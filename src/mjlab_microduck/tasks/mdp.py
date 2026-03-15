@@ -998,28 +998,54 @@ def skating_stroke(
     return torch.abs(cmd_x) * lateral_push
 
 
-def skating_push_reward(
+_LEFT_HIP_ROLL_CFG = SceneEntityCfg("robot", joint_names=("left_hip_roll",))
+_RIGHT_HIP_ROLL_CFG = SceneEntityCfg("robot", joint_names=("right_hip_roll",))
+
+
+def skating_outward_push(
     env: ManagerBasedRlEnv,
     contact_sensor_name: str,
-    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot", joint_names=(r".*hip_roll.*",)),
+    left_hip_roll_cfg: SceneEntityCfg = _LEFT_HIP_ROLL_CFG,
+    right_hip_roll_cfg: SceneEntityCfg = _RIGHT_HIP_ROLL_CFG,
+    left_outward_negative: bool = True,
 ) -> torch.Tensor:
-    """Reward lateral hip_roll velocity when any foot is in contact with the ground.
+    """Reward outward hip_roll (abduction) push when the corresponding foot is grounded.
 
-    Directly incentivises the skating push stroke: the robot pushes a grounded foot
-    laterally (hip abduction) which the wheel friction converts into forward force.
-    Gating on contact ensures the reward fires during actual ground pushes, not
-    while the foot is swinging through the air.
+    Skating propulsion comes from pushing one foot laterally outward while it grips
+    the ground — the anisotropic wheel friction converts lateral force into forward
+    momentum. This reward provides a dense gradient toward the correct skating stroke:
+
+    - Left foot on ground  → reward negative left_hip_roll velocity (abduction = outward)
+    - Right foot on ground → reward positive right_hip_roll velocity (abduction = outward)
+
+    Using clamp(min=0) instead of abs() means only the propulsive direction (outward)
+    is rewarded. Inward pushes get zero reward. Symmetric two-foot outward pushing
+    creates zero net forward force (the lateral reactions cancel), so velocity tracking
+    will naturally discourage it — the robot must learn alternating single-leg pushes.
+
+    Contact sensor primary bodies must be ordered [roller_foot1=left, roller_foot2=right].
     """
     from mjlab.sensor import ContactSensor
 
     sensor: ContactSensor = env.scene[contact_sensor_name]
-    in_contact = sensor.data.found.reshape(env.num_envs, -1).any(dim=1).float()  # (B,)
+    # found: (num_envs, 2) — roller_foot1 = left, roller_foot2 = right
+    contact = sensor.data.found.reshape(env.num_envs, -1)
+    left_contact = contact[:, 0].float()
+    right_contact = contact[:, 1].float()
 
-    asset: Entity = env.scene[asset_cfg.name]
-    hip_roll_vel = asset.data.joint_vel[:, asset_cfg.joint_ids]  # (B, 2)
-    lateral_push = torch.sum(torch.abs(hip_roll_vel), dim=1)
+    asset: Entity = env.scene[left_hip_roll_cfg.name]
+    # Left outward = negative velocity; right outward = positive velocity
+    left_vel = asset.data.joint_vel[:, left_hip_roll_cfg.joint_ids[0]]   # (B,)
+    right_vel = asset.data.joint_vel[:, right_hip_roll_cfg.joint_ids[0]]  # (B,)
 
-    return in_contact * lateral_push
+    # Sign convention: flip both if robot's hip_roll is defined opposite to standard.
+    # Default: left outward = negative vel, right outward = positive vel.
+    # Set left_outward_negative=False to flip if the reward is always near zero.
+    sign = -1.0 if left_outward_negative else 1.0
+    left_outward = torch.clamp(sign * left_vel, min=0.0)
+    right_outward = torch.clamp(-sign * right_vel, min=0.0)
+
+    return left_contact * left_outward + right_contact * right_outward
 
 
 def coasting_reward(

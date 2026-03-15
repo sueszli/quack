@@ -140,7 +140,7 @@ def make_microduck_velocity_rollers_env_cfg(
     # Let the robot discover the skating gait through exploration.
 
     # Keep only what we want; delete everything else from the base env
-    keep = {"pose", "upright", "track_linear_velocity", "body_ang_vel", "angular_momentum", "action_rate_l2", "air_time"}
+    keep = {"pose", "upright", "track_linear_velocity", "body_ang_vel", "angular_momentum", "action_rate_l2"}
     for name in list(cfg.rewards.keys()):
         if name not in keep:
             del cfg.rewards[name]
@@ -155,8 +155,6 @@ def make_microduck_velocity_rollers_env_cfg(
     cfg.rewards["upright"].params["asset_cfg"].body_names = ("trunk_base",)
     cfg.rewards["upright"].weight = 3.0
 
-    cfg.rewards["air_time"].weight = 5.0
-
     cfg.rewards["track_linear_velocity"].weight = 25.0
     cfg.rewards["track_linear_velocity"].params["std"] = math.sqrt(0.08)
 
@@ -169,11 +167,20 @@ def make_microduck_velocity_rollers_env_cfg(
         },
     )
 
-    # Regularization — same values as velocity env
+    # Skating push: reward outward hip_roll abduction when foot is grounded.
+    # Per-foot directional gating prevents the symmetric-wiggling exploit.
+    # Left: negative vel = outward; Right: positive vel = outward.
+    cfg.rewards["skating_push"] = RewardTermCfg(
+        func=microduck_mdp.skating_outward_push,
+        weight=5.0,
+        params={"contact_sensor_name": "feet_ground_contact"},
+    )
+
+    # Regularization
     cfg.rewards["body_ang_vel"].params["asset_cfg"].body_names = ("trunk_base",)
     cfg.rewards["body_ang_vel"].weight = -0.05
     cfg.rewards["angular_momentum"].weight = -0.02
-    cfg.rewards["action_rate_l2"].weight = -1.5  # strong from start — penalise wiggling
+    cfg.rewards["action_rate_l2"].weight = -0.3  # reduced: allow rhythmic skating strokes
     cfg.rewards["neck_action_rate_l2"] = RewardTermCfg(
         func=microduck_mdp.neck_action_rate_l2, weight=-0.5
     )
