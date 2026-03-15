@@ -135,8 +135,6 @@ def reset_with_forward_velocity(
             Example: [{"step":0,"fraction":0.8}, {"step":2000*24,"fraction":0.0}]
         asset_cfg: robot entity config.
     """
-    from mjlab.utils.lab_api.math import quat_apply
-
     if fraction_stages is None:
         fraction_stages = [{"step": 0, "fraction": 0.8}]
 
@@ -157,34 +155,35 @@ def reset_with_forward_velocity(
     lo, hi = velocity_range
     vx = lo + torch.rand(n_warmstart, device=env.device) * (hi - lo)
 
-    # Rotate body-forward [1,0,0] to world frame using current root quaternion
+    # Build horizontal forward direction from yaw only — ignoring pitch/roll.
+    # IMPORTANT: read quaternion from qpos, NOT from root_link_quat_w.
+    # root_link_quat_w reads xquat which requires sim.forward() to be current.
+    # After reset_base writes a new yaw to qpos, xquat is still stale (old episode).
+    # qpos is updated immediately by write_root_pose, so it's always fresh.
     asset: Entity = env.scene[asset_cfg.name]
-    root_quat = asset.data.root_link_quat_w[warmstart_ids]  # (n, 4)
-    body_fwd = torch.zeros(n_warmstart, 3, device=env.device)
-    body_fwd[:, 0] = 1.0
-    forward_world = quat_apply(root_quat, body_fwd)  # (n, 3)
+    qpos_q_adr = asset.data.indexing.free_joint_q_adr[3:7]  # quat indices in qpos
+    q = asset.data.data.qpos[warmstart_ids][:, qpos_q_adr]  # (n, 4) [w, x, y, z]
+    w, x, y, z = q[:, 0], q[:, 1], q[:, 2], q[:, 3]
+    yaw = torch.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
+    forward_world = torch.stack([torch.cos(yaw), torch.sin(yaw), torch.zeros_like(yaw)], dim=-1)
 
     velocities = torch.zeros(n_warmstart, 6, device=env.device)
     velocities[:, :3] = vx.unsqueeze(-1) * forward_world
 
     asset.write_root_link_velocity_to_sim(velocities, env_ids=warmstart_ids)
 
-    # Spin wheels to match forward velocity — prevents instantaneous no-slip braking
-    # on ground contact (mu1=0.8 lateral friction would otherwise stop the robot in ~2 steps).
-    #
-    # Kinematic analysis (from site quaternions):
-    #   roller_foot1 body_z = world +Y → passive_L* joint axis = +world Y → ω = +v/r
-    #   skateboard_bearing has 180° rotation around X → joint axis = -world Y → ω = -v/r
-    #
-    # Wheel radius from inertia tensor: Izz = m*r²/2 → r = sqrt(2*1.815e-6/0.01619) ≈ 0.015 m
-    _WHEEL_RADIUS = 0.015
+    # Spin wheels to match forward velocity — prevents instantaneous no-slip braking.
+    # Wheel radius = 0.0175 m (measured).
+    # Left wheels: joint axis = +world Y → ω = +v/r
+    # Right wheels: joint axis = -world Y → ω = -v/r
+    _WHEEL_RADIUS = 0.0175
     left_ids, _ = asset.find_joints(r"^passive_L.*")
     right_ids, _ = asset.find_joints(r"^passive_R.*")
 
     if left_ids or right_ids:
         joint_pos = asset.data.joint_pos[warmstart_ids].clone()
         joint_vel = asset.data.joint_vel[warmstart_ids].clone()
-        omega = vx / _WHEEL_RADIUS  # (n,) rad/s
+        omega = vx / _WHEEL_RADIUS  # (n,) rad/s, always positive (forward only)
         if left_ids:
             joint_vel[:, left_ids] = omega.unsqueeze(-1).expand(-1, len(left_ids))
         if right_ids:

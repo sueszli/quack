@@ -194,23 +194,6 @@ def make_microduck_velocity_rollers_env_cfg(
 
     # === EVENTS ===
 
-    # Warm-start: spawn some envs already moving at target speed so the robot
-    # first learns coasting, then progressively must earn speed from rest.
-    cfg.events["reset_forward_velocity"] = EventTermCfg(
-        func=microduck_mdp.reset_with_forward_velocity,
-        mode="reset",
-        params={
-            "velocity_range": (0.8, 1.5),
-            "fraction_stages": [
-                {"step": 0,           "fraction": 0.8},
-                {"step": 500 * 24,    "fraction": 0.6},
-                {"step": 1000 * 24,   "fraction": 0.3},
-                {"step": 1500 * 24,   "fraction": 0.1},
-                {"step": 2000 * 24,   "fraction": 0.0},
-            ],
-        },
-    )
-
     cfg.events["reset_action_history"] = EventTermCfg(
         func=microduck_mdp.reset_action_history,
         mode="reset",
@@ -231,6 +214,7 @@ def make_microduck_velocity_rollers_env_cfg(
     del cfg.events["foot_friction"]
 
     cfg.events["reset_base"].params["pose_range"]["z"] = (0.1335, 0.1435)
+    # cfg.events["reset_base"].params["pose_range"]["z"] = (0.124, 0.124)
 
     if ENABLE_VELOCITY_PUSHES:
         interval = (0.5, 1.0) if play else VELOCITY_PUSH_INTERVAL_S
