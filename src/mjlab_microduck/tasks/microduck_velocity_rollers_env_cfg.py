@@ -175,6 +175,11 @@ def make_microduck_velocity_rollers_env_cfg(
         weight=3.0,  # reduced: balance against stronger postural rewards
         params={"contact_sensor_name": "feet_ground_contact"},
     )
+    cfg.rewards["wheel_speed"] = RewardTermCfg(
+        func=microduck_mdp.wheel_speed_reward,
+        weight=5.0,
+        params={"command_name": "twist", "vel_scale": 0.5},
+    )
 
     # Regularization
     cfg.rewards["body_ang_vel"].params["asset_cfg"].body_names = ("trunk_base",)
@@ -296,6 +301,7 @@ def make_microduck_velocity_rollers_env_cfg(
         func=mdp.base_lin_vel,
         scale=1.0,
     )
+    del cfg.observations["policy"].terms["base_lin_vel"]
 
     gravity_term_name = "projected_gravity" if USE_PROJECTED_GRAVITY else "raw_accelerometer"
 

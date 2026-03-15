@@ -1046,6 +1046,36 @@ def skating_outward_push(
     return left_contact * left_outward + right_contact * right_outward
 
 
+def wheel_speed_reward(
+    env: ManagerBasedRlEnv,
+    command_name: str,
+    wheel_radius: float = 0.0175,
+    vel_scale: float = 0.5,
+) -> torch.Tensor:
+    """Reward forward wheel spin proportional to commanded speed.
+
+    Left wheels spin positive for forward motion; right wheels spin negative.
+    tanh saturation at vel_scale m/s equivalent prevents runaway.
+    Provides gradient at low body speeds when velocity tracking reward is near-zero.
+    Only fires for forward commands.
+    """
+    cmd_x = env.command_manager.get_command(command_name)[:, 0]  # (B,)
+
+    asset: Entity = env.scene["robot"]
+    lf_ids, _ = asset.find_joints("passive_LFwheel")
+    lr_ids, _ = asset.find_joints("passive_LRwheel")
+    rf_ids, _ = asset.find_joints("passive_RFwheel")
+    rr_ids, _ = asset.find_joints("passive_RRwheel")
+
+    vel = asset.data.joint_vel
+    left_omega = (vel[:, lf_ids[0]] + vel[:, lr_ids[0]]) / 2.0   # (B,) positive=forward
+    right_omega = (vel[:, rf_ids[0]] + vel[:, rr_ids[0]]) / 2.0  # (B,) negative=forward
+    forward_omega = (left_omega - right_omega) / 2.0              # (B,) positive=forward
+
+    omega_scale = vel_scale / wheel_radius
+    return torch.clamp(cmd_x, min=0.0) * torch.tanh(torch.clamp(forward_omega, min=0.0) / omega_scale)
+
+
 def coasting_reward(
     env: ManagerBasedRlEnv,
     command_name: str,
