@@ -153,7 +153,7 @@ def make_microduck_velocity_rollers_env_cfg(
     cfg.rewards["pose"].weight = 2.0
 
     cfg.rewards["upright"].params["asset_cfg"].body_names = ("trunk_base",)
-    cfg.rewards["upright"].weight = 8.0  # strong: crouched/leaning posture must be costly
+    cfg.rewards["upright"].weight = 4.0
 
     cfg.rewards["track_linear_velocity"].weight = 10.0
     cfg.rewards["track_linear_velocity"].params["std"] = math.sqrt(0.08)
@@ -186,16 +186,6 @@ def make_microduck_velocity_rollers_env_cfg(
     cfg.rewards["body_ang_vel"].weight = -0.05
     cfg.rewards["angular_momentum"].weight = -0.02
     cfg.rewards["action_rate_l2"].weight = -0.3  # reduced: allow rhythmic skating strokes
-    # Penalize walking-style sagittal joints (hip_pitch, knee) — skating uses hip_roll
-    cfg.rewards["hip_pitch_knee_vel"] = RewardTermCfg(
-        func=microduck_mdp.hip_pitch_knee_vel_l2, weight=-1.0
-    )
-    # Reward being at target speed with still legs (push → glide pattern)
-    cfg.rewards["coasting"] = RewardTermCfg(
-        func=microduck_mdp.coasting_reward,
-        weight=5.0,
-        params={"command_name": "twist", "vel_std": 0.3, "stillness_std": 3.0},
-    )
     cfg.rewards["neck_action_rate_l2"] = RewardTermCfg(
         func=microduck_mdp.neck_action_rate_l2, weight=-0.5
     )
