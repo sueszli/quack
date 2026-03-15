@@ -1001,6 +1001,7 @@ def skating_stroke(
 def skating_outward_push(
     env: ManagerBasedRlEnv,
     contact_sensor_name: str,
+    vel_scale: float = 1.0,
     left_outward_negative: bool = True,
 ) -> torch.Tensor:
     """Reward outward hip_roll (abduction) push when the corresponding foot is grounded.
@@ -1012,10 +1013,9 @@ def skating_outward_push(
     - Left foot on ground  → reward negative left_hip_roll velocity (abduction = outward)
     - Right foot on ground → reward positive right_hip_roll velocity (abduction = outward)
 
-    Using clamp(min=0) instead of abs() means only the propulsive direction (outward)
-    is rewarded. Inward pushes get zero reward. Symmetric two-foot outward pushing
-    creates zero net forward force (the lateral reactions cancel), so velocity tracking
-    will naturally discourage it — the robot must learn alternating single-leg pushes.
+    tanh saturation (vel_scale=1.0 rad/s by default) caps the reward at 1.0 per foot.
+    Without saturation the robot games the reward by oscillating as fast as possible
+    (unbounded return), which causes shaking with no forward motion.
 
     Contact sensor primary bodies must be ordered [roller_foot1=left, roller_foot2=right].
     If skating_push reward is near zero, flip left_outward_negative.
@@ -1039,8 +1039,9 @@ def skating_outward_push(
     # Sign convention: left outward = negative vel, right outward = positive vel (default).
     # Flip left_outward_negative if the reward stays near zero after a few iterations.
     sign = -1.0 if left_outward_negative else 1.0
-    left_outward = torch.clamp(sign * left_vel, min=0.0)
-    right_outward = torch.clamp(-sign * right_vel, min=0.0)
+    # tanh saturates at 1.0: robot gets no extra reward for shaking faster than vel_scale
+    left_outward = torch.tanh(torch.clamp(sign * left_vel, min=0.0) / vel_scale)
+    right_outward = torch.tanh(torch.clamp(-sign * right_vel, min=0.0) / vel_scale)
 
     return left_contact * left_outward + right_contact * right_outward
 
