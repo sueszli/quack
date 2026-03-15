@@ -155,7 +155,7 @@ def make_microduck_velocity_rollers_env_cfg(
     cfg.rewards["upright"].params["asset_cfg"].body_names = ("trunk_base",)
     cfg.rewards["upright"].weight = 3.0
 
-    cfg.rewards["air_time"].weight = 1.0
+    cfg.rewards["air_time"].weight = 5.0
 
     cfg.rewards["track_linear_velocity"].weight = 25.0
     cfg.rewards["track_linear_velocity"].params["std"] = math.sqrt(0.08)
