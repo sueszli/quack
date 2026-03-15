@@ -297,8 +297,8 @@ def make_microduck_velocity_rollers_env_cfg(
         )
 
     # === OBSERVATIONS ===
-    del cfg.observations["policy"].terms["base_lin_vel"]
-
+    # base_lin_vel kept in policy (non sim2real-safe but helps exploration).
+    # Critic gets it too via the base env default.
     cfg.observations["critic"].terms["base_lin_vel"] = ObservationTermCfg(
         func=mdp.base_lin_vel,
         scale=1.0,
