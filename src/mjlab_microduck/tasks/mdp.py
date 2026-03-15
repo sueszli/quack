@@ -169,6 +169,28 @@ def reset_with_forward_velocity(
 
     asset.write_root_link_velocity_to_sim(velocities, env_ids=warmstart_ids)
 
+    # Spin wheels to match forward velocity — prevents instantaneous no-slip braking
+    # on ground contact (mu1=0.8 lateral friction would otherwise stop the robot in ~2 steps).
+    #
+    # Kinematic analysis (from site quaternions):
+    #   roller_foot1 body_z = world +Y → passive_L* joint axis = +world Y → ω = +v/r
+    #   skateboard_bearing has 180° rotation around X → joint axis = -world Y → ω = -v/r
+    #
+    # Wheel radius from inertia tensor: Izz = m*r²/2 → r = sqrt(2*1.815e-6/0.01619) ≈ 0.015 m
+    _WHEEL_RADIUS = 0.015
+    left_ids, _ = asset.find_joints(r"^passive_L.*")
+    right_ids, _ = asset.find_joints(r"^passive_R.*")
+
+    if left_ids or right_ids:
+        joint_pos = asset.data.joint_pos[warmstart_ids].clone()
+        joint_vel = asset.data.joint_vel[warmstart_ids].clone()
+        omega = vx / _WHEEL_RADIUS  # (n,) rad/s
+        if left_ids:
+            joint_vel[:, left_ids] = omega.unsqueeze(-1).expand(-1, len(left_ids))
+        if right_ids:
+            joint_vel[:, right_ids] = (-omega).unsqueeze(-1).expand(-1, len(right_ids))
+        asset.write_joint_state_to_sim(joint_pos, joint_vel, env_ids=warmstart_ids)
+
 
 def reset_action_history(
     env: ManagerBasedRlEnv,
