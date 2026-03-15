@@ -186,6 +186,16 @@ def make_microduck_velocity_rollers_env_cfg(
     cfg.rewards["body_ang_vel"].weight = -0.05
     cfg.rewards["angular_momentum"].weight = -0.02
     cfg.rewards["action_rate_l2"].weight = -0.3  # reduced: allow rhythmic skating strokes
+    # Penalize walking-style sagittal joints (hip_pitch, knee) — skating uses hip_roll
+    cfg.rewards["hip_pitch_knee_vel"] = RewardTermCfg(
+        func=microduck_mdp.hip_pitch_knee_vel_l2, weight=-1.0
+    )
+    # Reward being at target speed with still legs (push → glide pattern)
+    cfg.rewards["coasting"] = RewardTermCfg(
+        func=microduck_mdp.coasting_reward,
+        weight=5.0,
+        params={"command_name": "twist", "vel_std": 0.3, "stillness_std": 3.0},
+    )
     cfg.rewards["neck_action_rate_l2"] = RewardTermCfg(
         func=microduck_mdp.neck_action_rate_l2, weight=-0.5
     )
@@ -414,11 +424,11 @@ MicroduckRollersRlCfg = RslRlOnPolicyRunnerCfg(
         entropy_coef=0.03,
         num_learning_epochs=5,
         num_mini_batches=4,
-        learning_rate=3.0e-4,
+        learning_rate=1.0e-3,
         schedule="adaptive",
         gamma=0.99,
         lam=0.95,
-        desired_kl=0.008,
+        desired_kl=0.01,
         max_grad_norm=1.0,
     ),
     wandb_project="mjlab_microduck",
