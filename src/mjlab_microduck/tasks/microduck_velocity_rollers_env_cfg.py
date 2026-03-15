@@ -140,7 +140,7 @@ def make_microduck_velocity_rollers_env_cfg(
     # Let the robot discover the skating gait through exploration.
 
     # Keep only what we want; delete everything else from the base env
-    keep = {"pose", "upright", "track_linear_velocity", "body_ang_vel", "angular_momentum", "action_rate_l2"}
+    keep = {"pose", "upright", "track_linear_velocity", "body_ang_vel", "angular_momentum", "action_rate_l2", "air_time"}
     for name in list(cfg.rewards.keys()):
         if name not in keep:
             del cfg.rewards[name]
@@ -154,6 +154,8 @@ def make_microduck_velocity_rollers_env_cfg(
 
     cfg.rewards["upright"].params["asset_cfg"].body_names = ("trunk_base",)
     cfg.rewards["upright"].weight = 3.0
+
+    cfg.rewards["air_time"].weight = 1.0
 
     cfg.rewards["track_linear_velocity"].weight = 25.0
     cfg.rewards["track_linear_velocity"].params["std"] = math.sqrt(0.08)
