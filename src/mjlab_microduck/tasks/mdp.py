@@ -998,15 +998,9 @@ def skating_stroke(
     return torch.abs(cmd_x) * lateral_push
 
 
-_LEFT_HIP_ROLL_CFG = SceneEntityCfg("robot", joint_names=("left_hip_roll",))
-_RIGHT_HIP_ROLL_CFG = SceneEntityCfg("robot", joint_names=("right_hip_roll",))
-
-
 def skating_outward_push(
     env: ManagerBasedRlEnv,
     contact_sensor_name: str,
-    left_hip_roll_cfg: SceneEntityCfg = _LEFT_HIP_ROLL_CFG,
-    right_hip_roll_cfg: SceneEntityCfg = _RIGHT_HIP_ROLL_CFG,
     left_outward_negative: bool = True,
 ) -> torch.Tensor:
     """Reward outward hip_roll (abduction) push when the corresponding foot is grounded.
@@ -1024,6 +1018,7 @@ def skating_outward_push(
     will naturally discourage it — the robot must learn alternating single-leg pushes.
 
     Contact sensor primary bodies must be ordered [roller_foot1=left, roller_foot2=right].
+    If skating_push reward is near zero, flip left_outward_negative.
     """
     from mjlab.sensor import ContactSensor
 
@@ -1033,14 +1028,16 @@ def skating_outward_push(
     left_contact = contact[:, 0].float()
     right_contact = contact[:, 1].float()
 
-    asset: Entity = env.scene[left_hip_roll_cfg.name]
-    # Left outward = negative velocity; right outward = positive velocity
-    left_vel = asset.data.joint_vel[:, left_hip_roll_cfg.joint_ids[0]]   # (B,)
-    right_vel = asset.data.joint_vel[:, right_hip_roll_cfg.joint_ids[0]]  # (B,)
+    asset: Entity = env.scene["robot"]
+    # Use find_joints to get integer indices — avoids slice/unresolved-cfg issues
+    left_ids, _ = asset.find_joints("left_hip_roll")
+    right_ids, _ = asset.find_joints("right_hip_roll")
 
-    # Sign convention: flip both if robot's hip_roll is defined opposite to standard.
-    # Default: left outward = negative vel, right outward = positive vel.
-    # Set left_outward_negative=False to flip if the reward is always near zero.
+    left_vel = asset.data.joint_vel[:, left_ids[0]]   # (B,)
+    right_vel = asset.data.joint_vel[:, right_ids[0]]  # (B,)
+
+    # Sign convention: left outward = negative vel, right outward = positive vel (default).
+    # Flip left_outward_negative if the reward stays near zero after a few iterations.
     sign = -1.0 if left_outward_negative else 1.0
     left_outward = torch.clamp(sign * left_vel, min=0.0)
     right_outward = torch.clamp(-sign * right_vel, min=0.0)
