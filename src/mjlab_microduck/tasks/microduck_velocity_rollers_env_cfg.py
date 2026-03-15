@@ -153,14 +153,14 @@ def make_microduck_velocity_rollers_env_cfg(
     cfg.rewards["pose"].weight = 2.0
 
     cfg.rewards["upright"].params["asset_cfg"].body_names = ("trunk_base",)
-    cfg.rewards["upright"].weight = 3.0
+    cfg.rewards["upright"].weight = 8.0  # strong: crouched/leaning posture must be costly
 
     cfg.rewards["track_linear_velocity"].weight = 25.0
     cfg.rewards["track_linear_velocity"].params["std"] = math.sqrt(0.08)
 
     cfg.rewards["com_height_target"] = RewardTermCfg(
         func=microduck_mdp.com_height_target,
-        weight=2.0,
+        weight=5.0,  # strong: robot crouches below 0.0935 to exploit single-foot stance
         params={
             "target_height_min": 0.0935,  # 0.08 + 0.0135 (roller height offset)
             "target_height_max": 0.1235,  # 0.11 + 0.0135
@@ -172,7 +172,7 @@ def make_microduck_velocity_rollers_env_cfg(
     # Left: negative vel = outward; Right: positive vel = outward.
     cfg.rewards["skating_push"] = RewardTermCfg(
         func=microduck_mdp.skating_outward_push,
-        weight=5.0,
+        weight=3.0,  # reduced: balance against stronger postural rewards
         params={"contact_sensor_name": "feet_ground_contact"},
     )
 
