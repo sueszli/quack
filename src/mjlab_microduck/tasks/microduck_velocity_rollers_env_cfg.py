@@ -155,7 +155,7 @@ def make_microduck_velocity_rollers_env_cfg(
     cfg.rewards["upright"].params["asset_cfg"].body_names = ("trunk_base",)
     cfg.rewards["upright"].weight = 8.0  # strong: crouched/leaning posture must be costly
 
-    cfg.rewards["track_linear_velocity"].weight = 25.0
+    cfg.rewards["track_linear_velocity"].weight = 10.0
     cfg.rewards["track_linear_velocity"].params["std"] = math.sqrt(0.08)
 
     cfg.rewards["com_height_target"] = RewardTermCfg(
@@ -177,7 +177,7 @@ def make_microduck_velocity_rollers_env_cfg(
     )
     cfg.rewards["wheel_speed"] = RewardTermCfg(
         func=microduck_mdp.wheel_speed_reward,
-        weight=5.0,
+        weight=15.0,
         params={"command_name": "twist", "vel_scale": 0.5},
     )
 
