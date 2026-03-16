@@ -45,6 +45,7 @@ from mjlab.rl import (
     RslRlPpoAlgorithmCfg,
 )
 from mjlab.sensor import ContactMatch, ContactSensorCfg
+from mjlab.envs.mdp import rewards as envs_rewards
 from mjlab.tasks.velocity import mdp
 from mjlab.tasks.velocity.mdp import UniformVelocityCommandCfg
 from mjlab.tasks.velocity.velocity_env_cfg import make_velocity_env_cfg
@@ -190,6 +191,9 @@ def make_microduck_velocity_rollers_env_cfg(
     )
     cfg.rewards["neck_joint_pos_l2"] = RewardTermCfg(
         func=microduck_mdp.neck_joint_pos_l2, weight=-2.0
+    )
+    cfg.rewards["alive"] = RewardTermCfg(
+        func=envs_rewards.is_alive, weight=5.0,
     )
     cfg.rewards["joint_torques_l2"] = RewardTermCfg(
         func=microduck_mdp.joint_torques_l2, weight=-1e-3
