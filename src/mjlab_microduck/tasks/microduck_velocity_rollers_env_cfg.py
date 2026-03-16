@@ -98,10 +98,15 @@ def make_microduck_velocity_rollers_env_cfg(
     command.ranges.lin_vel_y = (0.0, 0.0)
     command.ranges.ang_vel_z = (0.0, 0.0)
 
+    # Reduce foot-lifting incentives — skaters glide, not stride
+    cfg.rewards["foot_clearance"].weight = -0.2   # was -2.0
+    cfg.rewards["foot_swing_height"].weight = -0.05  # was -0.25
+    cfg.rewards["air_time"].weight = 0.5  # was 5.0
+
     # Reward spinning wheels forward
     cfg.rewards["wheel_speed"] = RewardTermCfg(
         func=microduck_mdp.wheel_speed_reward,
-        weight=5.0,
+        weight=50.0,
         params={"command_name": "twist", "vel_scale": 0.5},
     )
 
