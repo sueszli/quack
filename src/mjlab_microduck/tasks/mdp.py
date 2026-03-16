@@ -174,20 +174,15 @@ def reset_with_forward_velocity(
 
     # Spin wheels to match forward velocity — prevents instantaneous no-slip braking.
     # Wheel radius = 0.0175 m (measured).
-    # Left wheels: joint axis = +world Y → ω = +v/r
-    # Right wheels: joint axis = -world Y → ω = -v/r
+    # All 4 wheels spin at +ω for forward motion (verified by test_wheel_direction.py).
     _WHEEL_RADIUS = 0.0175
-    left_ids, _ = asset.find_joints(r"^passive_L.*")
-    right_ids, _ = asset.find_joints(r"^passive_R.*")
+    all_wheel_ids, _ = asset.find_joints(r"^passive_.*")
 
-    if left_ids or right_ids:
+    if all_wheel_ids:
         joint_pos = asset.data.joint_pos[warmstart_ids].clone()
         joint_vel = asset.data.joint_vel[warmstart_ids].clone()
-        omega = vx / _WHEEL_RADIUS  # (n,) rad/s, always positive (forward only)
-        if left_ids:
-            joint_vel[:, left_ids] = omega.unsqueeze(-1).expand(-1, len(left_ids))
-        if right_ids:
-            joint_vel[:, right_ids] = (-omega).unsqueeze(-1).expand(-1, len(right_ids))
+        omega = vx / _WHEEL_RADIUS  # (n,) rad/s, positive = forward
+        joint_vel[:, all_wheel_ids] = omega.unsqueeze(-1).expand(-1, len(all_wheel_ids))
         asset.write_joint_state_to_sim(joint_pos, joint_vel, env_ids=warmstart_ids)
 
 

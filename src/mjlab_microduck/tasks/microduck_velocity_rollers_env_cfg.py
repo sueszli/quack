@@ -202,6 +202,20 @@ def make_microduck_velocity_rollers_env_cfg(
 
     # === EVENTS ===
 
+    cfg.events["reset_forward_velocity"] = EventTermCfg(
+        func=microduck_mdp.reset_with_forward_velocity,
+        mode="reset",
+        params={
+            "velocity_range": (0.5, 1.5),
+            "fraction_stages": [
+                {"step": 0,           "fraction": 0.8},
+                {"step": 1000 * 24,   "fraction": 0.5},
+                {"step": 2000 * 24,   "fraction": 0.2},
+                {"step": 3000 * 24,   "fraction": 0.0},
+            ],
+        },
+    )
+
     cfg.events["reset_action_history"] = EventTermCfg(
         func=microduck_mdp.reset_action_history,
         mode="reset",
