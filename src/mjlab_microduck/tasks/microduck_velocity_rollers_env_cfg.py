@@ -76,6 +76,9 @@ def make_microduck_velocity_rollers_env_cfg(
     cfg.observations["critic"].terms["joint_pos"].params["asset_cfg"] = deepcopy(passive_excluded)
     cfg.observations["critic"].terms["joint_vel"].params["asset_cfg"] = deepcopy(passive_excluded)
 
+    # Roller skating requires lateral foot sliding — slip penalty is counterproductive
+    del cfg.rewards["foot_slip"]
+
     # Pose reward uses joint_names=".*" by default → would include 18 joints but std
     # dicts only have 14 entries → size mismatch. Restrict to non-passive joints.
     cfg.rewards["pose"].params["asset_cfg"] = deepcopy(passive_excluded)
