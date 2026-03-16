@@ -208,10 +208,9 @@ def make_microduck_velocity_rollers_env_cfg(
         params={
             "velocity_range": (0.5, 1.5),
             "fraction_stages": [
-                {"step": 0,           "fraction": 0.8},
-                {"step": 1000 * 24,   "fraction": 0.5},
-                {"step": 2000 * 24,   "fraction": 0.2},
-                {"step": 3000 * 24,   "fraction": 0.0},
+                {"step": 0,           "fraction": 0.3},
+                {"step": 1000 * 24,   "fraction": 0.1},
+                {"step": 2000 * 24,   "fraction": 0.0},
             ],
         },
     )
@@ -394,7 +393,6 @@ def make_microduck_velocity_rollers_env_cfg(
         )
 
 
-    # Tighter fall termination — prevents inverted-pendulum wheelie exploit
     cfg.terminations["fell_over"] = TerminationTermCfg(
         func=mdp.bad_orientation,
         params={"limit_angle": math.radians(45.0)},
