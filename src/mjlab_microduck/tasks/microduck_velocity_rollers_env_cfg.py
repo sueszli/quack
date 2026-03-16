@@ -91,12 +91,16 @@ def make_microduck_velocity_rollers_env_cfg(
         params={"asset_cfg": wheel_cfg},
     )
 
-    # Forward-only commands: no sideways, no turning
+    # Forward-only commands: always positive, no sideways, no turning
     command: UniformVelocityCommandCfg = cfg.commands["twist"]
     command.rel_standing_envs = 0.0
     command.rel_heading_envs = 0.0
+    command.ranges.lin_vel_x = (0.5, 1.5)
     command.ranges.lin_vel_y = (0.0, 0.0)
     command.ranges.ang_vel_z = (0.0, 0.0)
+
+    # stillness_at_zero_command rewards being still — counterproductive for skating
+    del cfg.rewards["stillness_at_zero_command"]
 
     # Reduce foot-lifting incentives — skaters glide, not stride
     cfg.rewards["foot_clearance"].weight = -0.2   # was -2.0
