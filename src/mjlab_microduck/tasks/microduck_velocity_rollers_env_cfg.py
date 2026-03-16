@@ -140,13 +140,23 @@ def make_microduck_velocity_rollers_env_cfg(
     # Let the robot discover the skating gait through exploration.
 
     # Keep only what we want; delete everything else from the base env
-    keep = {"upright", "body_ang_vel", "angular_momentum", "action_rate_l2"}
+    keep = {"pose", "upright", "track_linear_velocity", "body_ang_vel", "angular_momentum", "action_rate_l2"}
     for name in list(cfg.rewards.keys()):
         if name not in keep:
             del cfg.rewards[name]
 
+    cfg.rewards["pose"].params["std_standing"] = std_standing
+    cfg.rewards["pose"].params["std_walking"] = std_walking
+    cfg.rewards["pose"].params["std_running"] = std_running
+    cfg.rewards["pose"].params["walking_threshold"] = 0.01
+    cfg.rewards["pose"].params["running_threshold"] = 100.0
+    cfg.rewards["pose"].weight = 2.0
+
     cfg.rewards["upright"].params["asset_cfg"].body_names = ("trunk_base",)
     cfg.rewards["upright"].weight = 4.0
+
+    cfg.rewards["track_linear_velocity"].weight = 10.0
+    cfg.rewards["track_linear_velocity"].params["std"] = math.sqrt(0.08)
 
     cfg.rewards["com_height_target"] = RewardTermCfg(
         func=microduck_mdp.com_height_target,
@@ -183,6 +193,11 @@ def make_microduck_velocity_rollers_env_cfg(
     )
     cfg.rewards["joint_torques_l2"] = RewardTermCfg(
         func=microduck_mdp.joint_torques_l2, weight=-1e-3
+    )
+    cfg.rewards["self_collisions"] = RewardTermCfg(
+        func=mdp.self_collision_cost,
+        weight=-1.0,
+        params={"sensor_name": "self_collision"},
     )
 
     # === EVENTS ===

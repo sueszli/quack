@@ -1054,7 +1054,7 @@ def wheel_speed_reward(
 ) -> torch.Tensor:
     """Reward forward wheel spin proportional to commanded speed.
 
-    Left wheels spin positive for forward motion; right wheels spin negative.
+    All 4 wheels spin positive for forward motion (verified visually).
     tanh saturation at vel_scale m/s equivalent prevents runaway.
     Provides gradient at low body speeds when velocity tracking reward is near-zero.
     Only fires for forward commands.
@@ -1068,9 +1068,8 @@ def wheel_speed_reward(
     rr_ids, _ = asset.find_joints("passive_RRwheel")
 
     vel = asset.data.joint_vel
-    left_omega = (vel[:, lf_ids[0]] + vel[:, lr_ids[0]]) / 2.0   # (B,) positive=forward
-    right_omega = (vel[:, rf_ids[0]] + vel[:, rr_ids[0]]) / 2.0  # (B,) negative=forward
-    forward_omega = (left_omega - right_omega) / 2.0              # (B,) positive=forward
+    # All 4 wheels spin positive for forward motion (verified by test_wheel_direction.py)
+    forward_omega = (vel[:, lf_ids[0]] + vel[:, lr_ids[0]] + vel[:, rf_ids[0]] + vel[:, rr_ids[0]]) / 4.0
 
     omega_scale = vel_scale / wheel_radius
     return torch.clamp(cmd_x, min=0.0) * torch.tanh(torch.clamp(forward_omega, min=0.0) / omega_scale)
