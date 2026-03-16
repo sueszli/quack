@@ -45,7 +45,6 @@ from mjlab.rl import (
     RslRlPpoAlgorithmCfg,
 )
 from mjlab.sensor import ContactMatch, ContactSensorCfg
-from mjlab.envs.mdp import rewards as envs_rewards
 from mjlab.tasks.velocity import mdp
 from mjlab.tasks.velocity.mdp import UniformVelocityCommandCfg
 from mjlab.tasks.velocity.velocity_env_cfg import make_velocity_env_cfg
@@ -137,14 +136,7 @@ def make_microduck_velocity_rollers_env_cfg(
         joint_pos_action.class_type = microduck_mdp.NeckOffsetJointPositionAction
 
     # === REWARDS ===
-    # Strip everything back to the minimum: pose, upright, com_height, velocity tracking.
-    # Let the robot discover the skating gait through exploration.
-
-    # Keep only what we want; delete everything else from the base env
-    keep = {"pose", "upright", "track_linear_velocity", "body_ang_vel", "angular_momentum", "action_rate_l2"}
-    for name in list(cfg.rewards.keys()):
-        if name not in keep:
-            del cfg.rewards[name]
+    # Same as base walk env, just override microduck-specific params + add wheel_speed.
 
     cfg.rewards["pose"].params["std_standing"] = std_standing
     cfg.rewards["pose"].params["std_walking"] = std_walking
@@ -159,68 +151,34 @@ def make_microduck_velocity_rollers_env_cfg(
     cfg.rewards["track_linear_velocity"].weight = 10.0
     cfg.rewards["track_linear_velocity"].params["std"] = math.sqrt(0.08)
 
-    cfg.rewards["com_height_target"] = RewardTermCfg(
-        func=microduck_mdp.com_height_target,
-        weight=5.0,
-        params={
-            "target_height_min": 0.0935,
-            "target_height_max": 0.1235,
-        },
-    )
-    cfg.rewards["wheel_speed"] = RewardTermCfg(
-        func=microduck_mdp.wheel_speed_reward,
-        weight=25.0,
-        params={"command_name": "twist", "vel_scale": 0.5},
-    )
-    cfg.rewards["skating_push"] = RewardTermCfg(
-        func=microduck_mdp.skating_outward_push,
-        weight=3.0,
-        params={"contact_sensor_name": "feet_ground_contact"},
-    )
-    cfg.rewards["feet_flat"] = RewardTermCfg(
-        func=microduck_mdp.feet_flat_penalty,
-        weight=-20.0,
-        params={"asset_cfg": SceneEntityCfg("robot", site_names=("left_foot", "right_foot"))},
-    )
     cfg.rewards["body_ang_vel"].params["asset_cfg"].body_names = ("trunk_base",)
-    cfg.rewards["body_ang_vel"].weight = -0.05
-    cfg.rewards["angular_momentum"].weight = -0.02
-    cfg.rewards["action_rate_l2"].weight = -1.0
-    cfg.rewards["neck_action_rate_l2"] = RewardTermCfg(
-        func=microduck_mdp.neck_action_rate_l2, weight=-0.5
-    )
-    cfg.rewards["neck_joint_pos_l2"] = RewardTermCfg(
-        func=microduck_mdp.neck_joint_pos_l2, weight=-2.0
-    )
-    cfg.rewards["alive"] = RewardTermCfg(
-        func=envs_rewards.is_alive, weight=15.0,
-    )
-    cfg.rewards["termination_penalty"] = RewardTermCfg(
-        func=envs_rewards.is_terminated, weight=-100.0,
-    )
-    cfg.rewards["joint_torques_l2"] = RewardTermCfg(
-        func=microduck_mdp.joint_torques_l2, weight=-1e-3
-    )
+
     cfg.rewards["self_collisions"] = RewardTermCfg(
         func=mdp.self_collision_cost,
         weight=-1.0,
         params={"sensor_name": "self_collision"},
     )
-
-    # === EVENTS ===
-
-    cfg.events["reset_forward_velocity"] = EventTermCfg(
-        func=microduck_mdp.reset_with_forward_velocity,
-        mode="reset",
+    cfg.rewards["neck_action_rate_l2"] = RewardTermCfg(
+        func=microduck_mdp.neck_action_rate_l2, weight=-0.1
+    )
+    cfg.rewards["com_height_target"] = RewardTermCfg(
+        func=microduck_mdp.com_height_target,
+        weight=1.2,
         params={
-            "velocity_range": (0.5, 1.5),
-            "fraction_stages": [
-                {"step": 0,           "fraction": 0.3},
-                {"step": 1000 * 24,   "fraction": 0.1},
-                {"step": 2000 * 24,   "fraction": 0.0},
-            ],
+            "target_height_min": 0.0935,
+            "target_height_max": 0.1235,
         },
     )
+    cfg.rewards["joint_torques_l2"] = RewardTermCfg(
+        func=microduck_mdp.joint_torques_l2, weight=-1e-3
+    )
+    cfg.rewards["wheel_speed"] = RewardTermCfg(
+        func=microduck_mdp.wheel_speed_reward,
+        weight=5.0,
+        params={"command_name": "twist", "vel_scale": 0.5},
+    )
+
+    # === EVENTS ===
 
     cfg.events["reset_action_history"] = EventTermCfg(
         func=microduck_mdp.reset_action_history,
@@ -413,7 +371,7 @@ def make_microduck_velocity_rollers_env_cfg(
 
 MicroduckRollersRlCfg = RslRlOnPolicyRunnerCfg(
     policy=RslRlPpoActorCriticCfg(
-        init_noise_std=0.1,
+        init_noise_std=1.0,
         actor_obs_normalization=False,
         critic_obs_normalization=False,
         actor_hidden_dims=(512, 256, 128),
@@ -424,7 +382,7 @@ MicroduckRollersRlCfg = RslRlOnPolicyRunnerCfg(
         value_loss_coef=1.0,
         use_clipped_value_loss=True,
         clip_param=0.2,
-        entropy_coef=0.005,
+        entropy_coef=0.03,
         num_learning_epochs=5,
         num_mini_batches=4,
         learning_rate=1.0e-3,
