@@ -7,7 +7,7 @@ the minimal changes needed for the roller-skate robot.
 from copy import deepcopy
 
 from mjlab.envs import ManagerBasedRlEnvCfg
-from mjlab.managers.manager_term_config import ObservationTermCfg, RewardTermCfg
+from mjlab.managers.manager_term_config import EventTermCfg, ObservationTermCfg, RewardTermCfg
 from mjlab.tasks.velocity import mdp
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.rl import (
@@ -65,6 +65,20 @@ def make_microduck_velocity_rollers_env_cfg(
     # Rollers have no foot friction geoms
     del cfg.events["foot_friction"]
 
+    # Warm-start a fraction of episodes with forward velocity to seed wheel_speed gradient
+    cfg.events["reset_forward_velocity"] = EventTermCfg(
+        func=microduck_mdp.reset_with_forward_velocity,
+        mode="reset",
+        params={
+            "velocity_range": (0.5, 1.5),
+            "fraction_stages": [
+                {"step": 0,          "fraction": 0.2},
+                {"step": 2000 * 24,  "fraction": 0.1},
+                {"step": 4000 * 24,  "fraction": 0.0},
+            ],
+        },
+    )
+
     # Adjust CoM height target for roller robot (sits ~1cm higher than walk robot)
     cfg.rewards["com_height_target"].params["target_height_min"] = 0.0935
     cfg.rewards["com_height_target"].params["target_height_max"] = 0.1235
@@ -102,10 +116,14 @@ def make_microduck_velocity_rollers_env_cfg(
     # stillness_at_zero_command rewards being still — counterproductive for skating
     del cfg.rewards["stillness_at_zero_command"]
 
-    # Reduce foot-lifting incentives — skaters glide, not stride
-    cfg.rewards["foot_clearance"].weight = -0.2   # was -2.0
-    cfg.rewards["foot_swing_height"].weight = -0.05  # was -0.25
-    cfg.rewards["air_time"].weight = 0.5  # was 5.0
+    # Walk-specific rewards — irrelevant for skating, zero them out
+    cfg.rewards["foot_clearance"].weight = 0.0
+    cfg.rewards["foot_swing_height"].weight = 0.0
+    cfg.rewards["air_time"].weight = 0.0
+    cfg.rewards["soft_landing"].weight = 0.0
+
+    # Reduce pose weight — standing still shouldn't be too comfortable
+    cfg.rewards["pose"].weight = 0.5  # was 2.0
 
     cfg.rewards["feet_flat"] = RewardTermCfg(
         func=microduck_mdp.feet_flat_penalty,
