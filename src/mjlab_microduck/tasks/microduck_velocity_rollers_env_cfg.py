@@ -19,6 +19,8 @@ from mjlab.sensor import ContactMatch, ContactSensorCfg
 
 from mjlab_microduck.robot.microduck_constants import MICRODUCK_WALK_ROLLERS_ROBOT_CFG
 from mjlab_microduck.tasks import mdp as microduck_mdp
+from mjlab.tasks.velocity.mdp import UniformVelocityCommandCfg
+
 from mjlab_microduck.tasks.microduck_velocity_env_cfg import make_microduck_velocity_env_cfg
 
 
@@ -85,6 +87,13 @@ def make_microduck_velocity_rollers_env_cfg(
         scale=1.0,
         params={"asset_cfg": wheel_cfg},
     )
+
+    # Forward-only commands: no sideways, no turning
+    command: UniformVelocityCommandCfg = cfg.commands["twist"]
+    command.rel_standing_envs = 0.0
+    command.rel_heading_envs = 0.0
+    command.ranges.lin_vel_y = (0.0, 0.0)
+    command.ranges.ang_vel_z = (0.0, 0.0)
 
     # Reward spinning wheels forward
     cfg.rewards["wheel_speed"] = RewardTermCfg(
