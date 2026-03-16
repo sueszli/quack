@@ -413,7 +413,7 @@ def make_microduck_velocity_rollers_env_cfg(
 
 MicroduckRollersRlCfg = RslRlOnPolicyRunnerCfg(
     policy=RslRlPpoActorCriticCfg(
-        init_noise_std=1.0,
+        init_noise_std=0.1,
         actor_obs_normalization=False,
         critic_obs_normalization=False,
         actor_hidden_dims=(512, 256, 128),
@@ -424,7 +424,7 @@ MicroduckRollersRlCfg = RslRlOnPolicyRunnerCfg(
         value_loss_coef=1.0,
         use_clipped_value_loss=True,
         clip_param=0.2,
-        entropy_coef=0.03,
+        entropy_coef=0.005,
         num_learning_epochs=5,
         num_mini_batches=4,
         learning_rate=1.0e-3,
