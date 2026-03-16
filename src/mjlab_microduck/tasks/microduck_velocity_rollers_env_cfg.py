@@ -177,7 +177,7 @@ def make_microduck_velocity_rollers_env_cfg(
     )
     cfg.rewards["wheel_speed"] = RewardTermCfg(
         func=microduck_mdp.wheel_speed_reward,
-        weight=15.0,
+        weight=25.0,
         params={"command_name": "twist", "vel_scale": 0.5},
     )
 
@@ -185,7 +185,7 @@ def make_microduck_velocity_rollers_env_cfg(
     cfg.rewards["body_ang_vel"].params["asset_cfg"].body_names = ("trunk_base",)
     cfg.rewards["body_ang_vel"].weight = -0.05
     cfg.rewards["angular_momentum"].weight = -0.02
-    cfg.rewards["action_rate_l2"].weight = -0.3  # reduced: allow rhythmic skating strokes
+    cfg.rewards["action_rate_l2"].weight = -1.0
     cfg.rewards["neck_action_rate_l2"] = RewardTermCfg(
         func=microduck_mdp.neck_action_rate_l2, weight=-0.5
     )
