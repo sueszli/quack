@@ -103,6 +103,12 @@ def make_microduck_velocity_rollers_env_cfg(
     cfg.rewards["foot_swing_height"].weight = -0.05  # was -0.25
     cfg.rewards["air_time"].weight = 0.5  # was 5.0
 
+    cfg.rewards["feet_flat"] = RewardTermCfg(
+        func=microduck_mdp.feet_flat_penalty,
+        weight=-5.0,
+        params={"asset_cfg": SceneEntityCfg("robot", site_names=("left_foot", "right_foot"))},
+    )
+
     # Reward spinning wheels forward
     cfg.rewards["wheel_speed"] = RewardTermCfg(
         func=microduck_mdp.wheel_speed_reward,
