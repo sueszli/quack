@@ -140,48 +140,37 @@ def make_microduck_velocity_rollers_env_cfg(
     # Let the robot discover the skating gait through exploration.
 
     # Keep only what we want; delete everything else from the base env
-    keep = {"pose", "upright", "track_linear_velocity", "body_ang_vel", "angular_momentum", "action_rate_l2"}
+    keep = {"upright", "body_ang_vel", "angular_momentum", "action_rate_l2"}
     for name in list(cfg.rewards.keys()):
         if name not in keep:
             del cfg.rewards[name]
 
-    cfg.rewards["pose"].params["std_standing"] = std_standing
-    cfg.rewards["pose"].params["std_walking"] = std_walking
-    cfg.rewards["pose"].params["std_running"] = std_running
-    cfg.rewards["pose"].params["walking_threshold"] = 0.01
-    cfg.rewards["pose"].params["running_threshold"] = 100.0  # always use walking stds
-    cfg.rewards["pose"].weight = 2.0
-
     cfg.rewards["upright"].params["asset_cfg"].body_names = ("trunk_base",)
     cfg.rewards["upright"].weight = 4.0
 
-    cfg.rewards["track_linear_velocity"].weight = 10.0
-    cfg.rewards["track_linear_velocity"].params["std"] = math.sqrt(0.08)
-
     cfg.rewards["com_height_target"] = RewardTermCfg(
         func=microduck_mdp.com_height_target,
-        weight=5.0,  # strong: robot crouches below 0.0935 to exploit single-foot stance
+        weight=5.0,
         params={
-            "target_height_min": 0.0935,  # 0.08 + 0.0135 (roller height offset)
-            "target_height_max": 0.1235,  # 0.11 + 0.0135
+            "target_height_min": 0.0935,
+            "target_height_max": 0.1235,
         },
-    )
-
-    # Skating push: reward outward hip_roll abduction when foot is grounded.
-    # Per-foot directional gating prevents the symmetric-wiggling exploit.
-    # Left: negative vel = outward; Right: positive vel = outward.
-    cfg.rewards["skating_push"] = RewardTermCfg(
-        func=microduck_mdp.skating_outward_push,
-        weight=3.0,  # reduced: balance against stronger postural rewards
-        params={"contact_sensor_name": "feet_ground_contact"},
     )
     cfg.rewards["wheel_speed"] = RewardTermCfg(
         func=microduck_mdp.wheel_speed_reward,
         weight=25.0,
         params={"command_name": "twist", "vel_scale": 0.5},
     )
-
-    # Regularization
+    cfg.rewards["skating_push"] = RewardTermCfg(
+        func=microduck_mdp.skating_outward_push,
+        weight=3.0,
+        params={"contact_sensor_name": "feet_ground_contact"},
+    )
+    cfg.rewards["feet_flat"] = RewardTermCfg(
+        func=microduck_mdp.feet_flat_penalty,
+        weight=-20.0,
+        params={"asset_cfg": SceneEntityCfg("robot", site_names=("left_foot", "right_foot"))},
+    )
     cfg.rewards["body_ang_vel"].params["asset_cfg"].body_names = ("trunk_base",)
     cfg.rewards["body_ang_vel"].weight = -0.05
     cfg.rewards["angular_momentum"].weight = -0.02
@@ -192,18 +181,8 @@ def make_microduck_velocity_rollers_env_cfg(
     cfg.rewards["neck_joint_pos_l2"] = RewardTermCfg(
         func=microduck_mdp.neck_joint_pos_l2, weight=-2.0
     )
-    cfg.rewards["feet_flat"] = RewardTermCfg(
-        func=microduck_mdp.feet_flat_penalty,
-        weight=-20.0,
-        params={"asset_cfg": SceneEntityCfg("robot", site_names=("left_foot", "right_foot"))},
-    )
     cfg.rewards["joint_torques_l2"] = RewardTermCfg(
         func=microduck_mdp.joint_torques_l2, weight=-1e-3
-    )
-    cfg.rewards["self_collisions"] = RewardTermCfg(
-        func=mdp.self_collision_cost,
-        weight=-1.0,
-        params={"sensor_name": "self_collision"},
     )
 
     # === EVENTS ===
