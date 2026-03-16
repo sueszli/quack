@@ -153,6 +153,9 @@ def make_microduck_velocity_rollers_env_cfg(
 
     cfg.rewards["body_ang_vel"].params["asset_cfg"].body_names = ("trunk_base",)
 
+    for reward_name in ["foot_clearance", "foot_swing_height", "foot_slip"]:
+        cfg.rewards[reward_name].params["asset_cfg"].site_names = site_names
+
     cfg.rewards["self_collisions"] = RewardTermCfg(
         func=mdp.self_collision_cost,
         weight=-1.0,
