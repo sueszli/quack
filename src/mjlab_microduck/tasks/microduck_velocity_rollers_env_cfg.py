@@ -177,6 +177,15 @@ def make_microduck_velocity_rollers_env_cfg(
         weight=5.0,
         params={"command_name": "twist", "vel_scale": 0.5},
     )
+    cfg.rewards["coasting"] = RewardTermCfg(
+        func=microduck_mdp.coasting_reward,
+        weight=3.0,
+        params={
+            "command_name": "twist",
+            "vel_std": 0.2,
+            "stillness_std": 5.0,
+        },
+    )
 
     # === EVENTS ===
     cfg.events["reset_action_history"] = EventTermCfg(
