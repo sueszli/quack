@@ -39,8 +39,8 @@ def make_microduck_velocity_rollers_env_cfg(
         r".*hip_pitch.*": 0.05,
         r".*knee.*": 0.05,
         r".*ankle.*": 0.05,
-        r".*neck.*": 0.05,
-        r".*head.*": 0.05,
+        r".*neck.*": 0.02,
+        r".*head.*": 0.02,
         r".*passive_.*": 999.0,
     }
 
@@ -50,8 +50,8 @@ def make_microduck_velocity_rollers_env_cfg(
         r".*hip_pitch.*": 0.4,
         r".*knee.*": 0.4,
         r".*ankle.*": 0.25,
-        r".*neck.*": 0.05,
-        r".*head.*": 0.05,
+        r".*neck.*": 0.02,
+        r".*head.*": 0.02,
         r".*passive_.*": 999.0,
     }
 
@@ -61,8 +61,8 @@ def make_microduck_velocity_rollers_env_cfg(
         r".*hip_pitch.*": 0.8,
         r".*knee.*": 0.8,
         r".*ankle.*": 0.5,
-        r".*neck.*": 0.05,
-        r".*head.*": 0.05,
+        r".*neck.*": 0.02,
+        r".*head.*": 0.02,
         r".*passive_.*": 999.0,
     }
 
