@@ -157,7 +157,7 @@ def make_microduck_velocity_rollers_env_cfg(
         func=microduck_mdp.neck_action_rate_l2, weight=-0.5
     )
     cfg.rewards["neck_joint_pos_l2"] = RewardTermCfg(
-        func=microduck_mdp.neck_joint_pos_l2, weight=0.0
+        func=microduck_mdp.neck_joint_pos_l2, weight=0.2
     )
     cfg.rewards["joint_torques_l2"] = RewardTermCfg(
         func=microduck_mdp.joint_torques_l2, weight=-1e-3
@@ -297,19 +297,19 @@ def make_microduck_velocity_rollers_env_cfg(
         },
     )
 
-    cfg.curriculum["neck_joint_pos_l2_weight"] = CurriculumTermCfg(
-        func=mdp.reward_weight,
-        params={
-            "reward_name": "neck_joint_pos_l2",
-            "weight_stages": [
-                {"step": 0,          "weight": 0.0},
-                {"step": 1500 * 24,  "weight": -0.05},
-                {"step": 2500 * 24,  "weight": -0.2},
-                {"step": 4000 * 24,  "weight": -0.5},
-                {"step": 6000 * 24,  "weight": -2.0},
-            ],
-        },
-    )
+    # cfg.curriculum["neck_joint_pos_l2_weight"] = CurriculumTermCfg(
+        # func=mdp.reward_weight,
+        # params={
+            # "reward_name": "neck_joint_pos_l2",
+            # "weight_stages": [
+                # {"step": 0,          "weight": 0.0},
+                # {"step": 1500 * 24,  "weight": -0.05},
+                # {"step": 2500 * 24,  "weight": -0.2},
+                # {"step": 4000 * 24,  "weight": -0.5},
+                # {"step": 6000 * 24,  "weight": -2.0},
+            # ],
+        # },
+    # )
 
     del cfg.curriculum["terrain_levels"]
     del cfg.curriculum["command_vel"]
