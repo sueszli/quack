@@ -154,10 +154,10 @@ def make_microduck_velocity_rollers_env_cfg(
     cfg.rewards["action_rate_l2"].weight = -1.0
 
     cfg.rewards["neck_action_rate_l2"] = RewardTermCfg(
-        func=microduck_mdp.neck_action_rate_l2, weight=-2.0
+        func=microduck_mdp.neck_action_rate_l2, weight=-0.5
     )
     cfg.rewards["neck_joint_pos_l2"] = RewardTermCfg(
-        func=microduck_mdp.neck_joint_pos_l2, weight=-5.0
+        func=microduck_mdp.neck_joint_pos_l2, weight=-2.0
     )
     cfg.rewards["joint_torques_l2"] = RewardTermCfg(
         func=microduck_mdp.joint_torques_l2, weight=-1e-3
@@ -289,8 +289,10 @@ def make_microduck_velocity_rollers_env_cfg(
             "velocity_stages": [
                 {"step": 0,          "lin_vel_range": 0.6,  "ang_vel_range": 0.0},
                 {"step": 1000 * 24,  "lin_vel_range": 0.8,  "ang_vel_range": 0.0},
-                {"step": 2000 * 24,  "lin_vel_range": 1.2,  "ang_vel_range": 0.0},
-                {"step": 3000 * 24,  "lin_vel_range": 1.5,  "ang_vel_range": 0.0},
+                {"step": 2000 * 24,  "lin_vel_range": 0.9,  "ang_vel_range": 0.0},
+                {"step": 3000 * 24,  "lin_vel_range": 1.0,  "ang_vel_range": 0.0},
+                {"step": 4000 * 24,  "lin_vel_range": 1.2,  "ang_vel_range": 0.0},
+                {"step": 5000 * 24,  "lin_vel_range": 1.5,  "ang_vel_range": 0.0},
             ],
         },
     )
