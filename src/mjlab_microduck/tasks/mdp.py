@@ -968,6 +968,7 @@ def joint_torques_l2(
 def skating_stroke(
     env: ManagerBasedRlEnv,
     command_name: str,
+    vel_scale: float = 1.0,
     asset_cfg: SceneEntityCfg = SceneEntityCfg("robot", joint_names=(r".*hip_roll.*",)),
 ) -> torch.Tensor:
     """Reward lateral hip movements when commanded to move forward.
@@ -977,18 +978,15 @@ def skating_stroke(
     by giving a dense signal: high reward when hip_roll joints are active and there
     is a non-zero forward command.
 
-    The reward is proportional to the total absolute hip_roll velocity multiplied by
-    the signed forward command magnitude, so it's zero when standing still and grows
-    as the robot makes larger lateral pushes.
+    tanh saturation at vel_scale (rad/s) per joint caps the reward at 2.0 total,
+    preventing the robot from gaming the reward by shaking hips as fast as possible.
     """
     robot: Entity = env.scene[asset_cfg.name]
     cmd_x = env.command_manager.get_command(command_name)[:, 0]  # forward command
 
-    # Hip-roll velocity for both legs — (num_envs, 2)
+    # Hip-roll velocity for both legs — (num_envs, 2), saturated per joint
     hip_roll_vel = robot.data.joint_vel[:, asset_cfg.joint_ids]
-
-    # Sum of absolute lateral push velocities
-    lateral_push = torch.sum(torch.abs(hip_roll_vel), dim=1)
+    lateral_push = torch.sum(torch.tanh(torch.abs(hip_roll_vel) / vel_scale), dim=1)
 
     # Only reward when there is a forward (or backward) command
     return torch.abs(cmd_x) * lateral_push

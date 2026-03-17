@@ -169,8 +169,8 @@ def make_microduck_velocity_rollers_env_cfg(
     )
     cfg.rewards["skating_stroke"] = RewardTermCfg(
         func=microduck_mdp.skating_stroke,
-        weight=3.0,
-        params={"command_name": "twist"},
+        weight=2.0,
+        params={"command_name": "twist", "vel_scale": 1.0},
     )
     cfg.rewards["skating_push"] = RewardTermCfg(
         func=microduck_mdp.skating_outward_push,
