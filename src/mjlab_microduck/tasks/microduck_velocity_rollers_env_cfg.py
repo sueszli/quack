@@ -108,10 +108,9 @@ def make_microduck_velocity_rollers_env_cfg(
     joint_pos_action.scale = 1.0
 
     # === REWARDS ===
-    # Keep only core locomotion rewards; no walking-gait-specific rewards
     keep = {
         "pose", "upright", "track_linear_velocity", "body_ang_vel", "angular_momentum",
-        "action_rate_l2",
+        "action_rate_l2", "air_time",
     }
     for name in list(cfg.rewards.keys()):
         if name not in keep:
@@ -127,8 +126,11 @@ def make_microduck_velocity_rollers_env_cfg(
     cfg.rewards["upright"].params["asset_cfg"].body_names = ("trunk_base",)
     cfg.rewards["upright"].weight = 2.0
 
-    cfg.rewards["track_linear_velocity"].weight = 10.0
+    cfg.rewards["track_linear_velocity"].weight = 15.0
     cfg.rewards["track_linear_velocity"].params["std"] = math.sqrt(0.08)
+
+    cfg.rewards["air_time"].weight = 1.0
+    cfg.rewards["air_time"].params["command_threshold"] = 0.01
 
     cfg.rewards["body_ang_vel"].params["asset_cfg"].body_names = ("trunk_base",)
     cfg.rewards["body_ang_vel"].weight = -0.05
@@ -168,11 +170,6 @@ def make_microduck_velocity_rollers_env_cfg(
         weight=5.0,
         params={"command_name": "twist", "vel_scale": 0.5},
     )
-    cfg.rewards["double_support"] = RewardTermCfg(
-        func=microduck_mdp.double_support_reward,
-        weight=2.0,
-        params={"sensor_name": "feet_ground_contact"},
-    )
     cfg.rewards["skating_push"] = RewardTermCfg(
         func=microduck_mdp.skating_outward_push,
         weight=3.0,
@@ -180,7 +177,7 @@ def make_microduck_velocity_rollers_env_cfg(
     )
     cfg.rewards["coasting"] = RewardTermCfg(
         func=microduck_mdp.coasting_reward,
-        weight=8.0,
+        weight=5.0,
         params={
             "command_name": "twist",
             "vel_std": 0.3,
