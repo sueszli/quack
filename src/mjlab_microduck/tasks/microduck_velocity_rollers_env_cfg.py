@@ -157,6 +157,12 @@ def make_microduck_velocity_rollers_env_cfg(
         weight=10.0,
         params={"command_name": "twist", "vel_scale": 0.5},
     )
+    # Velocity tracking — starts at 0, introduced via curriculum after 1000 iters
+    cfg.rewards["track_linear_velocity"] = RewardTermCfg(
+        func=mdp.track_linear_velocity,
+        weight=0.0,
+        params={"std": 0.283, "command_name": "twist"},
+    )
 
     # === EVENTS ===
     cfg.events["reset_action_history"] = EventTermCfg(
@@ -302,6 +308,20 @@ def make_microduck_velocity_rollers_env_cfg(
 
     del cfg.curriculum["terrain_levels"]
     del cfg.curriculum["command_vel"]
+
+    # Gradually introduce velocity tracking after the robot has learned to skate
+    cfg.curriculum["track_linear_velocity_weight"] = CurriculumTermCfg(
+        func=mdp.reward_weight,
+        params={
+            "reward_name": "track_linear_velocity",
+            "weight_stages": [
+                {"step": 0,           "weight": 0.0},
+                {"step": 1000 * 24,   "weight": 3.0},
+                {"step": 2000 * 24,   "weight": 6.0},
+                {"step": 3000 * 24,   "weight": 10.0},
+            ],
+        },
+    )
 
     return cfg
 
