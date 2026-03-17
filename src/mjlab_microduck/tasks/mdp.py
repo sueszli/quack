@@ -933,12 +933,13 @@ def neck_joint_pos_l2(
 ) -> torch.Tensor:
     """Penalize neck/head joint position deviation from default (L2 squared).
 
-    Uses name-based joint lookup so indices are correct regardless of whether
-    passive wheel joints are present (roller env) or not (walking env).
-    Always has non-zero gradient regardless of how far displaced.
+    Uses find_joints() every call to avoid stale cached indices when the same
+    SceneEntityCfg singleton is reused across robots with different joint layouts
+    (e.g. walk robot vs rollers robot where passive wheels shift neck indices).
     """
     asset: Entity = env.scene[asset_cfg.name]
-    error = asset.data.joint_pos[:, asset_cfg.joint_ids] - asset.data.default_joint_pos[:, asset_cfg.joint_ids]
+    joint_ids, _ = asset.find_joints(r".*(neck|head).*")
+    error = asset.data.joint_pos[:, joint_ids] - asset.data.default_joint_pos[:, joint_ids]
     return torch.sum(torch.square(error), dim=1)
 
 
