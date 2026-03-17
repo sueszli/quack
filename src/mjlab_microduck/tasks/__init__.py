@@ -41,6 +41,10 @@ from .microduck_velocity_rollers_env_cfg import (
     make_microduck_velocity_rollers_env_cfg,
     MicroduckRollersRlCfg,
 )
+from .microduck_skating_stroke_env_cfg import (
+    make_microduck_skating_stroke_env_cfg,
+    MicroduckSkatingStrokeRlCfg,
+)
 
 def _make_roller_get_base_metadata():
     """Return a get_base_metadata replacement that skips joints with no actuator.
@@ -102,6 +106,16 @@ class MicroduckRollersOnPolicyRunner(MicroduckOnPolicyRunner):
             super().save(path, *args, **kwargs)
         finally:
             _vel_exporter.get_base_metadata = orig
+
+# Skating stroke motion primitive
+register_mjlab_task(
+    task_id="Mjlab-SkatingStroke-Flat-MicroDuck",
+    env_cfg=make_microduck_skating_stroke_env_cfg(),
+    play_env_cfg=make_microduck_skating_stroke_env_cfg(play=True),
+    rl_cfg=MicroduckSkatingStrokeRlCfg,
+    runner_cls=MicroduckRollersOnPolicyRunner,  # reuse roller runner (same passive joint handling)
+)
+print("✓ Skating stroke task registered: Mjlab-SkatingStroke-Flat-MicroDuck")
 
 # Roller skate velocity task
 register_mjlab_task(

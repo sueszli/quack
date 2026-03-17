@@ -1097,6 +1097,15 @@ def coasting_reward(
     return at_speed * stillness
 
 
+def forward_speed_reward(env: ManagerBasedRlEnv) -> torch.Tensor:
+    """Linear forward speed reward — no Gaussian, no saturation.
+
+    Designed for the skating stroke primitive: maximize forward speed gained
+    in a short episode. Walking in 3 seconds can't compete with a good stroke.
+    """
+    return torch.clamp(env.scene["robot"].data.root_link_lin_vel_b[:, 0], min=0.0)
+
+
 def double_support_reward(
     env: ManagerBasedRlEnv,
     sensor_name: str = "feet_ground_contact",
