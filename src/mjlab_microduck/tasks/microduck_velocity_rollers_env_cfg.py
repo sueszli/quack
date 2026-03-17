@@ -303,9 +303,10 @@ def make_microduck_velocity_rollers_env_cfg(
             "reward_name": "neck_joint_pos_l2",
             "weight_stages": [
                 {"step": 0,          "weight": 0.0},
-                {"step": 1000 * 24,  "weight": -0.5},
-                {"step": 2000 * 24,  "weight": -2.0},
-                {"step": 3000 * 24,  "weight": -5.0},
+                {"step": 1500 * 24,  "weight": -0.05},
+                {"step": 2500 * 24,  "weight": -0.2},
+                {"step": 4000 * 24,  "weight": -0.5},
+                {"step": 6000 * 24,  "weight": -2.0},
             ],
         },
     )
