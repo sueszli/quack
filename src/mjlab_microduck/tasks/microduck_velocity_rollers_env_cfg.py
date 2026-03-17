@@ -163,6 +163,11 @@ def make_microduck_velocity_rollers_env_cfg(
         weight=0.0,
         params={"std": 0.283, "command_name": "twist"},
     )
+    cfg.rewards["track_angular_velocity"] = RewardTermCfg(
+        func=mdp.track_angular_velocity,
+        weight=0.0,
+        params={"std": 0.25, "command_name": "twist"},
+    )
 
     # === EVENTS ===
     cfg.events["reset_action_history"] = EventTermCfg(
@@ -266,7 +271,7 @@ def make_microduck_velocity_rollers_env_cfg(
     command.rel_heading_envs = 0.0
     command.ranges.lin_vel_x = (0.3, 0.6)
     command.ranges.lin_vel_y = (0.0, 0.0)
-    command.ranges.ang_vel_z = (0.0, 0.0)
+    command.ranges.ang_vel_z = (-0.5, 0.5)
     command.viz.z_offset = 0.5
     command.class_type = microduck_mdp.VelocityCommandCommandOnly
 
@@ -319,6 +324,33 @@ def make_microduck_velocity_rollers_env_cfg(
                 {"step": 1000 * 24,   "weight": 3.0},
                 {"step": 2000 * 24,   "weight": 6.0},
                 {"step": 3000 * 24,   "weight": 10.0},
+            ],
+        },
+    )
+    cfg.curriculum["track_angular_velocity_weight"] = CurriculumTermCfg(
+        func=mdp.reward_weight,
+        params={
+            "reward_name": "track_angular_velocity",
+            "weight_stages": [
+                {"step": 0,           "weight": 0.0},
+                {"step": 1000 * 24,   "weight": 2.0},
+                {"step": 2000 * 24,   "weight": 5.0},
+            ],
+        },
+    )
+    cfg.curriculum["velocity_command_ranges"] = CurriculumTermCfg(
+        func=microduck_mdp.velocity_command_ranges_curriculum,
+        params={
+            "command_name": "twist",
+            "update_lin_vel_y": False,
+            "update_ang_vel_z": True,
+            "forward_only": True,
+            "velocity_stages": [
+                {"step": 0,          "lin_vel_range": 0.6,  "ang_vel_range": 0.0},
+                {"step": 1000 * 24,  "lin_vel_range": 0.8,  "ang_vel_range": 0.2},
+                {"step": 2000 * 24,  "lin_vel_range": 1.0,  "ang_vel_range": 0.4},
+                {"step": 3000 * 24,  "lin_vel_range": 1.2,  "ang_vel_range": 0.5},
+                {"step": 4000 * 24,  "lin_vel_range": 1.5,  "ang_vel_range": 0.5},
             ],
         },
     )
