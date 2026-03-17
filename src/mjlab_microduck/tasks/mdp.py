@@ -1099,6 +1099,22 @@ def coasting_reward(
     return at_speed * stillness
 
 
+def double_support_reward(
+    env: ManagerBasedRlEnv,
+    sensor_name: str = "feet_ground_contact",
+) -> torch.Tensor:
+    """Reward having both feet in contact with the ground simultaneously.
+
+    Roller skating keeps both feet on the ground most of the time (unlike walking).
+    Returns 1.0 when both feet are grounded, 0.0 otherwise.
+    """
+    from mjlab.sensor import ContactSensor
+
+    sensor: ContactSensor = env.scene[sensor_name]
+    contact = sensor.data.found.reshape(env.num_envs, -1)
+    return contact[:, 0].float() * contact[:, 1].float()
+
+
 def contact_frequency_penalty(
     env: ManagerBasedRlEnv,
     sensor_name: str = "feet_ground_contact",
