@@ -165,7 +165,16 @@ def make_microduck_velocity_rollers_env_cfg(
     )
 
     del cfg.events["foot_friction"]
-    del cfg.events["push_robot"]
+
+    cfg.events["push_robot"] = EventTermCfg(
+        func=mdp.push_by_setting_velocity,
+        mode="interval",
+        interval_range_s=(3.0, 6.0),
+        params={
+            "velocity_range": {"x": (-0.2, 0.2), "y": (-0.2, 0.2)},
+            "asset_cfg": SceneEntityCfg("robot"),
+        },
+    )
 
     cfg.events["reset_base"].params["pose_range"]["z"] = (0.1335, 0.1435)
 
