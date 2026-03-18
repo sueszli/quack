@@ -271,6 +271,7 @@ def make_microduck_velocity_rollers_env_cfg(
     command.rel_standing_envs = 0.0
     command.rel_heading_envs = 0.0
     command.heading_command = False  # RelativeHeadingVelocityCommand handles heading internally
+    command.ranges.heading = None    # must be None when heading_command=False
     # cmd_x semantics: 0=coast, >0=push to accelerate, <0=brake to stop
     command.ranges.lin_vel_x = (-0.5, 0.6)
     command.ranges.lin_vel_y = (0.0, 0.0)
