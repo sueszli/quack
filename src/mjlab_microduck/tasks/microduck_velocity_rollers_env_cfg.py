@@ -335,7 +335,7 @@ def make_microduck_velocity_rollers_env_cfg(
                 {"step": 0,           "weight": 0.0},
                 {"step": 750  * 24,   "weight": 2.0},
                 {"step": 1000 * 24,   "weight": 2.5},
-                {"step": 3500 * 24,   "weight": 3.0},
+                {"step": 1500 * 24,   "weight": 3.0},
             ],
         },
     )
@@ -344,7 +344,7 @@ def make_microduck_velocity_rollers_env_cfg(
         params={
             "reward_name": "track_angular_velocity",
             "weight_stages": [
-                {"step": 0,           "weight": 0.0},
+                {"step": 0,           "weight": 1.0},
                 {"step": 750 * 24,   "weight": 2.0},
                 {"step": 1000 * 24,   "weight": 2.5},
                 {"step": 1500 * 24,   "weight": 3.0},
@@ -359,7 +359,7 @@ def make_microduck_velocity_rollers_env_cfg(
             "update_ang_vel_z": True,
             "forward_only": True,
             "velocity_stages": [
-                {"step": 0,          "lin_vel_range": 0.6,  "ang_vel_range": 0.0},
+                {"step": 0,          "lin_vel_range": 0.6,  "ang_vel_range": 0.2},
                 {"step": 1000 * 24,  "lin_vel_range": 0.8,  "ang_vel_range": 0.2},
                 {"step": 2000 * 24,  "lin_vel_range": 1.0,  "ang_vel_range": 0.4},
                 {"step": 3000 * 24,  "lin_vel_range": 1.2,  "ang_vel_range": 0.5},
