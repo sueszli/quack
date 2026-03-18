@@ -163,11 +163,12 @@ def make_microduck_velocity_rollers_env_cfg(
         weight=3.0,
         params={"command_name": "twist", "vel_std": 0.3},
     )
-    # Heading: cmd[2] = heading error (0=straight, +right/-left). Always active.
+    # Heading: cmd[2] = heading error (0=straight, +right/-left).
+    # Start low so wheel_speed dominates early; ramp up once skating is learned.
     cfg.rewards["heading_tracking"] = RewardTermCfg(
         func=microduck_mdp.heading_tracking_reward,
-        weight=5.0,
-        params={"command_name": "twist", "std": 0.5},
+        weight=1.0,
+        params={"command_name": "twist", "std": 0.8},
     )
 
     # === EVENTS ===
@@ -318,9 +319,10 @@ def make_microduck_velocity_rollers_env_cfg(
         params={
             "reward_name": "heading_tracking",
             "weight_stages": [
-                {"step": 0,           "weight": 5.0},   # must match initial RewardTermCfg weight
-                {"step": 750  * 24,   "weight": 8.0},
-                {"step": 1500 * 24,   "weight": 10.0},
+                {"step": 0,           "weight": 1.0},   # must match initial RewardTermCfg weight
+                {"step": 500  * 24,   "weight": 3.0},   # robot should be skating by now
+                {"step": 1000 * 24,   "weight": 5.0},
+                {"step": 2000 * 24,   "weight": 8.0},
             ],
         },
     )
