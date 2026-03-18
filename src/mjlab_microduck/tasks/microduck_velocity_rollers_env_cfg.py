@@ -1,5 +1,6 @@
 """Microduck velocity environment — roller skate variant"""
 
+import math
 from copy import deepcopy
 
 from mjlab.envs import ManagerBasedRlEnvCfg
@@ -268,10 +269,12 @@ def make_microduck_velocity_rollers_env_cfg(
     # === COMMANDS ===
     command: UniformVelocityCommandCfg = cfg.commands["twist"]
     command.rel_standing_envs = 0.0
-    command.rel_heading_envs = 0.0
+    command.rel_heading_envs = 1.0
+    command.heading_command = True
+    command.ranges.heading = (-math.pi, math.pi)
     command.ranges.lin_vel_x = (0.3, 0.6)
     command.ranges.lin_vel_y = (0.0, 0.0)
-    command.ranges.ang_vel_z = (-0.5, 0.5)
+    command.ranges.ang_vel_z = (-0.5, 0.5)  # max yaw rate for heading controller
     command.viz.z_offset = 0.5
     command.class_type = microduck_mdp.VelocityCommandCommandOnly
 
@@ -356,14 +359,14 @@ def make_microduck_velocity_rollers_env_cfg(
         params={
             "command_name": "twist",
             "update_lin_vel_y": False,
-            "update_ang_vel_z": True,
+            "update_ang_vel_z": False,  # heading controller manages yaw internally
             "forward_only": True,
             "velocity_stages": [
-                {"step": 0,          "lin_vel_range": 0.6,  "ang_vel_range": 0.2},
-                {"step": 1000 * 24,  "lin_vel_range": 0.8,  "ang_vel_range": 0.2},
-                {"step": 2000 * 24,  "lin_vel_range": 1.0,  "ang_vel_range": 0.4},
-                {"step": 3000 * 24,  "lin_vel_range": 1.2,  "ang_vel_range": 0.5},
-                {"step": 4000 * 24,  "lin_vel_range": 1.5,  "ang_vel_range": 0.5},
+                {"step": 0,          "lin_vel_range": 0.6,  "ang_vel_range": 0.0},
+                {"step": 1000 * 24,  "lin_vel_range": 0.8,  "ang_vel_range": 0.0},
+                {"step": 2000 * 24,  "lin_vel_range": 1.0,  "ang_vel_range": 0.0},
+                {"step": 3000 * 24,  "lin_vel_range": 1.2,  "ang_vel_range": 0.0},
+                {"step": 4000 * 24,  "lin_vel_range": 1.5,  "ang_vel_range": 0.0},
             ],
         },
     )
