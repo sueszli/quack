@@ -160,7 +160,7 @@ def make_microduck_velocity_rollers_env_cfg(
     # Brake: reward stopping when cmd_x < 0. Silent at cmd_x >= 0 (coast/push).
     cfg.rewards["braking"] = RewardTermCfg(
         func=microduck_mdp.braking_reward,
-        weight=3.0,
+        weight=1.0,
         params={"command_name": "twist", "vel_std": 0.3},
     )
     # Heading: cmd[2] = heading error (0=straight, +right/-left).

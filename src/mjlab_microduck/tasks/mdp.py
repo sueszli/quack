@@ -2255,8 +2255,8 @@ class RelativeHeadingVelocityCommand(VelocityCommandCommandOnly):
         quat = self.robot.data.root_link_quat_w  # (N, 4) [w, x, y, z]
         w, x, y, z = quat[:, 0], quat[:, 1], quat[:, 2], quat[:, 3]
         current_yaw = torch.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
-        # Positive when robot faces CCW (left) of target → needs to turn CW (right)
-        delta = current_yaw - self._target_heading_w
+        # Positive = target is CCW (left) of robot → turn left. Standard convention.
+        delta = self._target_heading_w - current_yaw
         heading_error = torch.atan2(torch.sin(delta), torch.cos(delta))
         self.vel_command_b[:, 2] = heading_error.clamp(-self._heading_max, self._heading_max)
 
