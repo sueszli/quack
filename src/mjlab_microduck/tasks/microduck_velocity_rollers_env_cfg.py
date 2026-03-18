@@ -167,7 +167,7 @@ def make_microduck_velocity_rollers_env_cfg(
     cfg.rewards["track_angular_velocity"] = RewardTermCfg(
         func=mdp.track_angular_velocity,
         weight=0.0,
-        params={"std": 0.25, "command_name": "twist"},
+        params={"std": 0.15, "command_name": "twist"},
     )
 
     # === EVENTS ===
@@ -274,7 +274,7 @@ def make_microduck_velocity_rollers_env_cfg(
     command.ranges.heading = (-math.pi, math.pi)
     command.ranges.lin_vel_x = (0.3, 0.6)
     command.ranges.lin_vel_y = (0.0, 0.0)
-    command.ranges.ang_vel_z = (-0.5, 0.5)  # max yaw rate for heading controller
+    command.ranges.ang_vel_z = (-0.5, 0.5)  # max yaw rate output from heading controller
     command.viz.z_offset = 0.5
     command.class_type = microduck_mdp.VelocityCommandCommandOnly
 
@@ -347,10 +347,10 @@ def make_microduck_velocity_rollers_env_cfg(
         params={
             "reward_name": "track_angular_velocity",
             "weight_stages": [
-                {"step": 0,           "weight": 1.0},
-                {"step": 750 * 24,   "weight": 2.0},
-                {"step": 1000 * 24,   "weight": 2.5},
-                {"step": 1500 * 24,   "weight": 3.0},
+                {"step": 0,           "weight": 0.0},
+                {"step": 750  * 24,   "weight": 4.0},
+                {"step": 1000 * 24,   "weight": 7.0},
+                {"step": 1500 * 24,   "weight": 10.0},
             ],
         },
     )
