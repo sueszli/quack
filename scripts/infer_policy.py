@@ -146,6 +146,13 @@ class PolicyInference:
 
         # Velocity command [lin_vel_x, lin_vel_y, ang_vel_z] — controls walking / policy switching
         self.vel_cmd = np.zeros(3, dtype=np.float32)
+        # Key-press step sizes and limits (overridden for roller mode in main())
+        self.vel_step_x = 0.5
+        self.vel_step_y = 0.5
+        self.vel_step_ang = 4.0
+        self.vel_max_x = 2.0
+        self.vel_min_x = -2.0
+        self.vel_max_ang = 4.0
         # Body pose command [Δz (m), Δpitch (rad), Δroll (rad)] — physical units
         self.body_cmd = np.zeros(3, dtype=np.float32)
         # Normalized obs command (set by _update_command)
@@ -493,6 +500,22 @@ def main():
     )
     policy.set_vel_cmd(args.lin_vel_x, args.lin_vel_y, args.ang_vel_z)
 
+    # Roller-specific velocity command limits (training ranges differ from walking)
+    if args.roller:
+        policy.vel_step_x = 0.5       # lin_vel_x step (range 0.3–0.6)
+        policy.vel_step_y = 0.0       # no lateral command for rollers
+        policy.vel_step_ang = 0.25    # ang_vel_z step (range ±0.5)
+        policy.vel_max_x = 0.6
+        policy.vel_min_x = 0.0        # no negative (forward only)
+        policy.vel_max_ang = 0.5
+    else:
+        policy.vel_step_x = 0.5
+        policy.vel_step_y = 0.5
+        policy.vel_step_ang = 4.0
+        policy.vel_max_x = 2.0
+        policy.vel_min_x = -2.0
+        policy.vel_max_ang = 4.0
+
     # Set initial position to default pose
     freejoint_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "trunk_base_freejoint")
     qpos_adr = model.jnt_qposadr[freejoint_id]
@@ -567,7 +590,8 @@ def main():
                         policy._update_command()
                         policy._print_body_cmd()
                     else:
-                        policy.set_vel_cmd(0.5, 0.0, 0.0)
+                        new_x = np.clip(policy.vel_cmd[0] + policy.vel_step_x, policy.vel_min_x, policy.vel_max_x)
+                        policy.set_vel_cmd(new_x, policy.vel_cmd[1], policy.vel_cmd[2])
                 elif key == pynput_keyboard.Key.down:
                     if policy.head_mode:
                         policy.head_offset[1] = np.clip(policy.head_offset[1] - policy.head_step, -policy.head_max, policy.head_max)
@@ -577,7 +601,8 @@ def main():
                         policy._update_command()
                         policy._print_body_cmd()
                     else:
-                        policy.set_vel_cmd(-0.5, 0.0, 0.0)
+                        new_x = np.clip(policy.vel_cmd[0] - policy.vel_step_x, policy.vel_min_x, policy.vel_max_x)
+                        policy.set_vel_cmd(new_x, policy.vel_cmd[1], policy.vel_cmd[2])
                 elif key == pynput_keyboard.Key.right:
                     if policy.head_mode:
                         policy.head_offset[2] = np.clip(policy.head_offset[2] - policy.head_step, -policy.head_max, policy.head_max)
@@ -587,7 +612,8 @@ def main():
                         policy._update_command()
                         policy._print_body_cmd()
                     else:
-                        policy.set_vel_cmd(0.0, -0.5, 0.0)
+                        new_ang = np.clip(policy.vel_cmd[2] - policy.vel_step_ang, -policy.vel_max_ang, policy.vel_max_ang)
+                        policy.set_vel_cmd(policy.vel_cmd[0], policy.vel_cmd[1], new_ang)
                 elif key == pynput_keyboard.Key.left:
                     if policy.head_mode:
                         policy.head_offset[2] = np.clip(policy.head_offset[2] + policy.head_step, -policy.head_max, policy.head_max)
@@ -597,7 +623,8 @@ def main():
                         policy._update_command()
                         policy._print_body_cmd()
                     else:
-                        policy.set_vel_cmd(0.0, 0.5, 0.0)
+                        new_ang = np.clip(policy.vel_cmd[2] + policy.vel_step_ang, -policy.vel_max_ang, policy.vel_max_ang)
+                        policy.set_vel_cmd(policy.vel_cmd[0], policy.vel_cmd[1], new_ang)
                 elif key == pynput_keyboard.Key.space:
                     if policy.head_mode:
                         policy.head_offset[:] = 0.0
@@ -624,7 +651,8 @@ def main():
                             policy._update_command()
                             policy._print_body_cmd()
                         else:
-                            policy.set_vel_cmd(0.0, 0.0, 4.0)
+                            new_ang = np.clip(policy.vel_cmd[2] + policy.vel_step_ang, -policy.vel_max_ang, policy.vel_max_ang)
+                            policy.set_vel_cmd(policy.vel_cmd[0], policy.vel_cmd[1], new_ang)
                     elif key.char == 'e' or key.char == 'E':
                         if policy.head_mode:
                             policy.head_offset[3] = np.clip(policy.head_offset[3] - policy.head_step, -policy.head_max, policy.head_max)
@@ -634,7 +662,8 @@ def main():
                             policy._update_command()
                             policy._print_body_cmd()
                         else:
-                            policy.set_vel_cmd(0.0, 0.0, -4.0)
+                            new_ang = np.clip(policy.vel_cmd[2] - policy.vel_step_ang, -policy.vel_max_ang, policy.vel_max_ang)
+                            policy.set_vel_cmd(policy.vel_cmd[0], policy.vel_cmd[1], new_ang)
                     elif key.char == 'z' or key.char == 'Z':
                         if policy.head_mode:
                             policy.head_offset[0] = np.clip(policy.head_offset[0] + policy.head_step, -policy.head_max, policy.head_max)
