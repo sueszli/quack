@@ -502,11 +502,11 @@ def main():
 
     # Roller-specific velocity command limits (training ranges differ from walking)
     if args.roller:
-        policy.vel_step_x = 0.5       # lin_vel_x step (range 0.3–0.6)
+        policy.vel_step_x = 0.5       # lin_vel_x step: 0=coast, >0=push, <0=brake
         policy.vel_step_y = 0.0       # no lateral command for rollers
         policy.vel_step_ang = 0.25    # ang_vel_z step (range ±0.5)
         policy.vel_max_x = 0.6
-        policy.vel_min_x = 0.0        # no negative (forward only)
+        policy.vel_min_x = -0.5       # negative = brake
         policy.vel_max_ang = 0.5
     else:
         policy.vel_step_x = 0.5
@@ -680,10 +680,11 @@ def main():
 
         print("\nKeyboard controls:")
         print("  [ Velocity mode (default) ]")
-        print("  UP/DOWN arrow:    lin_vel_x ±0.5")
-        print("  LEFT/RIGHT arrow: lin_vel_y ±0.5")
-        print("  A / E:            ang_vel_z ±4.0")
-        print("  SPACE:            stop (zero velocity)")
+        print("  UP arrow:         increase lin_vel_x (push/accelerate)")
+        print("  DOWN arrow:       decrease lin_vel_x (0=coast, negative=brake)")
+        print("  LEFT/RIGHT arrow: turn left/right (ang_vel_z)")
+        print("  A / E:            turn left/right (ang_vel_z, incremental)")
+        print("  SPACE:            coast (zero all commands)")
         print("  G:                trigger ground pick (requires --ground-pick)")
         print("  [ Body pose mode — press B to toggle (requires --standing) ]")
         print(f"  UP/DOWN arrow:    Δz ±1mm  (max ±{BODY_CMD_MAX_Z*1000:.0f}mm)")

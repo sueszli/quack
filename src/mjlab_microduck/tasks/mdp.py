@@ -1097,6 +1097,27 @@ def coasting_reward(
     return at_speed * stillness
 
 
+def braking_reward(
+    env: ManagerBasedRlEnv,
+    command_name: str,
+    vel_std: float = 0.3,
+) -> torch.Tensor:
+    """Reward coming to a stop when cmd_x < 0 (brake commanded).
+
+    Returns clamp(-cmd_x, 0) * exp(-fwd_vel² / vel_std²).
+    - Silent when cmd_x ≥ 0 (coast or push).
+    - At cmd_x = -1 and vel = 0: reward = 1.0 (full stop achieved).
+    - At cmd_x = -1 and vel = vel_std: reward ≈ 0.37 (strong gradient).
+    vel_std=0.3 m/s gives meaningful gradient down to walking-pace speeds.
+    """
+    cmd = env.command_manager.get_command(command_name)
+    cmd_x = cmd[:, 0]
+    braking_strength = torch.clamp(-cmd_x, min=0.0)
+    fwd_vel = env.scene["robot"].data.root_link_lin_vel_b[:, 0]
+    stopped = torch.exp(-(fwd_vel.clamp(min=0.0) ** 2) / (vel_std ** 2))
+    return braking_strength * stopped
+
+
 def forward_speed_reward(env: ManagerBasedRlEnv) -> torch.Tensor:
     """Linear forward speed reward — no Gaussian, no saturation.
 
