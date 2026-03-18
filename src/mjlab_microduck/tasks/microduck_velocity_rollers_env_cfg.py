@@ -279,6 +279,18 @@ def make_microduck_velocity_rollers_env_cfg(
     cfg.scene.terrain.terrain_generator = None
 
     # === CURRICULUM ===
+    cfg.curriculum["action_rate_weight"] = CurriculumTermCfg(
+        func=mdp.reward_weight,
+        params={
+            "reward_name": "action_rate_l2",
+            "weight_stages": [
+                {"step": 0, "weight": -0.5},
+                {"step": 250 * 24, "weight": -0.8},
+                {"step": 500 * 24, "weight": -1.0},
+            ],
+        },
+    )
+    
     cfg.curriculum["velocity_command_ranges"] = CurriculumTermCfg(
         func=microduck_mdp.velocity_command_ranges_curriculum,
         params={
@@ -321,9 +333,9 @@ def make_microduck_velocity_rollers_env_cfg(
             "reward_name": "track_linear_velocity",
             "weight_stages": [
                 {"step": 0,           "weight": 0.0},
-                {"step": 1000 * 24,   "weight": 3.0},
-                {"step": 2000 * 24,   "weight": 6.0},
-                {"step": 3000 * 24,   "weight": 10.0},
+                {"step": 750  * 24,   "weight": 2.0},
+                {"step": 1000 * 24,   "weight": 2.5},
+                {"step": 3500 * 24,   "weight": 3.0},
             ],
         },
     )
@@ -333,8 +345,9 @@ def make_microduck_velocity_rollers_env_cfg(
             "reward_name": "track_angular_velocity",
             "weight_stages": [
                 {"step": 0,           "weight": 0.0},
-                {"step": 1000 * 24,   "weight": 2.0},
-                {"step": 2000 * 24,   "weight": 5.0},
+                {"step": 750 * 24,   "weight": 2.0},
+                {"step": 1000 * 24,   "weight": 2.5},
+                {"step": 1500 * 24,   "weight": 3.0},
             ],
         },
     )
