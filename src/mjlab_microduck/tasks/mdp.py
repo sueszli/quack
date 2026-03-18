@@ -2211,6 +2211,78 @@ class VelocityCommandCommandOnly(UniformVelocityCommand):
         visualizer.add_arrow(cmd_lin_from, cmd_lin_to, color=(0.2, 0.2, 0.6, 0.6), width=0.015)
 
 
+class RelativeHeadingVelocityCommand(VelocityCommandCommandOnly):
+    """Velocity command where cmd[2] is the heading error in the robot's body frame.
+
+    cmd[0] = lin_vel_x  (throttle: 0=coast, +push, -brake)
+    cmd[1] = lin_vel_y  (unused, 0)
+    cmd[2] = heading_error  (+ = target is to the right/CW, - = to the left/CCW)
+             0 → go straight, ±max = target is max_angle rad to the right/left
+
+    During training: a random world-frame heading is sampled at each episode reset.
+    At every step, cmd[2] = clamp(wrap(current_yaw - target_yaw), ±max_angle).
+    Positive when the robot is pointing CCW (left) of the target → needs to turn right.
+
+    At inference: the user feeds cmd[2] directly.  Holding cmd[2] = constant gives
+    a proportional heading correction = approximately constant turn rate.
+
+    Set heading_command=False and rel_heading_envs=0.0 in the cfg (we handle
+    heading internally).  ang_vel_z range in cfg is used as the clip limit for cmd[2].
+    """
+
+    def __init__(self, cfg, env: ManagerBasedRlEnv):
+        super().__init__(cfg, env)
+        # Sampled target heading per env, world frame (rad)
+        self._target_heading_w = torch.zeros(self.num_envs, device=self.device)
+        # Clip limit for cmd[2]: use ang_vel_z[1] from cfg (the positive bound)
+        ang_rng = cfg.ranges.ang_vel_z
+        self._heading_max = float(ang_rng[1]) if ang_rng else 1.0
+
+    def _resample_command(self, env_ids: torch.Tensor) -> None:
+        super()._resample_command(env_ids)
+        n = len(env_ids)
+        # Sample random world-frame target heading uniformly in [-π, π]
+        self._target_heading_w[env_ids] = (
+            torch.rand(n, device=self.device) * 2.0 * math.pi - math.pi
+        )
+        # Zero ang_vel slot; _update_command will fill it each step
+        self.vel_command_b[env_ids, 2] = 0.0
+
+    def _update_command(self) -> None:
+        # Do NOT call super()._update_command() — it would run the heading
+        # proportional controller and overwrite cmd[2] with a yaw rate.
+        # Instead recompute heading error from scratch each step.
+        quat = self.robot.data.root_link_quat_w  # (N, 4) [w, x, y, z]
+        w, x, y, z = quat[:, 0], quat[:, 1], quat[:, 2], quat[:, 3]
+        current_yaw = torch.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
+        # Positive when robot faces CCW (left) of target → needs to turn CW (right)
+        delta = current_yaw - self._target_heading_w
+        heading_error = torch.atan2(torch.sin(delta), torch.cos(delta))
+        self.vel_command_b[:, 2] = heading_error.clamp(-self._heading_max, self._heading_max)
+
+    def _update_metrics(self) -> None:
+        pass  # No velocity tracking metrics for heading command
+
+
+def heading_tracking_reward(
+    env: ManagerBasedRlEnv,
+    command_name: str,
+    std: float = 0.5,
+) -> torch.Tensor:
+    """Reward for reducing heading error when cmd[2] encodes heading error.
+
+    Returns exp(-cmd[2]² / std²).
+    - At error = 0 (on heading): reward = 1.0.
+    - At error = std: reward ≈ 0.37 (strong gradient).
+    - At error = 1.0 rad with std=0.5: reward ≈ 0.018 (nearly zero).
+
+    std=0.5 rad (≈28°) gives a meaningful gradient across the expected range.
+    """
+    cmd = env.command_manager.get_command(command_name)
+    heading_error = cmd[:, 2]
+    return torch.exp(-(heading_error ** 2) / (std ** 2))
+
+
 class GroundPickPhaseCommand(UniformVelocityCommand):
     """Phase-encoding command for the ground pick task.
 

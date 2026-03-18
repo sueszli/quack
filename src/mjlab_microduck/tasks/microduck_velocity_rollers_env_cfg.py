@@ -1,6 +1,5 @@
 """Microduck velocity environment — roller skate variant"""
 
-import math
 from copy import deepcopy
 
 from mjlab.envs import ManagerBasedRlEnvCfg
@@ -164,10 +163,11 @@ def make_microduck_velocity_rollers_env_cfg(
         weight=3.0,
         params={"command_name": "twist", "vel_std": 0.3},
     )
-    cfg.rewards["track_angular_velocity"] = RewardTermCfg(
-        func=mdp.track_angular_velocity,
-        weight=8.0,
-        params={"std": 0.15, "command_name": "twist"},
+    # Heading: cmd[2] = heading error (0=straight, +right/-left). Always active.
+    cfg.rewards["heading_tracking"] = RewardTermCfg(
+        func=microduck_mdp.heading_tracking_reward,
+        weight=5.0,
+        params={"command_name": "twist", "std": 0.5},
     )
 
     # === EVENTS ===
@@ -269,15 +269,15 @@ def make_microduck_velocity_rollers_env_cfg(
     # === COMMANDS ===
     command: UniformVelocityCommandCfg = cfg.commands["twist"]
     command.rel_standing_envs = 0.0
-    command.rel_heading_envs = 1.0
-    command.heading_command = True
-    command.ranges.heading = (-math.pi, math.pi)
+    command.rel_heading_envs = 0.0
+    command.heading_command = False  # RelativeHeadingVelocityCommand handles heading internally
     # cmd_x semantics: 0=coast, >0=push to accelerate, <0=brake to stop
     command.ranges.lin_vel_x = (-0.5, 0.6)
     command.ranges.lin_vel_y = (0.0, 0.0)
-    command.ranges.ang_vel_z = (-0.5, 0.5)  # max yaw rate output from heading controller
+    # ang_vel_z range is used as clip limit for cmd[2] = heading error (rad)
+    command.ranges.ang_vel_z = (-1.0, 1.0)
     command.viz.z_offset = 0.5
-    command.class_type = microduck_mdp.VelocityCommandCommandOnly
+    command.class_type = microduck_mdp.RelativeHeadingVelocityCommand
 
     cfg.scene.terrain.terrain_type = "plane"
     cfg.scene.terrain.terrain_generator = None
@@ -312,14 +312,14 @@ def make_microduck_velocity_rollers_env_cfg(
     del cfg.curriculum["terrain_levels"]
     del cfg.curriculum["command_vel"]
 
-    cfg.curriculum["track_angular_velocity_weight"] = CurriculumTermCfg(
+    cfg.curriculum["heading_tracking_weight"] = CurriculumTermCfg(
         func=mdp.reward_weight,
         params={
-            "reward_name": "track_angular_velocity",
+            "reward_name": "heading_tracking",
             "weight_stages": [
-                {"step": 0,           "weight": 8.0},   # must match initial RewardTermCfg weight
-                {"step": 750  * 24,   "weight": 10.0},
-                {"step": 1500 * 24,   "weight": 12.0},
+                {"step": 0,           "weight": 5.0},   # must match initial RewardTermCfg weight
+                {"step": 750  * 24,   "weight": 8.0},
+                {"step": 1500 * 24,   "weight": 10.0},
             ],
         },
     )

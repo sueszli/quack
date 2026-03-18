@@ -504,10 +504,10 @@ def main():
     if args.roller:
         policy.vel_step_x = 0.5       # lin_vel_x step: 0=coast, >0=push, <0=brake
         policy.vel_step_y = 0.0       # no lateral command for rollers
-        policy.vel_step_ang = 0.25    # ang_vel_z step (range ±0.5)
+        policy.vel_step_ang = 0.25    # heading error step (range ±1.0 rad)
         policy.vel_max_x = 0.6
         policy.vel_min_x = -0.5       # negative = brake
-        policy.vel_max_ang = 0.5
+        policy.vel_max_ang = 1.0      # ±1.0 rad heading error
     else:
         policy.vel_step_x = 0.5
         policy.vel_step_y = 0.5
