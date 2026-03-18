@@ -166,7 +166,7 @@ def make_microduck_velocity_rollers_env_cfg(
     )
     cfg.rewards["track_angular_velocity"] = RewardTermCfg(
         func=mdp.track_angular_velocity,
-        weight=0.0,
+        weight=8.0,
         params={"std": 0.15, "command_name": "twist"},
     )
 
@@ -293,24 +293,6 @@ def make_microduck_velocity_rollers_env_cfg(
             ],
         },
     )
-    
-    cfg.curriculum["velocity_command_ranges"] = CurriculumTermCfg(
-        func=microduck_mdp.velocity_command_ranges_curriculum,
-        params={
-            "command_name": "twist",
-            "update_lin_vel_y": False,
-            "update_ang_vel_z": False,
-            "forward_only": True,
-            "velocity_stages": [
-                {"step": 0,          "lin_vel_range": 0.6,  "ang_vel_range": 0.0},
-                {"step": 1000 * 24,  "lin_vel_range": 0.8,  "ang_vel_range": 0.0},
-                {"step": 2000 * 24,  "lin_vel_range": 0.9,  "ang_vel_range": 0.0},
-                {"step": 3000 * 24,  "lin_vel_range": 1.0,  "ang_vel_range": 0.0},
-                {"step": 4000 * 24,  "lin_vel_range": 1.2,  "ang_vel_range": 0.0},
-                {"step": 5000 * 24,  "lin_vel_range": 1.5,  "ang_vel_range": 0.0},
-            ],
-        },
-    )
 
     # cfg.curriculum["neck_joint_pos_l2_weight"] = CurriculumTermCfg(
         # func=mdp.reward_weight,
@@ -347,26 +329,9 @@ def make_microduck_velocity_rollers_env_cfg(
         params={
             "reward_name": "track_angular_velocity",
             "weight_stages": [
-                {"step": 0,           "weight": 0.0},
-                {"step": 750  * 24,   "weight": 4.0},
-                {"step": 1000 * 24,   "weight": 7.0},
-                {"step": 1500 * 24,   "weight": 10.0},
-            ],
-        },
-    )
-    cfg.curriculum["velocity_command_ranges"] = CurriculumTermCfg(
-        func=microduck_mdp.velocity_command_ranges_curriculum,
-        params={
-            "command_name": "twist",
-            "update_lin_vel_y": False,
-            "update_ang_vel_z": False,  # heading controller manages yaw internally
-            "forward_only": True,
-            "velocity_stages": [
-                {"step": 0,          "lin_vel_range": 0.6,  "ang_vel_range": 0.0},
-                {"step": 1000 * 24,  "lin_vel_range": 0.8,  "ang_vel_range": 0.0},
-                {"step": 2000 * 24,  "lin_vel_range": 1.0,  "ang_vel_range": 0.0},
-                {"step": 3000 * 24,  "lin_vel_range": 1.2,  "ang_vel_range": 0.0},
-                {"step": 4000 * 24,  "lin_vel_range": 1.5,  "ang_vel_range": 0.0},
+                {"step": 0,           "weight": 8.0},   # must match initial RewardTermCfg weight
+                {"step": 750  * 24,   "weight": 10.0},
+                {"step": 1500 * 24,   "weight": 12.0},
             ],
         },
     )
