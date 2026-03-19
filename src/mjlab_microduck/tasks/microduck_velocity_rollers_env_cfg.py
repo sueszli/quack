@@ -191,6 +191,18 @@ def make_microduck_velocity_rollers_env_cfg(
 
     cfg.events["reset_base"].params["pose_range"]["z"] = (0.1335, 0.1435)
 
+    cfg.events["randomize_wheel_friction"] = EventTermCfg(
+        func=mdp.randomize_field,
+        mode="reset",
+        domain_randomization=True,
+        params={
+            "asset_cfg": SceneEntityCfg("robot", joint_names=(r"^passive_.*",)),
+            "operation": "abs",
+            "field": "dof_frictionloss",
+            "ranges": (0.0, 0.01),  # 0 = frictionless, 0.01 Nm ≈ worn bearing
+        },
+    )
+
     cfg.events["randomize_com"] = EventTermCfg(
         func=mdp.randomize_field,
         mode="reset",
