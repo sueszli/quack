@@ -120,11 +120,11 @@ def make_microduck_velocity_rollers_env_cfg(
     cfg.rewards["pose"].weight = 2.0
 
     cfg.rewards["upright"].params["asset_cfg"].body_names = ("trunk_base",)
-    cfg.rewards["upright"].weight = 2.0
+    cfg.rewards["upright"].weight = 5.0  # was 2.0 — stronger pitch/roll stability
 
     cfg.rewards["body_ang_vel"].params["asset_cfg"].body_names = ("trunk_base",)
-    cfg.rewards["body_ang_vel"].weight = -0.05
-    cfg.rewards["angular_momentum"].weight = -0.02
+    cfg.rewards["body_ang_vel"].weight = -0.2   # was -0.05 — penalize backward pitch rate
+    cfg.rewards["angular_momentum"].weight = -0.05  # was -0.02
     cfg.rewards["action_rate_l2"].weight = -1.0
 
     cfg.rewards["com_height_target"] = RewardTermCfg(
@@ -191,6 +191,21 @@ def make_microduck_velocity_rollers_env_cfg(
 
     cfg.events["reset_base"].params["pose_range"]["z"] = (0.1335, 0.1435)
 
+    # Warmstart: 60% of resets begin already moving at speed so the policy
+    # learns to coast/glide efficiently, not just push from zero.
+    cfg.events["reset_with_forward_velocity"] = EventTermCfg(
+        func=microduck_mdp.reset_with_forward_velocity,
+        mode="reset",
+        params={
+            "velocity_range": (0.1, 0.5),
+            "fraction_stages": [
+                {"step": 0,           "fraction": 0.6},
+                {"step": 3000 * 24,   "fraction": 0.3},  # reduce later; robot earns speed
+            ],
+            "asset_cfg": SceneEntityCfg("robot"),
+        },
+    )
+
     cfg.events["randomize_wheel_friction"] = EventTermCfg(
         func=mdp.randomize_field,
         mode="reset",
@@ -199,7 +214,7 @@ def make_microduck_velocity_rollers_env_cfg(
             "asset_cfg": SceneEntityCfg("robot", joint_names=(r"^passive_.*",)),
             "operation": "abs",
             "field": "dof_frictionloss",
-            "ranges": (0.0, 0.01),  # 0 = frictionless, 0.01 Nm ≈ worn bearing
+            "ranges": (0.0, 0.02),  # 0 = frictionless, 0.02 Nm ≈ worn/dirty bearing
         },
     )
 
