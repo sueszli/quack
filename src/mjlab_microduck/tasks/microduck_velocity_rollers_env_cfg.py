@@ -163,6 +163,12 @@ def make_microduck_velocity_rollers_env_cfg(
         weight=1.0,
         params={"command_name": "twist", "vel_std": 0.3},
     )
+    # Encourage slight forward lean when pushing to counteract backward torque.
+    cfg.rewards["forward_lean"] = RewardTermCfg(
+        func=microduck_mdp.forward_lean_reward,
+        weight=1.0,
+        params={"command_name": "twist", "target_pitch": 0.08, "std": 0.08},
+    )
     # Heading: cmd[2] = heading error (0=straight, +right/-left).
     # Start low so wheel_speed dominates early; ramp up once skating is learned.
     cfg.rewards["heading_tracking"] = RewardTermCfg(

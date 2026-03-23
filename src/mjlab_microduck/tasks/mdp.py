@@ -2301,6 +2301,28 @@ def heading_tracking_reward(
     return torch.exp(-(heading_error ** 2) / (std ** 2))
 
 
+def forward_lean_reward(
+    env: ManagerBasedRlEnv,
+    command_name: str,
+    target_pitch: float = 0.08,
+    std: float = 0.08,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot", body_names=("trunk_base",)),
+) -> torch.Tensor:
+    """Reward leaning slightly forward when pushing, to counteract the backward
+    torque from skating strokes.
+
+    Uses projected_gravity_b x-component as a pitch proxy:
+      forward_lean = -gravity_b[:, 0]  (positive when leaning forward)
+
+    Only fires when cmd_x > 0. Peaks at target_pitch radians of forward lean.
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    cmd_x = env.command_manager.get_command(command_name)[:, 0]
+    forward_lean = -asset.data.projected_gravity_b[:, 0]
+    push = torch.clamp(cmd_x, min=0.0)
+    return push * torch.exp(-((forward_lean - target_pitch) ** 2) / (std ** 2))
+
+
 class GroundPickPhaseCommand(UniformVelocityCommand):
     """Phase-encoding command for the ground pick task.
 
