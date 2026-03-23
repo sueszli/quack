@@ -191,17 +191,6 @@ def make_microduck_velocity_rollers_env_cfg(
 
     cfg.events["reset_base"].params["pose_range"]["z"] = (0.1335, 0.1435)
 
-    cfg.events["randomize_wheel_friction"] = EventTermCfg(
-        func=mdp.randomize_field,
-        mode="reset",
-        domain_randomization=True,
-        params={
-            "asset_cfg": SceneEntityCfg("robot", joint_names=(r"^passive_.*",)),
-            "operation": "abs",
-            "field": "dof_frictionloss",
-            "ranges": (0.000, 0.000),  # ramped up by wheel_friction_curriculum
-        },
-    )
 
     cfg.events["randomize_com"] = EventTermCfg(
         func=mdp.randomize_field,
@@ -325,20 +314,6 @@ def make_microduck_velocity_rollers_env_cfg(
 
     del cfg.curriculum["terrain_levels"]
     del cfg.curriculum["command_vel"]
-
-    cfg.curriculum["wheel_friction"] = CurriculumTermCfg(
-        func=microduck_mdp.wheel_friction_curriculum,
-        params={
-            "event_name": "randomize_wheel_friction",
-            "ranges_stages": [
-                {"step": 0,           "ranges": (0.000, 0.000)},
-                {"step":  500 * 24,   "ranges": (0.000, 0.001)},
-                {"step": 1000 * 24,   "ranges": (0.000, 0.002)},
-                {"step": 2000 * 24,   "ranges": (0.000, 0.003)},
-                {"step": 3000 * 24,   "ranges": (0.000, 0.004)},
-            ],
-        },
-    )
 
     cfg.curriculum["heading_tracking_weight"] = CurriculumTermCfg(
         func=mdp.reward_weight,
