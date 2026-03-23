@@ -199,7 +199,7 @@ def make_microduck_velocity_rollers_env_cfg(
             "asset_cfg": SceneEntityCfg("robot", joint_names=(r"^passive_.*",)),
             "operation": "abs",
             "field": "dof_frictionloss",
-            "ranges": (0.005, 0.01),  # 0.005 Nm base friction, 0.01 Nm ≈ worn bearing
+            "ranges": (0.003, 0.007),  # ±0.002 Nm around 0.005 Nm base
         },
     )
 
