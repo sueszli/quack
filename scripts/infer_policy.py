@@ -500,6 +500,16 @@ def main():
     )
     policy.set_vel_cmd(args.lin_vel_x, args.lin_vel_y, args.ang_vel_z)
 
+    # Set realistic wheel bearing friction for roller inference (must be done
+    # programmatically — non-zero frictionloss in the XML breaks training)
+    if args.roller:
+        import re
+        for j in range(model.njnt):
+            name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_JOINT, j)
+            if name and re.match(r"^passive_.*", name):
+                dof_adr = model.jnt_dofadr[j]
+                model.dof_frictionloss[dof_adr] = 0.003
+
     # Roller-specific velocity command limits (training ranges differ from walking)
     if args.roller:
         policy.vel_step_x = 0.5       # lin_vel_x step: 0=coast, >0=push, <0=brake
