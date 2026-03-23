@@ -1569,41 +1569,6 @@ def push_curriculum(
     return torch.tensor([max_push])
 
 
-def wheel_friction_curriculum(
-    env: ManagerBasedRlEnv,
-    env_ids: torch.Tensor,
-    event_name: str,
-    ranges_stages: list[dict],
-) -> torch.Tensor:
-    """Update wheel friction ranges based on training step stages.
-
-    Args:
-        env: The RL environment
-        env_ids: Environment IDs (unused)
-        event_name: Name of the wheel friction event term
-        ranges_stages: List of dicts with 'step' and 'ranges' keys
-            Example: [
-                {"step": 0,          "ranges": (0.0,   0.0  )},
-                {"step": 500  * 24,  "ranges": (0.001, 0.003)},
-                {"step": 1500 * 24,  "ranges": (0.003, 0.007)},
-            ]
-
-    Returns:
-        Current friction midpoint as a tensor for logging
-    """
-    del env_ids  # Unused
-
-    current_ranges = ranges_stages[0]["ranges"]
-    for stage in ranges_stages:
-        if env.common_step_counter > stage["step"]:
-            current_ranges = stage["ranges"]
-
-    event_cfg = env.event_manager.get_term_cfg(event_name)
-    event_cfg.params["ranges"] = current_ranges
-
-    return torch.tensor([(current_ranges[0] + current_ranges[1]) / 2.0])
-
-
 def neck_offset_curriculum(
     env: ManagerBasedRlEnv,
     env_ids: torch.Tensor,

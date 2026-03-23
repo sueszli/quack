@@ -11,6 +11,6 @@
     </default>
     <default class="passive_wheel">
       <geom contype="0" conaffinity="0"/>
-      <joint damping="0.0" frictionloss="0.005" armature="0.0001"/>
+      <joint damping="0.0" frictionloss="0.0" armature="0.0001"/>
     </default>
 </default>
