@@ -1584,7 +1584,7 @@ def wheel_friction_curriculum(
             current_ranges = stage["ranges"]
 
     env.event_manager.get_term_cfg(event_name).params["ranges"] = current_ranges
-    return torch.tensor([(current_ranges[0] + current_ranges[1]) / 2.0])
+    return torch.tensor([current_ranges[0]])
 
 
 def neck_offset_curriculum(
