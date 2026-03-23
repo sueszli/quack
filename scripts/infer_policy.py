@@ -576,137 +576,136 @@ def main():
     if args.record:
         original_kp = model.actuator_gainprm[:, 0].copy()
 
-    try:
-        from pynput import keyboard as pynput_keyboard
+    # GLFW key codes
+    GLFW_KEY_SPACE = 32
+    GLFW_KEY_A = 65
+    GLFW_KEY_B = 66
+    GLFW_KEY_E = 69
+    GLFW_KEY_G = 71
+    GLFW_KEY_H = 72
+    GLFW_KEY_S = 83
+    GLFW_KEY_Z = 90
+    GLFW_KEY_RIGHT = 262
+    GLFW_KEY_LEFT = 263
+    GLFW_KEY_DOWN = 264
+    GLFW_KEY_UP = 265
 
-        def on_press(key):
-            try:
-                if key == pynput_keyboard.Key.up:
-                    if policy.head_mode:
-                        policy.head_offset[1] = np.clip(policy.head_offset[1] + policy.head_step, -policy.head_max, policy.head_max)
-                        print(f"Head offset: neck={policy.head_offset[0]:.2f} pitch={policy.head_offset[1]:.2f} yaw={policy.head_offset[2]:.2f} roll={policy.head_offset[3]:.2f}")
-                    elif policy.body_pose_mode:
-                        policy.body_cmd[0] = np.clip(policy.body_cmd[0] + policy.body_cmd_step_z, -BODY_CMD_MAX_Z, BODY_CMD_MAX_Z)
-                        policy._update_command()
-                        policy._print_body_cmd()
-                    else:
-                        new_x = np.clip(policy.vel_cmd[0] + policy.vel_step_x, policy.vel_min_x, policy.vel_max_x)
-                        policy.set_vel_cmd(new_x, policy.vel_cmd[1], policy.vel_cmd[2])
-                elif key == pynput_keyboard.Key.down:
-                    if policy.head_mode:
-                        policy.head_offset[1] = np.clip(policy.head_offset[1] - policy.head_step, -policy.head_max, policy.head_max)
-                        print(f"Head offset: neck={policy.head_offset[0]:.2f} pitch={policy.head_offset[1]:.2f} yaw={policy.head_offset[2]:.2f} roll={policy.head_offset[3]:.2f}")
-                    elif policy.body_pose_mode:
-                        policy.body_cmd[0] = np.clip(policy.body_cmd[0] - policy.body_cmd_step_z, -BODY_CMD_MAX_Z, BODY_CMD_MAX_Z)
-                        policy._update_command()
-                        policy._print_body_cmd()
-                    else:
-                        new_x = np.clip(policy.vel_cmd[0] - policy.vel_step_x, policy.vel_min_x, policy.vel_max_x)
-                        policy.set_vel_cmd(new_x, policy.vel_cmd[1], policy.vel_cmd[2])
-                elif key == pynput_keyboard.Key.right:
-                    if policy.head_mode:
-                        policy.head_offset[2] = np.clip(policy.head_offset[2] - policy.head_step, -policy.head_max, policy.head_max)
-                        print(f"Head offset: neck={policy.head_offset[0]:.2f} pitch={policy.head_offset[1]:.2f} yaw={policy.head_offset[2]:.2f} roll={policy.head_offset[3]:.2f}")
-                    elif policy.body_pose_mode:
-                        policy.body_cmd[1] = np.clip(policy.body_cmd[1] - policy.body_cmd_step_angle, -BODY_CMD_MAX_ANGLE, BODY_CMD_MAX_ANGLE)
-                        policy._update_command()
-                        policy._print_body_cmd()
-                    else:
-                        new_ang = np.clip(policy.vel_cmd[2] - policy.vel_step_ang, -policy.vel_max_ang, policy.vel_max_ang)
-                        policy.set_vel_cmd(policy.vel_cmd[0], policy.vel_cmd[1], new_ang)
-                elif key == pynput_keyboard.Key.left:
-                    if policy.head_mode:
-                        policy.head_offset[2] = np.clip(policy.head_offset[2] + policy.head_step, -policy.head_max, policy.head_max)
-                        print(f"Head offset: neck={policy.head_offset[0]:.2f} pitch={policy.head_offset[1]:.2f} yaw={policy.head_offset[2]:.2f} roll={policy.head_offset[3]:.2f}")
-                    elif policy.body_pose_mode:
-                        policy.body_cmd[1] = np.clip(policy.body_cmd[1] + policy.body_cmd_step_angle, -BODY_CMD_MAX_ANGLE, BODY_CMD_MAX_ANGLE)
-                        policy._update_command()
-                        policy._print_body_cmd()
-                    else:
-                        new_ang = np.clip(policy.vel_cmd[2] + policy.vel_step_ang, -policy.vel_max_ang, policy.vel_max_ang)
-                        policy.set_vel_cmd(policy.vel_cmd[0], policy.vel_cmd[1], new_ang)
-                elif key == pynput_keyboard.Key.space:
-                    if policy.head_mode:
-                        policy.head_offset[:] = 0.0
-                        print("Head offset reset to zero")
-                    elif policy.body_pose_mode:
-                        policy.body_cmd[:] = 0.0
-                        policy._update_command()
-                        print("Body pose cmd reset to zero")
-                    else:
-                        policy.set_vel_cmd(0.0, 0.0, 0.0)
-                elif hasattr(key, 'char'):
-                    if key.char == 'g' or key.char == 'G':
-                        policy.trigger_ground_pick()
-                    elif key.char == 'h' or key.char == 'H':
-                        policy.toggle_head_mode()
-                    elif key.char == 'b' or key.char == 'B':
-                        policy.toggle_body_pose_mode()
-                    elif key.char == 'a' or key.char == 'A':
-                        if policy.head_mode:
-                            policy.head_offset[3] = np.clip(policy.head_offset[3] + policy.head_step, -policy.head_max, policy.head_max)
-                            print(f"Head offset: neck={policy.head_offset[0]:.2f} pitch={policy.head_offset[1]:.2f} yaw={policy.head_offset[2]:.2f} roll={policy.head_offset[3]:.2f}")
-                        elif policy.body_pose_mode:
-                            policy.body_cmd[2] = np.clip(policy.body_cmd[2] + policy.body_cmd_step_angle, -BODY_CMD_MAX_ANGLE, BODY_CMD_MAX_ANGLE)
-                            policy._update_command()
-                            policy._print_body_cmd()
-                        else:
-                            new_ang = np.clip(policy.vel_cmd[2] + policy.vel_step_ang, -policy.vel_max_ang, policy.vel_max_ang)
-                            policy.set_vel_cmd(policy.vel_cmd[0], policy.vel_cmd[1], new_ang)
-                    elif key.char == 'e' or key.char == 'E':
-                        if policy.head_mode:
-                            policy.head_offset[3] = np.clip(policy.head_offset[3] - policy.head_step, -policy.head_max, policy.head_max)
-                            print(f"Head offset: neck={policy.head_offset[0]:.2f} pitch={policy.head_offset[1]:.2f} yaw={policy.head_offset[2]:.2f} roll={policy.head_offset[3]:.2f}")
-                        elif policy.body_pose_mode:
-                            policy.body_cmd[2] = np.clip(policy.body_cmd[2] - policy.body_cmd_step_angle, -BODY_CMD_MAX_ANGLE, BODY_CMD_MAX_ANGLE)
-                            policy._update_command()
-                            policy._print_body_cmd()
-                        else:
-                            new_ang = np.clip(policy.vel_cmd[2] - policy.vel_step_ang, -policy.vel_max_ang, policy.vel_max_ang)
-                            policy.set_vel_cmd(policy.vel_cmd[0], policy.vel_cmd[1], new_ang)
-                    elif key.char == 'z' or key.char == 'Z':
-                        if policy.head_mode:
-                            policy.head_offset[0] = np.clip(policy.head_offset[0] + policy.head_step, -policy.head_max, policy.head_max)
-                            print(f"Head offset: neck={policy.head_offset[0]:.2f} pitch={policy.head_offset[1]:.2f} yaw={policy.head_offset[2]:.2f} roll={policy.head_offset[3]:.2f}")
-                    elif key.char == 's' or key.char == 'S':
-                        if policy.head_mode:
-                            policy.head_offset[0] = np.clip(policy.head_offset[0] - policy.head_step, -policy.head_max, policy.head_max)
-                            print(f"Head offset: neck={policy.head_offset[0]:.2f} pitch={policy.head_offset[1]:.2f} yaw={policy.head_offset[2]:.2f} roll={policy.head_offset[3]:.2f}")
-            except Exception as e:
-                print(f"Key press error: {e}")
+    def key_callback(key):
+        try:
+            if key == GLFW_KEY_UP:
+                if policy.head_mode:
+                    policy.head_offset[1] = np.clip(policy.head_offset[1] + policy.head_step, -policy.head_max, policy.head_max)
+                    print(f"Head offset: neck={policy.head_offset[0]:.2f} pitch={policy.head_offset[1]:.2f} yaw={policy.head_offset[2]:.2f} roll={policy.head_offset[3]:.2f}")
+                elif policy.body_pose_mode:
+                    policy.body_cmd[0] = np.clip(policy.body_cmd[0] + policy.body_cmd_step_z, -BODY_CMD_MAX_Z, BODY_CMD_MAX_Z)
+                    policy._update_command()
+                    policy._print_body_cmd()
+                else:
+                    new_x = np.clip(policy.vel_cmd[0] + policy.vel_step_x, policy.vel_min_x, policy.vel_max_x)
+                    policy.set_vel_cmd(new_x, policy.vel_cmd[1], policy.vel_cmd[2])
+            elif key == GLFW_KEY_DOWN:
+                if policy.head_mode:
+                    policy.head_offset[1] = np.clip(policy.head_offset[1] - policy.head_step, -policy.head_max, policy.head_max)
+                    print(f"Head offset: neck={policy.head_offset[0]:.2f} pitch={policy.head_offset[1]:.2f} yaw={policy.head_offset[2]:.2f} roll={policy.head_offset[3]:.2f}")
+                elif policy.body_pose_mode:
+                    policy.body_cmd[0] = np.clip(policy.body_cmd[0] - policy.body_cmd_step_z, -BODY_CMD_MAX_Z, BODY_CMD_MAX_Z)
+                    policy._update_command()
+                    policy._print_body_cmd()
+                else:
+                    new_x = np.clip(policy.vel_cmd[0] - policy.vel_step_x, policy.vel_min_x, policy.vel_max_x)
+                    policy.set_vel_cmd(new_x, policy.vel_cmd[1], policy.vel_cmd[2])
+            elif key == GLFW_KEY_RIGHT:
+                if policy.head_mode:
+                    policy.head_offset[2] = np.clip(policy.head_offset[2] - policy.head_step, -policy.head_max, policy.head_max)
+                    print(f"Head offset: neck={policy.head_offset[0]:.2f} pitch={policy.head_offset[1]:.2f} yaw={policy.head_offset[2]:.2f} roll={policy.head_offset[3]:.2f}")
+                elif policy.body_pose_mode:
+                    policy.body_cmd[1] = np.clip(policy.body_cmd[1] - policy.body_cmd_step_angle, -BODY_CMD_MAX_ANGLE, BODY_CMD_MAX_ANGLE)
+                    policy._update_command()
+                    policy._print_body_cmd()
+                else:
+                    new_ang = np.clip(policy.vel_cmd[2] - policy.vel_step_ang, -policy.vel_max_ang, policy.vel_max_ang)
+                    policy.set_vel_cmd(policy.vel_cmd[0], policy.vel_cmd[1], new_ang)
+            elif key == GLFW_KEY_LEFT:
+                if policy.head_mode:
+                    policy.head_offset[2] = np.clip(policy.head_offset[2] + policy.head_step, -policy.head_max, policy.head_max)
+                    print(f"Head offset: neck={policy.head_offset[0]:.2f} pitch={policy.head_offset[1]:.2f} yaw={policy.head_offset[2]:.2f} roll={policy.head_offset[3]:.2f}")
+                elif policy.body_pose_mode:
+                    policy.body_cmd[1] = np.clip(policy.body_cmd[1] + policy.body_cmd_step_angle, -BODY_CMD_MAX_ANGLE, BODY_CMD_MAX_ANGLE)
+                    policy._update_command()
+                    policy._print_body_cmd()
+                else:
+                    new_ang = np.clip(policy.vel_cmd[2] + policy.vel_step_ang, -policy.vel_max_ang, policy.vel_max_ang)
+                    policy.set_vel_cmd(policy.vel_cmd[0], policy.vel_cmd[1], new_ang)
+            elif key == GLFW_KEY_SPACE:
+                if policy.head_mode:
+                    policy.head_offset[:] = 0.0
+                    print("Head offset reset to zero")
+                elif policy.body_pose_mode:
+                    policy.body_cmd[:] = 0.0
+                    policy._update_command()
+                    print("Body pose cmd reset to zero")
+                else:
+                    policy.set_vel_cmd(0.0, 0.0, 0.0)
+            elif key == GLFW_KEY_G:
+                policy.trigger_ground_pick()
+            elif key == GLFW_KEY_H:
+                policy.toggle_head_mode()
+            elif key == GLFW_KEY_B:
+                policy.toggle_body_pose_mode()
+            elif key == GLFW_KEY_A:
+                if policy.head_mode:
+                    policy.head_offset[3] = np.clip(policy.head_offset[3] + policy.head_step, -policy.head_max, policy.head_max)
+                    print(f"Head offset: neck={policy.head_offset[0]:.2f} pitch={policy.head_offset[1]:.2f} yaw={policy.head_offset[2]:.2f} roll={policy.head_offset[3]:.2f}")
+                elif policy.body_pose_mode:
+                    policy.body_cmd[2] = np.clip(policy.body_cmd[2] + policy.body_cmd_step_angle, -BODY_CMD_MAX_ANGLE, BODY_CMD_MAX_ANGLE)
+                    policy._update_command()
+                    policy._print_body_cmd()
+                else:
+                    new_ang = np.clip(policy.vel_cmd[2] + policy.vel_step_ang, -policy.vel_max_ang, policy.vel_max_ang)
+                    policy.set_vel_cmd(policy.vel_cmd[0], policy.vel_cmd[1], new_ang)
+            elif key == GLFW_KEY_E:
+                if policy.head_mode:
+                    policy.head_offset[3] = np.clip(policy.head_offset[3] - policy.head_step, -policy.head_max, policy.head_max)
+                    print(f"Head offset: neck={policy.head_offset[0]:.2f} pitch={policy.head_offset[1]:.2f} yaw={policy.head_offset[2]:.2f} roll={policy.head_offset[3]:.2f}")
+                elif policy.body_pose_mode:
+                    policy.body_cmd[2] = np.clip(policy.body_cmd[2] - policy.body_cmd_step_angle, -BODY_CMD_MAX_ANGLE, BODY_CMD_MAX_ANGLE)
+                    policy._update_command()
+                    policy._print_body_cmd()
+                else:
+                    new_ang = np.clip(policy.vel_cmd[2] - policy.vel_step_ang, -policy.vel_max_ang, policy.vel_max_ang)
+                    policy.set_vel_cmd(policy.vel_cmd[0], policy.vel_cmd[1], new_ang)
+            elif key == GLFW_KEY_Z:
+                if policy.head_mode:
+                    policy.head_offset[0] = np.clip(policy.head_offset[0] + policy.head_step, -policy.head_max, policy.head_max)
+                    print(f"Head offset: neck={policy.head_offset[0]:.2f} pitch={policy.head_offset[1]:.2f} yaw={policy.head_offset[2]:.2f} roll={policy.head_offset[3]:.2f}")
+            elif key == GLFW_KEY_S:
+                if policy.head_mode:
+                    policy.head_offset[0] = np.clip(policy.head_offset[0] - policy.head_step, -policy.head_max, policy.head_max)
+                    print(f"Head offset: neck={policy.head_offset[0]:.2f} pitch={policy.head_offset[1]:.2f} yaw={policy.head_offset[2]:.2f} roll={policy.head_offset[3]:.2f}")
+        except Exception as e:
+            print(f"Key press error: {e}")
 
-        listener = pynput_keyboard.Listener(on_press=on_press)
-        listener.start()
+    print("\nKeyboard controls (click the viewer window first):")
+    print("  [ Velocity mode (default) ]")
+    print("  UP arrow:         increase lin_vel_x (push/accelerate)")
+    print("  DOWN arrow:       decrease lin_vel_x (0=coast, negative=brake)")
+    print("  LEFT/RIGHT arrow: turn left/right (ang_vel_z)")
+    print("  A / E:            turn left/right (ang_vel_z, incremental)")
+    print("  SPACE:            coast (zero all commands)")
+    print("  G:                trigger ground pick (requires --ground-pick)")
+    print("  [ Body pose mode — press B to toggle (requires --standing) ]")
+    print(f"  UP/DOWN arrow:    Δz ±1mm  (max ±{BODY_CMD_MAX_Z*1000:.0f}mm)")
+    print(f"  LEFT/RIGHT arrow: Δpitch ±1°  (max ±{math.degrees(BODY_CMD_MAX_ANGLE):.0f}°)")
+    print(f"  A / E:            Δroll ±1°  (max ±{math.degrees(BODY_CMD_MAX_ANGLE):.0f}°)")
+    print("  SPACE:            reset body pose to zero")
+    print("  [ Head mode — press H to toggle ]")
+    print("  Z / S:            neck_pitch ±step")
+    print("  UP/DOWN arrow:    head_pitch ±step")
+    print("  LEFT/RIGHT arrow: head_yaw ±step")
+    print("  A / E:            head_roll ±step")
+    print("  SPACE:            reset head offset to zero")
 
-        print("\nKeyboard controls:")
-        print("  [ Velocity mode (default) ]")
-        print("  UP arrow:         increase lin_vel_x (push/accelerate)")
-        print("  DOWN arrow:       decrease lin_vel_x (0=coast, negative=brake)")
-        print("  LEFT/RIGHT arrow: turn left/right (ang_vel_z)")
-        print("  A / E:            turn left/right (ang_vel_z, incremental)")
-        print("  SPACE:            coast (zero all commands)")
-        print("  G:                trigger ground pick (requires --ground-pick)")
-        print("  [ Body pose mode — press B to toggle (requires --standing) ]")
-        print(f"  UP/DOWN arrow:    Δz ±1mm  (max ±{BODY_CMD_MAX_Z*1000:.0f}mm)")
-        print(f"  LEFT/RIGHT arrow: Δpitch ±1°  (max ±{math.degrees(BODY_CMD_MAX_ANGLE):.0f}°)")
-        print(f"  A / E:            Δroll ±1°  (max ±{math.degrees(BODY_CMD_MAX_ANGLE):.0f}°)")
-        print("  SPACE:            reset body pose to zero")
-        print("  [ Head mode — press H to toggle ]")
-        print("  Z / S:            neck_pitch ±step")
-        print("  UP/DOWN arrow:    head_pitch ±step")
-        print("  LEFT/RIGHT arrow: head_yaw ±step")
-        print("  A / E:            head_roll ±step")
-        print("  SPACE:            reset head offset to zero")
-        print("\nNote: Keyboard listener captures keys system-wide")
-
-    except ImportError:
-        print("\nKeyboard control unavailable: pynput not found. Install with: pip install pynput")
-    except Exception as e:
-        print(f"\nCould not enable keyboard controls: {e}")
-        import traceback
-        traceback.print_exc()
-
-    with mujoco.viewer.launch_passive(model, data, show_left_ui=False, show_right_ui=False) as viewer:
+    with mujoco.viewer.launch_passive(model, data, show_left_ui=False, show_right_ui=False, key_callback=key_callback) as viewer:
         viewer.sync()
         start_time = time.time()
 
