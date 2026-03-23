@@ -163,6 +163,17 @@ def make_microduck_velocity_rollers_env_cfg(
         weight=1.0,
         params={"command_name": "twist", "vel_std": 0.3},
     )
+    # Small air time reward during push to encourage lifting feet in recovery phase.
+    cfg.rewards["skating_air_time"] = RewardTermCfg(
+        func=microduck_mdp.skating_air_time_reward,
+        weight=0.1,
+        params={
+            "sensor_name": "feet_ground_contact",
+            "command_name": "twist",
+            "threshold_min": 0.05,
+            "threshold_max": 0.4,
+        },
+    )
     # Encourage slight forward lean when pushing to counteract backward torque.
     cfg.rewards["forward_lean"] = RewardTermCfg(
         func=microduck_mdp.forward_lean_reward,

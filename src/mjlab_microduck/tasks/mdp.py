@@ -2301,6 +2301,31 @@ def heading_tracking_reward(
     return torch.exp(-(heading_error ** 2) / (std ** 2))
 
 
+def skating_air_time_reward(
+    env: ManagerBasedRlEnv,
+    sensor_name: str,
+    command_name: str,
+    threshold_min: float = 0.05,
+    threshold_max: float = 0.4,
+) -> torch.Tensor:
+    """Reward feet air time only when pushing (cmd_x > 0).
+
+    Encourages the robot to lift each foot during the recovery phase of the
+    skating stroke rather than dragging it on the ground.
+    Scaled by cmd_x so the incentive grows with push intensity.
+    """
+    from mjlab.sensor import ContactSensor
+    sensor: ContactSensor = env.scene[sensor_name]
+    current_air_time = sensor.data.current_air_time
+    assert current_air_time is not None
+
+    in_range = (current_air_time > threshold_min) & (current_air_time < threshold_max)
+    reward = torch.sum(in_range.float(), dim=1)
+
+    cmd_x = env.command_manager.get_command(command_name)[:, 0]
+    return reward * torch.clamp(cmd_x, min=0.0)
+
+
 def forward_lean_reward(
     env: ManagerBasedRlEnv,
     command_name: str,
