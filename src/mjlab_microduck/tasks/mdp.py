@@ -1598,7 +1598,7 @@ def wheel_friction_curriculum(
         if env.common_step_counter > stage["step"]:
             current_ranges = stage["ranges"]
 
-    event_cfg = env.cfg.events[event_name]
+    event_cfg = env.event_manager.get_term_cfg(event_name)
     event_cfg.params["ranges"] = current_ranges
 
     return torch.tensor([(current_ranges[0] + current_ranges[1]) / 2.0])
