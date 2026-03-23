@@ -199,7 +199,7 @@ def make_microduck_velocity_rollers_env_cfg(
             "asset_cfg": SceneEntityCfg("robot", joint_names=(r"^passive_.*",)),
             "operation": "abs",
             "field": "dof_frictionloss",
-            "ranges": (0.003, 0.003),  # fixed 0.003 Nm, no randomization
+            "ranges": (0.000, 0.000),  # ramped up by wheel_friction_curriculum
         },
     )
 
@@ -325,6 +325,19 @@ def make_microduck_velocity_rollers_env_cfg(
 
     del cfg.curriculum["terrain_levels"]
     del cfg.curriculum["command_vel"]
+
+    cfg.curriculum["wheel_friction"] = CurriculumTermCfg(
+        func=microduck_mdp.wheel_friction_curriculum,
+        params={
+            "event_name": "randomize_wheel_friction",
+            "ranges_stages": [
+                {"step":    0 * 24,  "ranges": (0.000, 0.000)},
+                {"step":  750 * 24,  "ranges": (0.001, 0.001)},
+                {"step": 1500 * 24,  "ranges": (0.002, 0.002)},
+                {"step": 2500 * 24,  "ranges": (0.003, 0.003)},
+            ],
+        },
+    )
 
     cfg.curriculum["heading_tracking_weight"] = CurriculumTermCfg(
         func=mdp.reward_weight,
