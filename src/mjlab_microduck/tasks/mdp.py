@@ -2318,7 +2318,7 @@ def forward_lean_reward(
     """
     asset: Entity = env.scene[asset_cfg.name]
     cmd_x = env.command_manager.get_command(command_name)[:, 0]
-    forward_lean = -asset.data.projected_gravity_b[:, 0]
+    forward_lean = asset.data.projected_gravity_b[:, 0]
     push = torch.clamp(cmd_x, min=0.0)
     return push * torch.exp(-((forward_lean - target_pitch) ** 2) / (std ** 2))
 
