@@ -199,7 +199,7 @@ def make_microduck_velocity_rollers_env_cfg(
             "asset_cfg": SceneEntityCfg("robot", joint_names=(r"^passive_.*",)),
             "operation": "abs",
             "field": "dof_frictionloss",
-            "ranges": (0.0, 0.01),  # 0 = frictionless, 0.01 Nm ≈ worn bearing
+            "ranges": (0.000, 0.000),  # ramped up by wheel_friction_curriculum
         },
     )
 
@@ -331,10 +331,11 @@ def make_microduck_velocity_rollers_env_cfg(
         params={
             "event_name": "randomize_wheel_friction",
             "ranges_stages": [
-                {"step": 0,          "ranges": (0.000, 0.010)},  # working baseline
-                {"step": 1500 * 24,  "ranges": (0.001, 0.010)},
-                {"step": 2000 * 24,  "ranges": (0.002, 0.008)},
-                {"step": 2500 * 24,  "ranges": (0.003, 0.007)},
+                {"step": 0,           "ranges": (0.000, 0.000)},
+                {"step":  500 * 24,   "ranges": (0.000, 0.001)},
+                {"step": 1000 * 24,   "ranges": (0.000, 0.002)},
+                {"step": 2000 * 24,   "ranges": (0.000, 0.003)},
+                {"step": 3000 * 24,   "ranges": (0.000, 0.004)},
             ],
         },
     )
