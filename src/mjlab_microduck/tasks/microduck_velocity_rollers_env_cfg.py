@@ -166,7 +166,7 @@ def make_microduck_velocity_rollers_env_cfg(
     # Small air time reward during push to encourage lifting feet in recovery phase.
     cfg.rewards["skating_air_time"] = RewardTermCfg(
         func=microduck_mdp.skating_air_time_reward,
-        weight=0.1,
+        weight=1.0,
         params={
             "sensor_name": "feet_ground_contact",
             "command_name": "twist",
