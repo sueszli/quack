@@ -146,13 +146,15 @@ class PolicyInference:
 
         # Velocity command [lin_vel_x, lin_vel_y, ang_vel_z] — controls walking / policy switching
         self.vel_cmd = np.zeros(3, dtype=np.float32)
-        # Key-press step sizes and limits (overridden for roller mode in main())
-        self.vel_step_x = 0.5
-        self.vel_step_y = 0.5
-        self.vel_step_ang = 4.0
-        self.vel_max_x = 2.0
-        self.vel_min_x = -2.0
-        self.vel_max_ang = 4.0
+        # Key-press step sizes and limits (overridden per mode in main())
+        self.vel_step_x = 0.05
+        self.vel_step_y = 0.05
+        self.vel_step_ang = 0.3
+        self.vel_max_x = 0.3
+        self.vel_min_x = -0.3
+        self.vel_max_y = 0.3
+        self.vel_min_y = -0.3
+        self.vel_max_ang = 1.5
         # Body pose command [Δz (m), Δpitch (rad), Δroll (rad)] — physical units
         self.body_cmd = np.zeros(3, dtype=np.float32)
         # Normalized obs command (set by _update_command)
@@ -510,21 +512,25 @@ def main():
                 dof_adr = model.jnt_dofadr[j]
                 model.dof_frictionloss[dof_adr] = 0.003
 
-    # Roller-specific velocity command limits (training ranges differ from walking)
+    # Per-mode velocity command limits matching training ranges
     if args.roller:
-        policy.vel_step_x = 0.5       # lin_vel_x step: 0=coast, >0=push, <0=brake
+        policy.vel_step_x = 0.05      # lin_vel_x step (range -0.5..0.6)
         policy.vel_step_y = 0.0       # no lateral command for rollers
-        policy.vel_step_ang = 0.25    # heading error step (range ±1.0 rad)
+        policy.vel_step_ang = 0.1     # heading error step (range ±1.0 rad)
         policy.vel_max_x = 0.6
         policy.vel_min_x = -0.5       # negative = brake
+        policy.vel_max_y = 0.0
+        policy.vel_min_y = 0.0
         policy.vel_max_ang = 1.0      # ±1.0 rad heading error
     else:
-        policy.vel_step_x = 0.5
-        policy.vel_step_y = 0.5
-        policy.vel_step_ang = 4.0
-        policy.vel_max_x = 2.0
-        policy.vel_min_x = -2.0
-        policy.vel_max_ang = 4.0
+        policy.vel_step_x = 0.05      # lin_vel_x step (range ±0.3)
+        policy.vel_step_y = 0.05      # lin_vel_y step (range ±0.3)
+        policy.vel_step_ang = 0.3     # ang_vel_z step (range ±1.5)
+        policy.vel_max_x = 0.3
+        policy.vel_min_x = -0.3
+        policy.vel_max_y = 0.3
+        policy.vel_min_y = -0.3
+        policy.vel_max_ang = 1.5
 
     # Set initial position to default pose
     freejoint_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "trunk_base_freejoint")
@@ -632,9 +638,12 @@ def main():
                     policy.body_cmd[1] = np.clip(policy.body_cmd[1] - policy.body_cmd_step_angle, -BODY_CMD_MAX_ANGLE, BODY_CMD_MAX_ANGLE)
                     policy._update_command()
                     policy._print_body_cmd()
-                else:
+                elif args.roller:
                     new_ang = np.clip(policy.vel_cmd[2] - policy.vel_step_ang, -policy.vel_max_ang, policy.vel_max_ang)
                     policy.set_vel_cmd(policy.vel_cmd[0], policy.vel_cmd[1], new_ang)
+                else:
+                    new_y = np.clip(policy.vel_cmd[1] - policy.vel_step_y, policy.vel_min_y, policy.vel_max_y)
+                    policy.set_vel_cmd(policy.vel_cmd[0], new_y, policy.vel_cmd[2])
             elif key == GLFW_KEY_LEFT:
                 if policy.head_mode:
                     policy.head_offset[2] = np.clip(policy.head_offset[2] + policy.head_step, -policy.head_max, policy.head_max)
@@ -643,9 +652,12 @@ def main():
                     policy.body_cmd[1] = np.clip(policy.body_cmd[1] + policy.body_cmd_step_angle, -BODY_CMD_MAX_ANGLE, BODY_CMD_MAX_ANGLE)
                     policy._update_command()
                     policy._print_body_cmd()
-                else:
+                elif args.roller:
                     new_ang = np.clip(policy.vel_cmd[2] + policy.vel_step_ang, -policy.vel_max_ang, policy.vel_max_ang)
                     policy.set_vel_cmd(policy.vel_cmd[0], policy.vel_cmd[1], new_ang)
+                else:
+                    new_y = np.clip(policy.vel_cmd[1] + policy.vel_step_y, policy.vel_min_y, policy.vel_max_y)
+                    policy.set_vel_cmd(policy.vel_cmd[0], new_y, policy.vel_cmd[2])
             elif key == GLFW_KEY_SPACE:
                 if policy.head_mode:
                     policy.head_offset[:] = 0.0
@@ -699,8 +711,12 @@ def main():
     print("  [ Velocity mode (default) ]")
     print("  UP arrow:         increase lin_vel_x (push/accelerate)")
     print("  DOWN arrow:       decrease lin_vel_x (0=coast, negative=brake)")
-    print("  LEFT/RIGHT arrow: turn left/right (ang_vel_z)")
-    print("  A / E:            turn left/right (ang_vel_z, incremental)")
+    if args.roller:
+        print("  LEFT/RIGHT arrow: turn left/right (ang_vel_z heading error)")
+        print("  A / E:            turn left/right (ang_vel_z, incremental)")
+    else:
+        print("  LEFT/RIGHT arrow: strafe left/right (lin_vel_y)")
+        print("  A / E:            turn left/right (ang_vel_z)")
     print("  SPACE:            coast (zero all commands)")
     print("  G:                trigger ground pick (requires --ground-pick)")
     print("  [ Body pose mode — press B to toggle (requires --standing) ]")
