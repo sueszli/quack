@@ -13,6 +13,7 @@ from mjlab.entity import Entity
 from mjlab_microduck.reference_motion import ReferenceMotionLoader
 from mjlab.tasks.velocity.mdp.velocity_command import UniformVelocityCommand
 from mjlab.utils.lab_api.math import matrix_from_quat
+from mjlab.envs.mdp.actions import JointPositionAction as _JointPositionAction
 from mjlab.envs.mdp.actions import JointPositionActionCfg as _JointPositionActionCfg
 
 if TYPE_CHECKING:
@@ -26,7 +27,7 @@ _NECK_JOINT_INDICES = list(range(5, 9))
 # Time constant (seconds) for smooth offset interpolation toward target
 _NECK_OFFSET_SMOOTHING_TAU = 0.5
 
-class NeckOffsetJointPositionAction(_JointPositionActionCfg.class_type):
+class NeckOffsetJointPositionAction(_JointPositionAction):
     """JointPositionAction that adds a random offset to neck/head joint targets.
 
     After the policy output is applied as joint position targets, adds

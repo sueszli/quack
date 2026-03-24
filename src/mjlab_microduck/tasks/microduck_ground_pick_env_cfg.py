@@ -36,8 +36,9 @@ VELOCITY_PUSH_RANGE              = (-0.3, 0.3)
 IMU_ORIENTATION_RANDOMIZATION_ANGLE = 1.0
 
 from mjlab.envs import ManagerBasedRlEnvCfg
+from mjlab.envs.mdp import dr
 from mjlab.envs.mdp.actions import JointPositionActionCfg
-from mjlab.managers.manager_term_config import (
+from mjlab.managers import (
     CurriculumTermCfg,
     EventTermCfg,
     ObservationTermCfg,
@@ -46,7 +47,7 @@ from mjlab.managers.manager_term_config import (
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.rl import (
     RslRlOnPolicyRunnerCfg,
-    RslRlPpoActorCriticCfg,
+    RslRlModelCfg,
     RslRlPpoAlgorithmCfg,
 )
 from mjlab.sensor import ContactMatch, ContactSensorCfg
@@ -208,7 +209,7 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     )
 
     # ── Observations (identical layout to walking policy — 51 D) ─────────────
-    del cfg.observations["policy"].terms["base_lin_vel"]
+    del cfg.observations["actor"].terms["base_lin_vel"]
 
     cfg.observations["critic"].terms["base_lin_vel"] = ObservationTermCfg(
         func=mdp.base_lin_vel, scale=1.0,
@@ -218,26 +219,26 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     ].site_names = site_names
 
     gravity_term_name = "projected_gravity"
-    cfg.observations["policy"].terms[gravity_term_name] = deepcopy(
-        cfg.observations["policy"].terms[gravity_term_name]
+    cfg.observations["actor"].terms[gravity_term_name] = deepcopy(
+        cfg.observations["actor"].terms[gravity_term_name]
     )
-    cfg.observations["policy"].terms["base_ang_vel"] = deepcopy(
-        cfg.observations["policy"].terms["base_ang_vel"]
+    cfg.observations["actor"].terms["base_ang_vel"] = deepcopy(
+        cfg.observations["actor"].terms["base_ang_vel"]
     )
 
     # Sensor delay — matches velocity env
-    cfg.observations["policy"].terms["base_ang_vel"].delay_min_lag = 0
-    cfg.observations["policy"].terms["base_ang_vel"].delay_max_lag = 3
-    cfg.observations["policy"].terms["base_ang_vel"].delay_update_period = 64
-    cfg.observations["policy"].terms[gravity_term_name].delay_min_lag = 0
-    cfg.observations["policy"].terms[gravity_term_name].delay_max_lag = 3
-    cfg.observations["policy"].terms[gravity_term_name].delay_update_period = 64
+    cfg.observations["actor"].terms["base_ang_vel"].delay_min_lag = 0
+    cfg.observations["actor"].terms["base_ang_vel"].delay_max_lag = 3
+    cfg.observations["actor"].terms["base_ang_vel"].delay_update_period = 64
+    cfg.observations["actor"].terms[gravity_term_name].delay_min_lag = 0
+    cfg.observations["actor"].terms[gravity_term_name].delay_max_lag = 3
+    cfg.observations["actor"].terms[gravity_term_name].delay_update_period = 64
 
     # Observation noise — matches velocity env
-    cfg.observations["policy"].terms["base_ang_vel"].noise   = Unoise(n_min=-0.024, n_max=0.024)
-    cfg.observations["policy"].terms[gravity_term_name].noise = Unoise(n_min=-0.007, n_max=0.007)
-    cfg.observations["policy"].terms["joint_pos"].noise      = Unoise(n_min=-0.0006, n_max=0.0006)
-    cfg.observations["policy"].terms["joint_vel"].noise      = Unoise(n_min=-0.024, n_max=0.024)
+    cfg.observations["actor"].terms["base_ang_vel"].noise   = Unoise(n_min=-0.024, n_max=0.024)
+    cfg.observations["actor"].terms[gravity_term_name].noise = Unoise(n_min=-0.007, n_max=0.007)
+    cfg.observations["actor"].terms["joint_pos"].noise      = Unoise(n_min=-0.0006, n_max=0.0006)
+    cfg.observations["actor"].terms["joint_vel"].noise      = Unoise(n_min=-0.024, n_max=0.024)
 
     # ── Command: cyclic phase encoding ────────────────────────────────────────
     command: UniformVelocityCommandCfg = cfg.commands["twist"]
@@ -270,13 +271,11 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
 
     if ENABLE_COM_RANDOMIZATION:
         cfg.events["randomize_com"] = EventTermCfg(
-            func=mdp.randomize_field,
+            func=dr.body_ipos,
             mode="reset",
-            domain_randomization=True,
             params={
                 "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
                 "operation": "add",
-                "field": "body_ipos",
                 "ranges": (-COM_RANDOMIZATION_RANGE, COM_RANDOMIZATION_RANGE),
             },
         )
@@ -352,13 +351,20 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
 # ── RL runner config ──────────────────────────────────────────────────────────
 
 MicroduckGroundPickRlCfg = RslRlOnPolicyRunnerCfg(
-    policy=RslRlPpoActorCriticCfg(
-        init_noise_std=1.0,
-        actor_obs_normalization=False,
-        critic_obs_normalization=False,
-        actor_hidden_dims=(512, 256, 128),
-        critic_hidden_dims=(512, 256, 128),
+    actor=RslRlModelCfg(
+        hidden_dims=(512, 256, 128),
         activation="elu",
+        obs_normalization=False,
+        distribution_cfg={
+            "class_name": "GaussianDistribution",
+            "init_std": 1.0,
+            "std_type": "scalar",
+        },
+    ),
+    critic=RslRlModelCfg(
+        hidden_dims=(512, 256, 128),
+        activation="elu",
+        obs_normalization=False,
     ),
     algorithm=RslRlPpoAlgorithmCfg(
         value_loss_coef=1.0,

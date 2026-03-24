@@ -3,7 +3,8 @@
 from copy import deepcopy
 from pathlib import Path
 
-from mjlab.managers.manager_term_config import (
+from mjlab.envs.mdp import dr
+from mjlab.managers import (
     CurriculumTermCfg,
     EventTermCfg,
     ObservationGroupCfg,
@@ -389,13 +390,11 @@ def make_microduck_imitation_env_cfg(play: bool = False, ghost_vis: bool = False
     # CoM randomization
     if ENABLE_COM_RANDOMIZATION:
         cfg.events["randomize_com"] = EventTermCfg(
-            func=velocity_mdp.randomize_field,
+            func=dr.body_ipos,
             mode="reset",
-            domain_randomization=True,
             params={
                 "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
                 "operation": "add",
-                "field": "body_ipos",
                 "ranges": (-COM_RANDOMIZATION_RANGE, COM_RANDOMIZATION_RANGE),
             },
         )
@@ -452,13 +451,11 @@ def make_microduck_imitation_env_cfg(play: bool = False, ghost_vis: bool = False
     # Joint friction randomization (disabled by default)
     if ENABLE_JOINT_FRICTION_RANDOMIZATION:
         cfg.events["randomize_joint_friction"] = EventTermCfg(
-            func=velocity_mdp.randomize_field,
+            func=dr.dof_frictionloss,
             mode="reset",
-            domain_randomization=True,
             params={
                 "asset_cfg": SceneEntityCfg("robot", joint_names=(r".*",)),
                 "operation": "scale",
-                "field": "dof_frictionloss",
                 "ranges": JOINT_FRICTION_RANDOMIZATION_RANGE,
             },
         )
@@ -466,13 +463,11 @@ def make_microduck_imitation_env_cfg(play: bool = False, ghost_vis: bool = False
     # Joint damping randomization (disabled by default)
     if ENABLE_JOINT_DAMPING_RANDOMIZATION:
         cfg.events["randomize_joint_damping"] = EventTermCfg(
-            func=velocity_mdp.randomize_field,
+            func=dr.dof_damping,
             mode="reset",
-            domain_randomization=True,
             params={
                 "asset_cfg": SceneEntityCfg("robot", joint_names=(r".*",)),
                 "operation": "scale",
-                "field": "dof_damping",
                 "ranges": JOINT_DAMPING_RANDOMIZATION_RANGE,
             },
         )
@@ -547,18 +542,25 @@ def make_microduck_imitation_env_cfg(play: bool = False, ghost_vis: bool = False
 # RL configuration for imitation task
 from mjlab.rl import (
     RslRlOnPolicyRunnerCfg,
-    RslRlPpoActorCriticCfg,
+    RslRlModelCfg,
     RslRlPpoAlgorithmCfg,
 )
 
 MicroduckImitationRlCfg = RslRlOnPolicyRunnerCfg(
-    policy=RslRlPpoActorCriticCfg(
-        init_noise_std=1.0,
-        actor_obs_normalization=False,
-        critic_obs_normalization=False,
-        actor_hidden_dims=(512, 256, 128),
-        critic_hidden_dims=(512, 256, 128),
+    actor=RslRlModelCfg(
+        hidden_dims=(512, 256, 128),
         activation="elu",
+        obs_normalization=False,
+        distribution_cfg={
+            "class_name": "GaussianDistribution",
+            "init_std": 1.0,
+            "std_type": "scalar",
+        },
+    ),
+    critic=RslRlModelCfg(
+        hidden_dims=(512, 256, 128),
+        activation="elu",
+        obs_normalization=False,
     ),
     algorithm=RslRlPpoAlgorithmCfg(
         value_loss_coef=1.0,

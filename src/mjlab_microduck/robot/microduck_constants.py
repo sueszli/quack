@@ -65,11 +65,11 @@ FULL_COLLISION = CollisionCfg(
 actuators = DelayedActuatorCfg(
     delay_min_lag=0,  # Increased from 0 - real actuators have consistent delay
     delay_max_lag=3,  # Increased from 3 - force lower-gain control
-    base_cfg=XmlPositionActuatorCfg(joint_names_expr=(r".*",)),
+    base_cfg=XmlPositionActuatorCfg(target_names_expr=(r".*",)),
 )
 
 
-# actuators=XmlPositionActuatorCfg(joint_names_expr=(r".*",))
+# actuators=XmlPositionActuatorCfg(target_names_expr=(r".*",))
 
 MICRODUCK_WALK_ROBOT_CFG = EntityCfg(
     spec_fn=get_walk_spec,
@@ -107,7 +107,7 @@ MICRODUCK_GROUND_PICK_ROBOT_CFG = EntityCfg(
 roller_actuators = DelayedActuatorCfg(
     delay_min_lag=0,
     delay_max_lag=3,
-    base_cfg=XmlPositionActuatorCfg(joint_names_expr=(r"^(?!passive_).*",)),
+    base_cfg=XmlPositionActuatorCfg(target_names_expr=(r"^(?!passive_).*",)),
 )
 
 MICRODUCK_WALK_ROLLERS_ROBOT_CFG = EntityCfg(
