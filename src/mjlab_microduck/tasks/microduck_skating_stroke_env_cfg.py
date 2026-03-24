@@ -263,7 +263,7 @@ def make_microduck_skating_stroke_env_cfg(
     command.ranges.lin_vel_y = (0.0, 0.0)
     command.ranges.ang_vel_z = (0.0, 0.0)
     command.viz.z_offset = 0.5
-    command.class_type = microduck_mdp.VelocityCommandCommandOnly
+    cfg.commands["twist"] = microduck_mdp.VelocityCommandCommandOnlyCfg(**vars(command))
 
     cfg.scene.terrain.terrain_type = "plane"
     cfg.scene.terrain.terrain_generator = None

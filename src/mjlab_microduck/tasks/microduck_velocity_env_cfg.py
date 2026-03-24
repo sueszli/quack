@@ -195,7 +195,7 @@ def make_microduck_velocity_env_cfg(
     assert isinstance(joint_pos_action, JointPositionActionCfg)
     joint_pos_action.scale = 1.0
     if ENABLE_NECK_OFFSET_RANDOMIZATION:
-        joint_pos_action.class_type = microduck_mdp.NeckOffsetJointPositionAction
+        cfg.actions["joint_pos"] = microduck_mdp.NeckOffsetJointPositionActionCfg(**vars(joint_pos_action))
 
     # === REWARDS ===
     # Pose reward configuration
@@ -518,7 +518,7 @@ def make_microduck_velocity_env_cfg(
     command.ranges.lin_vel_y = (-0.3, 0.3)
     command.ranges.ang_vel_z = (-1.5, 1.5)
     command.viz.z_offset = 0.5
-    command.class_type = microduck_mdp.VelocityCommandCommandOnly
+    cfg.commands["twist"] = microduck_mdp.VelocityCommandCommandOnlyCfg(**vars(command))
 
     # Terrain
     if not rough:

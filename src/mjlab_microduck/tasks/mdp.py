@@ -58,6 +58,11 @@ class NeckOffsetJointPositionAction(_JointPositionAction):
         env.sim.data.ctrl[:, _NECK_JOINT_INDICES] += env._neck_offset
 
 
+class NeckOffsetJointPositionActionCfg(_JointPositionActionCfg):
+    def build(self, env: ManagerBasedRlEnv) -> "NeckOffsetJointPositionAction":
+        return NeckOffsetJointPositionAction(self, env)
+
+
 def reset_neck_offset(
     env: ManagerBasedRlEnv,
     env_ids: torch.Tensor,
@@ -2230,6 +2235,11 @@ class VelocityCommandCommandOnly(UniformVelocityCommand):
         visualizer.add_arrow(cmd_lin_from, cmd_lin_to, color=(0.2, 0.2, 0.6, 0.6), width=0.015)
 
 
+class VelocityCommandCommandOnlyCfg(UniformVelocityCommandCfg):
+    def build(self, env: ManagerBasedRlEnv) -> "VelocityCommandCommandOnly":
+        return VelocityCommandCommandOnly(self, env)
+
+
 class RelativeHeadingVelocityCommand(VelocityCommandCommandOnly):
     """Velocity command where cmd[2] is the heading error in the robot's body frame.
 
@@ -2398,6 +2408,11 @@ class GroundPickPhaseCommand(UniformVelocityCommand):
         pass  # No velocity tracking metrics for ground pick
 
 
+class GroundPickPhaseCommandCfg(UniformVelocityCommandCfg):
+    def build(self, env: ManagerBasedRlEnv) -> "GroundPickPhaseCommand":
+        return GroundPickPhaseCommand(self, env)
+
+
 class BodyPoseCommand(UniformVelocityCommand):
     """Body pose command for standing control: [Δz (m), Δpitch (rad), Δroll (rad)].
 
@@ -2424,6 +2439,11 @@ class BodyPoseCommand(UniformVelocityCommand):
 
     def _debug_vis_impl(self, visualizer: "DebugVisualizer") -> None:
         pass  # No visualization needed
+
+
+class BodyPoseCommandCfg(UniformVelocityCommandCfg):
+    def build(self, env: ManagerBasedRlEnv) -> "BodyPoseCommand":
+        return BodyPoseCommand(self, env)
 
 
 def body_pose_cmd_obs(

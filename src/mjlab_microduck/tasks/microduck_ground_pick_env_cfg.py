@@ -244,7 +244,7 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     command: UniformVelocityCommandCfg = cfg.commands["twist"]
     command.rel_standing_envs = 0.0
     command.rel_heading_envs  = 0.0
-    command.class_type = microduck_mdp.GroundPickPhaseCommand
+    cfg.commands["twist"] = microduck_mdp.GroundPickPhaseCommandCfg(**vars(command))
 
     # ── Events ────────────────────────────────────────────────────────────────
     cfg.events["reset_action_history"] = EventTermCfg(

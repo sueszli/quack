@@ -167,7 +167,7 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
     command.ranges.heading = None
     command.resampling_time_range = (4.0, 8.0)
     command.debug_vis = False
-    command.class_type = microduck_mdp.BodyPoseCommand
+    cfg.commands["twist"] = microduck_mdp.BodyPoseCommandCfg(**vars(command))
     command.ranges.lin_vel_x = (0.0, 0.0)   # Δz:     expanded by curriculum
     command.ranges.lin_vel_y = (0.0, 0.0)   # Δpitch: expanded by curriculum
     command.ranges.ang_vel_z = (0.0, 0.0)   # Δroll:  expanded by curriculum
