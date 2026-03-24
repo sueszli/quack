@@ -233,24 +233,10 @@ def make_microduck_velocity_env_cfg(
 
     cfg.rewards["air_time"].weight = 5.0
     cfg.rewards["air_time"].params["command_threshold"] = 0.01
-
-    # # Replace built-in air_time with adaptive version that uses different
-    # # swing-time windows for walking vs running.
-    # del cfg.rewards["air_time"]
-    # cfg.rewards["air_time"] = RewardTermCfg(
-        # func=microduck_mdp.air_time_adaptive,
-        # weight=5.0,
-        # params={
-            # "sensor_name": "feet_ground_contact",
-            # "command_name": "twist",
-            # "command_threshold": 0.01,
-            # "running_threshold": 0.5,
-            # "walk_threshold_min": 0.10,  # 100–250 ms: deliberate walking cadence
-            # "walk_threshold_max": 0.25,
-            # "run_threshold_min": 0.05,   # 50–250 ms: faster running cadence
-            # "run_threshold_max": 0.25,
-        # },
-    # )
+    # v1.2.0 base defaults changed to (0.05, 0.5) which is too wide and rewards hopping.
+    # Pin to the values that produced good walking gait.
+    cfg.rewards["air_time"].params["threshold_min"] = 0.10
+    cfg.rewards["air_time"].params["threshold_max"] = 0.25
 
     # Reward staying still at zero command. Uses a tight Gaussian on body velocity:
     # reward peaks at 0 m/s and decays quickly, so moving faster is always worse.
