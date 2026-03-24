@@ -385,7 +385,7 @@ def make_microduck_velocity_env_cfg(
         # Randomize CoM position
         cfg.events["randomize_com"] = EventTermCfg(
             func=dr.body_ipos,
-            mode="reset",
+            mode="startup",
             params={
                 "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
                 "operation": "add",
@@ -469,6 +469,8 @@ def make_microduck_velocity_env_cfg(
         )
 
     # Observations
+    del cfg.observations["actor"].terms["height_scan"]
+    del cfg.observations["critic"].terms["height_scan"]
     del cfg.observations["actor"].terms["base_lin_vel"]
 
     # Add base_lin_vel to critic only (privileged information)

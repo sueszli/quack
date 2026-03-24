@@ -181,7 +181,7 @@ def make_microduck_skating_stroke_env_cfg(
 
     cfg.events["randomize_com"] = EventTermCfg(
         func=dr.body_ipos,
-        mode="reset",
+        mode="startup",
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
             "operation": "add",
@@ -217,6 +217,8 @@ def make_microduck_skating_stroke_env_cfg(
 
     # === OBSERVATIONS ===
     # No velocity command — command slot set to zeros (robot just pushes forward)
+    del cfg.observations["actor"].terms["height_scan"]
+    del cfg.observations["critic"].terms["height_scan"]
     del cfg.observations["actor"].terms["base_lin_vel"]
     cfg.observations["critic"].terms["base_lin_vel"] = ObservationTermCfg(
         func=mdp.base_lin_vel,

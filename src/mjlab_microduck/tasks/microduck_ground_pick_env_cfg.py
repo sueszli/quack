@@ -209,6 +209,8 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     )
 
     # ── Observations (identical layout to walking policy — 51 D) ─────────────
+    del cfg.observations["actor"].terms["height_scan"]
+    del cfg.observations["critic"].terms["height_scan"]
     del cfg.observations["actor"].terms["base_lin_vel"]
 
     cfg.observations["critic"].terms["base_lin_vel"] = ObservationTermCfg(
@@ -272,7 +274,7 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     if ENABLE_COM_RANDOMIZATION:
         cfg.events["randomize_com"] = EventTermCfg(
             func=dr.body_ipos,
-            mode="reset",
+            mode="startup",
             params={
                 "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
                 "operation": "add",

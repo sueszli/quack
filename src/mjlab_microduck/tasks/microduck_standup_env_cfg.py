@@ -126,6 +126,8 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
     joint_pos_action.scale = 1.0
 
     # === OBSERVATIONS ===
+    del cfg.observations["actor"].terms["height_scan"]
+    del cfg.observations["critic"].terms["height_scan"]
     del cfg.observations["actor"].terms["base_lin_vel"]
 
     cfg.observations["critic"].terms["foot_height"].params[
@@ -297,7 +299,7 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
     if ENABLE_COM_RANDOMIZATION:
         cfg.events["randomize_com"] = EventTermCfg(
             func=dr.body_ipos,
-            mode="reset",
+            mode="startup",
             params={
                 "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
                 "operation": "add",
