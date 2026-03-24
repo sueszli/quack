@@ -35,12 +35,12 @@ def _make_roller_get_base_metadata():
     but have no position actuators, causing a KeyError in the stock implementation.
     """
     import torch
-    from mjlab.envs.mdp.actions.joint_actions import JointAction
+    from mjlab.envs.mdp.actions import JointPositionAction
 
     def roller_get_base_metadata(env, run_path):
         robot = env.scene["robot"]
         joint_action = env.action_manager.get_term("joint_pos")
-        assert isinstance(joint_action, JointAction)
+        assert isinstance(joint_action, JointPositionAction)
 
         joint_name_to_ctrl_id = {
             act.target.split("/")[-1]: act.id
@@ -81,13 +81,13 @@ class MicroduckRollersOnPolicyRunner(MicroduckOnPolicyRunner):
     """
 
     def save(self, path, *args, **kwargs):
-        import mjlab.tasks.velocity.rl.exporter as _vel_exporter
-        orig = _vel_exporter.get_base_metadata
-        _vel_exporter.get_base_metadata = _make_roller_get_base_metadata()
+        import mjlab.tasks.velocity.rl.runner as _vel_runner
+        orig = _vel_runner.get_base_metadata
+        _vel_runner.get_base_metadata = _make_roller_get_base_metadata()
         try:
             super().save(path, *args, **kwargs)
         finally:
-            _vel_exporter.get_base_metadata = orig
+            _vel_runner.get_base_metadata = orig
 
 # Skating stroke motion primitive
 register_mjlab_task(
