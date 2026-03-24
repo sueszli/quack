@@ -177,7 +177,7 @@ def make_microduck_velocity_rollers_env_cfg(
     # Encourage slight forward lean when pushing to counteract backward torque.
     cfg.rewards["forward_lean"] = RewardTermCfg(
         func=microduck_mdp.forward_lean_reward,
-        weight=1.0,
+        weight=3.0,
         params={"command_name": "twist", "target_pitch": 0.262, "std": 0.1},
     )
     # Heading: cmd[2] = heading error (0=straight, +right/-left).
