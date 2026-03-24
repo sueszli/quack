@@ -11,7 +11,7 @@ from mjlab.envs.manager_based_rl_env import ManagerBasedRlEnv
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.entity import Entity
 from mjlab_microduck.reference_motion import ReferenceMotionLoader
-from mjlab.tasks.velocity.mdp.velocity_command import UniformVelocityCommand
+from mjlab.tasks.velocity.mdp.velocity_command import UniformVelocityCommand, UniformVelocityCommandCfg
 from mjlab.utils.lab_api.math import matrix_from_quat
 from mjlab.envs.mdp.actions import JointPositionAction as _JointPositionAction
 from mjlab.envs.mdp.actions import JointPositionActionCfg as _JointPositionActionCfg
@@ -2281,6 +2281,11 @@ class RelativeHeadingVelocityCommand(VelocityCommandCommandOnly):
 
     def _update_metrics(self) -> None:
         pass  # No velocity tracking metrics for heading command
+
+
+class RelativeHeadingVelocityCommandCfg(UniformVelocityCommandCfg):
+    def build(self, env: ManagerBasedRlEnv) -> "RelativeHeadingVelocityCommand":
+        return RelativeHeadingVelocityCommand(self, env)
 
 
 def heading_tracking_reward(

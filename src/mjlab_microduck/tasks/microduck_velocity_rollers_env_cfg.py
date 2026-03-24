@@ -308,7 +308,7 @@ def make_microduck_velocity_rollers_env_cfg(
     # ang_vel_z range is used as clip limit for cmd[2] = heading error (rad)
     command.ranges.ang_vel_z = (-1.0, 1.0)
     command.viz.z_offset = 0.5
-    command.class_type = microduck_mdp.RelativeHeadingVelocityCommand
+    cfg.commands["twist"] = microduck_mdp.RelativeHeadingVelocityCommandCfg(**vars(command))
 
     cfg.scene.terrain.terrain_type = "plane"
     cfg.scene.terrain.terrain_generator = None
