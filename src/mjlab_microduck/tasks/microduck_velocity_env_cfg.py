@@ -233,10 +233,8 @@ def make_microduck_velocity_env_cfg(
 
     cfg.rewards["air_time"].weight = 5.0
     cfg.rewards["air_time"].params["command_threshold"] = 0.01
-    # v1.2.0 base defaults changed to (0.05, 0.5) which is too wide and rewards hopping.
-    # Pin to the values that produced good walking gait.
-    cfg.rewards["air_time"].params["threshold_min"] = 0.10
-    cfg.rewards["air_time"].params["threshold_max"] = 0.25
+    # Keep the default threshold_min=0.05, threshold_max=0.5 (same as old mjlab base config
+    # and the BEST training run on main).
 
     # Reward staying still at zero command. Uses a tight Gaussian on body velocity:
     # reward peaks at 0 m/s and decays quickly, so moving faster is always worse.
@@ -343,6 +341,13 @@ def make_microduck_velocity_env_cfg(
             interval_range_s=NECK_OFFSET_INTERVAL_S,
             params={"max_offset": NECK_OFFSET_MAX_ANGLE},
         )
+
+    # Remove new-mjlab startup DR events not present in old training (main branch).
+    # encoder_bias subtracts a constant per-joint offset from action targets,
+    # making joint control inaccurate and preventing clean walking.
+    # base_com is a no-op (body_names=()) but remove for clarity.
+    del cfg.events["encoder_bias"]
+    del cfg.events["base_com"]
 
     cfg.events["foot_friction"].params[
         "asset_cfg"
