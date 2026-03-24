@@ -110,7 +110,7 @@ def make_microduck_velocity_env_cfg(
         r".*hip_yaw.*": 0.1,
         r".*hip_roll.*": 0.1,
         r".*hip_pitch.*": 0.15,
-        r".*knee.*": 0.1,
+        r".*knee.*": 0.15,
         r".*ankle.*": 0.1,
         r".*neck.*": 0.1,
         r".*head.*": 0.1,
@@ -353,7 +353,7 @@ def make_microduck_velocity_env_cfg(
         # Randomize CoM position
         cfg.events["randomize_com"] = EventTermCfg(
             func=dr.body_ipos,
-            mode="startup",
+            mode="reset",
             params={
                 "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
                 "operation": "add",

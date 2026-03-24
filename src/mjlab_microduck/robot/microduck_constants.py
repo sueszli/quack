@@ -55,6 +55,24 @@ HOME_FRAME = EntityCfg.InitialStateCfg(
     joint_vel={".*": 0.0},
 )
 
+# Walking-only home frame: head/neck at neutral (0.0) — matches the training
+# checkpoint at e8de2fb where neck and head were not pre-tilted.
+WALK_HOME_FRAME = EntityCfg.InitialStateCfg(
+    joint_pos={
+        r".*hip_yaw.*": 0.0,
+        r".*hip_roll.*": 0.0,
+        r".*left_hip_pitch.*": 0.6,
+        r".*right_hip_pitch.*": -0.6,
+        r".*left_knee.*": -1.2,
+        r".*right_knee.*": 1.2,
+        r".*left_ankle.*": 0.6,
+        r".*right_ankle.*": -0.6,
+        r".*neck.*": 0.0,
+        r".*head.*": 0.0,
+    },
+    joint_vel={".*": 0.0},
+)
+
 FULL_COLLISION = CollisionCfg(
     geom_names_expr=[".*_collision"],
     condim={r"^(left|right)_foot_collision$": 3, ".*_collision": 1},
