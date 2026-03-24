@@ -221,7 +221,7 @@ def make_microduck_velocity_rollers_env_cfg(
 
     cfg.events["randomize_com"] = EventTermCfg(
         func=dr.body_ipos,
-        mode="reset",
+        mode="startup",
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
             "operation": "add",
