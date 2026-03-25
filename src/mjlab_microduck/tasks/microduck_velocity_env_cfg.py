@@ -16,7 +16,7 @@ ENABLE_BASE_ORIENTATION_RANDOMIZATION = False  # Randomize initial tilt to force
 ENABLE_NECK_OFFSET_RANDOMIZATION = True  # Random neck offsets for head-motion robustness
 
 # Neck offset randomization parameters
-NECK_OFFSET_MAX_ANGLE = 2.5 # Was 0.3
+NECK_OFFSET_MAX_ANGLE = 0.3
 NECK_OFFSET_INTERVAL_S = (2.0, 5.0)  # Sample new random target every 2–5 seconds
 
 # Observation configuration
@@ -109,11 +109,11 @@ def make_microduck_velocity_env_cfg(
         # Lower body — tighter to keep the robot in home pose when standing
         r".*hip_yaw.*": 0.1,
         r".*hip_roll.*": 0.1,
-        r".*hip_pitch.*": 0.1,
-        r".*knee.*": 0.1,
+        r".*hip_pitch.*": 0.15,
+        r".*knee.*": 0.15,
         r".*ankle.*": 0.1,
-        r".*neck.*": 0.05,
-        r".*head.*": 0.05,
+        r".*neck.*": 0.1,
+        r".*head.*": 0.1,
     }
 
     std_walking = {
@@ -126,17 +126,6 @@ def make_microduck_velocity_env_cfg(
         # Head — relaxed because random offsets are applied during training
         r".*neck.*": 0.1, # Was 0.1
         r".*head.*": 0.1, # Was 0.1
-    }
-
-    std_running = {
-        # Running needs much larger joint excursions
-        r".*hip_yaw.*": 0.5,
-        r".*hip_roll.*": 0.2,  # slightly relaxed for CoM shifting at speed
-        r".*hip_pitch.*": 0.8,  # big hip flexion/extension for bounding
-        r".*knee.*": 0.8,       # deep knee bend for running
-        r".*ankle.*": 0.5,      # more plantarflexion push-off
-        r".*neck.*": 0.1,
-        r".*head.*": 0.1,
     }
 
     site_names = ["left_foot", "right_foot"]
@@ -201,17 +190,9 @@ def make_microduck_velocity_env_cfg(
     # Pose reward configuration
     cfg.rewards["pose"].params["std_standing"] = std_standing  # tight when command=0
     cfg.rewards["pose"].params["std_walking"] = std_walking
-    cfg.rewards["pose"].params["std_running"] = std_running    # relaxed for fast running
+    cfg.rewards["pose"].params["std_running"] = std_walking
     cfg.rewards["pose"].params["walking_threshold"] = 0.01
-    cfg.rewards["pose"].params["running_threshold"] = 0.5      # switch to running pose at 0.5 m/s
     cfg.rewards["pose"].weight = 2.0  # was 1.0
-    
-
-    cfg.rewards["self_collisions"] = RewardTermCfg(
-        func=mdp.self_collision_cost,
-        weight=-1.0,
-        params={"sensor_name": self_collision_cfg.name},
-    )
 
     # Body-specific reward configurations
     cfg.rewards["upright"].params["asset_cfg"].body_names = ("trunk_base",)
@@ -233,8 +214,8 @@ def make_microduck_velocity_env_cfg(
 
     cfg.rewards["air_time"].weight = 5.0
     cfg.rewards["air_time"].params["command_threshold"] = 0.01
-    # Keep the default threshold_min=0.05, threshold_max=0.5 (same as old mjlab base config
-    # and the BEST training run on main).
+    cfg.rewards["air_time"].params["threshold_min"] = 0.10  # Increased from 0.055 to slow down gait (100ms swing)
+    cfg.rewards["air_time"].params["threshold_max"] = 0.25  # Increased from 0.15 to allow slower stepping (250ms max swing)
 
     # Reward staying still at zero command. Uses a tight Gaussian on body velocity:
     # reward peaks at 0 m/s and decays quickly, so moving faster is always worse.
@@ -627,19 +608,8 @@ def make_microduck_velocity_env_cfg(
                 "offset_stages": [
                     {"step": 0,          "max_offset": 0.0},
                     {"step": 500 * 24,   "max_offset": 0.1},
-                    {"step": 750 * 24,  "max_offset": 0.2},
-                    {"step": 1000 * 24,  "max_offset": 0.3},
-                    {"step": 1500 * 24,  "max_offset": 0.5},
-                    {"step": 2000 * 24,  "max_offset": 0.7},
-                    {"step": 2500 * 24,  "max_offset": 0.9},
-                    {"step": 3000 * 24,  "max_offset": 1.1},
-                    {"step": 3500 * 24,  "max_offset": 1.3},
-                    {"step": 4000 * 24,  "max_offset": 1.5},
-                    {"step": 4500 * 24,  "max_offset": 1.7},
-                    {"step": 5000 * 24,  "max_offset": 1.9},
-                    {"step": 5500 * 24,  "max_offset": 2.1},
-                    {"step": 6000 * 24,  "max_offset": 2.3},
-                    {"step": 6500 * 24,  "max_offset": NECK_OFFSET_MAX_ANGLE},
+                    {"step": 750 * 24,   "max_offset": 0.2},
+                    {"step": 1000 * 24,  "max_offset": NECK_OFFSET_MAX_ANGLE},
                 ],
             },
         )
