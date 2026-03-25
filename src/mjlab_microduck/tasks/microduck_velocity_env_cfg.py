@@ -481,8 +481,11 @@ def make_microduck_velocity_env_cfg(
     cfg.observations["policy"].terms["joint_pos"].noise = Unoise(n_min=-0.0006, n_max=0.0006)  # was 0.05
     cfg.observations["policy"].terms["joint_vel"].noise = Unoise(n_min=-0.024, n_max=0.024)  # was 2.0
 
-    # Commands
-    command: UniformVelocityCommandCfg = cfg.commands["twist"]
+    # Commands — deepcopy to avoid shared-state corruption from other env cfgs
+    # (make_velocity_env_cfg() returns objects with shared mutable references;
+    # standup/ground_pick envs mutate commands["twist"] in place, zeroing ranges)
+    command: UniformVelocityCommandCfg = deepcopy(cfg.commands["twist"])
+    cfg.commands["twist"] = command
     command.rel_standing_envs = 0.02  # small but non-zero from the start, ramped up by curriculum
     command.rel_heading_envs = 0.0
     command.ranges.lin_vel_x = (-0.3, 0.3)
