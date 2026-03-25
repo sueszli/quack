@@ -523,13 +523,10 @@ def main():
         policy.vel_min_y = 0.0
         policy.vel_max_ang = 1.0      # ±1.0 rad heading error
     else:
-        policy.vel_step_x = 0.05      # lin_vel_x step (range ±0.3)
-        policy.vel_step_y = 0.05      # lin_vel_y step (range ±0.3)
-        policy.vel_step_ang = 0.3     # ang_vel_z step (range ±1.5)
-        policy.vel_max_x = 0.3
-        policy.vel_min_x = -0.3
-        policy.vel_max_y = 0.3
-        policy.vel_min_y = -0.3
+        policy.vel_max_x = 0.5
+        policy.vel_min_x = -0.5
+        policy.vel_max_y = 0.5
+        policy.vel_min_y = -0.5
         policy.vel_max_ang = 1.5
 
     # Set initial position to default pose
@@ -617,8 +614,7 @@ def main():
                     policy._update_command()
                     policy._print_body_cmd()
                 else:
-                    new_x = np.clip(policy.vel_cmd[0] + policy.vel_step_x, policy.vel_min_x, policy.vel_max_x)
-                    policy.set_vel_cmd(new_x, policy.vel_cmd[1], policy.vel_cmd[2])
+                    policy.set_vel_cmd(policy.vel_max_x, policy.vel_cmd[1], policy.vel_cmd[2])
             elif key == GLFW_KEY_DOWN:
                 if policy.head_mode:
                     policy.head_offset[1] = np.clip(policy.head_offset[1] - policy.head_step, -policy.head_max, policy.head_max)
@@ -628,8 +624,7 @@ def main():
                     policy._update_command()
                     policy._print_body_cmd()
                 else:
-                    new_x = np.clip(policy.vel_cmd[0] - policy.vel_step_x, policy.vel_min_x, policy.vel_max_x)
-                    policy.set_vel_cmd(new_x, policy.vel_cmd[1], policy.vel_cmd[2])
+                    policy.set_vel_cmd(policy.vel_min_x, policy.vel_cmd[1], policy.vel_cmd[2])
             elif key == GLFW_KEY_RIGHT:
                 if policy.head_mode:
                     policy.head_offset[2] = np.clip(policy.head_offset[2] - policy.head_step, -policy.head_max, policy.head_max)
@@ -642,8 +637,7 @@ def main():
                     new_ang = np.clip(policy.vel_cmd[2] - policy.vel_step_ang, -policy.vel_max_ang, policy.vel_max_ang)
                     policy.set_vel_cmd(policy.vel_cmd[0], policy.vel_cmd[1], new_ang)
                 else:
-                    new_y = np.clip(policy.vel_cmd[1] - policy.vel_step_y, policy.vel_min_y, policy.vel_max_y)
-                    policy.set_vel_cmd(policy.vel_cmd[0], new_y, policy.vel_cmd[2])
+                    policy.set_vel_cmd(policy.vel_cmd[0], policy.vel_min_y, policy.vel_cmd[2])
             elif key == GLFW_KEY_LEFT:
                 if policy.head_mode:
                     policy.head_offset[2] = np.clip(policy.head_offset[2] + policy.head_step, -policy.head_max, policy.head_max)
@@ -656,8 +650,7 @@ def main():
                     new_ang = np.clip(policy.vel_cmd[2] + policy.vel_step_ang, -policy.vel_max_ang, policy.vel_max_ang)
                     policy.set_vel_cmd(policy.vel_cmd[0], policy.vel_cmd[1], new_ang)
                 else:
-                    new_y = np.clip(policy.vel_cmd[1] + policy.vel_step_y, policy.vel_min_y, policy.vel_max_y)
-                    policy.set_vel_cmd(policy.vel_cmd[0], new_y, policy.vel_cmd[2])
+                    policy.set_vel_cmd(policy.vel_cmd[0], policy.vel_max_y, policy.vel_cmd[2])
             elif key == GLFW_KEY_SPACE:
                 if policy.head_mode:
                     policy.head_offset[:] = 0.0
@@ -683,8 +676,7 @@ def main():
                     policy._update_command()
                     policy._print_body_cmd()
                 else:
-                    new_ang = np.clip(policy.vel_cmd[2] + policy.vel_step_ang, -policy.vel_max_ang, policy.vel_max_ang)
-                    policy.set_vel_cmd(policy.vel_cmd[0], policy.vel_cmd[1], new_ang)
+                    policy.set_vel_cmd(policy.vel_cmd[0], policy.vel_cmd[1], policy.vel_max_ang)
             elif key == GLFW_KEY_E:
                 if policy.head_mode:
                     policy.head_offset[3] = np.clip(policy.head_offset[3] - policy.head_step, -policy.head_max, policy.head_max)
@@ -694,8 +686,7 @@ def main():
                     policy._update_command()
                     policy._print_body_cmd()
                 else:
-                    new_ang = np.clip(policy.vel_cmd[2] - policy.vel_step_ang, -policy.vel_max_ang, policy.vel_max_ang)
-                    policy.set_vel_cmd(policy.vel_cmd[0], policy.vel_cmd[1], new_ang)
+                    policy.set_vel_cmd(policy.vel_cmd[0], policy.vel_cmd[1], -policy.vel_max_ang)
             elif key == GLFW_KEY_Z:
                 if policy.head_mode:
                     policy.head_offset[0] = np.clip(policy.head_offset[0] + policy.head_step, -policy.head_max, policy.head_max)
