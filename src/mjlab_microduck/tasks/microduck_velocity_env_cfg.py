@@ -231,6 +231,10 @@ def make_microduck_velocity_env_cfg(
 
     cfg.rewards["air_time"].weight = 5.0
     cfg.rewards["air_time"].params["command_threshold"] = 0.01
+    
+    cfg.rewards["air_time"].params["threshold_min"] = 0.10
+    cfg.rewards["air_time"].params["threshold_max"] = 0.25  # Increased from 0.15 to allow slower stepping (250ms max swing)
+
 
     # # Replace built-in air_time with adaptive version that uses different
     # # swing-time windows for walking vs running.
