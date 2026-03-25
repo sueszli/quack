@@ -354,9 +354,9 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
                 {"step": 0,          "weight": -0.01},
                 {"step": 500 * 24,   "weight": -0.1},
                 {"step": 1000 * 24,  "weight": -0.3},
-                {"step": 2000 * 24,  "weight": -0.6},
-                {"step": 2500 * 24,  "weight": -0.8},
-                {"step": 3000 * 24,  "weight": -1.0},
+                {"step": 1500 * 24,  "weight": -0.6},
+                {"step": 2000 * 24,  "weight": -0.8},
+                {"step": 2500 * 24,  "weight": -1.0},
             ],
         },
     )
@@ -368,8 +368,8 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
             "reward_name": "body_pose_tracking",
             "weight_stages": [
                 {"step": 0,          "weight": 0.0},
-                {"step": 3000 * 24,  "weight": 2.0},
-                {"step": 5000 * 24,  "weight": 5.0},
+                {"step": 1000 * 24,  "weight": 2.0},
+                {"step": 2000 * 24,  "weight": 5.0},
             ],
         },
     )
@@ -381,8 +381,8 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
             "command_name": "twist",
             "range_stages": [
                 {"step": 0,          "max_z": 0.0,                     "max_angle": 0.0},
-                {"step": 3000 * 24,  "max_z": 0.010,                   "max_angle": math.radians(10)},
-                {"step": 5000 * 24,  "max_z": BODY_CMD_MAX_Z,          "max_angle": BODY_CMD_MAX_ANGLE},
+                {"step": 1000 * 24,  "max_z": 0.010,                   "max_angle": math.radians(10)},
+                {"step": 2000 * 24,  "max_z": BODY_CMD_MAX_Z,          "max_angle": BODY_CMD_MAX_ANGLE},
             ],
         },
     )
