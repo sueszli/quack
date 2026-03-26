@@ -261,10 +261,7 @@ def make_microduck_velocity_env_cfg(
 
     # Neck stability
     cfg.rewards["neck_action_rate_l2"] = RewardTermCfg(
-        func=microduck_mdp.neck_action_rate_l2, weight=-0.5
-    )
-    cfg.rewards["neck_joint_pos_l2"] = RewardTermCfg(
-        func=microduck_mdp.neck_joint_pos_l2, weight=-0.5
+        func=microduck_mdp.neck_action_rate_l2, weight=-0.1
     )
     # cfg.rewards["neck_joint_vel_l2"] = RewardTermCfg(
     # func=microduck_mdp.neck_joint_vel_l2, weight=-0.1
@@ -361,7 +358,7 @@ def make_microduck_velocity_env_cfg(
         # Randomize CoM position
         cfg.events["randomize_com"] = EventTermCfg(
             func=dr.body_ipos,
-            mode="startup",
+            mode="reset",
             params={
                 "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
                 "operation": "add",
@@ -376,7 +373,7 @@ def make_microduck_velocity_env_cfg(
         kd_range = KD_RANDOMIZATION_RANGE if ENABLE_KD_RANDOMIZATION else (1.0, 1.0)
         cfg.events["randomize_motor_gains"] = EventTermCfg(
             func=microduck_mdp.randomize_delayed_actuator_gains,
-            mode="startup",
+            mode="reset",
             params={
                 "asset_cfg": SceneEntityCfg("robot"),
                 "operation": "scale",
@@ -390,7 +387,7 @@ def make_microduck_velocity_env_cfg(
         # Using the same scale for both prevents invalid inertia tensors
         cfg.events["randomize_mass_inertia"] = EventTermCfg(
             func=microduck_mdp.randomize_mass_and_inertia,
-            mode="startup",
+            mode="reset",
             params={
                 "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
                 "scale_range": MASS_INERTIA_RANDOMIZATION_RANGE,
@@ -401,7 +398,7 @@ def make_microduck_velocity_env_cfg(
         # Randomize joint friction losses (wear, temperature effects)
         cfg.events["randomize_joint_friction"] = EventTermCfg(
             func=dr.dof_frictionloss,
-            mode="startup",
+            mode="reset",
             params={
                 "asset_cfg": SceneEntityCfg("robot", joint_names=(r".*",)),
                 "operation": "scale",
@@ -413,7 +410,7 @@ def make_microduck_velocity_env_cfg(
         # Randomize joint damping (lubrication, temperature effects)
         cfg.events["randomize_joint_damping"] = EventTermCfg(
             func=dr.dof_damping,
-            mode="startup",
+            mode="reset",
             params={
                 "asset_cfg": SceneEntityCfg("robot", joint_names=(r".*",)),
                 "operation": "scale",
@@ -425,7 +422,7 @@ def make_microduck_velocity_env_cfg(
     if ENABLE_IMU_ORIENTATION_RANDOMIZATION:
         cfg.events["randomize_imu_orientation"] = EventTermCfg(
             func=microduck_mdp.randomize_imu_orientation,
-            mode="startup",
+            mode="reset",
             params={
                 "asset_cfg": SceneEntityCfg("robot"),
                 "max_angle_deg": IMU_ORIENTATION_RANDOMIZATION_ANGLE,
@@ -436,7 +433,7 @@ def make_microduck_velocity_env_cfg(
     if ENABLE_BASE_ORIENTATION_RANDOMIZATION:
         cfg.events["randomize_base_orientation"] = EventTermCfg(
             func=microduck_mdp.randomize_base_orientation,
-            mode="startup",
+            mode="reset",
             params={
                 "asset_cfg": SceneEntityCfg("robot"),
                 "max_pitch_deg": BASE_ORIENTATION_MAX_PITCH_DEG,
