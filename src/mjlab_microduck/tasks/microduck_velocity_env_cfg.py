@@ -284,6 +284,13 @@ def make_microduck_velocity_env_cfg(
     # )
 
     # === REGULARIZATION REWARDS (applies to all tasks) ===
+    # Flat feet penalty — penalizes foot tilt relative to ground
+    cfg.rewards["feet_flat"] = RewardTermCfg(
+        func=microduck_mdp.feet_flat_penalty,
+        weight=-1.0,
+        params={"asset_cfg": SceneEntityCfg("robot", site_names=("left_foot", "right_foot"))},
+    )
+
     # Joint torques penalty
     cfg.rewards["joint_torques_l2"] = RewardTermCfg(
         func=microduck_mdp.joint_torques_l2, weight=-1e-3
