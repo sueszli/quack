@@ -16,7 +16,7 @@ ENABLE_BASE_ORIENTATION_RANDOMIZATION = False  # Randomize initial tilt to force
 ENABLE_NECK_OFFSET_RANDOMIZATION = True  # Random neck offsets for head-motion robustness
 
 # Neck offset randomization parameters
-NECK_OFFSET_MAX_ANGLE = 1.0 # was 0.3
+NECK_OFFSET_MAX_ANGLE = 0.3
 NECK_OFFSET_INTERVAL_S = (2.0, 5.0)  # Sample new random target every 2–5 seconds
 
 # Observation configuration
@@ -305,13 +305,6 @@ def make_microduck_velocity_env_cfg(
     # )
 
     # Events
-    # Fix: entity.clear_state() zeroes joint_pos_target; correct it to default
-    # before write_data_to_sim() is called, to avoid a spurious actuator force
-    # on the first physics step of each episode when defaults are non-zero.
-    cfg.events["reset_joint_pos_target"] = EventTermCfg(
-        func=microduck_mdp.reset_joint_pos_target,
-        mode="reset",
-    )
     cfg.events["reset_action_history"] = EventTermCfg(
         func=microduck_mdp.reset_action_history,
         mode="reset",

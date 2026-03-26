@@ -54,10 +54,8 @@ class NeckOffsetJointPositionAction(_JointPositionAction):
         alpha = min(1.0, env.step_dt / _NECK_OFFSET_SMOOTHING_TAU)
         env._neck_offset.lerp_(env._neck_offset_target, alpha)
 
-        # Add offset to joint_pos_target (write_data_to_sim reads this and writes to ctrl).
-        # Previously wrote to ctrl directly, but write_data_to_sim() overwrites ctrl via
-        # DelayedActuator after apply_actions(), so the offset was silently lost.
-        self._entity.data.joint_pos_target[:, _NECK_JOINT_INDICES] += env._neck_offset
+        # Add offset on top of the ctrl values already set by the action manager
+        env.sim.data.ctrl[:, _NECK_JOINT_INDICES] += env._neck_offset
 
 
 class NeckOffsetJointPositionActionCfg(_JointPositionActionCfg):
@@ -192,23 +190,6 @@ def reset_with_forward_velocity(
         omega = vx / _WHEEL_RADIUS  # (n,) rad/s, positive = forward
         joint_vel[:, all_wheel_ids] = omega.unsqueeze(-1).expand(-1, len(all_wheel_ids))
         asset.write_joint_state_to_sim(joint_pos, joint_vel, env_ids=warmstart_ids)
-
-
-def reset_joint_pos_target(
-    env: ManagerBasedRlEnv,
-    env_ids: torch.Tensor,
-    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
-):
-    """Reset joint_pos_target to default_joint_pos at episode start.
-
-    Fixes a bug where entity.clear_state() sets joint_pos_target=0, causing
-    write_data_to_sim() (called right after reset) to drive ctrl=0 for one
-    physics step. When default joint positions are non-zero (e.g. neck=-0.3),
-    this creates a spurious actuator force that destabilizes the robot at the
-    start of every episode.
-    """
-    asset: Entity = env.scene[asset_cfg.name]
-    asset.data.joint_pos_target[env_ids] = asset.data.default_joint_pos[env_ids]
 
 
 def reset_action_history(
