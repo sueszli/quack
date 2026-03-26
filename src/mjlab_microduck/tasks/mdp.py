@@ -192,6 +192,23 @@ def reset_with_forward_velocity(
         asset.write_joint_state_to_sim(joint_pos, joint_vel, env_ids=warmstart_ids)
 
 
+def reset_joint_pos_target(
+    env: ManagerBasedRlEnv,
+    env_ids: torch.Tensor,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+):
+    """Reset joint_pos_target to default_joint_pos at episode start.
+
+    Fixes a bug where entity.clear_state() sets joint_pos_target=0, causing
+    write_data_to_sim() (called right after reset) to drive ctrl=0 for one
+    physics step. When default joint positions are non-zero (e.g. neck=-0.3),
+    this creates a spurious actuator force that destabilizes the robot at the
+    start of every episode.
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    asset.data.joint_pos_target[env_ids] = asset.data.default_joint_pos[env_ids]
+
+
 def reset_action_history(
     env: ManagerBasedRlEnv,
     env_ids: torch.Tensor,

@@ -284,13 +284,6 @@ def make_microduck_velocity_env_cfg(
     # )
 
     # === REGULARIZATION REWARDS (applies to all tasks) ===
-    # Flat feet penalty — penalizes foot tilt relative to ground
-    cfg.rewards["feet_flat"] = RewardTermCfg(
-        func=microduck_mdp.feet_flat_penalty,
-        weight=-1.0,
-        params={"asset_cfg": SceneEntityCfg("robot", site_names=("left_foot", "right_foot"))},
-    )
-
     # Joint torques penalty
     cfg.rewards["joint_torques_l2"] = RewardTermCfg(
         func=microduck_mdp.joint_torques_l2, weight=-1e-3
@@ -312,6 +305,13 @@ def make_microduck_velocity_env_cfg(
     # )
 
     # Events
+    # Fix: entity.clear_state() zeroes joint_pos_target; correct it to default
+    # before write_data_to_sim() is called, to avoid a spurious actuator force
+    # on the first physics step of each episode when defaults are non-zero.
+    cfg.events["reset_joint_pos_target"] = EventTermCfg(
+        func=microduck_mdp.reset_joint_pos_target,
+        mode="reset",
+    )
     cfg.events["reset_action_history"] = EventTermCfg(
         func=microduck_mdp.reset_action_history,
         mode="reset",
