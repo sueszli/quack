@@ -16,7 +16,7 @@ ENABLE_BASE_ORIENTATION_RANDOMIZATION = False  # Randomize initial tilt to force
 ENABLE_NECK_OFFSET_RANDOMIZATION = True  # Random neck offsets for head-motion robustness
 
 # Neck offset randomization parameters
-NECK_OFFSET_MAX_ANGLE = 0.3
+NECK_OFFSET_MAX_ANGLE = 1.0 # was 0.3
 NECK_OFFSET_INTERVAL_S = (2.0, 5.0)  # Sample new random target every 2–5 seconds
 
 # Observation configuration
