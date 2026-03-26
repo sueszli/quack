@@ -310,14 +310,14 @@ def make_microduck_velocity_env_cfg(
     # Events
     cfg.events["reset_action_history"] = EventTermCfg(
         func=microduck_mdp.reset_action_history,
-        mode="startup",
+        mode="reset",
     )
 
     # Neck offset randomization: randomly offset head joints to train robustness
     if ENABLE_NECK_OFFSET_RANDOMIZATION:
         cfg.events["reset_neck_offset"] = EventTermCfg(
             func=microduck_mdp.reset_neck_offset,
-            mode="startup",
+            mode="reset",
         )
         cfg.events["randomize_neck_offset_target"] = EventTermCfg(
             func=microduck_mdp.randomize_neck_offset_target,
