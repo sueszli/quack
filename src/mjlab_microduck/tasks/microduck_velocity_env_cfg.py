@@ -183,11 +183,6 @@ def make_microduck_velocity_env_cfg(
     joint_pos_action = cfg.actions["joint_pos"]
     assert isinstance(joint_pos_action, JointPositionActionCfg)
     joint_pos_action.scale = 1.0
-    # Restore pre-migration behavior: ctrl = action * scale (centered at 0, not at default_joint_pos).
-    # With use_default_offset=True (new mjlab default), ctrl is centered at default_joint_pos.
-    # For non-zero neck defaults (e.g. -0.5), this shifts the ctrl distribution toward joint limits,
-    # causing ~29% soft-limit violations vs ~15% with 0/0, which prevents convergence to walking.
-    joint_pos_action.use_default_offset = False
     if ENABLE_NECK_OFFSET_RANDOMIZATION:
         cfg.actions["joint_pos"] = microduck_mdp.NeckOffsetJointPositionActionCfg(**vars(joint_pos_action))
 

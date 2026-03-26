@@ -54,8 +54,10 @@ class NeckOffsetJointPositionAction(_JointPositionAction):
         alpha = min(1.0, env.step_dt / _NECK_OFFSET_SMOOTHING_TAU)
         env._neck_offset.lerp_(env._neck_offset_target, alpha)
 
-        # Add offset on top of the ctrl values already set by the action manager
-        env.sim.data.ctrl[:, _NECK_JOINT_INDICES] += env._neck_offset
+        # Add offset to joint_pos_target (write_data_to_sim reads this and writes to ctrl).
+        # Previously wrote to ctrl directly, but write_data_to_sim() overwrites ctrl via
+        # DelayedActuator after apply_actions(), so the offset was silently lost.
+        self._entity.data.joint_pos_target[:, _NECK_JOINT_INDICES] += env._neck_offset
 
 
 class NeckOffsetJointPositionActionCfg(_JointPositionActionCfg):
