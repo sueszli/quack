@@ -5,7 +5,14 @@ from mjlab.tasks.velocity.rl import VelocityOnPolicyRunner
 
 
 class MicroduckOnPolicyRunner(VelocityOnPolicyRunner):
-    pass
+    def __init__(self, env, train_cfg: dict, log_dir=None, device="cpu", **kwargs):
+        super().__init__(env, train_cfg, log_dir, device, **kwargs)
+        # resolve_symmetry_config injects _env into train_cfg["algorithm"]["symmetry_cfg"]
+        # in-place; remove it so dump_yaml can serialize the config (MjSpec is not picklable).
+        alg = train_cfg.get("algorithm", {})
+        sym = alg.get("symmetry_cfg") if isinstance(alg, dict) else None
+        if isinstance(sym, dict):
+            sym.pop("_env", None)
 
 from .microduck_velocity_env_cfg import (
     make_microduck_velocity_env_cfg,
