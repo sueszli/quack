@@ -16,6 +16,9 @@ avoid synchronised oscillations.  PERIOD = 4 s (2 s down + 2 s up).
 
 from copy import deepcopy
 
+# Symmetry
+ENABLE_SYMMETRY = True
+
 # ── Domain randomisation (same as velocity env, neck offset disabled) ─────────
 ENABLE_COM_RANDOMIZATION          = True
 ENABLE_KP_RANDOMIZATION           = True
@@ -48,7 +51,6 @@ from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.rl import (
     RslRlOnPolicyRunnerCfg,
     RslRlModelCfg,
-    RslRlPpoAlgorithmCfg,
 )
 from mjlab.sensor import ContactMatch, ContactSensorCfg
 from mjlab.tasks.velocity import mdp
@@ -59,6 +61,7 @@ from mjlab.utils.noise import UniformNoiseCfg as Unoise
 from mjlab_microduck.robot.microduck_constants import MICRODUCK_GROUND_PICK_ROBOT_CFG
 from mjlab_microduck.tasks import mdp as microduck_mdp
 from mjlab_microduck.tasks.microduck_velocity_env_cfg import MICRODUCK_ROUGH_TERRAINS_CFG
+from mjlab_microduck.tasks.symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
 
 
 def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) -> ManagerBasedRlEnvCfg:
@@ -368,7 +371,7 @@ MicroduckGroundPickRlCfg = RslRlOnPolicyRunnerCfg(
         activation="elu",
         obs_normalization=False,
     ),
-    algorithm=RslRlPpoAlgorithmCfg(
+    algorithm=PpoWithSymmetryCfg(
         value_loss_coef=1.0,
         use_clipped_value_loss=True,
         clip_param=0.2,
@@ -381,6 +384,7 @@ MicroduckGroundPickRlCfg = RslRlOnPolicyRunnerCfg(
         lam=0.95,
         desired_kl=0.01,
         max_grad_norm=1.0,
+        symmetry_cfg=SYMMETRY_CFG if ENABLE_SYMMETRY else None,
     ),
     wandb_project="mjlab_microduck",
     experiment_name="ground_pick",
