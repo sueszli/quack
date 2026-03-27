@@ -13,7 +13,7 @@ ENABLE_JOINT_DAMPING_RANDOMIZATION = False  # Too disruptive - affects joint dyn
 ENABLE_VELOCITY_PUSHES = True  # Velocity-based pushes for robustness training
 ENABLE_IMU_ORIENTATION_RANDOMIZATION = True  # Simulates mounting errors
 ENABLE_BASE_ORIENTATION_RANDOMIZATION = False  # Randomize initial tilt to force reactive behavior
-ENABLE_NECK_OFFSET_RANDOMIZATION = False  # Random neck offsets for head-motion robustness
+ENABLE_NECK_OFFSET_RANDOMIZATION = True  # Random neck offsets for head-motion robustness
 
 # Neck offset randomization parameters
 NECK_OFFSET_MAX_ANGLE = 0.3
@@ -261,7 +261,7 @@ def make_microduck_velocity_env_cfg(
 
     # Neck stability
     cfg.rewards["neck_action_rate_l2"] = RewardTermCfg(
-        func=microduck_mdp.neck_action_rate_l2, weight=-0.3
+        func=microduck_mdp.neck_action_rate_l2, weight=-0.1
     )
     # cfg.rewards["neck_joint_vel_l2"] = RewardTermCfg(
     # func=microduck_mdp.neck_joint_vel_l2, weight=-0.1
@@ -592,7 +592,7 @@ def make_microduck_velocity_env_cfg(
                 {"step": 0,          "lin_vel_range": 0.3,  "ang_vel_range": 1.5},
                 {"step": 500 * 24,   "lin_vel_range": 0.35, "ang_vel_range": 1.6},
                 {"step": 1000 * 24,  "lin_vel_range": 0.4,  "ang_vel_range": 1.7},
-                # {"step": 1500 * 24,  "lin_vel_range": 0.5,  "ang_vel_range": 2.0},
+                {"step": 1500 * 24,  "lin_vel_range": 0.5,  "ang_vel_range": 2.0},
                 # {"step": 2000 * 24,  "lin_vel_range": 1.0,  "ang_vel_range": 2.5},
             ],
         },
