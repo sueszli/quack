@@ -80,8 +80,8 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
     feet_ground_cfg = ContactSensorCfg(
         name="feet_ground_contact",
         primary=ContactMatch(
-            mode="subtree",
-            pattern=r"^(foot|foot_2)$",
+            mode="geom",
+            pattern=r"^(left_foot_collision|right_foot_collision)$",
             entity="robot",
         ),
         secondary=ContactMatch(mode="body", pattern="terrain"),
