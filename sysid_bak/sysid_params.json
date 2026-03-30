@@ -1,0 +1,21 @@
+{
+  "params": {
+    "foot_friction": 0.49320353318278254,
+    "frictionloss_scale": 4.540388268637074,
+    "armature_scale": 1.669779238800133,
+    "kp_scale": 1.5962051632241288,
+    "kd_scale": 2.6856506324929277,
+    "action_delay": 0.7077660555321338
+  },
+  "loss": 0.9164119085841586,
+  "nominal_loss": 1.6897096312044717,
+  "improvement": 45.765124867583616,
+  "episodes": [
+    "walk_data/walk_record1.pkl",
+    "walk_data/walk_record2.pkl",
+    "walk_data/walk_record3.pkl",
+    "walk_data/walk_record5.pkl",
+    "walk_data/walk_record6.pkl"
+  ],
+  "n_episodes": 5
+}
