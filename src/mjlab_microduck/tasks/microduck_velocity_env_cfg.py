@@ -4,7 +4,7 @@ import math
 from copy import deepcopy
 
 # Symmetry
-ENABLE_SYMMETRY = False
+ENABLE_SYMMETRY = True
 
 # Domain randomization toggles
 ENABLE_COM_RANDOMIZATION = True
