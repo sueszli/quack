@@ -81,7 +81,7 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
         name="feet_ground_contact",
         primary=ContactMatch(
             mode="subtree",
-            pattern=r"^(foot_tpu_bottom|foot)$",
+            pattern=r"^(foot|foot_2)$",
             entity="robot",
         ),
         secondary=ContactMatch(mode="body", pattern="terrain"),

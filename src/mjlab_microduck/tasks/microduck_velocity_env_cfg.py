@@ -139,7 +139,7 @@ def make_microduck_velocity_env_cfg(
         name="feet_ground_contact",
         primary=ContactMatch(
             mode="subtree",
-            pattern=r"^(foot_tpu_bottom|foot)$",  # LEFT foot first, RIGHT foot second
+            pattern=r"^(foot|foot_2)$",  # LEFT foot first, RIGHT foot second
             entity="robot",
         ),
         secondary=ContactMatch(mode="body", pattern="terrain"),
