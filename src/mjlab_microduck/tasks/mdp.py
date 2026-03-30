@@ -22,8 +22,10 @@ if TYPE_CHECKING:
 
 _DEFAULT_ASSET_CFG = SceneEntityCfg("robot")
 
-# Neck/head joint indices (neck_pitch=5, head_pitch=6, head_yaw=7, head_roll=8)
-_NECK_JOINT_INDICES = list(range(5, 9))
+# Name patterns to look up neck/head joint entity-local IDs at runtime.
+# Must use names rather than ctrl indices because joint_pos_target is indexed
+# by entity-local joint order, which differs from ctrl order.
+_NECK_JOINT_PATTERNS = [r".*neck_pitch.*", r".*head_pitch.*", r".*head_yaw.*", r".*head_roll.*"]
 # Time constant (seconds) for smooth offset interpolation toward target
 _NECK_OFFSET_SMOOTHING_TAU = 0.5
 
@@ -31,7 +33,7 @@ class NeckOffsetJointPositionAction(_JointPositionAction):
     """JointPositionAction that adds a random offset to neck/head joint targets.
 
     After the policy output is applied as joint position targets, adds
-    env._neck_offset to the ctrl values for neck joints (indices 5–8).
+    env._neck_offset to the joint_pos_target buffer for neck joints.
     This trains robustness to external head movement and enables independent
     head control at deployment (add any offset on top of policy output).
 
@@ -40,7 +42,10 @@ class NeckOffsetJointPositionAction(_JointPositionAction):
     """
 
     def apply_actions(self) -> None:
-        # Apply standard joint position control from policy output
+        # Apply standard joint position control from policy output.
+        # In new mjlab this writes to entity.data.joint_pos_target (not ctrl directly).
+        # entity.write_data_to_sim() then copies joint_pos_target → ctrl after all
+        # apply_actions() calls, so the offset must be added here to joint_pos_target.
         super().apply_actions()
 
         env = self._env
@@ -50,12 +55,17 @@ class NeckOffsetJointPositionAction(_JointPositionAction):
             env._neck_offset = torch.zeros(env.num_envs, 4, device=env.device)
             env._neck_offset_target = torch.zeros(env.num_envs, 4, device=env.device)
 
+        # Cache entity-local neck joint IDs (looked up by name, not ctrl index)
+        if not hasattr(self, "_neck_joint_ids"):
+            ids, _ = self._entity.find_joints_by_actuator_names(_NECK_JOINT_PATTERNS)
+            self._neck_joint_ids = torch.tensor(ids, device=env.device, dtype=torch.long)
+
         # Exponential smoothing: offset tracks target with time constant tau
         alpha = min(1.0, env.step_dt / _NECK_OFFSET_SMOOTHING_TAU)
         env._neck_offset.lerp_(env._neck_offset_target, alpha)
 
-        # Add offset on top of the ctrl values already set by the action manager
-        env.sim.data.ctrl[:, _NECK_JOINT_INDICES] += env._neck_offset
+        # Add offset to joint_pos_target — the buffer super().apply_actions() wrote to
+        self._entity.data.joint_pos_target[:, self._neck_joint_ids] += env._neck_offset
 
 
 class NeckOffsetJointPositionActionCfg(_JointPositionActionCfg):
