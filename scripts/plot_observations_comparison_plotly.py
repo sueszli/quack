@@ -41,13 +41,10 @@ def load_observations(pkl_path: str):
     return np.array(observations), np.array(timestamps)
 
 
-def plot_comparison(real_obs, real_ts, sim_obs=None, sim_ts=None, imitation=False):
+def plot_comparison(real_obs, real_ts, sim_obs=None, sim_ts=None):
     """
     Plot comparison between real and simulated observations using Plotly.
     If sim_obs is None, only plots real data.
-
-    Args:
-        imitation: If True, observations include command (3) + phase (2) at the start
     """
 
     # Joint names
@@ -59,30 +56,15 @@ def plot_comparison(real_obs, real_ts, sim_obs=None, sim_ts=None, imitation=Fals
 
     obs_dim = real_obs.shape[1] if sim_obs is None else min(real_obs.shape[1], sim_obs.shape[1])
 
-    # Observation indices depend on whether this is imitation or velocity
-    # Imitation (53D): command (3) + phase (2) + ang_vel (3) + proj_grav (3) + joint_pos (14) + joint_vel (14) + actions (14)
     # Velocity (51D): ang_vel (3) + proj_grav (3) + joint_pos (14) + joint_vel (14) + actions (14) + command (3)
-
-    if imitation:
-        base_ang_vel_start = 5
-        gravity_start = 8
-        joint_pos_start = 11
-        joint_vel_start = 25
-        action_start = 39
-    else:
-        base_ang_vel_start = 0
-        gravity_start = 3
-        joint_pos_start = 6
-        joint_vel_start = 20
-        action_start = 34
+    base_ang_vel_start = 0
+    gravity_start = 3
+    joint_pos_start = 6
+    joint_vel_start = 20
+    action_start = 34
 
     # Create subplot titles with sections
     subplot_titles = []
-
-    # Command and phase (only for imitation)
-    if imitation:
-        subplot_titles.extend(['<b>COMMAND</b><br>vel_x', 'vel_y', 'ang_z', ''])
-        subplot_titles.extend(['<b>PHASE</b><br>cos(2π*φ)', 'sin(2π*φ)', '', ''])
 
     # Base angular velocity (3)
     subplot_titles.extend(['<b>BASE ANG VEL</b><br>ω_x', 'ω_y', 'ω_z', ''])
@@ -105,8 +87,7 @@ def plot_comparison(real_obs, real_ts, sim_obs=None, sim_ts=None, imitation=Fals
     subplot_titles.extend(joint_names[1:14])
     subplot_titles.extend(['', ''])
 
-    # Create subplots (add 2 rows for imitation: command + phase)
-    num_rows = 16 if imitation else 14
+    num_rows = 14
     fig = make_subplots(
         rows=num_rows, cols=4,
         subplot_titles=subplot_titles,
@@ -119,7 +100,6 @@ def plot_comparison(real_obs, real_ts, sim_obs=None, sim_ts=None, imitation=Fals
 
     # Track data for common scaling
     command_data = []
-    phase_data = []
 
     def add_traces(row, col, real_data, sim_data=None, y_range=None):
         """Helper to add real and sim traces to a subplot."""
@@ -144,35 +124,6 @@ def plot_comparison(real_obs, real_ts, sim_obs=None, sim_ts=None, imitation=Fals
     joint_pos_data = []
     joint_vel_data = []
     action_data = []
-
-    # 0. Command (only for imitation, 3 subplots)
-    if imitation:
-        for i in range(3):
-            row, col = divmod(plot_idx, 4)
-            row += 1
-            col += 1
-            command_data.append(real_obs[:, i])
-            if sim_obs is not None:
-                command_data.append(sim_obs[:, i])
-            add_traces(row, col, real_obs[:, i], None if sim_obs is None else sim_obs[:, i])
-            fig.update_yaxes(title_text='m/s or rad/s', row=row, col=col)
-            plot_idx += 1
-        # Empty slot
-        plot_idx += 1
-
-        # Phase (2 subplots: cos and sin)
-        for i in range(2):
-            row, col = divmod(plot_idx, 4)
-            row += 1
-            col += 1
-            phase_data.append(real_obs[:, 3+i])
-            if sim_obs is not None:
-                phase_data.append(sim_obs[:, 3+i])
-            add_traces(row, col, real_obs[:, 3+i], None if sim_obs is None else sim_obs[:, 3+i])
-            fig.update_yaxes(title_text='cos' if i == 0 else 'sin', row=row, col=col)
-            plot_idx += 1
-        # Empty slots
-        plot_idx += 2
 
     # 1. Base angular velocity (3 subplots)
     for i in range(3):
@@ -265,25 +216,8 @@ def plot_comparison(real_obs, real_ts, sim_obs=None, sim_ts=None, imitation=Fals
     joint_vel_range = compute_range(joint_vel_data)
     action_range = compute_range(action_data)
 
-    command_range = compute_range(command_data) if command_data else None
-    phase_range = compute_range(phase_data) if phase_data else None
-
     # Apply common ranges
     plot_idx = 0
-
-    # Command ranges (only for imitation)
-    if imitation:
-        for i in range(3):
-            row, col = divmod(plot_idx, 4)
-            fig.update_yaxes(range=command_range, row=row+1, col=col+1)
-            plot_idx += 1
-        plot_idx += 1
-
-        for i in range(2):
-            row, col = divmod(plot_idx, 4)
-            fig.update_yaxes(range=phase_range, row=row+1, col=col+1)
-            plot_idx += 1
-        plot_idx += 2
 
     for i in range(3):  # Base ang vel
         row, col = divmod(plot_idx, 4)
@@ -315,16 +249,12 @@ def plot_comparison(real_obs, real_ts, sim_obs=None, sim_ts=None, imitation=Fals
         plot_idx += 1
 
     # Update layout
-    task_type = ' (Imitation)' if imitation else ' (Velocity)'
     title = 'Real vs Simulated Observations Comparison' if sim_obs is not None else 'Real Robot Observations'
-    title += task_type
-
-    height = 5200 if imitation else 4600  # Taller for imitation (extra rows)
 
     fig.update_layout(
         title_text=title,
         title_font_size=24,
-        height=height,
+        height=4600,
         width=1600,
         showlegend=True,
         legend=dict(x=0.85, y=0.99, bgcolor='rgba(255,255,255,0.8)'),
@@ -342,9 +272,6 @@ def main():
                        help="Path to .pkl file with real robot observations")
     parser.add_argument("sim_pkl", type=str, nargs='?', default=None,
                        help="Path to .pkl file with simulated observations (optional)")
-    parser.add_argument("--imitation", action='store_true',
-                       help="Use imitation observation structure (includes command + phase as cos/sin)")
-
     args = parser.parse_args()
 
     # Check if files exist
@@ -369,8 +296,8 @@ def main():
         sim_obs, sim_ts = None, None
 
     # Plot comparison
-    print(f"\nGenerating interactive comparison plots ({'imitation' if args.imitation else 'velocity'} mode)...")
-    plot_comparison(real_obs, real_ts, sim_obs, sim_ts, imitation=args.imitation)
+    print(f"\nGenerating interactive comparison plots...")
+    plot_comparison(real_obs, real_ts, sim_obs, sim_ts)
 
     return 0
 

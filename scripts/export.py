@@ -16,7 +16,6 @@ from mjlab.rl import RslRlVecEnvWrapper
 from mjlab.tasks.registry import list_tasks, load_env_cfg, load_rl_cfg, load_runner_cls
 from mjlab.tasks.tracking.mdp import MotionCommandCfg
 from mjlab.utils.os import get_checkpoint_path, get_wandb_checkpoint_path
-from mjlab_microduck.tasks.imitation_command import ImitationCommandCfg
 from mjlab.utils.torch import configure_torch_backends
 from mjlab.utils.wrappers import VideoRecorder
 from mjlab.viewer import NativeMujocoViewer, ViserPlayViewer
@@ -55,41 +54,27 @@ def run_export(task_id: str, cfg: ExportConfig):
     DUMMY_MODE = cfg.agent in {"zero", "random"}
     TRAINED_MODE = not DUMMY_MODE
 
-    # Check if this is a tracking task by checking for motion or imitation command.
+    # Check if this is a motion tracking task.
     is_motion_tracking = (
         env_cfg.commands is not None
         and "motion" in env_cfg.commands
         and isinstance(env_cfg.commands["motion"], MotionCommandCfg)
     )
-    is_imitation_tracking = (
-        env_cfg.commands is not None
-        and "imitation" in env_cfg.commands
-        and isinstance(env_cfg.commands["imitation"], ImitationCommandCfg)
-    )
-    is_tracking_task = is_motion_tracking or is_imitation_tracking
+    is_tracking_task = is_motion_tracking
 
     if is_tracking_task and cfg._demo_mode:
         # Demo mode: use uniform sampling to see more diversity with num_envs > 1.
         assert env_cfg.commands is not None
-        if is_motion_tracking:
-            motion_cmd = env_cfg.commands["motion"]
-            assert isinstance(motion_cmd, MotionCommandCfg)
-            motion_cmd.sampling_mode = "uniform"
-        elif is_imitation_tracking:
-            imitation_cmd = env_cfg.commands["imitation"]
-            assert isinstance(imitation_cmd, ImitationCommandCfg)
-            imitation_cmd.sampling_mode = "uniform"
+        motion_cmd = env_cfg.commands["motion"]
+        assert isinstance(motion_cmd, MotionCommandCfg)
+        motion_cmd.sampling_mode = "uniform"
 
     if is_tracking_task:
         assert env_cfg.commands is not None
-        if is_motion_tracking:
-            motion_cmd = env_cfg.commands["motion"]
-            assert isinstance(motion_cmd, MotionCommandCfg)
-        elif is_imitation_tracking:
-            motion_cmd = env_cfg.commands["imitation"]
-            assert isinstance(motion_cmd, (MotionCommandCfg, ImitationCommandCfg))
+        motion_cmd = env_cfg.commands["motion"]
+        assert isinstance(motion_cmd, MotionCommandCfg)
 
-        # Check if motion file is already set and exists (e.g., for imitation tasks with local files)
+        # Check if motion file is already set and exists
         motion_file_already_set = (
             hasattr(motion_cmd, 'motion_file')
             and motion_cmd.motion_file is not None
@@ -109,17 +94,12 @@ def run_export(task_id: str, cfg: ExportConfig):
 
             api = wandb.Api()
             artifact = api.artifact(registry_name)
-            # MotionCommandCfg uses .npz, ImitationCommandCfg uses .pkl
-            if is_motion_tracking:
-                motion_cmd.motion_file = str(Path(artifact.download()) / "motion.npz")
-            else:
-                motion_cmd.motion_file = str(Path(artifact.download()) / "motion.pkl")
+            motion_cmd.motion_file = str(Path(artifact.download()) / "motion.npz")
         else:
             if cfg.motion_file is not None:
                 print(f"[INFO]: Using motion file from CLI: {cfg.motion_file}")
                 motion_cmd.motion_file = cfg.motion_file
             elif motion_file_already_set:
-                # Motion file already configured (e.g., local file in imitation task)
                 print(f"[INFO]: Using motion file from env config: {motion_cmd.motion_file}")
             else:
                 # Try to download from wandb artifacts
@@ -139,11 +119,7 @@ def run_export(task_id: str, cfg: ExportConfig):
                     )
                     if art is None:
                         raise RuntimeError("No motion artifact found in the run.")
-                    # MotionCommandCfg uses .npz, ImitationCommandCfg uses .pkl
-                    if is_motion_tracking:
-                        motion_cmd.motion_file = str(Path(art.download()) / "motion.npz")
-                    else:
-                        motion_cmd.motion_file = str(Path(art.download()) / "motion.pkl")
+                    motion_cmd.motion_file = str(Path(art.download()) / "motion.npz")
 
     log_dir: Path | None = None
     resume_path: Path | None = None
@@ -267,32 +243,6 @@ def run_export(task_id: str, cfg: ExportConfig):
     finally:
         if _is_rollers:
             _vel_runner.get_base_metadata = _orig_get_base_metadata
-
-    # Add extra metadata for imitation tasks
-    if is_imitation_tracking:
-        # Extract period from reference motion file and add to ONNX metadata
-        try:
-            import pickle
-            import onnx
-
-            motion_file = motion_cmd.motion_file
-            if motion_file and Path(motion_file).exists():
-                with open(motion_file, 'rb') as f:
-                    ref_data = pickle.load(f)
-                # Get period from first motion (they should all have similar periods)
-                first_key = list(ref_data.keys())[0]
-                gait_period = ref_data[first_key]['period']
-
-                # Load ONNX model and add custom metadata
-                model = onnx.load(onnx_path)
-                meta = model.metadata_props.add()
-                meta.key = 'gait_period'
-                meta.value = str(gait_period)
-                onnx.save(model, onnx_path)
-
-                print(f"[INFO] Added gait period to ONNX metadata: {gait_period:.4f}s")
-        except Exception as e:
-            print(f"[WARN] Could not add gait period to ONNX metadata: {e}")
 
     print(f"Written {onnx_path}")
 

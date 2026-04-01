@@ -10,7 +10,6 @@ import mujoco
 from mjlab.envs.manager_based_rl_env import ManagerBasedRlEnv
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.entity import Entity
-from mjlab_microduck.reference_motion import ReferenceMotionLoader
 from mjlab.tasks.velocity.mdp.velocity_command import UniformVelocityCommand, UniformVelocityCommandCfg
 from mjlab.utils.lab_api.math import matrix_from_quat
 from mjlab.envs.mdp.actions import JointPositionAction as _JointPositionAction
@@ -107,30 +106,6 @@ def randomize_neck_offset_target(
         ) * max_offset
 
 
-class ImitationRewardState:
-    """State for tracking imitation reward computation"""
-
-    def __init__(self, ref_motion_loader: ReferenceMotionLoader):
-        self.ref_motion_loader = ref_motion_loader
-        self.phase = None  # Will be initialized as (num_envs,) tensor
-        self.current_motion_idx = None  # (num_envs,) tensor of motion indices
-
-    def initialize(self, num_envs: int, device: str):
-        """Initialize phase tracking for each environment"""
-        self.phase = torch.zeros(num_envs, device=device)
-        self.current_motion_idx = torch.zeros(num_envs, dtype=torch.int32, device=device)
-
-    def reset_phases(self, env_ids: torch.Tensor):
-        """Reset phases for specific environments (e.g., after episode termination)
-
-        Randomizes phase instead of always starting at 0.0 to improve push recovery.
-        This forces the robot to learn to start walking from any point in the gait cycle.
-        """
-        if self.phase is not None and len(env_ids) > 0:
-            # Randomize phase in [0, 1) for better generalization and push recovery
-            self.phase[env_ids] = torch.rand(len(env_ids), device=self.phase.device)
-
-
 def reset_with_forward_velocity(
     env: ManagerBasedRlEnv,
     env_ids: torch.Tensor,
@@ -206,7 +181,6 @@ def reset_action_history(
     env: ManagerBasedRlEnv,
     env_ids: torch.Tensor,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
-    imitation_state: Optional[ImitationRewardState] = None,
 ):
     """
     Reset cached action history for environments that are being reset.
@@ -218,7 +192,6 @@ def reset_action_history(
         env: The environment
         env_ids: Indices of environments being reset
         asset_cfg: Asset configuration
-        imitation_state: Optional imitation state to reset phase tracking
     """
     if len(env_ids) == 0:
         return
@@ -285,277 +258,6 @@ def reset_action_history(
         if "feet_ground_contact" in env.scene.sensors:
             forces = env.scene.sensors["feet_ground_contact"].data.found[env_ids, :2].squeeze(-1)
             env._prev_foot_forces[env_ids] = forces
-
-    # Reset imitation phase tracking
-    if imitation_state is not None and imitation_state.phase is not None:
-        imitation_state.reset_phases(env_ids)
-
-
-def imitation_reward(
-    env: ManagerBasedRlEnv,
-    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
-    imitation_state: Optional[ImitationRewardState] = None,
-    command_threshold: float = 0.01,
-    weight_torso_pos_xy: float = 1.0,
-    weight_torso_orient: float = 1.0,
-    weight_lin_vel_xy: float = 1.0,
-    weight_lin_vel_z: float = 1.0,
-    weight_ang_vel_xy: float = 0.5,
-    weight_ang_vel_z: float = 0.5,
-    weight_leg_joint_pos: float = 15.0,
-    weight_neck_joint_pos: float = 100.0,
-    weight_leg_joint_vel: float = 1e-3,
-    weight_neck_joint_vel: float = 1.0,
-    weight_contact: float = 1.0,
-) -> torch.Tensor:
-    """
-    Imitation reward based on reference motion tracking (BD-X paper structure)
-
-    Args:
-        env: The environment
-        asset_cfg: Asset configuration
-        imitation_state: State object holding reference motion loader and phase tracking
-        command_threshold: Minimum command magnitude to apply reward
-        weight_torso_pos_xy: Weight for torso position xy tracking
-        weight_torso_orient: Weight for torso orientation tracking
-        weight_lin_vel_xy: Weight for linear velocity xy tracking
-        weight_lin_vel_z: Weight for linear velocity z tracking
-        weight_ang_vel_xy: Weight for angular velocity xy tracking
-        weight_ang_vel_z: Weight for angular velocity z tracking
-        weight_leg_joint_pos: Weight for leg joint position tracking
-        weight_neck_joint_pos: Weight for neck joint position tracking
-        weight_leg_joint_vel: Weight for leg joint velocity tracking
-        weight_neck_joint_vel: Weight for neck joint velocity tracking
-        weight_contact: Weight for foot contact matching
-
-    Returns:
-        Reward tensor of shape (num_envs,)
-    """
-    if imitation_state is None or imitation_state.ref_motion_loader is None:
-        return torch.zeros(env.num_envs, device=env.device)
-
-    # Initialize phase tracking if needed
-    if imitation_state.phase is None:
-        imitation_state.initialize(env.num_envs, env.device)
-
-    asset: Entity = env.scene[asset_cfg.name]
-
-    # Get commanded velocity from the environment
-    # Assuming velocity command exists with name "twist"
-    if "twist" not in env.command_manager._terms:
-        return torch.zeros(env.num_envs, device=env.device)
-
-    cmd = env.command_manager.get_command("twist")
-    cmd_vel = cmd[:, :3]  # (num_envs, 3) -> [vel_x, vel_y, ang_vel_z]
-    cmd_norm = torch.linalg.norm(cmd_vel, dim=1)
-
-    # Only reward when command is above threshold
-    active_mask = cmd_norm > command_threshold
-
-    # Find closest reference motion for each environment
-    new_motion_indices = imitation_state.ref_motion_loader.find_closest_motion(cmd_vel)
-
-    # Detect motion changes and reset phase when motion changes
-    motion_changed = new_motion_indices != imitation_state.current_motion_idx
-    imitation_state.phase[motion_changed] = 0.0
-    imitation_state.current_motion_idx = new_motion_indices
-
-    # Get periods for all environments
-    periods = imitation_state.ref_motion_loader.get_period_batch(new_motion_indices)
-
-    # Update phase for all environments
-    dt = env.step_dt
-    imitation_state.phase += dt / periods
-    imitation_state.phase = torch.fmod(imitation_state.phase, 1.0)  # Keep in [0, 1]
-
-    # Evaluate reference motions at current phases (batched per-environment)
-    ref_data = imitation_state.ref_motion_loader.evaluate_motion_batch(
-        new_motion_indices, imitation_state.phase, device=env.device
-    )
-
-    # Get current state
-    # Joint positions and velocities (all 14 joints including head)
-    # Joint order: left_hip_yaw, left_hip_roll, left_hip_pitch, left_knee, left_ankle,
-    #              neck_pitch, head_pitch, head_yaw, head_roll,
-    #              right_hip_yaw, right_hip_roll, right_hip_pitch, right_knee, right_ankle
-    joints_pos = asset.data.joint_pos[:, asset_cfg.joint_ids]
-    joints_vel = asset.data.joint_vel[:, asset_cfg.joint_ids]
-
-    # Separate leg joints (indices 0-4, 9-13) from neck joints (indices 5-8)
-    leg_joint_indices = list(range(0, 5)) + list(range(9, 14))  # 10 leg joints
-    neck_joint_indices = list(range(5, 9))  # 4 neck joints
-
-    leg_joints_pos = joints_pos[:, leg_joint_indices]
-    neck_joints_pos = joints_pos[:, neck_joint_indices]
-    leg_joints_vel = joints_vel[:, leg_joint_indices]
-    neck_joints_vel = joints_vel[:, neck_joint_indices]
-
-    # Reference joint positions and velocities
-    ref_joints_pos = ref_data["joints_pos"]
-    ref_joints_vel = ref_data["joints_vel"]
-    ref_leg_joints_pos = ref_joints_pos[:, leg_joint_indices]
-    ref_neck_joints_pos = ref_joints_pos[:, neck_joint_indices]
-    ref_leg_joints_vel = ref_joints_vel[:, leg_joint_indices]
-    ref_neck_joints_vel = ref_joints_vel[:, neck_joint_indices]
-
-    # Torso (base) position and orientation
-    torso_pos_w = asset.data.root_link_pos_w  # (num_envs, 3) in world frame
-    torso_quat_w = asset.data.root_link_quat_w  # (num_envs, 4) quaternion in world frame
-
-    # Base velocities (world frame)
-    base_lin_vel = asset.data.root_link_vel_w[:, :3]  # Linear velocity (first 3 components)
-    base_ang_vel = asset.data.root_link_vel_w[:, 3:]  # Angular velocity (last 3 components)
-
-    # Foot contacts
-    if "feet_ground_contact" in env.scene.sensors:
-        contacts = env.scene.sensors["feet_ground_contact"].data.found[:, :2]  # (num_envs, 2)
-    else:
-        contacts = torch.zeros((env.num_envs, 2), device=env.device)
-
-    # Compute reward components (BD-X paper structure)
-
-    # Torso position XY: exponential reward
-    # Note: For periodic motions, torso position in reference is relative to path frame
-    # For now, we compute this as zero since ref_data may not include absolute position
-    # TODO: Add torso position tracking if reference motions include it
-    torso_pos_xy_rew = torch.zeros(env.num_envs, device=env.device) * weight_torso_pos_xy
-
-    # Torso orientation: exponential reward
-    # TODO: Add quaternion difference computation if reference includes orientation
-    torso_orient_rew = torch.zeros(env.num_envs, device=env.device) * weight_torso_orient
-
-    # Linear velocity XY: exponential reward
-    lin_vel_xy_rew = torch.exp(-8.0 * torch.sum(torch.square(base_lin_vel[:, :2] - ref_data["base_linear_vel"][:, :2]), dim=1)) * weight_lin_vel_xy
-
-    # Linear velocity Z: exponential reward
-    lin_vel_z_rew = torch.exp(-8.0 * torch.square(base_lin_vel[:, 2] - ref_data["base_linear_vel"][:, 2])) * weight_lin_vel_z
-
-    # Angular velocity XY: exponential reward
-    ang_vel_xy_rew = torch.exp(-2.0 * torch.sum(torch.square(base_ang_vel[:, :2] - ref_data["base_angular_vel"][:, :2]), dim=1)) * weight_ang_vel_xy
-
-    # Angular velocity Z: exponential reward
-    ang_vel_z_rew = torch.exp(-2.0 * torch.square(base_ang_vel[:, 2] - ref_data["base_angular_vel"][:, 2])) * weight_ang_vel_z
-
-    # Leg joint positions: negative squared error (10 leg joints)
-    leg_joint_pos_rew = -torch.sum(torch.square(leg_joints_pos - ref_leg_joints_pos), dim=1) * weight_leg_joint_pos
-
-    # Neck joint positions: negative squared error (4 neck joints)
-    neck_joint_pos_rew = -torch.sum(torch.square(neck_joints_pos - ref_neck_joints_pos), dim=1) * weight_neck_joint_pos
-
-    # Leg joint velocities: negative squared error (10 leg joints)
-    leg_joint_vel_rew = -torch.sum(torch.square(leg_joints_vel - ref_leg_joints_vel), dim=1) * weight_leg_joint_vel
-
-    # Neck joint velocities: negative squared error (4 neck joints)
-    neck_joint_vel_rew = -torch.sum(torch.square(neck_joints_vel - ref_neck_joints_vel), dim=1) * weight_neck_joint_vel
-
-    # Contact reward: Σ_{i∈{L,R}} 1[c_i = ĉ_i] (simple binary match per foot)
-    ref_contacts = (ref_data["foot_contacts"] > 0.5).float()
-    contacts_float = contacts.float()
-
-    # Compute per-foot contact matching (0 if mismatch, 1 if match)
-    contact_matches = (contacts_float == ref_contacts).float()  # (num_envs, 2)
-
-    # Sum matches across both feet (max value is 2.0)
-    contact_rew = torch.sum(contact_matches, dim=1) * weight_contact
-
-    # Total reward
-    reward = (
-        torso_pos_xy_rew
-        + torso_orient_rew
-        + lin_vel_xy_rew
-        + lin_vel_z_rew
-        + ang_vel_xy_rew
-        + ang_vel_z_rew
-        + leg_joint_pos_rew
-        + neck_joint_pos_rew
-        + leg_joint_vel_rew
-        + neck_joint_vel_rew
-        + contact_rew
-    )
-
-    # Apply mask: zero reward when command magnitude is below threshold
-    reward = reward * active_mask.float()
-
-    return reward
-
-
-def imitation_phase_observation(
-    env: ManagerBasedRlEnv,
-    imitation_state: Optional[ImitationRewardState] = None,
-) -> torch.Tensor:
-    """
-    Provide phase observation for imitation learning
-    Returns [cos(phase * 2π), sin(phase * 2π)] encoding
-
-    Args:
-        env: The environment
-        imitation_state: State object holding phase tracking
-
-    Returns:
-        Phase observation tensor of shape (num_envs, 2)
-    """
-    if imitation_state is None or imitation_state.phase is None:
-        return torch.zeros((env.num_envs, 2), device=env.device)
-
-    # Convert phase [0, 1] to angle [0, 2π]
-    angle = imitation_state.phase * 2 * torch.pi
-
-    # Return [cos, sin] encoding
-    phase_obs = torch.stack([torch.cos(angle), torch.sin(angle)], dim=1)
-
-    return phase_obs
-
-
-def reference_motion_observation(
-    env: ManagerBasedRlEnv,
-    imitation_state: Optional[ImitationRewardState] = None,
-) -> torch.Tensor:
-    """
-    Provide full reference motion as privileged observation for the critic
-
-    Args:
-        env: The environment
-        imitation_state: State object holding reference motion loader and phase tracking
-
-    Returns:
-        Reference motion tensor of shape (num_envs, 36) containing:
-        - joints_pos (14): Reference joint positions
-        - joints_vel (14): Reference joint velocities
-        - foot_contacts (2): Reference foot contact states
-        - base_linear_vel (3): Reference base linear velocity
-        - base_angular_vel (3): Reference base angular velocity
-    """
-    if imitation_state is None or imitation_state.ref_motion_loader is None:
-        return torch.zeros((env.num_envs, 36), device=env.device)
-
-    if imitation_state.phase is None:
-        imitation_state.initialize(env.num_envs, env.device)
-
-    # Get commanded velocity to find the reference motion
-    if "twist" not in env.command_manager._terms:
-        return torch.zeros((env.num_envs, 36), device=env.device)
-
-    cmd = env.command_manager.get_command("twist")
-    cmd_vel = cmd[:, :3]
-
-    # Find closest reference motion for each environment
-    motion_indices = imitation_state.ref_motion_loader.find_closest_motion(cmd_vel)
-
-    # Evaluate reference motions at current phases
-    ref_data = imitation_state.ref_motion_loader.evaluate_motion_batch(
-        motion_indices, imitation_state.phase, device=env.device
-    )
-
-    # Concatenate all reference motion data
-    ref_obs = torch.cat([
-        ref_data["joints_pos"],       # 14
-        ref_data["joints_vel"],       # 14
-        ref_data["foot_contacts"],    # 2
-        ref_data["base_linear_vel"],  # 3
-        ref_data["base_angular_vel"], # 3
-    ], dim=1)
-
-    return ref_obs
 
 
 def joint_accelerations_l2(
@@ -981,81 +683,6 @@ def joint_torques_l2(
     return torch.sum(torch.square(actuator_forces), dim=1)
 
 
-def skating_stroke(
-    env: ManagerBasedRlEnv,
-    command_name: str,
-    vel_scale: float = 1.0,
-    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot", joint_names=(r".*hip_roll.*",)),
-) -> torch.Tensor:
-    """Reward lateral hip movements when commanded to move forward.
-
-    On roller skates, forward propulsion requires pushing feet laterally outward —
-    the "skating stroke". This reward shapes the policy toward discovering that gait
-    by giving a dense signal: high reward when hip_roll joints are active and there
-    is a non-zero forward command.
-
-    tanh saturation at vel_scale (rad/s) per joint caps the reward at 2.0 total,
-    preventing the robot from gaming the reward by shaking hips as fast as possible.
-    """
-    robot: Entity = env.scene[asset_cfg.name]
-    cmd_x = env.command_manager.get_command(command_name)[:, 0]  # forward command
-
-    # Hip-roll velocity for both legs — (num_envs, 2), saturated per joint
-    hip_roll_vel = robot.data.joint_vel[:, asset_cfg.joint_ids]
-    lateral_push = torch.sum(torch.tanh(torch.abs(hip_roll_vel) / vel_scale), dim=1)
-
-    # Only reward when there is a forward (or backward) command
-    return torch.abs(cmd_x) * lateral_push
-
-
-def skating_outward_push(
-    env: ManagerBasedRlEnv,
-    contact_sensor_name: str,
-    vel_scale: float = 1.0,
-    left_outward_negative: bool = True,
-) -> torch.Tensor:
-    """Reward outward hip_roll (abduction) push when the corresponding foot is grounded.
-
-    Skating propulsion comes from pushing one foot laterally outward while it grips
-    the ground — the anisotropic wheel friction converts lateral force into forward
-    momentum. This reward provides a dense gradient toward the correct skating stroke:
-
-    - Left foot on ground  → reward negative left_hip_roll velocity (abduction = outward)
-    - Right foot on ground → reward positive right_hip_roll velocity (abduction = outward)
-
-    tanh saturation (vel_scale=1.0 rad/s by default) caps the reward at 1.0 per foot.
-    Without saturation the robot games the reward by oscillating as fast as possible
-    (unbounded return), which causes shaking with no forward motion.
-
-    Contact sensor primary bodies must be ordered [roller_foot1=left, roller_foot2=right].
-    If skating_push reward is near zero, flip left_outward_negative.
-    """
-    from mjlab.sensor import ContactSensor
-
-    sensor: ContactSensor = env.scene[contact_sensor_name]
-    # found: (num_envs, 2) — roller_foot1 = left, roller_foot2 = right
-    contact = sensor.data.found.reshape(env.num_envs, -1)
-    left_contact = contact[:, 0].float()
-    right_contact = contact[:, 1].float()
-
-    asset: Entity = env.scene["robot"]
-    # Use find_joints to get integer indices — avoids slice/unresolved-cfg issues
-    left_ids, _ = asset.find_joints("left_hip_roll")
-    right_ids, _ = asset.find_joints("right_hip_roll")
-
-    left_vel = asset.data.joint_vel[:, left_ids[0]]   # (B,)
-    right_vel = asset.data.joint_vel[:, right_ids[0]]  # (B,)
-
-    # Sign convention: left outward = negative vel, right outward = positive vel (default).
-    # Flip left_outward_negative if the reward stays near zero after a few iterations.
-    sign = -1.0 if left_outward_negative else 1.0
-    # tanh saturates at 1.0: robot gets no extra reward for shaking faster than vel_scale
-    left_outward = torch.tanh(torch.clamp(sign * left_vel, min=0.0) / vel_scale)
-    right_outward = torch.tanh(torch.clamp(-sign * right_vel, min=0.0) / vel_scale)
-
-    return left_contact * left_outward + right_contact * right_outward
-
-
 def wheel_speed_reward(
     env: ManagerBasedRlEnv,
     command_name: str,
@@ -1132,31 +759,6 @@ def braking_reward(
     fwd_vel = env.scene["robot"].data.root_link_lin_vel_b[:, 0]
     stopped = torch.exp(-(fwd_vel.clamp(min=0.0) ** 2) / (vel_std ** 2))
     return braking_strength * stopped
-
-
-def forward_speed_reward(env: ManagerBasedRlEnv) -> torch.Tensor:
-    """Linear forward speed reward — no Gaussian, no saturation.
-
-    Designed for the skating stroke primitive: maximize forward speed gained
-    in a short episode. Walking in 3 seconds can't compete with a good stroke.
-    """
-    return torch.clamp(env.scene["robot"].data.root_link_lin_vel_b[:, 0], min=0.0)
-
-
-def double_support_reward(
-    env: ManagerBasedRlEnv,
-    sensor_name: str = "feet_ground_contact",
-) -> torch.Tensor:
-    """Reward having both feet in contact with the ground simultaneously.
-
-    Roller skating keeps both feet on the ground most of the time (unlike walking).
-    Returns 1.0 when both feet are grounded, 0.0 otherwise.
-    """
-    from mjlab.sensor import ContactSensor
-
-    sensor: ContactSensor = env.scene[sensor_name]
-    contact = sensor.data.found.reshape(env.num_envs, -1)
-    return contact[:, 0].float() * contact[:, 1].float()
 
 
 def contact_frequency_penalty(

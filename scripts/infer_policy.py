@@ -41,14 +41,13 @@ DEFAULT_POSE = np.array([
 
 
 class PolicyInference:
-    def __init__(self, model, data, walking_onnx_path=None, action_scale=1.0, use_imitation=False,
-                 reference_motion_path=None, delay_min_lag=0, delay_max_lag=0,
+    def __init__(self, model, data, walking_onnx_path=None, action_scale=1.0,
+                 delay_min_lag=0, delay_max_lag=0,
                  standing_onnx_path=None, switch_threshold=0.05,
                  use_projected_gravity=False, ground_pick_onnx_path=None, ground_pick_period=4.0):
         self.model = model
         self.data = data
         self.action_scale = action_scale
-        self.use_imitation = use_imitation
         self.use_projected_gravity = use_projected_gravity
         self.delay_min_lag = delay_min_lag
         self.delay_max_lag = delay_max_lag
@@ -171,33 +170,6 @@ class PolicyInference:
         self.head_max = 2.5
         self.head_step = 0.1
 
-        # Imitation learning phase tracking
-        self.imitation_phase = 0.0
-        self.gait_period = 0.5
-
-        if self.use_imitation:
-            print(f"\nImitation mode enabled")
-
-            if reference_motion_path:
-                import pickle
-                try:
-                    with open(reference_motion_path, 'rb') as f:
-                        ref_data = pickle.load(f)
-                    first_key = list(ref_data.keys())[0]
-                    self.gait_period = ref_data[first_key]['period']
-                    print(f"  Loaded gait period from reference motion file: {self.gait_period:.4f}s")
-                    print(f"  Reference motion: {reference_motion_path}")
-                except Exception as e:
-                    print(f"  Warning: Could not load reference motion: {e}")
-
-            if not reference_motion_path and self.default_gait_period_from_onnx is not None:
-                self.gait_period = self.default_gait_period_from_onnx
-                print(f"  Using gait period from ONNX metadata: {self.gait_period:.4f}s")
-
-            if reference_motion_path is None and self.default_gait_period_from_onnx is None:
-                print(f"  Warning: No gait period found in ONNX or reference motion")
-                print(f"  Using fallback default period: {self.gait_period:.4f}s")
-
         # Action delay buffer
         self.use_delay = self.delay_max_lag > 0
         if self.use_delay:
@@ -309,21 +281,10 @@ class PolicyInference:
         """Get joint velocities."""
         return self.data.qvel[self.joint_qvel_indices].copy().astype(np.float32)
 
-    def get_imitation_phase_obs(self):
-        """Get imitation phase observation as [cos(2π*phase), sin(2π*phase)]."""
-        phase_rad = self.imitation_phase * 2 * np.pi
-        return np.array([np.cos(phase_rad), np.sin(phase_rad)], dtype=np.float32)
-
-    def update_phase(self, dt):
-        """Update the gait phase based on elapsed time."""
-        if self.use_imitation:
-            self.imitation_phase += dt / self.gait_period
-            self.imitation_phase = self.imitation_phase % 1.0
-
     def get_observations(self):
         """Collect observations matching policy input.
 
-        Order for velocity/standing task (no imitation):
+        Order for velocity/standing task:
         1. base_ang_vel (3D)
         2. raw_accelerometer OR projected_gravity (3D)
         3. joint_pos (14D) - relative to default
@@ -331,22 +292,8 @@ class PolicyInference:
         5. actions (14D) - last action
         6. command (3D) - vel cmd (walking) or normalized body pose cmd (standing)
         Total: 51D
-
-        Order for imitation task (use_imitation=True):
-        1. command (3D)
-        2. phase (2D)
-        3. base_ang_vel (3D)
-        4. raw_accelerometer OR projected_gravity (3D)
-        5. joint_pos (14D)
-        6. joint_vel (14D)
-        7. actions (14D)
-        Total: 53D
         """
         obs = []
-
-        if self.use_imitation:
-            obs.append(self.command)
-            obs.append(self.get_imitation_phase_obs())
 
         obs.append(self.get_base_ang_vel())
 
@@ -358,9 +305,7 @@ class PolicyInference:
         obs.append(self.get_joint_pos_relative())
         obs.append(self.get_joint_vel())
         obs.append(self.last_action)
-
-        if not self.use_imitation:
-            obs.append(self.command)
+        obs.append(self.command)
 
         return np.concatenate(obs).astype(np.float32)
 
@@ -447,8 +392,6 @@ def main():
     parser.add_argument("--lin-vel-y", type=float, default=0.0, help="Initial linear velocity Y command (m/s)")
     parser.add_argument("--ang-vel-z", type=float, default=0.0, help="Initial angular velocity Z command (rad/s)")
     parser.add_argument("--action-scale", type=float, default=1.0, help="Action scale (default: 1.0)")
-    parser.add_argument("--imitation", action="store_true", help="Enable imitation mode (adds phase observation)")
-    parser.add_argument("--reference-motion", type=str, default=None, help="Path to reference motion .pkl file (for imitation)")
     parser.add_argument("--raw-accelerometer", action="store_true", help="Use raw accelerometer instead of projected gravity")
     parser.add_argument("--delay", type=int, nargs='*', default=None, help="Enable actuator delay: --delay MIN MAX or --delay LAG")
     parser.add_argument("--debug", action="store_true", help="Print observations and actions")
@@ -490,8 +433,6 @@ def main():
         model, data,
         walking_onnx_path=args.walking,
         action_scale=args.action_scale,
-        use_imitation=args.imitation,
-        reference_motion_path=args.reference_motion,
         delay_min_lag=delay_min_lag,
         delay_max_lag=delay_max_lag,
         standing_onnx_path=args.standing,
@@ -543,12 +484,8 @@ def main():
 
     # Verify observation size
     test_obs = policy.get_observations()
-    if policy.use_imitation:
-        expected_obs_size = 3 + 2 + 3 + 3 + policy.n_joints + policy.n_joints + policy.n_joints
-        breakdown = f"3(command) + 2(phase) + 3(ang_vel) + 3(proj_grav) + {policy.n_joints}(joint_pos) + {policy.n_joints}(joint_vel) + {policy.n_joints}(last_action)"
-    else:
-        expected_obs_size = 3 + 3 + policy.n_joints + policy.n_joints + policy.n_joints + 3
-        breakdown = f"3(ang_vel) + 3(proj_grav) + {policy.n_joints}(joint_pos) + {policy.n_joints}(joint_vel) + {policy.n_joints}(last_action) + 3(command)"
+    expected_obs_size = 3 + 3 + policy.n_joints + policy.n_joints + policy.n_joints + 3
+    breakdown = f"3(ang_vel) + 3(proj_grav) + {policy.n_joints}(joint_pos) + {policy.n_joints}(joint_vel) + {policy.n_joints}(last_action) + 3(command)"
 
     if test_obs.size != expected_obs_size:
         print(f"\nWARNING: Observation size mismatch!")
@@ -563,8 +500,6 @@ def main():
     print(f"Control frequency: 50 Hz (decimation: 4)")
     print(f"Simulation timestep: {model.opt.timestep}s")
     print(f"Observation size: {test_obs.size} (expected: {expected_obs_size})")
-    if policy.use_imitation:
-        print(f"Imitation mode: ENABLED (gait period: {policy.gait_period:.3f}s)")
     if policy.walking_session:
         print(f"Walking policy: loaded")
     if policy.standing_session:
@@ -754,7 +689,6 @@ def main():
                 actual_dt = step_start - prev_step_time
                 prev_step_time = step_start
 
-                policy.update_phase(actual_dt)
                 policy.update_ground_pick_phase(actual_dt)
 
                 if policy_enabled:
@@ -790,31 +724,19 @@ def main():
                         print(f"\n{'='*70}")
                         print(f"Step {control_step_count} DEBUG:")
                         print(f"{'='*70}")
-                        if policy.use_imitation:
-                            print(f"Imitation phase: {policy.imitation_phase:.4f} (period: {policy.gait_period:.3f}s)")
                         print(f"Active policy: {policy.current_policy}")
                         print(f"Base state:")
                         print(f"  Position: [{pos[0]:7.4f}, {pos[1]:7.4f}, {pos[2]:7.4f}]")
                         print(f"  CoM height: {com_height:7.4f}")
                         print(f"  Quaternion: [{quat[0]:7.4f}, {quat[1]:7.4f}, {quat[2]:7.4f}, {quat[3]:7.4f}]")
                         print(f"\nObservation (shape {obs.shape}, total {obs.size}):")
-                        if policy.use_imitation:
-                            print(f"  Command [0:3]:        {obs[0:3]}")
-                            print(f"  Phase [3:5]:          {obs[3:5]} (cos, sin)")
-                            print(f"  Ang vel [5:8]:        {obs[5:8]}")
-                            print(f"  Proj grav [8:11]:     {obs[8:11]}")
-                            joint_start = 11
-                            print(f"  Joint pos [{joint_start}:{joint_start+policy.n_joints}]:     {obs[joint_start:joint_start+policy.n_joints]}")
-                            print(f"  Joint vel [{joint_start+policy.n_joints}:{joint_start+2*policy.n_joints}]:    {obs[joint_start+policy.n_joints:joint_start+2*policy.n_joints]}")
-                            print(f"  Last action [{joint_start+2*policy.n_joints}:{joint_start+3*policy.n_joints}]:  {obs[joint_start+2*policy.n_joints:joint_start+3*policy.n_joints]}")
-                        else:
-                            print(f"  Ang vel [0:3]:        {obs[0:3]}")
-                            print(f"  Proj grav [3:6]:      {obs[3:6]}")
-                            print(f"  Joint pos [6:{6+policy.n_joints}]:     {obs[6:6+policy.n_joints]}")
-                            print(f"  Joint vel [{6+policy.n_joints}:{6+2*policy.n_joints}]:    {obs[6+policy.n_joints:6+2*policy.n_joints]}")
-                            print(f"  Last action [{6+2*policy.n_joints}:{6+3*policy.n_joints}]:  {obs[6+2*policy.n_joints:6+3*policy.n_joints]}")
-                            cmd_end = 6+3*policy.n_joints+3
-                            print(f"  Command [{6+3*policy.n_joints}:{cmd_end}]:      {obs[6+3*policy.n_joints:cmd_end]}")
+                        print(f"  Ang vel [0:3]:        {obs[0:3]}")
+                        print(f"  Proj grav [3:6]:      {obs[3:6]}")
+                        print(f"  Joint pos [6:{6+policy.n_joints}]:     {obs[6:6+policy.n_joints]}")
+                        print(f"  Joint vel [{6+policy.n_joints}:{6+2*policy.n_joints}]:    {obs[6+policy.n_joints:6+2*policy.n_joints]}")
+                        print(f"  Last action [{6+2*policy.n_joints}:{6+3*policy.n_joints}]:  {obs[6+2*policy.n_joints:6+3*policy.n_joints]}")
+                        cmd_end = 6+3*policy.n_joints+3
+                        print(f"  Command [{6+3*policy.n_joints}:{cmd_end}]:      {obs[6+3*policy.n_joints:cmd_end]}")
                         if policy.current_policy == "standing":
                             print(f"  Body cmd (raw): z={policy.body_cmd[0]*1000:.1f}mm  pitch={math.degrees(policy.body_cmd[1]):.1f}°  roll={math.degrees(policy.body_cmd[2]):.1f}°")
                         print(f"\nAction output:")

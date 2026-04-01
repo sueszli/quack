@@ -104,7 +104,7 @@ register_mjlab_task(
 )
 print("✓ Rollers task registered: Mjlab-Velocity-Flat-MicroDuck-Rollers")
 
-# Standard velocity task (no imitation)
+# Standard velocity task
 register_mjlab_task(
     task_id="Mjlab-Velocity-Flat-MicroDuck",
     env_cfg=make_microduck_velocity_env_cfg(),
@@ -158,6 +158,3 @@ register_mjlab_task(
     runner_cls=MicroduckOnPolicyRunner,
 )
 print("✓ Ground pick task registered: Mjlab-GroundPick-Rough-MicroDuck")
-
-# Imitation motion tracking task
-# Uses frame-based reference motions (reference_motion.pkl)
