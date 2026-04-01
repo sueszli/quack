@@ -11,8 +11,9 @@ from mjlab.envs.manager_based_rl_env import ManagerBasedRlEnv
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.entity import Entity
 from mjlab_microduck.reference_motion import ReferenceMotionLoader
-from mjlab.tasks.velocity.mdp.velocity_command import UniformVelocityCommand
+from mjlab.tasks.velocity.mdp.velocity_command import UniformVelocityCommand, UniformVelocityCommandCfg
 from mjlab.utils.lab_api.math import matrix_from_quat
+from mjlab.envs.mdp.actions import JointPositionAction as _JointPositionAction
 from mjlab.envs.mdp.actions import JointPositionActionCfg as _JointPositionActionCfg
 
 if TYPE_CHECKING:
@@ -21,17 +22,18 @@ if TYPE_CHECKING:
 
 _DEFAULT_ASSET_CFG = SceneEntityCfg("robot")
 
-# Neck/head joint indices (neck_pitch=5, head_pitch=6, head_yaw=7, head_roll=8)
-_NECK_JOINT_INDICES = list(range(5, 9))
+# Name patterns to look up neck/head joint entity-local IDs at runtime.
+# Must use names rather than ctrl indices because joint_pos_target is indexed
+# by entity-local joint order, which differs from ctrl order.
+_NECK_JOINT_PATTERNS = [r".*neck_pitch.*", r".*head_pitch.*", r".*head_yaw.*", r".*head_roll.*"]
 # Time constant (seconds) for smooth offset interpolation toward target
 _NECK_OFFSET_SMOOTHING_TAU = 0.5
 
-
-class NeckOffsetJointPositionAction(_JointPositionActionCfg.class_type):
+class NeckOffsetJointPositionAction(_JointPositionAction):
     """JointPositionAction that adds a random offset to neck/head joint targets.
 
     After the policy output is applied as joint position targets, adds
-    env._neck_offset to the ctrl values for neck joints (indices 5–8).
+    env._neck_offset to the joint_pos_target buffer for neck joints.
     This trains robustness to external head movement and enables independent
     head control at deployment (add any offset on top of policy output).
 
@@ -40,7 +42,10 @@ class NeckOffsetJointPositionAction(_JointPositionActionCfg.class_type):
     """
 
     def apply_actions(self) -> None:
-        # Apply standard joint position control from policy output
+        # Apply standard joint position control from policy output.
+        # In new mjlab this writes to entity.data.joint_pos_target (not ctrl directly).
+        # entity.write_data_to_sim() then copies joint_pos_target → ctrl after all
+        # apply_actions() calls, so the offset must be added here to joint_pos_target.
         super().apply_actions()
 
         env = self._env
@@ -50,12 +55,22 @@ class NeckOffsetJointPositionAction(_JointPositionActionCfg.class_type):
             env._neck_offset = torch.zeros(env.num_envs, 4, device=env.device)
             env._neck_offset_target = torch.zeros(env.num_envs, 4, device=env.device)
 
+        # Cache entity-local neck joint IDs (looked up by name, not ctrl index)
+        if not hasattr(self, "_neck_joint_ids"):
+            ids, _ = self._entity.find_joints_by_actuator_names(_NECK_JOINT_PATTERNS)
+            self._neck_joint_ids = torch.tensor(ids, device=env.device, dtype=torch.long)
+
         # Exponential smoothing: offset tracks target with time constant tau
         alpha = min(1.0, env.step_dt / _NECK_OFFSET_SMOOTHING_TAU)
         env._neck_offset.lerp_(env._neck_offset_target, alpha)
 
-        # Add offset on top of the ctrl values already set by the action manager
-        env.sim.data.ctrl[:, _NECK_JOINT_INDICES] += env._neck_offset
+        # Add offset to joint_pos_target — the buffer super().apply_actions() wrote to
+        self._entity.data.joint_pos_target[:, self._neck_joint_ids] += env._neck_offset
+
+
+class NeckOffsetJointPositionActionCfg(_JointPositionActionCfg):
+    def build(self, env: ManagerBasedRlEnv) -> "NeckOffsetJointPositionAction":
+        return NeckOffsetJointPositionAction(self, env)
 
 
 def reset_neck_offset(
@@ -114,6 +129,77 @@ class ImitationRewardState:
         if self.phase is not None and len(env_ids) > 0:
             # Randomize phase in [0, 1) for better generalization and push recovery
             self.phase[env_ids] = torch.rand(len(env_ids), device=self.phase.device)
+
+
+def reset_with_forward_velocity(
+    env: ManagerBasedRlEnv,
+    env_ids: torch.Tensor,
+    velocity_range: tuple[float, float] = (0.3, 0.8),
+    fraction_stages: list[dict] | None = None,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> None:
+    """Warm-start a fraction of reset environments with a random forward velocity.
+
+    The robot spawns already moving in its body-forward direction, so it first
+    discovers what coasting at speed feels like. The fraction decreases over
+    training, forcing it to progressively earn that speed from rest.
+
+    Args:
+        velocity_range: (min, max) forward speed in m/s.
+        fraction_stages: list of {"step": int, "fraction": float} dicts, sorted by step.
+            The fraction active at the current training step is used.
+            Example: [{"step":0,"fraction":0.8}, {"step":2000*24,"fraction":0.0}]
+        asset_cfg: robot entity config.
+    """
+    if fraction_stages is None:
+        fraction_stages = [{"step": 0, "fraction": 0.8}]
+
+    # Determine current fraction from training step
+    step = env.common_step_counter
+    fraction = fraction_stages[0]["fraction"]
+    for stage in fraction_stages:
+        if step >= stage["step"]:
+            fraction = stage["fraction"]
+
+    if len(env_ids) == 0 or fraction <= 0.0:
+        return
+
+    n_warmstart = max(1, int(len(env_ids) * fraction))
+    perm = torch.randperm(len(env_ids), device=env.device)[:n_warmstart]
+    warmstart_ids = env_ids[perm]
+
+    lo, hi = velocity_range
+    vx = lo + torch.rand(n_warmstart, device=env.device) * (hi - lo)
+
+    # Build horizontal forward direction from yaw only — ignoring pitch/roll.
+    # IMPORTANT: read quaternion from qpos, NOT from root_link_quat_w.
+    # root_link_quat_w reads xquat which requires sim.forward() to be current.
+    # After reset_base writes a new yaw to qpos, xquat is still stale (old episode).
+    # qpos is updated immediately by write_root_pose, so it's always fresh.
+    asset: Entity = env.scene[asset_cfg.name]
+    qpos_q_adr = asset.data.indexing.free_joint_q_adr[3:7]  # quat indices in qpos
+    q = asset.data.data.qpos[warmstart_ids][:, qpos_q_adr]  # (n, 4) [w, x, y, z]
+    w, x, y, z = q[:, 0], q[:, 1], q[:, 2], q[:, 3]
+    yaw = torch.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
+    forward_world = torch.stack([torch.cos(yaw), torch.sin(yaw), torch.zeros_like(yaw)], dim=-1)
+
+    velocities = torch.zeros(n_warmstart, 6, device=env.device)
+    velocities[:, :3] = vx.unsqueeze(-1) * forward_world
+
+    asset.write_root_link_velocity_to_sim(velocities, env_ids=warmstart_ids)
+
+    # Spin wheels to match forward velocity — prevents instantaneous no-slip braking.
+    # Wheel radius = 0.0175 m (measured).
+    # All 4 wheels spin at +ω for forward motion (verified by test_wheel_direction.py).
+    _WHEEL_RADIUS = 0.0175
+    all_wheel_ids, _ = asset.find_joints(r"^passive_.*")
+
+    if all_wheel_ids:
+        joint_pos = asset.data.joint_pos[warmstart_ids].clone()
+        joint_vel = asset.data.joint_vel[warmstart_ids].clone()
+        omega = vx / _WHEEL_RADIUS  # (n,) rad/s, positive = forward
+        joint_vel[:, all_wheel_ids] = omega.unsqueeze(-1).expand(-1, len(all_wheel_ids))
+        asset.write_joint_state_to_sim(joint_pos, joint_vel, env_ids=warmstart_ids)
 
 
 def reset_action_history(
@@ -807,6 +893,72 @@ def leg_joint_vel_l2(
     # Return L2 squared norm of leg joint velocities
     return torch.sum(torch.square(leg_joint_vel), dim=1)
 
+_NECK_JOINT_CFG = SceneEntityCfg("robot", joint_names=(r".*(neck|head).*",))
+_HIP_PITCH_KNEE_CFG = SceneEntityCfg("robot", joint_names=(r".*(hip_pitch|knee).*",))
+_ROLLER_FEET_SITE_CFG = SceneEntityCfg("robot", site_names=("left_foot", "right_foot"))
+
+
+def feet_flat_penalty(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg = _ROLLER_FEET_SITE_CFG,
+) -> torch.Tensor:
+    """Penalize foot sites not being parallel to the ground.
+
+    The foot site frame has Z+ pointing up when flat. We project a unit gravity
+    vector (pointing down) into each foot site's local frame. When flat, gravity
+    maps to [0,0,-1] in site frame (xy=0, penalty=0). Any tilt rotates Z away
+    from world-up, giving nonzero xy components.
+
+    Max value ≈ 2.0 per foot (foot fully sideways), total ≈ 4.0.
+
+    Bug note: must normalize gravity PER ENV with dim=-1. Using torch.norm()
+    without dim computes a scalar over all envs × 3 dims, making the vector
+    ~1/sqrt(num_envs) in magnitude → penalty ~num_envs times too small.
+    """
+    from mjlab.utils.lab_api.math import quat_apply_inverse
+    import torch.nn.functional as F
+
+    asset: Entity = env.scene[asset_cfg.name]
+    gravity_w_n = F.normalize(asset.data.gravity_vec_w, dim=-1)  # (B, 3), unit vector per env
+
+    foot_quats = asset.data.site_quat_w[:, asset_cfg.site_ids, :]  # (B, N_feet, 4)
+    total = torch.zeros(env.num_envs, device=env.device)
+    for i in range(foot_quats.shape[1]):
+        proj = quat_apply_inverse(foot_quats[:, i, :], gravity_w_n)  # (B, 3)
+        total += torch.sum(torch.square(proj[:, :2]), dim=1)  # xy² only
+    return total
+
+
+def hip_pitch_knee_vel_l2(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg = _HIP_PITCH_KNEE_CFG,
+) -> torch.Tensor:
+    """Penalize hip_pitch and knee joint velocities (L2 squared).
+
+    Walking requires rapid oscillation of these sagittal-plane joints.
+    Skating uses hip_roll laterally and glides with minimal sagittal movement.
+    This penalizes the oscillation without preventing static balance adjustments.
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    return torch.sum(torch.square(asset.data.joint_vel[:, asset_cfg.joint_ids]), dim=1)
+
+
+def neck_joint_pos_l2(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg = _NECK_JOINT_CFG,
+) -> torch.Tensor:
+    """Penalize neck/head joint position deviation from default (L2 squared).
+
+    Uses find_joints() every call to avoid stale cached indices when the same
+    SceneEntityCfg singleton is reused across robots with different joint layouts
+    (e.g. walk robot vs rollers robot where passive wheels shift neck indices).
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    joint_ids, _ = asset.find_joints(r".*(neck|head).*")
+    error = asset.data.joint_pos[:, joint_ids] - asset.data.default_joint_pos[:, joint_ids]
+    return torch.sum(torch.square(error), dim=1)
+
+
 def joint_torques_l2(
     env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG
 ) -> torch.Tensor:
@@ -827,6 +979,184 @@ def joint_torques_l2(
 
     # Return L2 squared norm
     return torch.sum(torch.square(actuator_forces), dim=1)
+
+
+def skating_stroke(
+    env: ManagerBasedRlEnv,
+    command_name: str,
+    vel_scale: float = 1.0,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot", joint_names=(r".*hip_roll.*",)),
+) -> torch.Tensor:
+    """Reward lateral hip movements when commanded to move forward.
+
+    On roller skates, forward propulsion requires pushing feet laterally outward —
+    the "skating stroke". This reward shapes the policy toward discovering that gait
+    by giving a dense signal: high reward when hip_roll joints are active and there
+    is a non-zero forward command.
+
+    tanh saturation at vel_scale (rad/s) per joint caps the reward at 2.0 total,
+    preventing the robot from gaming the reward by shaking hips as fast as possible.
+    """
+    robot: Entity = env.scene[asset_cfg.name]
+    cmd_x = env.command_manager.get_command(command_name)[:, 0]  # forward command
+
+    # Hip-roll velocity for both legs — (num_envs, 2), saturated per joint
+    hip_roll_vel = robot.data.joint_vel[:, asset_cfg.joint_ids]
+    lateral_push = torch.sum(torch.tanh(torch.abs(hip_roll_vel) / vel_scale), dim=1)
+
+    # Only reward when there is a forward (or backward) command
+    return torch.abs(cmd_x) * lateral_push
+
+
+def skating_outward_push(
+    env: ManagerBasedRlEnv,
+    contact_sensor_name: str,
+    vel_scale: float = 1.0,
+    left_outward_negative: bool = True,
+) -> torch.Tensor:
+    """Reward outward hip_roll (abduction) push when the corresponding foot is grounded.
+
+    Skating propulsion comes from pushing one foot laterally outward while it grips
+    the ground — the anisotropic wheel friction converts lateral force into forward
+    momentum. This reward provides a dense gradient toward the correct skating stroke:
+
+    - Left foot on ground  → reward negative left_hip_roll velocity (abduction = outward)
+    - Right foot on ground → reward positive right_hip_roll velocity (abduction = outward)
+
+    tanh saturation (vel_scale=1.0 rad/s by default) caps the reward at 1.0 per foot.
+    Without saturation the robot games the reward by oscillating as fast as possible
+    (unbounded return), which causes shaking with no forward motion.
+
+    Contact sensor primary bodies must be ordered [roller_foot1=left, roller_foot2=right].
+    If skating_push reward is near zero, flip left_outward_negative.
+    """
+    from mjlab.sensor import ContactSensor
+
+    sensor: ContactSensor = env.scene[contact_sensor_name]
+    # found: (num_envs, 2) — roller_foot1 = left, roller_foot2 = right
+    contact = sensor.data.found.reshape(env.num_envs, -1)
+    left_contact = contact[:, 0].float()
+    right_contact = contact[:, 1].float()
+
+    asset: Entity = env.scene["robot"]
+    # Use find_joints to get integer indices — avoids slice/unresolved-cfg issues
+    left_ids, _ = asset.find_joints("left_hip_roll")
+    right_ids, _ = asset.find_joints("right_hip_roll")
+
+    left_vel = asset.data.joint_vel[:, left_ids[0]]   # (B,)
+    right_vel = asset.data.joint_vel[:, right_ids[0]]  # (B,)
+
+    # Sign convention: left outward = negative vel, right outward = positive vel (default).
+    # Flip left_outward_negative if the reward stays near zero after a few iterations.
+    sign = -1.0 if left_outward_negative else 1.0
+    # tanh saturates at 1.0: robot gets no extra reward for shaking faster than vel_scale
+    left_outward = torch.tanh(torch.clamp(sign * left_vel, min=0.0) / vel_scale)
+    right_outward = torch.tanh(torch.clamp(-sign * right_vel, min=0.0) / vel_scale)
+
+    return left_contact * left_outward + right_contact * right_outward
+
+
+def wheel_speed_reward(
+    env: ManagerBasedRlEnv,
+    command_name: str,
+    wheel_radius: float = 0.0175,
+    vel_scale: float = 0.5,
+) -> torch.Tensor:
+    """Reward forward wheel spin proportional to commanded speed.
+
+    All 4 wheels spin positive for forward motion (verified visually).
+    tanh saturation at vel_scale m/s equivalent prevents runaway.
+    Provides gradient at low body speeds when velocity tracking reward is near-zero.
+    Only fires for forward commands.
+    """
+    cmd_x = env.command_manager.get_command(command_name)[:, 0]  # (B,)
+
+    asset: Entity = env.scene["robot"]
+    lf_ids, _ = asset.find_joints("passive_LFwheel")
+    lr_ids, _ = asset.find_joints("passive_LRwheel")
+    rf_ids, _ = asset.find_joints("passive_RFwheel")
+    rr_ids, _ = asset.find_joints("passive_RRwheel")
+
+    vel = asset.data.joint_vel
+    # All 4 wheels spin positive for forward motion (verified by test_wheel_direction.py)
+    forward_omega = (vel[:, lf_ids[0]] + vel[:, lr_ids[0]] + vel[:, rf_ids[0]] + vel[:, rr_ids[0]]) / 4.0
+
+    omega_scale = vel_scale / wheel_radius
+    return torch.clamp(cmd_x, min=0.0) * torch.tanh(torch.clamp(forward_omega, min=0.0) / omega_scale)
+
+
+def coasting_reward(
+    env: ManagerBasedRlEnv,
+    command_name: str,
+    vel_std: float = 0.3,
+    stillness_std: float = 5.0,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot", joint_names=(r".*(hip|knee|ankle).*",)),
+) -> torch.Tensor:
+    """Reward coasting: low leg-joint velocity while at target speed.
+
+    Returns exp(-vel_error / vel_std²) × exp(-sum(joint_vel²) / stillness_std²).
+    Both factors must be high simultaneously — robot is rewarded for being at
+    target speed AND keeping its legs still (gliding), not for either alone.
+
+    Typical values when coasting well: ~0.7–1.0.  When actively stomping at
+    speed the joint_vel term suppresses the reward toward 0.
+    """
+    cmd = env.command_manager.get_command(command_name)
+    vel_b = env.scene["robot"].data.root_link_lin_vel_b[:, :2]
+    vel_error = torch.sum(torch.square(cmd[:, :2] - vel_b), dim=1)
+    at_speed = torch.exp(-vel_error / vel_std ** 2)
+
+    asset: Entity = env.scene[asset_cfg.name]
+    joint_vel_sq = torch.sum(torch.square(asset.data.joint_vel[:, asset_cfg.joint_ids]), dim=1)
+    stillness = torch.exp(-joint_vel_sq / stillness_std ** 2)
+
+    return at_speed * stillness
+
+
+def braking_reward(
+    env: ManagerBasedRlEnv,
+    command_name: str,
+    vel_std: float = 0.3,
+) -> torch.Tensor:
+    """Reward coming to a stop when cmd_x < 0 (brake commanded).
+
+    Returns clamp(-cmd_x, 0) * exp(-fwd_vel² / vel_std²).
+    - Silent when cmd_x ≥ 0 (coast or push).
+    - At cmd_x = -1 and vel = 0: reward = 1.0 (full stop achieved).
+    - At cmd_x = -1 and vel = vel_std: reward ≈ 0.37 (strong gradient).
+    vel_std=0.3 m/s gives meaningful gradient down to walking-pace speeds.
+    """
+    cmd = env.command_manager.get_command(command_name)
+    cmd_x = cmd[:, 0]
+    braking_strength = torch.clamp(-cmd_x, min=0.0)
+    fwd_vel = env.scene["robot"].data.root_link_lin_vel_b[:, 0]
+    stopped = torch.exp(-(fwd_vel.clamp(min=0.0) ** 2) / (vel_std ** 2))
+    return braking_strength * stopped
+
+
+def forward_speed_reward(env: ManagerBasedRlEnv) -> torch.Tensor:
+    """Linear forward speed reward — no Gaussian, no saturation.
+
+    Designed for the skating stroke primitive: maximize forward speed gained
+    in a short episode. Walking in 3 seconds can't compete with a good stroke.
+    """
+    return torch.clamp(env.scene["robot"].data.root_link_lin_vel_b[:, 0], min=0.0)
+
+
+def double_support_reward(
+    env: ManagerBasedRlEnv,
+    sensor_name: str = "feet_ground_contact",
+) -> torch.Tensor:
+    """Reward having both feet in contact with the ground simultaneously.
+
+    Roller skating keeps both feet on the ground most of the time (unlike walking).
+    Returns 1.0 when both feet are grounded, 0.0 otherwise.
+    """
+    from mjlab.sensor import ContactSensor
+
+    sensor: ContactSensor = env.scene[sensor_name]
+    contact = sensor.data.found.reshape(env.num_envs, -1)
+    return contact[:, 0].float() * contact[:, 1].float()
 
 
 def contact_frequency_penalty(
@@ -1255,6 +1585,24 @@ def push_curriculum(
     return torch.tensor([max_push])
 
 
+def wheel_friction_curriculum(
+    env: ManagerBasedRlEnv,
+    env_ids: torch.Tensor,
+    event_name: str,
+    ranges_stages: list[dict],
+) -> torch.Tensor:
+    """Update wheel friction based on training step stages."""
+    del env_ids  # Unused
+
+    current_ranges = ranges_stages[0]["ranges"]
+    for stage in ranges_stages:
+        if env.common_step_counter > stage["step"]:
+            current_ranges = stage["ranges"]
+
+    env.event_manager.get_term_cfg(event_name).params["ranges"] = current_ranges
+    return torch.tensor([current_ranges[0]])
+
+
 def neck_offset_curriculum(
     env: ManagerBasedRlEnv,
     env_ids: torch.Tensor,
@@ -1300,6 +1648,9 @@ def velocity_command_ranges_curriculum(
     env_ids: torch.Tensor,
     command_name: str,
     velocity_stages: list[dict],
+    update_lin_vel_y: bool = True,
+    update_ang_vel_z: bool = True,
+    forward_only: bool = False,
 ) -> torch.Tensor:
     """Update velocity command ranges based on training progress.
 
@@ -1340,10 +1691,15 @@ def velocity_command_ranges_curriculum(
             current_lin_vel = stage["lin_vel_range"]
             current_ang_vel = stage["ang_vel_range"]
 
-    # Update command ranges (symmetric around zero)
-    cfg.ranges.lin_vel_x = (-current_lin_vel, current_lin_vel)
-    cfg.ranges.lin_vel_y = (-current_lin_vel, current_lin_vel)
-    cfg.ranges.ang_vel_z = (-current_ang_vel, current_ang_vel)
+    # Update command ranges
+    if forward_only:
+        cfg.ranges.lin_vel_x = (0.0, current_lin_vel)
+    else:
+        cfg.ranges.lin_vel_x = (-current_lin_vel, current_lin_vel)
+    if update_lin_vel_y:
+        cfg.ranges.lin_vel_y = (-current_lin_vel, current_lin_vel)
+    if update_ang_vel_z:
+        cfg.ranges.ang_vel_z = (-current_ang_vel, current_ang_vel)
 
     return torch.tensor([current_lin_vel])
 
@@ -1889,6 +2245,135 @@ class VelocityCommandCommandOnly(UniformVelocityCommand):
         visualizer.add_arrow(cmd_lin_from, cmd_lin_to, color=(0.2, 0.2, 0.6, 0.6), width=0.015)
 
 
+class VelocityCommandCommandOnlyCfg(UniformVelocityCommandCfg):
+    def build(self, env: ManagerBasedRlEnv) -> "VelocityCommandCommandOnly":
+        return VelocityCommandCommandOnly(self, env)
+
+
+class RelativeHeadingVelocityCommand(VelocityCommandCommandOnly):
+    """Velocity command where cmd[2] is the heading error in the robot's body frame.
+
+    cmd[0] = lin_vel_x  (throttle: 0=coast, +push, -brake)
+    cmd[1] = lin_vel_y  (unused, 0)
+    cmd[2] = heading_error  (+ = target is to the right/CW, - = to the left/CCW)
+             0 → go straight, ±max = target is max_angle rad to the right/left
+
+    During training: a random world-frame heading is sampled at each episode reset.
+    At every step, cmd[2] = clamp(wrap(current_yaw - target_yaw), ±max_angle).
+    Positive when the robot is pointing CCW (left) of the target → needs to turn right.
+
+    At inference: the user feeds cmd[2] directly.  Holding cmd[2] = constant gives
+    a proportional heading correction = approximately constant turn rate.
+
+    Set heading_command=False and rel_heading_envs=0.0 in the cfg (we handle
+    heading internally).  ang_vel_z range in cfg is used as the clip limit for cmd[2].
+    """
+
+    def __init__(self, cfg, env: ManagerBasedRlEnv):
+        super().__init__(cfg, env)
+        # Sampled target heading per env, world frame (rad)
+        self._target_heading_w = torch.zeros(self.num_envs, device=self.device)
+        # Clip limit for cmd[2]: use ang_vel_z[1] from cfg (the positive bound)
+        ang_rng = cfg.ranges.ang_vel_z
+        self._heading_max = float(ang_rng[1]) if ang_rng else 1.0
+
+    def _resample_command(self, env_ids: torch.Tensor) -> None:
+        super()._resample_command(env_ids)
+        n = len(env_ids)
+        # Sample random world-frame target heading uniformly in [-π, π]
+        self._target_heading_w[env_ids] = (
+            torch.rand(n, device=self.device) * 2.0 * math.pi - math.pi
+        )
+        # Zero ang_vel slot; _update_command will fill it each step
+        self.vel_command_b[env_ids, 2] = 0.0
+
+    def _update_command(self) -> None:
+        # Do NOT call super()._update_command() — it would run the heading
+        # proportional controller and overwrite cmd[2] with a yaw rate.
+        # Instead recompute heading error from scratch each step.
+        quat = self.robot.data.root_link_quat_w  # (N, 4) [w, x, y, z]
+        w, x, y, z = quat[:, 0], quat[:, 1], quat[:, 2], quat[:, 3]
+        current_yaw = torch.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
+        # Positive = target is CCW (left) of robot → turn left. Standard convention.
+        delta = self._target_heading_w - current_yaw
+        heading_error = torch.atan2(torch.sin(delta), torch.cos(delta))
+        self.vel_command_b[:, 2] = heading_error.clamp(-self._heading_max, self._heading_max)
+
+    def _update_metrics(self) -> None:
+        pass  # No velocity tracking metrics for heading command
+
+
+class RelativeHeadingVelocityCommandCfg(UniformVelocityCommandCfg):
+    def build(self, env: ManagerBasedRlEnv) -> "RelativeHeadingVelocityCommand":
+        return RelativeHeadingVelocityCommand(self, env)
+
+
+def heading_tracking_reward(
+    env: ManagerBasedRlEnv,
+    command_name: str,
+    std: float = 0.5,
+) -> torch.Tensor:
+    """Reward for reducing heading error when cmd[2] encodes heading error.
+
+    Returns exp(-cmd[2]² / std²).
+    - At error = 0 (on heading): reward = 1.0.
+    - At error = std: reward ≈ 0.37 (strong gradient).
+    - At error = 1.0 rad with std=0.5: reward ≈ 0.018 (nearly zero).
+
+    std=0.5 rad (≈28°) gives a meaningful gradient across the expected range.
+    """
+    cmd = env.command_manager.get_command(command_name)
+    heading_error = cmd[:, 2]
+    return torch.exp(-(heading_error ** 2) / (std ** 2))
+
+
+def skating_air_time_reward(
+    env: ManagerBasedRlEnv,
+    sensor_name: str,
+    command_name: str,
+    threshold_min: float = 0.05,
+    threshold_max: float = 0.4,
+) -> torch.Tensor:
+    """Reward feet air time only when pushing (cmd_x > 0).
+
+    Encourages the robot to lift each foot during the recovery phase of the
+    skating stroke rather than dragging it on the ground.
+    Scaled by cmd_x so the incentive grows with push intensity.
+    """
+    from mjlab.sensor import ContactSensor
+    sensor: ContactSensor = env.scene[sensor_name]
+    current_air_time = sensor.data.current_air_time
+    assert current_air_time is not None
+
+    in_range = (current_air_time > threshold_min) & (current_air_time < threshold_max)
+    reward = torch.sum(in_range.float(), dim=1)
+
+    cmd_x = env.command_manager.get_command(command_name)[:, 0]
+    return reward * torch.clamp(cmd_x, min=0.0)
+
+
+def forward_lean_reward(
+    env: ManagerBasedRlEnv,
+    command_name: str,
+    target_pitch: float = 0.08,
+    std: float = 0.08,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot", body_names=("trunk_base",)),
+) -> torch.Tensor:
+    """Reward leaning slightly forward when pushing, to counteract the backward
+    torque from skating strokes.
+
+    Uses projected_gravity_b x-component as a pitch proxy:
+      forward_lean = -gravity_b[:, 0]  (positive when leaning forward)
+
+    Only fires when cmd_x > 0. Peaks at target_pitch radians of forward lean.
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    cmd_x = env.command_manager.get_command(command_name)[:, 0]
+    forward_lean = asset.data.projected_gravity_b[:, 0]
+    push = torch.clamp(cmd_x, min=0.0)
+    return push * torch.exp(-((forward_lean - target_pitch) ** 2) / (std ** 2))
+
+
 class GroundPickPhaseCommand(UniformVelocityCommand):
     """Phase-encoding command for the ground pick task.
 
@@ -1933,6 +2418,11 @@ class GroundPickPhaseCommand(UniformVelocityCommand):
         pass  # No velocity tracking metrics for ground pick
 
 
+class GroundPickPhaseCommandCfg(UniformVelocityCommandCfg):
+    def build(self, env: ManagerBasedRlEnv) -> "GroundPickPhaseCommand":
+        return GroundPickPhaseCommand(self, env)
+
+
 class BodyPoseCommand(UniformVelocityCommand):
     """Body pose command for standing control: [Δz (m), Δpitch (rad), Δroll (rad)].
 
@@ -1959,6 +2449,11 @@ class BodyPoseCommand(UniformVelocityCommand):
 
     def _debug_vis_impl(self, visualizer: "DebugVisualizer") -> None:
         pass  # No visualization needed
+
+
+class BodyPoseCommandCfg(UniformVelocityCommandCfg):
+    def build(self, env: ManagerBasedRlEnv) -> "BodyPoseCommand":
+        return BodyPoseCommand(self, env)
 
 
 def body_pose_cmd_obs(

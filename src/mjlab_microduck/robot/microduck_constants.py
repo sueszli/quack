@@ -11,10 +11,12 @@ _ROBOT_DIR: Path = Path(os.path.dirname(__file__)) / "microduck"
 MICRODUCK_WALK_XML: Path = _ROBOT_DIR / "robot_walk.xml"
 MICRODUCK_STANDUP_XML: Path = _ROBOT_DIR / "robot_standup.xml"
 MICRODUCK_GROUND_PICK_XML: Path = _ROBOT_DIR / "robot_ground_pick.xml"
+MICRODUCK_WALK_ROLLERS_XML: Path = _ROBOT_DIR / "robot_walk_rollers.xml"
 
 assert MICRODUCK_WALK_XML.exists(), f"XML not found: {MICRODUCK_WALK_XML}"
 assert MICRODUCK_STANDUP_XML.exists(), f"XML not found: {MICRODUCK_STANDUP_XML}"
 assert MICRODUCK_GROUND_PICK_XML.exists(), f"XML not found: {MICRODUCK_GROUND_PICK_XML}"
+assert MICRODUCK_WALK_ROLLERS_XML.exists(), f"XML not found: {MICRODUCK_WALK_ROLLERS_XML}"
 
 
 def get_walk_spec() -> mujoco.MjSpec:
@@ -29,6 +31,10 @@ def get_ground_pick_spec() -> mujoco.MjSpec:
     return mujoco.MjSpec.from_file(str(MICRODUCK_GROUND_PICK_XML))
 
 
+def get_walk_rollers_spec() -> mujoco.MjSpec:
+    return mujoco.MjSpec.from_file(str(MICRODUCK_WALK_ROLLERS_XML))
+
+
 HOME_FRAME = EntityCfg.InitialStateCfg(
     joint_pos={
         # Lower body
@@ -41,8 +47,8 @@ HOME_FRAME = EntityCfg.InitialStateCfg(
         r".*left_ankle.*": 0.6,
         r".*right_ankle.*": -0.6,
         # Head
-        r".*neck_pitch.*": -0.2,
-        r".*head_pitch.*": 0.2,
+        r".*neck_pitch.*": 0.0,
+        r".*head_pitch.*": 0.0,
         r".*head_yaw.*": 0.0,
         r".*head_roll.*": 0.0,
     },
@@ -59,10 +65,11 @@ FULL_COLLISION = CollisionCfg(
 actuators = DelayedActuatorCfg(
     delay_min_lag=0,  # Increased from 0 - real actuators have consistent delay
     delay_max_lag=3,  # Increased from 3 - force lower-gain control
-    base_cfg=XmlPositionActuatorCfg(joint_names_expr=(r".*",)),
+    base_cfg=XmlPositionActuatorCfg(target_names_expr=(r".*",)),
 )
 
-# actuators=XmlPositionActuatorCfg(joint_names_expr=(r".*",))
+
+# actuators=XmlPositionActuatorCfg(target_names_expr=(r".*",))
 
 MICRODUCK_WALK_ROBOT_CFG = EntityCfg(
     spec_fn=get_walk_spec,
@@ -90,6 +97,25 @@ MICRODUCK_GROUND_PICK_ROBOT_CFG = EntityCfg(
     collisions=(FULL_COLLISION,),
     articulation=EntityArticulationInfoCfg(
         actuators=(actuators,),
+        soft_joint_pos_limit_factor=0.9,
+    ),
+)
+
+# Roller skate robot: passive wheel joints have no actuators in the XML.
+# Use a separate actuator config that explicitly excludes passive joints so
+# the action space stays 14-dimensional (same as the walk robot).
+roller_actuators = DelayedActuatorCfg(
+    delay_min_lag=0,
+    delay_max_lag=3,
+    base_cfg=XmlPositionActuatorCfg(target_names_expr=(r"^(?!passive_).*",)),
+)
+
+MICRODUCK_WALK_ROLLERS_ROBOT_CFG = EntityCfg(
+    spec_fn=get_walk_rollers_spec,
+    init_state=HOME_FRAME,
+    collisions=(),  # roller wheel collision geoms have no explicit names; XML defaults apply
+    articulation=EntityArticulationInfoCfg(
+        actuators=(roller_actuators,),
         soft_joint_pos_limit_factor=0.9,
     ),
 )

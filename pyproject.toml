@@ -25,8 +25,9 @@ exclude = [
 
 [tool.uv]
 override-dependencies = [
-    "mujoco",
+    "mujoco>=3.5.0",
 ]
 
 [tool.uv.sources]
-mjlab = { git = "https://github.com/mujocolab/mjlab.git", rev = "d1d32d8b86e68fe317356de2561f4efc63ffcc29" }
+# mjlab = { git = "https://github.com/mujocolab/mjlab.git", rev = "d1d32d8b86e68fe317356de2561f4efc63ffcc29" }
+mjlab = { git = "https://github.com/mujocolab/mjlab.git", rev = "5af32e378dcb93c9e881ace83cc5a3f5d373fe60" }

@@ -3,6 +3,9 @@
 import math
 from copy import deepcopy
 
+# Symmetry
+ENABLE_SYMMETRY = True
+
 # Domain randomization toggles
 ENABLE_COM_RANDOMIZATION = True
 ENABLE_KP_RANDOMIZATION = True
@@ -40,8 +43,9 @@ import mjlab.terrains as terrain_gen
 from mjlab.terrains.terrain_generator import TerrainGeneratorCfg
 
 from mjlab.envs import ManagerBasedRlEnvCfg
+from mjlab.envs.mdp import dr
 from mjlab.envs.mdp.actions import JointPositionActionCfg
-from mjlab.managers.manager_term_config import (
+from mjlab.managers import (
     CurriculumTermCfg,
     EventTermCfg,
     ObservationTermCfg,
@@ -50,8 +54,7 @@ from mjlab.managers.manager_term_config import (
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.rl import (
     RslRlOnPolicyRunnerCfg,
-    RslRlPpoActorCriticCfg,
-    RslRlPpoAlgorithmCfg,
+    RslRlModelCfg,
 )
 from mjlab.sensor import ContactMatch, ContactSensorCfg
 from mjlab.tasks.velocity import mdp
@@ -61,6 +64,8 @@ from mjlab.utils.noise import UniformNoiseCfg as Unoise
 
 from mjlab_microduck.robot.microduck_constants import MICRODUCK_WALK_ROBOT_CFG
 from mjlab_microduck.tasks import mdp as microduck_mdp
+from mjlab_microduck.tasks.symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
+
 
 # Microduck-specific rough terrain: much gentler than the default ROUGH_TERRAINS_CFG.
 # The robot can only lift its feet ~1-2 cm, so steps are capped at 1.5 cm.
@@ -133,8 +138,8 @@ def make_microduck_velocity_env_cfg(
     feet_ground_cfg = ContactSensorCfg(
         name="feet_ground_contact",
         primary=ContactMatch(
-            mode="subtree",
-            pattern=r"^(foot_tpu_bottom|foot)$",  # LEFT foot first, RIGHT foot second
+            mode="geom",
+            pattern=r"^(left_foot_collision|right_foot_collision)$",  # LEFT foot first, RIGHT foot second
             entity="robot",
         ),
         secondary=ContactMatch(mode="body", pattern="terrain"),
@@ -183,7 +188,7 @@ def make_microduck_velocity_env_cfg(
     assert isinstance(joint_pos_action, JointPositionActionCfg)
     joint_pos_action.scale = 1.0
     if ENABLE_NECK_OFFSET_RANDOMIZATION:
-        joint_pos_action.class_type = microduck_mdp.NeckOffsetJointPositionAction
+        cfg.actions["joint_pos"] = microduck_mdp.NeckOffsetJointPositionActionCfg(**vars(joint_pos_action))
 
     # === REWARDS ===
     # Pose reward configuration
@@ -322,6 +327,13 @@ def make_microduck_velocity_env_cfg(
             params={"max_offset": NECK_OFFSET_MAX_ANGLE},
         )
 
+    # Remove new-mjlab startup DR events not present in old training (main branch).
+    # encoder_bias subtracts a constant per-joint offset from action targets,
+    # making joint control inaccurate and preventing clean walking.
+    # base_com is a no-op (body_names=()) but remove for clarity.
+    del cfg.events["encoder_bias"]
+    del cfg.events["base_com"]
+
     cfg.events["foot_friction"].params[
         "asset_cfg"
     ].geom_names = foot_frictions_geom_names
@@ -349,13 +361,11 @@ def make_microduck_velocity_env_cfg(
     if ENABLE_COM_RANDOMIZATION:
         # Randomize CoM position
         cfg.events["randomize_com"] = EventTermCfg(
-            func=mdp.randomize_field,
+            func=dr.body_ipos,
             mode="reset",
-            domain_randomization=True,
             params={
                 "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
                 "operation": "add",
-                "field": "body_ipos",  # Body inertial position (CoM)
                 "ranges": (-COM_RANDOMIZATION_RANGE, COM_RANDOMIZATION_RANGE),
             },
         )
@@ -391,13 +401,11 @@ def make_microduck_velocity_env_cfg(
     if ENABLE_JOINT_FRICTION_RANDOMIZATION:
         # Randomize joint friction losses (wear, temperature effects)
         cfg.events["randomize_joint_friction"] = EventTermCfg(
-            func=mdp.randomize_field,
+            func=dr.dof_frictionloss,
             mode="reset",
-            domain_randomization=True,
             params={
                 "asset_cfg": SceneEntityCfg("robot", joint_names=(r".*",)),
                 "operation": "scale",
-                "field": "dof_frictionloss",
                 "ranges": JOINT_FRICTION_RANDOMIZATION_RANGE,
             },
         )
@@ -405,13 +413,11 @@ def make_microduck_velocity_env_cfg(
     if ENABLE_JOINT_DAMPING_RANDOMIZATION:
         # Randomize joint damping (lubrication, temperature effects)
         cfg.events["randomize_joint_damping"] = EventTermCfg(
-            func=mdp.randomize_field,
+            func=dr.dof_damping,
             mode="reset",
-            domain_randomization=True,
             params={
                 "asset_cfg": SceneEntityCfg("robot", joint_names=(r".*",)),
                 "operation": "scale",
-                "field": "dof_damping",
                 "ranges": JOINT_DAMPING_RANDOMIZATION_RANGE,
             },
         )
@@ -440,7 +446,9 @@ def make_microduck_velocity_env_cfg(
         )
 
     # Observations
-    del cfg.observations["policy"].terms["base_lin_vel"]
+    del cfg.observations["actor"].terms["height_scan"]
+    del cfg.observations["critic"].terms["height_scan"]
+    del cfg.observations["actor"].terms["base_lin_vel"]
 
     # Add base_lin_vel to critic only (privileged information)
     cfg.observations["critic"].terms["base_lin_vel"] = ObservationTermCfg(
@@ -454,32 +462,32 @@ def make_microduck_velocity_env_cfg(
     # Replace projected_gravity with raw_accelerometer if flag is False
     if not USE_PROJECTED_GRAVITY:
         # Remove projected_gravity and add raw_accelerometer
-        del cfg.observations["policy"].terms["projected_gravity"]
-        cfg.observations["policy"].terms["raw_accelerometer"] = ObservationTermCfg(
+        del cfg.observations["actor"].terms["projected_gravity"]
+        cfg.observations["actor"].terms["raw_accelerometer"] = ObservationTermCfg(
             func=microduck_mdp.raw_accelerometer,
             scale=1.0,
         )
 
-    cfg.observations["policy"].terms[gravity_term_name] = deepcopy(
-        cfg.observations["policy"].terms[gravity_term_name]
+    cfg.observations["actor"].terms[gravity_term_name] = deepcopy(
+        cfg.observations["actor"].terms[gravity_term_name]
     )
-    cfg.observations["policy"].terms["base_ang_vel"] = deepcopy(
-        cfg.observations["policy"].terms["base_ang_vel"]
+    cfg.observations["actor"].terms["base_ang_vel"] = deepcopy(
+        cfg.observations["actor"].terms["base_ang_vel"]
     )
 
-    cfg.observations["policy"].terms["base_ang_vel"].delay_min_lag = 0
-    cfg.observations["policy"].terms["base_ang_vel"].delay_max_lag = 3
-    cfg.observations["policy"].terms["base_ang_vel"].delay_update_period = 64
+    cfg.observations["actor"].terms["base_ang_vel"].delay_min_lag = 0
+    cfg.observations["actor"].terms["base_ang_vel"].delay_max_lag = 3
+    cfg.observations["actor"].terms["base_ang_vel"].delay_update_period = 64
 
-    cfg.observations["policy"].terms[gravity_term_name].delay_min_lag = 0
-    cfg.observations["policy"].terms[gravity_term_name].delay_max_lag = 3
-    cfg.observations["policy"].terms[gravity_term_name].delay_update_period = 64
+    cfg.observations["actor"].terms[gravity_term_name].delay_min_lag = 0
+    cfg.observations["actor"].terms[gravity_term_name].delay_max_lag = 3
+    cfg.observations["actor"].terms[gravity_term_name].delay_update_period = 64
 
     # Observation noise configuration (edit these values as needed)
-    cfg.observations["policy"].terms["base_ang_vel"].noise = Unoise(n_min=-0.024, n_max=0.024) # was 0.2
-    cfg.observations["policy"].terms[gravity_term_name].noise = Unoise(n_min=-0.007, n_max=0.007)  # was 0.15
-    cfg.observations["policy"].terms["joint_pos"].noise = Unoise(n_min=-0.0006, n_max=0.0006)  # was 0.05
-    cfg.observations["policy"].terms["joint_vel"].noise = Unoise(n_min=-0.024, n_max=0.024)  # was 2.0
+    cfg.observations["actor"].terms["base_ang_vel"].noise = Unoise(n_min=-0.024, n_max=0.024) # was 0.2
+    cfg.observations["actor"].terms[gravity_term_name].noise = Unoise(n_min=-0.007, n_max=0.007)  # was 0.15
+    cfg.observations["actor"].terms["joint_pos"].noise = Unoise(n_min=-0.0006, n_max=0.0006)  # was 0.05
+    cfg.observations["actor"].terms["joint_vel"].noise = Unoise(n_min=-0.024, n_max=0.024)  # was 2.0
 
     # Commands — deepcopy to avoid shared-state corruption from other env cfgs
     # (make_velocity_env_cfg() returns objects with shared mutable references;
@@ -492,7 +500,7 @@ def make_microduck_velocity_env_cfg(
     command.ranges.lin_vel_y = (-0.3, 0.3)
     command.ranges.ang_vel_z = (-1.5, 1.5)
     command.viz.z_offset = 0.5
-    command.class_type = microduck_mdp.VelocityCommandCommandOnly
+    cfg.commands["twist"] = microduck_mdp.VelocityCommandCommandOnlyCfg(**vars(command))
 
     # Terrain
     if not rough:
@@ -591,7 +599,7 @@ def make_microduck_velocity_env_cfg(
                 {"step": 0,          "lin_vel_range": 0.3,  "ang_vel_range": 1.5},
                 {"step": 500 * 24,   "lin_vel_range": 0.35, "ang_vel_range": 1.6},
                 {"step": 1000 * 24,  "lin_vel_range": 0.4,  "ang_vel_range": 1.7},
-                # {"step": 1500 * 24,  "lin_vel_range": 0.7,  "ang_vel_range": 2.0},
+                {"step": 1500 * 24,  "lin_vel_range": 0.5,  "ang_vel_range": 2.0},
                 # {"step": 2000 * 24,  "lin_vel_range": 1.0,  "ang_vel_range": 2.5},
             ],
         },
@@ -607,7 +615,7 @@ def make_microduck_velocity_env_cfg(
                 "offset_stages": [
                     {"step": 0,          "max_offset": 0.0},
                     {"step": 500 * 24,   "max_offset": 0.1},
-                    {"step": 750 * 24,  "max_offset": 0.2},
+                    {"step": 750 * 24,   "max_offset": 0.2},
                     {"step": 1000 * 24,  "max_offset": NECK_OFFSET_MAX_ANGLE},
                 ],
             },
@@ -622,15 +630,22 @@ def make_microduck_velocity_env_cfg(
 
 
 MicroduckRlCfg = RslRlOnPolicyRunnerCfg(
-    policy=RslRlPpoActorCriticCfg(
-        init_noise_std=1.0,
-        actor_obs_normalization=False,
-        critic_obs_normalization=False,
-        actor_hidden_dims=(512, 256, 128),
-        critic_hidden_dims=(512, 256, 128),
+    actor=RslRlModelCfg(
+        hidden_dims=(512, 256, 128),
         activation="elu",
+        obs_normalization=False,
+        distribution_cfg={
+            "class_name": "GaussianDistribution",
+            "init_std": 1.0,
+            "std_type": "scalar",
+        },
     ),
-    algorithm=RslRlPpoAlgorithmCfg(
+    critic=RslRlModelCfg(
+        hidden_dims=(512, 256, 128),
+        activation="elu",
+        obs_normalization=False,
+    ),
+    algorithm=PpoWithSymmetryCfg(
         value_loss_coef=1.0,
         use_clipped_value_loss=True,
         clip_param=0.2,
@@ -643,6 +658,7 @@ MicroduckRlCfg = RslRlOnPolicyRunnerCfg(
         lam=0.95,
         desired_kl=0.01,
         max_grad_norm=1.0,
+        symmetry_cfg=SYMMETRY_CFG if ENABLE_SYMMETRY else None,
     ),
     wandb_project="mjlab_microduck",
     experiment_name="velocity",  # Directory name
