@@ -28,5 +28,10 @@ uv run play Mjlab-Velocity-Flat-MicroDuck --wandb-run-path <...>
 
 ```
 uv run export.py Mjlab-Velocity-Flat-MicroDuck --wandb-run-path <...>
-
 ````
+
+## Infer policy in mujoco cpu
+
+```
+uv run scripts/infer_policy.py --walking output.onnx
+```
