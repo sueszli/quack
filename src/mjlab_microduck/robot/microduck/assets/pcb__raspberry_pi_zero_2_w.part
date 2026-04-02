@@ -2,12 +2,12 @@
     "configuration": "default",
     "documentId": "804927696f06d877f3f1803e",
     "documentMicroversion": "042c634875381e2229dd008a",
-    "elementId": "6a7320ab42427c3c6d1a75ee",
+    "elementId": "c1085f5be782740f05cd18b2",
     "fullConfiguration": "default",
-    "id": "ML/osgnaXvaEGY0Vc",
+    "id": "MbQFoo55+sLIkygdu",
     "isStandardContent": false,
-    "name": "roll_motor_bottom <2>",
-    "partId": "R5BD",
+    "name": "PCB, Raspberry Pi Zero 2 W <1>",
+    "partId": "KF7G",
     "suppressed": false,
     "type": "Part"
 }

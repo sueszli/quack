@@ -4,10 +4,10 @@
     "documentMicroversion": "042c634875381e2229dd008a",
     "elementId": "6a7320ab42427c3c6d1a75ee",
     "fullConfiguration": "default",
-    "id": "ML/osgnaXvaEGY0Vc",
+    "id": "M6fcZrx3z5imuC4IX",
     "isStandardContent": false,
-    "name": "roll_motor_bottom <2>",
-    "partId": "R5BD",
+    "name": "electronics_hub <1>",
+    "partId": "R6PD",
     "suppressed": false,
     "type": "Part"
 }
