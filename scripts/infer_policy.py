@@ -11,7 +11,8 @@ import mujoco
 import mujoco.viewer
 import onnxruntime as ort
 
-MICRODUCK_XML = "src/mjlab_microduck/robot/microduck/scene.xml"
+# MICRODUCK_XML = "src/mjlab_microduck/robot/microduck/scene.xml"
+MICRODUCK_XML = "src/mjlab_microduck/robot/microduck/scene_robot_walk.xml"
 MICRODUCK_ROLLERS_XML = "src/mjlab_microduck/robot/microduck/scene_roller.xml"
 
 # Body pose command constants (must match training constants)

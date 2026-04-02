@@ -184,14 +184,16 @@ class BamM6Actuator(Actuator["BamM6ActuatorCfg"]):
         motor_torque = cfg.kt * voltage / cfg.R - (cfg.kt ** 2) * vel / cfg.R
 
         # ── 3. External (bias) torque on each joint ──
-        # qfrc_bias contains gravity + Coriolis forces per DOF
+        # qfrc_bias contains gravity + Coriolis forces per DOF.
+        # BAM convention: bias_torque = m*g*l*sin(q) with g = -9.81
+        # MuJoCo convention: qfrc_bias has the opposite sign.
+        # We negate to match BAM's sign convention for the friction model.
         assert self._data is not None and self._dof_ids is not None
         qfrc_bias_all = self._data.qfrc_bias  # (nworld, nv)
         if isinstance(qfrc_bias_all, torch.Tensor):
-            external_torque = qfrc_bias_all[:, self._dof_ids]
+            external_torque = -qfrc_bias_all[:, self._dof_ids]
         else:
-            # WarpBridge: convert to torch
-            external_torque = torch.as_tensor(
+            external_torque = -torch.as_tensor(
                 qfrc_bias_all, device=self._device
             )[:, self._dof_ids]
 
@@ -254,7 +256,11 @@ class BamM6Actuator(Actuator["BamM6ActuatorCfg"]):
             eff_inertia = 1.0 / invweight[:, self._dof_ids]
 
         # Net torque without friction (motor + gravity/coriolis)
-        net_no_friction = motor_torque + external_torque
+        # Note: external_torque is in BAM convention (negated qfrc_bias).
+        # For tau_stop we need the actual MuJoCo net force, which is
+        # motor_torque (our ctrl) + qfrc_bias (added by MuJoCo) = motor_torque - external_torque
+        qfrc_bias_mujoco = -external_torque  # un-negate to get MuJoCo convention
+        net_no_friction = motor_torque + qfrc_bias_mujoco
         tau_stop = (eff_inertia / self._dt) * vel + net_no_friction
 
         # Friction opposes tau_stop, clipped to budget
@@ -263,11 +269,5 @@ class BamM6Actuator(Actuator["BamM6ActuatorCfg"]):
         friction_torque = -torch.sign(tau_stop) * friction_magnitude
 
         # ── 6. Return total actuator torque ──
-        # MuJoCo will add qfrc_bias (gravity/coriolis) automatically,
-        # so we only return motor_torque + friction.
-        # But wait — qfrc_bias is already in the sim pipeline. Our friction
-        # computation used external_torque (= qfrc_bias) to determine the
-        # friction magnitude. The friction_torque itself is an additional force
-        # that opposes the combined motor + external torque.
-        # Since MuJoCo adds qfrc_bias separately, we return motor + friction only.
+        # MuJoCo adds qfrc_bias separately. We return motor + friction only.
         return motor_torque + friction_torque
