@@ -1258,6 +1258,45 @@ def neck_offset_curriculum(
     return torch.tensor([current_offset])
 
 
+def com_range_curriculum(
+    env: ManagerBasedRlEnv,
+    env_ids: torch.Tensor,
+    event_name: str,
+    range_stages: list[dict],
+) -> torch.Tensor:
+    """Update CoM randomization range based on training progress.
+
+    Gradually increases the CoM offset range so the robot first learns to walk
+    with a small CoM uncertainty, then progressively larger.
+
+    Args:
+        env: The RL environment
+        env_ids: Environment IDs (unused)
+        event_name: Name of the CoM randomization event (e.g., "randomize_com")
+        range_stages: List of dicts with 'step' and 'range' keys (range in meters)
+            Example: [
+                {"step": 0,          "range": 0.003},
+                {"step": 1000 * 24,  "range": 0.005},
+                {"step": 2000 * 24,  "range": 0.008},
+            ]
+
+    Returns:
+        Current range value as a tensor (for logging)
+    """
+    del env_ids
+
+    assert event_name in env.cfg.events, f"Event '{event_name}' not found"
+    event_cfg = env.cfg.events[event_name]
+
+    current_range = range_stages[0]["range"]
+    for stage in range_stages:
+        if env.common_step_counter > stage["step"]:
+            current_range = stage["range"]
+
+    event_cfg.params["ranges"] = (-current_range, current_range)
+    return torch.tensor([current_range])
+
+
 def velocity_command_ranges_curriculum(
     env: ManagerBasedRlEnv,
     env_ids: torch.Tensor,

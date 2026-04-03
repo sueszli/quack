@@ -27,7 +27,7 @@ USE_PROJECTED_GRAVITY = True  # If True, use projected gravity instead of raw ac
 
 # Domain randomization ranges (adjust as needed)
 # Conservative ranges proven to be stable - can increase gradually if needed
-COM_RANDOMIZATION_RANGE = 0.008  # ±8mm
+COM_RANDOMIZATION_RANGE = 0.003  # ±3mm initial, ramped to ±8mm via curriculum
 MASS_INERTIA_RANDOMIZATION_RANGE = (0.95, 1.05)  # ±5% applied to BOTH mass and inertia together.
 KP_RANDOMIZATION_RANGE = (0.85, 1.15)  # ±15%
 KD_RANDOMIZATION_RANGE = (0.9, 1.1)  # ±10% (can increase to 0.8-1.2)
@@ -617,6 +617,20 @@ def make_microduck_velocity_env_cfg(
                     {"step": 500 * 24,   "max_offset": 0.1},
                     {"step": 750 * 24,   "max_offset": 0.2},
                     {"step": 1000 * 24,  "max_offset": NECK_OFFSET_MAX_ANGLE},
+                ],
+            },
+        )
+
+    # CoM randomization range curriculum - start small, ramp up
+    if ENABLE_COM_RANDOMIZATION:
+        cfg.curriculum["com_range"] = CurriculumTermCfg(
+            func=microduck_mdp.com_range_curriculum,
+            params={
+                "event_name": "randomize_com",
+                "range_stages": [
+                    {"step": 0,          "range": 0.003},
+                    {"step": 1000 * 24,  "range": 0.005},
+                    {"step": 2000 * 24,  "range": 0.008},
                 ],
             },
         )
