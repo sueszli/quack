@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.12, <3.14"
 dependencies = [
     "mjlab",
+    "onnxruntime>=1.24.4",
 ]
 
 [project.entry-points."mjlab.tasks"]

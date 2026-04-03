@@ -27,7 +27,7 @@ USE_PROJECTED_GRAVITY = True  # If True, use projected gravity instead of raw ac
 
 # Domain randomization ranges (adjust as needed)
 # Conservative ranges proven to be stable - can increase gradually if needed
-COM_RANDOMIZATION_RANGE = 0.003  # ±3mm
+COM_RANDOMIZATION_RANGE = 0.008  # ±8mm
 MASS_INERTIA_RANDOMIZATION_RANGE = (0.95, 1.05)  # ±5% applied to BOTH mass and inertia together.
 KP_RANDOMIZATION_RANGE = (0.85, 1.15)  # ±15%
 KD_RANDOMIZATION_RANGE = (0.9, 1.1)  # ±10% (can increase to 0.8-1.2)
