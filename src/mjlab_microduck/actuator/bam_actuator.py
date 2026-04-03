@@ -93,6 +93,11 @@ class BamM6Actuator(Actuator["BamM6ActuatorCfg"]):
         self._data: mjwarp.Data | None = None
         self._dt: float = 0.0
         self._dof_ids: torch.Tensor | None = None
+        # Per-env gain tensors (initialized in initialize(), randomized by DR)
+        self.kp_scale: torch.Tensor | None = None
+        self.kd_scale: torch.Tensor | None = None
+        self.default_kp_scale: torch.Tensor | None = None
+        self.default_kd_scale: torch.Tensor | None = None
 
     def edit_spec(self, spec: mujoco.MjSpec, target_names: list[str]) -> None:
         """Convert existing XML position actuators to motor (torque) mode and
@@ -162,6 +167,40 @@ class BamM6Actuator(Actuator["BamM6ActuatorCfg"]):
             dof_ids.append(jnt_dofadr[global_joint_id])
         self._dof_ids = torch.tensor(dof_ids, dtype=torch.long, device=device)
 
+        # Per-env gain scaling factors (1.0 = nominal, randomized by DR)
+        num_envs = data.nworld
+        self.kp_scale = torch.ones(num_envs, 1, dtype=torch.float, device=device)
+        self.kd_scale = torch.ones(num_envs, 1, dtype=torch.float, device=device)
+        self.default_kp_scale = self.kp_scale.clone()
+        self.default_kd_scale = self.kd_scale.clone()
+
+    def set_gains(
+        self,
+        env_ids: torch.Tensor | slice,
+        kp_scale: torch.Tensor | None = None,
+        kd_scale: torch.Tensor | None = None,
+    ) -> None:
+        """Set per-env gain scaling factors.
+
+        Args:
+            env_ids: Environment indices to update.
+            kp_scale: Multiplicative scale for kp_fw (shape: (len(env_ids), 1)).
+            kd_scale: Multiplicative scale for back-EMF damping (shape: (len(env_ids), 1)).
+        """
+        if kp_scale is not None:
+            assert self.kp_scale is not None
+            self.kp_scale[env_ids] = kp_scale
+        if kd_scale is not None:
+            assert self.kd_scale is not None
+            self.kd_scale[env_ids] = kd_scale
+
+    def reset_gains(self, env_ids: torch.Tensor | slice) -> None:
+        """Reset gains to nominal for specified environments."""
+        assert self.kp_scale is not None and self.default_kp_scale is not None
+        assert self.kd_scale is not None and self.default_kd_scale is not None
+        self.kp_scale[env_ids] = self.default_kp_scale[env_ids]
+        self.kd_scale[env_ids] = self.default_kd_scale[env_ids]
+
     def compute(self, cmd: ActuatorCmd) -> torch.Tensor:
         """Compute actuator torques using the full BAM M6 model.
 
@@ -176,12 +215,14 @@ class BamM6Actuator(Actuator["BamM6ActuatorCfg"]):
         vel = cmd.vel
 
         # ── 1. XL330 firmware voltage control law ──
-        duty_cycle = pos_error * cfg.kp_fw * cfg.error_gain
+        # kp_scale is per-env (shape: num_envs, 1), broadcast over joints
+        assert self.kp_scale is not None and self.kd_scale is not None
+        duty_cycle = pos_error * cfg.kp_fw * self.kp_scale * cfg.error_gain
         duty_cycle = torch.clamp(duty_cycle, -cfg.max_pwm, cfg.max_pwm)
         voltage = cfg.vin * duty_cycle
 
         # ── 2. DC motor torque ──
-        motor_torque = cfg.kt * voltage / cfg.R - (cfg.kt ** 2) * vel / cfg.R
+        motor_torque = cfg.kt * voltage / cfg.R - (cfg.kt ** 2) * vel * self.kd_scale / cfg.R
 
         # ── 3. External (bias) torque on each joint ──
         # qfrc_bias contains gravity + Coriolis forces per DOF.

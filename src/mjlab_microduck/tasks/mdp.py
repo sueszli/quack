@@ -974,20 +974,24 @@ def randomize_delayed_actuator_gains(
         ctrl_ids = base_actuator.ctrl_ids
 
         # Store original values on first call (use tuple of ctrl_ids as key)
+        from mjlab_microduck.actuator.bam_actuator import BamM6Actuator
         ctrl_key = tuple(ctrl_ids.tolist())
-        if ctrl_key not in env._original_actuator_gains:
-            # Store a copy of the original values for env 0 (they're the same for all envs initially)
-            env._original_actuator_gains[ctrl_key] = {
-                'gainprm': env.sim.model.actuator_gainprm[0, ctrl_ids, 0].clone(),
-                'biasprm1': env.sim.model.actuator_biasprm[0, ctrl_ids, 1].clone(),
-                'biasprm2': env.sim.model.actuator_biasprm[0, ctrl_ids, 2].clone(),
-            }
+        if not isinstance(base_actuator, BamM6Actuator):
+            if ctrl_key not in env._original_actuator_gains:
+                env._original_actuator_gains[ctrl_key] = {
+                    'gainprm': env.sim.model.actuator_gainprm[0, ctrl_ids, 0].clone(),
+                    'biasprm1': env.sim.model.actuator_biasprm[0, ctrl_ids, 1].clone(),
+                    'biasprm2': env.sim.model.actuator_biasprm[0, ctrl_ids, 2].clone(),
+                }
 
         # Reset to original values first (to prevent accumulation)
-        original = env._original_actuator_gains[ctrl_key]
-        env.sim.model.actuator_gainprm[env_ids[:, None], ctrl_ids, 0] = original['gainprm'].unsqueeze(0).expand(len(env_ids), -1)
-        env.sim.model.actuator_biasprm[env_ids[:, None], ctrl_ids, 1] = original['biasprm1'].unsqueeze(0).expand(len(env_ids), -1)
-        env.sim.model.actuator_biasprm[env_ids[:, None], ctrl_ids, 2] = original['biasprm2'].unsqueeze(0).expand(len(env_ids), -1)
+        if isinstance(base_actuator, BamM6Actuator):
+            base_actuator.reset_gains(env_ids)
+        else:
+            original = env._original_actuator_gains[ctrl_key]
+            env.sim.model.actuator_gainprm[env_ids[:, None], ctrl_ids, 0] = original['gainprm'].unsqueeze(0).expand(len(env_ids), -1)
+            env.sim.model.actuator_biasprm[env_ids[:, None], ctrl_ids, 1] = original['biasprm1'].unsqueeze(0).expand(len(env_ids), -1)
+            env.sim.model.actuator_biasprm[env_ids[:, None], ctrl_ids, 2] = original['biasprm2'].unsqueeze(0).expand(len(env_ids), -1)
 
         # Sample random gains for each env and each control
         kp_samples = torch.rand(len(env_ids), len(ctrl_ids), device=env.device) * (kp_range[1] - kp_range[0]) + kp_range[0]
@@ -1004,6 +1008,15 @@ def randomize_delayed_actuator_gains(
                 env.sim.model.actuator_gainprm[env_ids[:, None], ctrl_ids, 0] = kp_samples
                 env.sim.model.actuator_biasprm[env_ids[:, None], ctrl_ids, 1] = -kp_samples
                 env.sim.model.actuator_biasprm[env_ids[:, None], ctrl_ids, 2] = -kd_samples
+        else:
+            # For BamM6Actuator (or other custom actuators with set_gains):
+            # Use per-env gain scaling instead of modifying MuJoCo model params.
+            from mjlab_microduck.actuator.bam_actuator import BamM6Actuator
+            if isinstance(base_actuator, BamM6Actuator):
+                # kp_samples shape: (num_envs, num_joints) — average across joints for a scalar scale
+                kp_mean = kp_samples.mean(dim=1, keepdim=True)
+                kd_mean = kd_samples.mean(dim=1, keepdim=True)
+                base_actuator.set_gains(env_ids, kp_scale=kp_mean, kd_scale=kd_mean)
 
 
 def randomize_mass_and_inertia(
