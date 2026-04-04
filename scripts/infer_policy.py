@@ -29,8 +29,8 @@ DEFAULT_POSE = np.array([
     0.6,   # left_hip_pitch
     -1.2,  # left_knee
     0.6,   # left_ankle
-    0.0,  # neck_pitch (was -0.5)
-    0.0,   # head_pitch (was 0.5)
+    -0.3491,  # neck_pitch (was -0.5)
+    0.3491,   # head_pitch (was 0.5)
     0.0,   # head_yaw
     0.0,   # head_roll
     0.0,   # right_hip_yaw
