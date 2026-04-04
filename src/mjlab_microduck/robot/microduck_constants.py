@@ -61,7 +61,7 @@ FULL_COLLISION = CollisionCfg(
     geom_names_expr=[".*_collision"],
     condim={r"^(left|right)_foot_collision$": 3, ".*_collision": 1},
     priority={r"^(left|right)_foot_collision$": 1},
-    friction={r"^(left|right)_foot_collision$": (0.6,)},
+    friction={r"^(left|right)_foot_collision$": (1.0,)},
 )
 
 # -- Old actuator (XML position, MuJoCo built-in PD + friction) --

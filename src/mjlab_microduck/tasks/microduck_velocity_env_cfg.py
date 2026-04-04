@@ -337,6 +337,7 @@ def make_microduck_velocity_env_cfg(
     cfg.events["foot_friction"].params[
         "asset_cfg"
     ].geom_names = foot_frictions_geom_names
+    cfg.events["foot_friction"].params["ranges"] = (0.7, 1.3)  # Grippier footpad — narrowed from (0.3, 1.2)
     cfg.events["reset_base"].params["pose_range"]["z"] = (0.12, 0.13)
 
     # Velocity-based pushes for robustness training
