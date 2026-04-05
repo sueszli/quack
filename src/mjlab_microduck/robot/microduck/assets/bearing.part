@@ -1,12 +1,12 @@
 {
     "configuration": "default",
     "documentId": "804927696f06d877f3f1803e",
-    "documentMicroversion": "ae5ce34d8ce6847d7e54652f",
+    "documentMicroversion": "16647d97052288eecfb2e2e3",
     "elementId": "6a7320ab42427c3c6d1a75ee",
     "fullConfiguration": "default",
-    "id": "Ml4vPtvGxiSMCC60K",
+    "id": "MWSMLWhuQtd+5DzVa",
     "isStandardContent": false,
-    "name": "bearing <1>",
+    "name": "bearing <3>",
     "partId": "RLCD",
     "suppressed": false,
     "type": "Part"
