@@ -114,7 +114,7 @@ def microduck_vel_symmetry(
 
     Args:
         env: The vectorised environment (unused, present for interface compatibility).
-        obs: TensorDict with keys ``"actor"`` and ``"critic"``, shape ``[B, obs_dim]``.
+        obs: TensorDict with keys ``"policy"`` and ``"critic"``, shape ``[B, obs_dim]``.
              Pass ``None`` when only actions need to be mirrored.
         actions: Float tensor of shape ``[B, 14]``.
                  Pass ``None`` when only obs need to be mirrored.
@@ -127,7 +127,7 @@ def microduck_vel_symmetry(
     aug_actions: torch.Tensor | None = None
 
     if obs is not None:
-        actor_orig: torch.Tensor = obs["actor"]  # [B, 51]
+        actor_orig: torch.Tensor = obs["policy"]  # [B, 51]
         obs_perm, obs_sign, _, _ = _get_tensors(actor_orig.device)
         actor_sym = actor_orig[:, obs_perm] * obs_sign
 
@@ -140,7 +140,7 @@ def microduck_vel_symmetry(
 
         aug_obs = TensorDict(
             {
-                "actor": torch.cat([actor_orig, actor_sym], dim=0),
+                "policy": torch.cat([actor_orig, actor_sym], dim=0),
                 "critic": critic_repeated,
             },
             batch_size=[actor_orig.shape[0] * 2],
