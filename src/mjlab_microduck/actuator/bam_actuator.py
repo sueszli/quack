@@ -78,7 +78,7 @@ class BamM6ActuatorCfg(ActuatorCfg):
         return BamM6Actuator(self, entity, target_ids, target_names)
 
 
-class BamM6Actuator(Actuator["BamM6ActuatorCfg"]):
+class BamM6Actuator(Actuator):
     """BAM M6 actuator: full voltage control + load-dependent friction."""
 
     def __init__(
