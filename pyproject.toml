@@ -26,7 +26,7 @@ exclude = [
 
 [tool.uv]
 override-dependencies = [
-    "mujoco>=3.5.0",
+    "mujoco>=3.4.0",
 ]
 
 [tool.uv.sources]
