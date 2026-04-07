@@ -12,7 +12,6 @@ from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.entity import Entity
 from mjlab.tasks.velocity.mdp.velocity_command import UniformVelocityCommand, UniformVelocityCommandCfg
 from mjlab.utils.lab_api.math import matrix_from_quat
-from mjlab.envs.mdp.actions import JointPositionAction as _JointPositionAction
 from mjlab.envs.mdp.actions import JointPositionActionCfg as _JointPositionActionCfg
 
 if TYPE_CHECKING:
@@ -28,7 +27,7 @@ _NECK_JOINT_PATTERNS = [r".*neck_pitch.*", r".*head_pitch.*", r".*head_yaw.*", r
 # Time constant (seconds) for smooth offset interpolation toward target
 _NECK_OFFSET_SMOOTHING_TAU = 0.5
 
-class NeckOffsetJointPositionAction(_JointPositionAction):
+class NeckOffsetJointPositionAction(_JointPositionActionCfg.class_type):
     """JointPositionAction that adds a random offset to neck/head joint targets.
 
     After the policy output is applied as joint position targets, adds

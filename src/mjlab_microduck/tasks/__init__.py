@@ -68,7 +68,7 @@ def _make_roller_get_base_metadata():
             "joint_damping": joint_damping.tolist(),
             "default_joint_pos": robot.data.default_joint_pos[0][actuated_idx].cpu().tolist(),
             "command_names": list(env.command_manager.active_terms),
-            "observation_names": env.observation_manager.active_terms["actor"],
+            "observation_names": env.observation_manager.active_terms["policy"],
             "action_scale": joint_action._scale[0].cpu().tolist()
             if isinstance(joint_action._scale, torch.Tensor)
             else joint_action._scale,

@@ -44,9 +44,8 @@ BODY_CMD_Z_STD = 0.01           # 10 mm
 BODY_CMD_ANGLE_STD = math.radians(5)   # 5°
 
 from mjlab.envs import ManagerBasedRlEnvCfg
-from mjlab.envs.mdp import dr
 from mjlab.envs.mdp.actions import JointPositionActionCfg
-from mjlab.managers import (
+from mjlab.managers.manager_term_config import (
     CurriculumTermCfg,
     EventTermCfg,
     ObservationTermCfg,
@@ -55,7 +54,7 @@ from mjlab.managers import (
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.rl import (
     RslRlOnPolicyRunnerCfg,
-    RslRlModelCfg,
+    RslRlPpoActorCriticCfg,
 )
 from mjlab.sensor import ContactMatch, ContactSensorCfg
 from mjlab.tasks.velocity import mdp as velocity_mdp
@@ -129,9 +128,7 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
     joint_pos_action.scale = 1.0
 
     # === OBSERVATIONS ===
-    del cfg.observations["actor"].terms["height_scan"]
-    del cfg.observations["critic"].terms["height_scan"]
-    del cfg.observations["actor"].terms["base_lin_vel"]
+    del cfg.observations["policy"].terms["base_lin_vel"]
 
     cfg.observations["critic"].terms["foot_height"].params[
         "asset_cfg"
@@ -141,25 +138,25 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
         scale=1.0,
     )
 
-    cfg.observations["actor"].terms["projected_gravity"] = deepcopy(
-        cfg.observations["actor"].terms["projected_gravity"]
+    cfg.observations["policy"].terms["projected_gravity"] = deepcopy(
+        cfg.observations["policy"].terms["projected_gravity"]
     )
-    cfg.observations["actor"].terms["base_ang_vel"] = deepcopy(
-        cfg.observations["actor"].terms["base_ang_vel"]
+    cfg.observations["policy"].terms["base_ang_vel"] = deepcopy(
+        cfg.observations["policy"].terms["base_ang_vel"]
     )
 
-    cfg.observations["actor"].terms["base_ang_vel"].delay_min_lag = 0
-    cfg.observations["actor"].terms["base_ang_vel"].delay_max_lag = 3
-    cfg.observations["actor"].terms["base_ang_vel"].delay_update_period = 64
-    cfg.observations["actor"].terms["projected_gravity"].delay_min_lag = 0
-    cfg.observations["actor"].terms["projected_gravity"].delay_max_lag = 3
-    cfg.observations["actor"].terms["projected_gravity"].delay_update_period = 64
+    cfg.observations["policy"].terms["base_ang_vel"].delay_min_lag = 0
+    cfg.observations["policy"].terms["base_ang_vel"].delay_max_lag = 3
+    cfg.observations["policy"].terms["base_ang_vel"].delay_update_period = 64
+    cfg.observations["policy"].terms["projected_gravity"].delay_min_lag = 0
+    cfg.observations["policy"].terms["projected_gravity"].delay_max_lag = 3
+    cfg.observations["policy"].terms["projected_gravity"].delay_update_period = 64
 
-    cfg.observations["actor"].terms["base_ang_vel"].noise = Unoise(n_min=-0.024, n_max=0.024)
-    cfg.observations["actor"].terms["projected_gravity"].noise = Unoise(n_min=-0.007, n_max=0.007)
-    cfg.observations["actor"].terms["joint_pos"].noise = Unoise(n_min=-0.0006, n_max=0.0006)
-    cfg.observations["actor"].terms["joint_vel"].noise = Unoise(n_min=-0.024, n_max=0.024)
-    cfg.observations["actor"].enable_corruption = not play
+    cfg.observations["policy"].terms["base_ang_vel"].noise = Unoise(n_min=-0.024, n_max=0.024)
+    cfg.observations["policy"].terms["projected_gravity"].noise = Unoise(n_min=-0.007, n_max=0.007)
+    cfg.observations["policy"].terms["joint_pos"].noise = Unoise(n_min=-0.0006, n_max=0.0006)
+    cfg.observations["policy"].terms["joint_vel"].noise = Unoise(n_min=-0.024, n_max=0.024)
+    cfg.observations["policy"].enable_corruption = not play
 
     # === COMMANDS ===
     # Repurpose the 3 velocity command slots as body pose control:
@@ -178,7 +175,7 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
     command.ranges.ang_vel_z = (0.0, 0.0)   # Δroll:  expanded by curriculum
 
     # Override policy command observation with normalized body pose cmd
-    cfg.observations["actor"].terms["command"] = ObservationTermCfg(
+    cfg.observations["policy"].terms["command"] = ObservationTermCfg(
         func=microduck_mdp.body_pose_cmd_obs,
         params={
             "command_name": "twist",
@@ -301,11 +298,13 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
     # Domain randomization
     if ENABLE_COM_RANDOMIZATION:
         cfg.events["randomize_com"] = EventTermCfg(
-            func=dr.body_ipos,
+            func=velocity_mdp.randomize_field,
             mode="startup",
+            domain_randomization=True,
             params={
                 "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
                 "operation": "add",
+                "field": "body_ipos",
                 "ranges": (-COM_RANDOMIZATION_RANGE, COM_RANDOMIZATION_RANGE),
             },
         )
@@ -394,20 +393,13 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
 
 
 MicroduckStandUpRlCfg = RslRlOnPolicyRunnerCfg(
-    actor=RslRlModelCfg(
-        hidden_dims=(512, 256, 128),
+    policy=RslRlPpoActorCriticCfg(
+        init_noise_std=1.0,
+        actor_obs_normalization=False,
+        critic_obs_normalization=False,
+        actor_hidden_dims=(512, 256, 128),
+        critic_hidden_dims=(512, 256, 128),
         activation="elu",
-        obs_normalization=False,
-        distribution_cfg={
-            "class_name": "GaussianDistribution",
-            "init_std": 1.0,
-            "std_type": "scalar",
-        },
-    ),
-    critic=RslRlModelCfg(
-        hidden_dims=(512, 256, 128),
-        activation="elu",
-        obs_normalization=False,
     ),
     algorithm=PpoWithSymmetryCfg(
         value_loss_coef=1.0,

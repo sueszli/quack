@@ -6,7 +6,6 @@ from mjlab.actuator import DelayedActuatorCfg, XmlPositionActuatorCfg
 from mjlab.entity import EntityArticulationInfoCfg, EntityCfg
 from mjlab.utils.spec_config import CollisionCfg
 
-from mjlab_microduck.actuator.bam_params import make_bam_m6_actuator_cfg
 
 _ROBOT_DIR: Path = Path(os.path.dirname(__file__)) / "microduck"
 
@@ -68,7 +67,7 @@ FULL_COLLISION = CollisionCfg(
 actuators = DelayedActuatorCfg(
     delay_min_lag=0,
     delay_max_lag=3,
-    base_cfg=XmlPositionActuatorCfg(target_names_expr=(r".*",)),
+    base_cfg=XmlPositionActuatorCfg(joint_names_expr=(r".*",)),
 )
 
 # -- BAM M6 actuator (full voltage control + load-dependent friction) --
@@ -114,7 +113,7 @@ MICRODUCK_GROUND_PICK_ROBOT_CFG = EntityCfg(
 roller_actuators = DelayedActuatorCfg(
     delay_min_lag=0,
     delay_max_lag=3,
-    base_cfg=XmlPositionActuatorCfg(target_names_expr=(r"^(?!passive_).*",)),
+    base_cfg=XmlPositionActuatorCfg(joint_names_expr=(r"^(?!passive_).*",)),
 )
 
 MICRODUCK_WALK_ROLLERS_ROBOT_CFG = EntityCfg(
