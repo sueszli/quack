@@ -2072,6 +2072,8 @@ class GroundPickPhaseCommand(UniformVelocityCommand):
 
 
 class GroundPickPhaseCommandCfg(UniformVelocityCommandCfg):
+    class_type: type = GroundPickPhaseCommand
+
     def build(self, env: ManagerBasedRlEnv) -> "GroundPickPhaseCommand":
         return GroundPickPhaseCommand(self, env)
 
