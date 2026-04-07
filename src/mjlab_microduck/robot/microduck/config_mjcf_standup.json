@@ -15,6 +15,7 @@
         "!head_top_base_plate": "collision",
         "!trunk_base": "collision",
         "!foot": "collision",
+        "!NP-F970" : "collision",
     },
     "additional_xml": [
         "joints_properties.xml",

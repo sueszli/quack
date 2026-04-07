@@ -223,26 +223,26 @@ def run_export(task_id: str, cfg: ExportConfig):
         runner.load(str(resume_path), map_location=device)
         policy = runner.get_inference_policy(device=device)
 
-    from mjlab.rl.exporter_utils import get_base_metadata, attach_metadata_to_onnx
+    from mjlab.tasks.velocity.rl.exporter import (
+        export_velocity_policy_as_onnx,
+        attach_onnx_metadata,
+    )
 
     onnx_path = os.path.abspath(cfg.onnx_file)
     path = os.path.dirname(onnx_path)
 
-    runner.export_policy_to_onnx(path, os.path.basename(onnx_path))
+    export_velocity_policy_as_onnx(
+        runner.alg.policy,
+        path=path,
+        filename=onnx_path,
+    )
 
-    import mjlab.tasks.velocity.rl.runner as _vel_runner
-    from mjlab_microduck.tasks import _make_roller_get_base_metadata
-    _is_rollers = "Rollers" in task_id
-    if _is_rollers:
-        _orig_get_base_metadata = _vel_runner.get_base_metadata
-        _vel_runner.get_base_metadata = _make_roller_get_base_metadata()
-    try:
-        run_path = cfg.wandb_run_path or str(resume_path)
-        metadata = get_base_metadata(runner.env.unwrapped, run_path)
-        attach_metadata_to_onnx(onnx_path, metadata)
-    finally:
-        if _is_rollers:
-            _vel_runner.get_base_metadata = _orig_get_base_metadata
+    attach_onnx_metadata(
+        runner.env.unwrapped,
+        cfg.checkpoint_file,
+        path=path,
+        filename=onnx_path,
+    )
 
     print(f"Written {onnx_path}")
 
