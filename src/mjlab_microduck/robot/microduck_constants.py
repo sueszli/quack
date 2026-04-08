@@ -3,6 +3,7 @@ from pathlib import Path
 
 import mujoco
 from mjlab.actuator import DelayedActuatorCfg, XmlPositionActuatorCfg
+from mjlab_microduck.actuator.bam_params import make_bam_m6_actuator_cfg
 from mjlab.entity import EntityArticulationInfoCfg, EntityCfg
 from mjlab.utils.spec_config import CollisionCfg
 
