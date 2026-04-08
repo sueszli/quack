@@ -88,7 +88,8 @@ class BamM6Actuator(Actuator):
         target_ids: list[int],
         target_names: list[str],
     ) -> None:
-        super().__init__(cfg, entity, target_ids, target_names)
+        super().__init__(entity, target_ids, target_names)
+        self.cfg = cfg
         self._model: mjwarp.Model | None = None
         self._data: mjwarp.Data | None = None
         self._dt: float = 0.0
@@ -162,7 +163,7 @@ class BamM6Actuator(Actuator):
         jnt_dofadr = mj_model.jnt_dofadr
         entity_joint_ids = self.entity.indexing.joint_ids
         dof_ids = []
-        for tid in self._target_ids_list:
+        for tid in self._joint_ids_list:
             global_joint_id = entity_joint_ids[tid].item()
             dof_ids.append(jnt_dofadr[global_joint_id])
         self._dof_ids = torch.tensor(dof_ids, dtype=torch.long, device=device)
@@ -211,8 +212,8 @@ class BamM6Actuator(Actuator):
         5. Return: motor_torque + friction_torque
         """
         cfg = self.cfg
-        pos_error = cmd.position_target - cmd.pos
-        vel = cmd.vel
+        pos_error = cmd.position_target - cmd.joint_pos
+        vel = cmd.joint_vel
 
         # ── 1. XL330 firmware voltage control law ──
         # kp_scale is per-env (shape: num_envs, 1), broadcast over joints

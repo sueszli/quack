@@ -36,7 +36,7 @@ def load_bam_m6_params(json_path: str | Path) -> dict:
 
 
 def make_bam_m6_actuator_cfg(
-    target_names_expr: tuple[str, ...] = (r".*",),
+    joint_names_expr: tuple[str, ...] = (r".*",),
     params: dict | None = None,
     json_path: str | Path | None = None,
     vin: float = 7.4,
@@ -45,7 +45,7 @@ def make_bam_m6_actuator_cfg(
     """Create a BamM6ActuatorCfg from BAM parameters.
 
     Args:
-        target_names_expr: Joint name patterns to control.
+        joint_names_expr: Joint name patterns to control.
         params: Dict of M6 params. If None, uses DEFAULT_XL330_M6.
         json_path: Path to BAM M6 JSON. Overrides params if provided.
         vin: Supply voltage.
@@ -59,7 +59,7 @@ def make_bam_m6_actuator_cfg(
         p = DEFAULT_XL330_M6
 
     return BamM6ActuatorCfg(
-        target_names_expr=target_names_expr,
+        joint_names_expr=joint_names_expr,
         armature=p["armature"],
         kt=p["kt"],
         R=p["R"],
