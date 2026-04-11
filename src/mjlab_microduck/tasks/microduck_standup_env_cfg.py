@@ -99,6 +99,32 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
         num_slots=1,
     )
 
+    # Net terrain contact force on the trunk shell only (excludes legs and head).
+    # Detects when the robot belly-flops onto the ground.
+    trunk_impact_cfg = ContactSensorCfg(
+        name="trunk_impact_contact",
+        primary=ContactMatch(mode="body", pattern="trunk_base", entity="robot"),
+        secondary=ContactMatch(mode="body", pattern="terrain"),
+        fields=("force",),
+        reduce="netforce",
+        num_slots=1,
+    )
+
+    # Net terrain contact force across the entire head/neck subtree.
+    # Detects the robot using its beak or head to break a forward fall.
+    head_impact_cfg = ContactSensorCfg(
+        name="head_impact_contact",
+        primary=ContactMatch(
+            mode="subtree",
+            pattern="long_neck_plate2",
+            entity="robot",
+        ),
+        secondary=ContactMatch(mode="body", pattern="terrain"),
+        fields=("force",),
+        reduce="netforce",
+        num_slots=1,
+    )
+
     foot_frictions_geom_names = (
         "left_foot_collision",
         "right_foot_collision",
@@ -107,7 +133,7 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
     cfg = make_velocity_env_cfg()
 
     cfg.scene.entities = {"robot": MICRODUCK_STANDUP_ROBOT_CFG}
-    cfg.scene.sensors = (feet_ground_cfg, self_collision_cfg)
+    cfg.scene.sensors = (feet_ground_cfg, self_collision_cfg, trunk_impact_cfg, head_impact_cfg)
     if not rough:
         cfg.scene.terrain.terrain_type = "plane"
         cfg.scene.terrain.terrain_generator = None
@@ -271,6 +297,26 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
             weight=-1.0,
             params={"sensor_name": self_collision_cfg.name},
         ),
+        # Penalize hard impacts of the trunk shell against the ground.
+        # Starts at 0; curriculum ramps up after standup is learned.
+        "trunk_impact_penalty": RewardTermCfg(
+            func=microduck_mdp.body_impact_cost,
+            weight=0.0,
+            params={"sensor_name": trunk_impact_cfg.name, "threshold": 5.0},
+        ),
+        # Penalize hard impacts of the head/neck against the ground.
+        # Higher weight than trunk because the head servo is more fragile.
+        "head_impact_penalty": RewardTermCfg(
+            func=microduck_mdp.body_impact_cost,
+            weight=0.0,
+            params={"sensor_name": head_impact_cfg.name, "threshold": 2.0},
+        ),
+        # Penalize sudden torque spikes (gearbox shock proxy).
+        # Starts at 0; curriculum ramps up after standup is learned.
+        "joint_torque_rate_l2": RewardTermCfg(
+            func=microduck_mdp.joint_torque_rate_l2,
+            weight=0.0,
+        ),
     }
 
     # === TERMINATIONS ===
@@ -385,6 +431,59 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
                 {"step": 0,          "max_z": 0.0,                     "max_angle": 0.0},
                 {"step": 1000 * 24,  "max_z": 0.010,                   "max_angle": math.radians(10)},
                 {"step": 2000 * 24,  "max_z": BODY_CMD_MAX_Z,          "max_angle": BODY_CMD_MAX_ANGLE},
+            ],
+        },
+    )
+
+    # Gradually increase push magnitude so the robot eventually practices full falls
+    # (not just balance recovery). Kicks in after standup is stable.
+    cfg.curriculum["push_magnitude"] = CurriculumTermCfg(
+        func=microduck_mdp.push_curriculum,
+        params={
+            "event_name": "push_robot",
+            "push_stages": [
+                {"step": 0,          "velocity_range": {"x": (-0.3, 0.3),   "y": (-0.3, 0.3)}},
+                {"step": 1500 * 24,  "velocity_range": {"x": (-0.6, 0.6),   "y": (-0.6, 0.6)}},
+                {"step": 2500 * 24,  "velocity_range": {"x": (-1.0, 1.0),   "y": (-1.0, 1.0)}},
+            ],
+        },
+    )
+
+    # Ramp up trunk impact penalty after standup is stable.
+    cfg.curriculum["trunk_impact_weight"] = CurriculumTermCfg(
+        func=velocity_mdp.reward_weight,
+        params={
+            "reward_name": "trunk_impact_penalty",
+            "weight_stages": [
+                {"step": 0,          "weight": 0.0},
+                {"step": 1000 * 24,  "weight": -0.05},
+                {"step": 2000 * 24,  "weight": -0.2},
+            ],
+        },
+    )
+
+    # Head is more fragile than the trunk — higher final weight.
+    cfg.curriculum["head_impact_weight"] = CurriculumTermCfg(
+        func=velocity_mdp.reward_weight,
+        params={
+            "reward_name": "head_impact_penalty",
+            "weight_stages": [
+                {"step": 0,          "weight": 0.0},
+                {"step": 1000 * 24,  "weight": -0.2},
+                {"step": 2000 * 24,  "weight": -1.0},
+            ],
+        },
+    )
+
+    # Ramp up torque-rate penalty alongside impact penalties.
+    cfg.curriculum["torque_rate_weight"] = CurriculumTermCfg(
+        func=velocity_mdp.reward_weight,
+        params={
+            "reward_name": "joint_torque_rate_l2",
+            "weight_stages": [
+                {"step": 0,          "weight": 0.0},
+                {"step": 1000 * 24,  "weight": -1e-4},
+                {"step": 2000 * 24,  "weight": -5e-4},
             ],
         },
     )
