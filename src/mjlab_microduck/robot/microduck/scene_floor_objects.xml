@@ -1,0 +1,154 @@
+<mujoco model="scene">
+    <include file="robot_standup.xml" />
+
+    <visual>
+        <headlight diffuse="0.6 0.6 0.6" ambient="0.3 0.3 0.3" specular="0 0 0" />
+        <rgba haze="0.15 0.25 0.35 1" />
+        <global azimuth="160" elevation="-20" />
+    </visual>
+
+    <asset>
+        <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512"
+            height="3072" />
+        <texture type="2d" name="groundplane" builtin="checker" mark="edge" rgb1="0.2 0.3 0.4"
+            rgb2="0.1 0.2 0.3"
+            markrgb="0.8 0.8 0.8" width="300" height="300" />
+        <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5"
+            reflectance="0.2" />
+    </asset>
+
+    <worldbody>
+        <light pos="0 0 3.5" dir="0 0 -1" directional="true" />
+        <geom name="floor" size="0 0 0.05" pos="0 0 0" type="plane" material="groundplane" />
+
+        <!-- Small floor objects for robustness testing (cubes and rectangles, ≤1cm tall, ≤3x3cm) -->
+        <!-- Dense 9x7 grid + staggered inner layer — ~90 objects total              -->
+        <!-- Sizes are half-extents; z_pos = size[2] so objects sit flat on floor    -->
+        <!-- Center hole (~±0.09m) kept clear for robot feet                          -->
+
+        <!-- === PRIMARY GRID: 9 cols × 7 rows, spacing ~0.14m === -->
+        <!-- Row y ≈ -0.44 -->
+        <body name="obj_0"  pos="-0.44 -0.43 0.005"><freejoint/><geom type="box" size="0.005 0.005 0.005" rgba="0.8 0.2 0.2 1" mass="0.005"/></body>
+        <body name="obj_1"  pos="-0.32 -0.46 0.003"><freejoint/><geom type="box" size="0.015 0.010 0.003" rgba="0.2 0.7 0.3 1" mass="0.005"/></body>
+        <body name="obj_2"  pos="-0.20 -0.43 0.004"><freejoint/><geom type="box" size="0.010 0.015 0.004" rgba="0.2 0.3 0.9 1" mass="0.005"/></body>
+        <body name="obj_3"  pos="-0.07 -0.44 0.003"><freejoint/><geom type="box" size="0.012 0.012 0.003" rgba="0.9 0.6 0.1 1" mass="0.005"/></body>
+        <body name="obj_4"  pos=" 0.03 -0.46 0.004"><freejoint/><geom type="box" size="0.004 0.004 0.004" rgba="0.7 0.2 0.8 1" mass="0.005"/></body>
+        <body name="obj_5"  pos=" 0.15 -0.43 0.004"><freejoint/><geom type="box" size="0.015 0.007 0.004" rgba="0.1 0.8 0.8 1" mass="0.005"/></body>
+        <body name="obj_6"  pos=" 0.30 -0.43 0.005"><freejoint/><geom type="box" size="0.008 0.008 0.005" rgba="0.9 0.9 0.2 1" mass="0.005"/></body>
+        <body name="obj_7"  pos=" 0.40 -0.46 0.005"><freejoint/><geom type="box" size="0.005 0.005 0.005" rgba="0.8 0.2 0.2 1" mass="0.005"/></body>
+        <body name="obj_8"  pos=" 0.51 -0.43 0.003"><freejoint/><geom type="box" size="0.015 0.010 0.003" rgba="0.2 0.7 0.3 1" mass="0.005"/></body>
+        <!-- Row y ≈ -0.30 -->
+        <body name="obj_9"  pos="-0.44 -0.29 0.004"><freejoint/><geom type="box" size="0.010 0.015 0.004" rgba="0.2 0.3 0.9 1" mass="0.005"/></body>
+        <body name="obj_10" pos="-0.33 -0.32 0.003"><freejoint/><geom type="box" size="0.012 0.012 0.003" rgba="0.9 0.6 0.1 1" mass="0.005"/></body>
+        <body name="obj_11" pos="-0.21 -0.29 0.004"><freejoint/><geom type="box" size="0.004 0.004 0.004" rgba="0.7 0.2 0.8 1" mass="0.005"/></body>
+        <body name="obj_12" pos="-0.06 -0.29 0.004"><freejoint/><geom type="box" size="0.015 0.007 0.004" rgba="0.1 0.8 0.8 1" mass="0.005"/></body>
+        <body name="obj_13" pos=" 0.03 -0.32 0.005"><freejoint/><geom type="box" size="0.008 0.008 0.005" rgba="0.9 0.9 0.2 1" mass="0.005"/></body>
+        <body name="obj_14" pos=" 0.15 -0.29 0.005"><freejoint/><geom type="box" size="0.005 0.005 0.005" rgba="0.8 0.2 0.2 1" mass="0.005"/></body>
+        <body name="obj_15" pos=" 0.30 -0.29 0.003"><freejoint/><geom type="box" size="0.015 0.010 0.003" rgba="0.2 0.7 0.3 1" mass="0.005"/></body>
+        <body name="obj_16" pos=" 0.39 -0.32 0.004"><freejoint/><geom type="box" size="0.010 0.015 0.004" rgba="0.2 0.3 0.9 1" mass="0.005"/></body>
+        <body name="obj_17" pos=" 0.51 -0.29 0.003"><freejoint/><geom type="box" size="0.012 0.012 0.003" rgba="0.9 0.6 0.1 1" mass="0.005"/></body>
+        <!-- Row y ≈ -0.16 -->
+        <body name="obj_18" pos="-0.44 -0.15 0.004"><freejoint/><geom type="box" size="0.004 0.004 0.004" rgba="0.7 0.2 0.8 1" mass="0.005"/></body>
+        <body name="obj_19" pos="-0.33 -0.18 0.004"><freejoint/><geom type="box" size="0.015 0.007 0.004" rgba="0.1 0.8 0.8 1" mass="0.005"/></body>
+        <body name="obj_20" pos="-0.21 -0.15 0.005"><freejoint/><geom type="box" size="0.008 0.008 0.005" rgba="0.9 0.9 0.2 1" mass="0.005"/></body>
+        <body name="obj_21" pos="-0.06 -0.15 0.005"><freejoint/><geom type="box" size="0.005 0.005 0.005" rgba="0.8 0.2 0.2 1" mass="0.005"/></body>
+        <body name="obj_22" pos=" 0.03 -0.18 0.003"><freejoint/><geom type="box" size="0.015 0.010 0.003" rgba="0.2 0.7 0.3 1" mass="0.005"/></body>
+        <body name="obj_23" pos=" 0.15 -0.15 0.004"><freejoint/><geom type="box" size="0.010 0.015 0.004" rgba="0.2 0.3 0.9 1" mass="0.005"/></body>
+        <body name="obj_24" pos=" 0.30 -0.15 0.003"><freejoint/><geom type="box" size="0.012 0.012 0.003" rgba="0.9 0.6 0.1 1" mass="0.005"/></body>
+        <body name="obj_25" pos=" 0.39 -0.18 0.004"><freejoint/><geom type="box" size="0.004 0.004 0.004" rgba="0.7 0.2 0.8 1" mass="0.005"/></body>
+        <body name="obj_26" pos=" 0.51 -0.15 0.004"><freejoint/><geom type="box" size="0.015 0.007 0.004" rgba="0.1 0.8 0.8 1" mass="0.005"/></body>
+        <!-- Row y ≈ 0.00 — center two columns skipped (robot feet) -->
+        <body name="obj_27" pos="-0.44  0.01 0.005"><freejoint/><geom type="box" size="0.008 0.008 0.005" rgba="0.9 0.9 0.2 1" mass="0.005"/></body>
+        <body name="obj_28" pos="-0.33 -0.02 0.005"><freejoint/><geom type="box" size="0.005 0.005 0.005" rgba="0.8 0.2 0.2 1" mass="0.005"/></body>
+        <body name="obj_29" pos="-0.21  0.01 0.003"><freejoint/><geom type="box" size="0.015 0.010 0.003" rgba="0.2 0.7 0.3 1" mass="0.005"/></body>
+        <body name="obj_30" pos=" 0.15  0.01 0.004"><freejoint/><geom type="box" size="0.010 0.015 0.004" rgba="0.2 0.3 0.9 1" mass="0.005"/></body>
+        <body name="obj_31" pos=" 0.30  0.01 0.003"><freejoint/><geom type="box" size="0.012 0.012 0.003" rgba="0.9 0.6 0.1 1" mass="0.005"/></body>
+        <body name="obj_32" pos=" 0.39 -0.02 0.004"><freejoint/><geom type="box" size="0.004 0.004 0.004" rgba="0.7 0.2 0.8 1" mass="0.005"/></body>
+        <body name="obj_33" pos=" 0.51  0.01 0.004"><freejoint/><geom type="box" size="0.015 0.007 0.004" rgba="0.1 0.8 0.8 1" mass="0.005"/></body>
+        <!-- Row y ≈ 0.14 -->
+        <body name="obj_34" pos="-0.44  0.15 0.005"><freejoint/><geom type="box" size="0.008 0.008 0.005" rgba="0.9 0.9 0.2 1" mass="0.005"/></body>
+        <body name="obj_35" pos="-0.33  0.12 0.005"><freejoint/><geom type="box" size="0.005 0.005 0.005" rgba="0.8 0.2 0.2 1" mass="0.005"/></body>
+        <body name="obj_36" pos="-0.21  0.15 0.003"><freejoint/><geom type="box" size="0.015 0.010 0.003" rgba="0.2 0.7 0.3 1" mass="0.005"/></body>
+        <body name="obj_37" pos="-0.06  0.15 0.004"><freejoint/><geom type="box" size="0.010 0.015 0.004" rgba="0.2 0.3 0.9 1" mass="0.005"/></body>
+        <body name="obj_38" pos=" 0.03  0.12 0.003"><freejoint/><geom type="box" size="0.012 0.012 0.003" rgba="0.9 0.6 0.1 1" mass="0.005"/></body>
+        <body name="obj_39" pos=" 0.15  0.15 0.004"><freejoint/><geom type="box" size="0.004 0.004 0.004" rgba="0.7 0.2 0.8 1" mass="0.005"/></body>
+        <body name="obj_40" pos=" 0.30  0.15 0.004"><freejoint/><geom type="box" size="0.015 0.007 0.004" rgba="0.1 0.8 0.8 1" mass="0.005"/></body>
+        <body name="obj_41" pos=" 0.39  0.12 0.005"><freejoint/><geom type="box" size="0.008 0.008 0.005" rgba="0.9 0.9 0.2 1" mass="0.005"/></body>
+        <body name="obj_42" pos=" 0.51  0.15 0.005"><freejoint/><geom type="box" size="0.005 0.005 0.005" rgba="0.8 0.2 0.2 1" mass="0.005"/></body>
+        <!-- Row y ≈ 0.28 -->
+        <body name="obj_43" pos="-0.44  0.29 0.003"><freejoint/><geom type="box" size="0.015 0.010 0.003" rgba="0.2 0.7 0.3 1" mass="0.005"/></body>
+        <body name="obj_44" pos="-0.33  0.26 0.004"><freejoint/><geom type="box" size="0.010 0.015 0.004" rgba="0.2 0.3 0.9 1" mass="0.005"/></body>
+        <body name="obj_45" pos="-0.21  0.29 0.003"><freejoint/><geom type="box" size="0.012 0.012 0.003" rgba="0.9 0.6 0.1 1" mass="0.005"/></body>
+        <body name="obj_46" pos="-0.06  0.29 0.004"><freejoint/><geom type="box" size="0.004 0.004 0.004" rgba="0.7 0.2 0.8 1" mass="0.005"/></body>
+        <body name="obj_47" pos=" 0.03  0.26 0.004"><freejoint/><geom type="box" size="0.015 0.007 0.004" rgba="0.1 0.8 0.8 1" mass="0.005"/></body>
+        <body name="obj_48" pos=" 0.15  0.29 0.005"><freejoint/><geom type="box" size="0.008 0.008 0.005" rgba="0.9 0.9 0.2 1" mass="0.005"/></body>
+        <body name="obj_49" pos=" 0.30  0.29 0.005"><freejoint/><geom type="box" size="0.005 0.005 0.005" rgba="0.8 0.2 0.2 1" mass="0.005"/></body>
+        <body name="obj_50" pos=" 0.39  0.26 0.003"><freejoint/><geom type="box" size="0.015 0.010 0.003" rgba="0.2 0.7 0.3 1" mass="0.005"/></body>
+        <body name="obj_51" pos=" 0.51  0.29 0.004"><freejoint/><geom type="box" size="0.010 0.015 0.004" rgba="0.2 0.3 0.9 1" mass="0.005"/></body>
+        <!-- Row y ≈ 0.42 -->
+        <body name="obj_52" pos="-0.44  0.43 0.003"><freejoint/><geom type="box" size="0.012 0.012 0.003" rgba="0.9 0.6 0.1 1" mass="0.005"/></body>
+        <body name="obj_53" pos="-0.33  0.40 0.004"><freejoint/><geom type="box" size="0.004 0.004 0.004" rgba="0.7 0.2 0.8 1" mass="0.005"/></body>
+        <body name="obj_54" pos="-0.21  0.43 0.004"><freejoint/><geom type="box" size="0.015 0.007 0.004" rgba="0.1 0.8 0.8 1" mass="0.005"/></body>
+        <body name="obj_55" pos="-0.06  0.43 0.005"><freejoint/><geom type="box" size="0.008 0.008 0.005" rgba="0.9 0.9 0.2 1" mass="0.005"/></body>
+        <body name="obj_56" pos=" 0.03  0.40 0.005"><freejoint/><geom type="box" size="0.005 0.005 0.005" rgba="0.8 0.2 0.2 1" mass="0.005"/></body>
+        <body name="obj_57" pos=" 0.15  0.43 0.003"><freejoint/><geom type="box" size="0.015 0.010 0.003" rgba="0.2 0.7 0.3 1" mass="0.005"/></body>
+        <body name="obj_58" pos=" 0.30  0.43 0.004"><freejoint/><geom type="box" size="0.010 0.015 0.004" rgba="0.2 0.3 0.9 1" mass="0.005"/></body>
+        <body name="obj_59" pos=" 0.39  0.40 0.003"><freejoint/><geom type="box" size="0.012 0.012 0.003" rgba="0.9 0.6 0.1 1" mass="0.005"/></body>
+        <body name="obj_60" pos=" 0.51  0.43 0.004"><freejoint/><geom type="box" size="0.004 0.004 0.004" rgba="0.7 0.2 0.8 1" mass="0.005"/></body>
+
+        <!-- === STAGGERED INNER LAYER: offset by (0.07, 0.07) to fill gaps near robot === -->
+        <!-- Row y ≈ -0.37 -->
+        <body name="obj_61" pos="-0.37 -0.36 0.004"><freejoint/><geom type="box" size="0.015 0.007 0.004" rgba="0.1 0.8 0.8 1" mass="0.005"/></body>
+        <body name="obj_62" pos="-0.25 -0.38 0.005"><freejoint/><geom type="box" size="0.008 0.008 0.005" rgba="0.9 0.9 0.2 1" mass="0.005"/></body>
+        <body name="obj_63" pos="-0.13 -0.36 0.005"><freejoint/><geom type="box" size="0.005 0.005 0.005" rgba="0.8 0.2 0.2 1" mass="0.005"/></body>
+        <body name="obj_64" pos="-0.01 -0.38 0.003"><freejoint/><geom type="box" size="0.015 0.010 0.003" rgba="0.2 0.7 0.3 1" mass="0.005"/></body>
+        <body name="obj_65" pos=" 0.11 -0.36 0.004"><freejoint/><geom type="box" size="0.010 0.015 0.004" rgba="0.2 0.3 0.9 1" mass="0.005"/></body>
+        <body name="obj_66" pos=" 0.23 -0.38 0.003"><freejoint/><geom type="box" size="0.012 0.012 0.003" rgba="0.9 0.6 0.1 1" mass="0.005"/></body>
+        <body name="obj_67" pos=" 0.35 -0.36 0.004"><freejoint/><geom type="box" size="0.004 0.004 0.004" rgba="0.7 0.2 0.8 1" mass="0.005"/></body>
+        <body name="obj_68" pos=" 0.46 -0.38 0.004"><freejoint/><geom type="box" size="0.015 0.007 0.004" rgba="0.1 0.8 0.8 1" mass="0.005"/></body>
+        <!-- Row y ≈ -0.23 -->
+        <body name="obj_69" pos="-0.37 -0.22 0.005"><freejoint/><geom type="box" size="0.008 0.008 0.005" rgba="0.9 0.9 0.2 1" mass="0.005"/></body>
+        <body name="obj_70" pos="-0.25 -0.24 0.005"><freejoint/><geom type="box" size="0.005 0.005 0.005" rgba="0.8 0.2 0.2 1" mass="0.005"/></body>
+        <body name="obj_71" pos="-0.13 -0.22 0.003"><freejoint/><geom type="box" size="0.015 0.010 0.003" rgba="0.2 0.7 0.3 1" mass="0.005"/></body>
+        <body name="obj_72" pos="-0.01 -0.24 0.004"><freejoint/><geom type="box" size="0.010 0.015 0.004" rgba="0.2 0.3 0.9 1" mass="0.005"/></body>
+        <body name="obj_73" pos=" 0.11 -0.22 0.003"><freejoint/><geom type="box" size="0.012 0.012 0.003" rgba="0.9 0.6 0.1 1" mass="0.005"/></body>
+        <body name="obj_74" pos=" 0.23 -0.24 0.004"><freejoint/><geom type="box" size="0.004 0.004 0.004" rgba="0.7 0.2 0.8 1" mass="0.005"/></body>
+        <body name="obj_75" pos=" 0.35 -0.22 0.004"><freejoint/><geom type="box" size="0.015 0.007 0.004" rgba="0.1 0.8 0.8 1" mass="0.005"/></body>
+        <body name="obj_76" pos=" 0.46 -0.24 0.005"><freejoint/><geom type="box" size="0.008 0.008 0.005" rgba="0.9 0.9 0.2 1" mass="0.005"/></body>
+        <!-- Row y ≈ -0.09 (skip x ∈ {-0.13..0.11} to stay clear of feet) -->
+        <body name="obj_77" pos="-0.37 -0.08 0.005"><freejoint/><geom type="box" size="0.005 0.005 0.005" rgba="0.8 0.2 0.2 1" mass="0.005"/></body>
+        <body name="obj_78" pos="-0.25 -0.10 0.003"><freejoint/><geom type="box" size="0.015 0.010 0.003" rgba="0.2 0.7 0.3 1" mass="0.005"/></body>
+        <body name="obj_79" pos=" 0.23 -0.08 0.004"><freejoint/><geom type="box" size="0.010 0.015 0.004" rgba="0.2 0.3 0.9 1" mass="0.005"/></body>
+        <body name="obj_80" pos=" 0.35 -0.10 0.003"><freejoint/><geom type="box" size="0.012 0.012 0.003" rgba="0.9 0.6 0.1 1" mass="0.005"/></body>
+        <body name="obj_81" pos=" 0.46 -0.08 0.004"><freejoint/><geom type="box" size="0.004 0.004 0.004" rgba="0.7 0.2 0.8 1" mass="0.005"/></body>
+        <!-- Row y ≈ 0.07 (skip x ∈ {-0.13..0.11}) -->
+        <body name="obj_82" pos="-0.37  0.08 0.004"><freejoint/><geom type="box" size="0.015 0.007 0.004" rgba="0.1 0.8 0.8 1" mass="0.005"/></body>
+        <body name="obj_83" pos="-0.25  0.06 0.005"><freejoint/><geom type="box" size="0.008 0.008 0.005" rgba="0.9 0.9 0.2 1" mass="0.005"/></body>
+        <body name="obj_84" pos=" 0.23  0.08 0.005"><freejoint/><geom type="box" size="0.005 0.005 0.005" rgba="0.8 0.2 0.2 1" mass="0.005"/></body>
+        <body name="obj_85" pos=" 0.35  0.06 0.003"><freejoint/><geom type="box" size="0.015 0.010 0.003" rgba="0.2 0.7 0.3 1" mass="0.005"/></body>
+        <body name="obj_86" pos=" 0.46  0.08 0.004"><freejoint/><geom type="box" size="0.010 0.015 0.004" rgba="0.2 0.3 0.9 1" mass="0.005"/></body>
+        <!-- Row y ≈ 0.21 -->
+        <body name="obj_87" pos="-0.37  0.22 0.003"><freejoint/><geom type="box" size="0.012 0.012 0.003" rgba="0.9 0.6 0.1 1" mass="0.005"/></body>
+        <body name="obj_88" pos="-0.25  0.20 0.004"><freejoint/><geom type="box" size="0.004 0.004 0.004" rgba="0.7 0.2 0.8 1" mass="0.005"/></body>
+        <body name="obj_89" pos="-0.13  0.22 0.004"><freejoint/><geom type="box" size="0.015 0.007 0.004" rgba="0.1 0.8 0.8 1" mass="0.005"/></body>
+        <body name="obj_90" pos="-0.01  0.20 0.005"><freejoint/><geom type="box" size="0.008 0.008 0.005" rgba="0.9 0.9 0.2 1" mass="0.005"/></body>
+        <body name="obj_91" pos=" 0.11  0.22 0.005"><freejoint/><geom type="box" size="0.005 0.005 0.005" rgba="0.8 0.2 0.2 1" mass="0.005"/></body>
+        <body name="obj_92" pos=" 0.23  0.20 0.003"><freejoint/><geom type="box" size="0.015 0.010 0.003" rgba="0.2 0.7 0.3 1" mass="0.005"/></body>
+        <body name="obj_93" pos=" 0.35  0.22 0.004"><freejoint/><geom type="box" size="0.010 0.015 0.004" rgba="0.2 0.3 0.9 1" mass="0.005"/></body>
+        <body name="obj_94" pos=" 0.46  0.20 0.003"><freejoint/><geom type="box" size="0.012 0.012 0.003" rgba="0.9 0.6 0.1 1" mass="0.005"/></body>
+        <!-- Row y ≈ 0.35 -->
+        <body name="obj_95" pos="-0.37  0.36 0.004"><freejoint/><geom type="box" size="0.004 0.004 0.004" rgba="0.7 0.2 0.8 1" mass="0.005"/></body>
+        <body name="obj_96" pos="-0.25  0.34 0.004"><freejoint/><geom type="box" size="0.015 0.007 0.004" rgba="0.1 0.8 0.8 1" mass="0.005"/></body>
+        <body name="obj_97" pos="-0.13  0.36 0.005"><freejoint/><geom type="box" size="0.008 0.008 0.005" rgba="0.9 0.9 0.2 1" mass="0.005"/></body>
+        <body name="obj_98" pos="-0.01  0.34 0.005"><freejoint/><geom type="box" size="0.005 0.005 0.005" rgba="0.8 0.2 0.2 1" mass="0.005"/></body>
+        <body name="obj_99" pos=" 0.11  0.36 0.003"><freejoint/><geom type="box" size="0.015 0.010 0.003" rgba="0.2 0.7 0.3 1" mass="0.005"/></body>
+        <body name="obj_100" pos=" 0.23  0.34 0.004"><freejoint/><geom type="box" size="0.010 0.015 0.004" rgba="0.2 0.3 0.9 1" mass="0.005"/></body>
+        <body name="obj_101" pos=" 0.35  0.36 0.003"><freejoint/><geom type="box" size="0.012 0.012 0.003" rgba="0.9 0.6 0.1 1" mass="0.005"/></body>
+        <body name="obj_102" pos=" 0.46  0.34 0.004"><freejoint/><geom type="box" size="0.004 0.004 0.004" rgba="0.7 0.2 0.8 1" mass="0.005"/></body>
+    </worldbody>
+
+    <keyframe>
+        <key name="standing" qpos="0 0 0.12 1 0 0 0 0 0 0.6 -1.2 0.6 0 0 0 0 0 0 -0.6 1.2 -0.6" ctrl="0 0 0.6 -1.2 0.6 0 0 0 0 0 0 -0.6 1.2 -0.6"/>
+        <key name="sitting" qpos="0 0 0.12 1 0 0 0 0.532 0.567 -0.0089 -1.72 -0.0274 -1.22 1.23 0.00119 -0.0036 -0.533 -0.701 0.0084 1.63 0.0115" ctrl="0.532 0.567 -0.0089 -1.72 -0.0274 -1.22 1.23 0.00119 -0.0036 -0.533 -0.701 0.0084 1.63 0.0115"/>
+    </keyframe>
+</mujoco>
