@@ -50,6 +50,7 @@ from mjlab.managers.manager_term_config import (
     EventTermCfg,
     ObservationTermCfg,
     RewardTermCfg,
+    TerminationTermCfg,
 )
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.rl import (
@@ -295,6 +296,15 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
         mode="reset",
     )
 
+    # Terminate environments where MuJoCo physics went NaN (contact instability).
+    # The standup task is especially prone to this: the robot starts face-down and
+    # generates large contact forces while flipping over. NaN states corrupt network
+    # weights — terminating immediately ensures the observation buffer stays finite.
+    cfg.terminations["nan_state"] = TerminationTermCfg(
+        func=microduck_mdp.robot_state_is_nan,
+        time_out=False,
+    )
+
     # Domain randomization
     if ENABLE_COM_RANDOMIZATION:
         cfg.events["randomize_com"] = EventTermCfg(
@@ -394,7 +404,7 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
 
 MicroduckStandUpRlCfg = RslRlOnPolicyRunnerCfg(
     policy=RslRlPpoActorCriticCfg(
-        init_noise_std=1.0,
+        init_noise_std=0.3,  # conservative: face-down start + scale=1.0 → init_noise_std=1.0 causes MuJoCo NaN
         actor_obs_normalization=False,
         critic_obs_normalization=False,
         actor_hidden_dims=(512, 256, 128),

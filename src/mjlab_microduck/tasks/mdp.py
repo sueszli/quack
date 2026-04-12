@@ -482,10 +482,37 @@ def com_upward_velocity(
     incentive to keep squatting to farm upward-velocity reward.
     """
     asset: Entity = env.scene[asset_cfg.name]
-    com_z = asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2]
-    vz = asset.data.root_link_lin_vel_w[:, 2]
+    # nan_to_num: MuJoCo can produce NaN on contact instability; treat as z=0
+    com_z = torch.nan_to_num(
+        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
+    )
+    vz = torch.nan_to_num(asset.data.root_link_lin_vel_w[:, 2], nan=0.0)
     below_target = (com_z < max_height).float()
     return torch.clamp(vz, min=0.0) * below_target
+
+
+def robot_state_is_nan(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """Terminate environments where MuJoCo produced NaN joint positions.
+
+    MuJoCo's contact solver can overflow to NaN under extreme penetration or
+    impulse (e.g. robot landing at high velocity). A NaN simulation state
+    propagates into observations, corrupting the policy network weights.
+
+    Terminating immediately resets the environment before the cascade spreads:
+    - The observation returned to the runner is from the valid reset state.
+    - NaN rewards are avoided on subsequent steps.
+
+    Note: the reward at THIS terminal step may still be NaN from the simulation;
+    mjlab computes rewards before resetting (see manager_based_rl_env.py step()).
+    Our custom reward functions guard against NaN internally with nan_to_num,
+    but standard mjlab rewards can still be NaN here. One NaN reward is
+    tolerable because done=True prevents it propagating backward through GAE.
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    return torch.any(torch.isnan(asset.data.joint_pos), dim=1)
 
 
 def is_alive(env: ManagerBasedRlEnv) -> torch.Tensor:
@@ -524,7 +551,11 @@ def com_height_target(
 
     # Height above terrain spawn origin (world z minus terrain z).
     # env_origins[:, 2] is 0 for flat ground, so this is safe unconditionally.
-    com_height = asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2]
+    # nan_to_num: MuJoCo can produce NaN on contact instability; treat as z=0
+    # so the penalty is finite (small, since 0 is near the target range).
+    com_height = torch.nan_to_num(
+        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
+    )
 
     # Reward when in range, penalty when outside
     # Use smooth penalty that increases quadratically with distance from range
@@ -2155,7 +2186,10 @@ def body_pose_tracking(
     droll_cmd = cmd[:, 2]
 
     # Height above terrain spawn origin (world z minus terrain z).
-    z = asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2]
+    # nan_to_num: MuJoCo can produce NaN on contact instability; treat as z=0.
+    z = torch.nan_to_num(
+        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
+    )
     z_reward = torch.exp(-((z - (nominal_height + dz_cmd)) / z_std) ** 2)
 
     # Pitch and roll from quaternion (ZYX Euler angles)

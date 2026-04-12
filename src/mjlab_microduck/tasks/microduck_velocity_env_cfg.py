@@ -49,6 +49,7 @@ from mjlab.managers.manager_term_config import (
     EventTermCfg,
     ObservationTermCfg,
     RewardTermCfg,
+    TerminationTermCfg,
 )
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.rl import (
@@ -328,6 +329,15 @@ def make_microduck_velocity_env_cfg(
         "asset_cfg"
     ].geom_names = foot_frictions_geom_names
     cfg.events["foot_friction"].params["ranges"] = (0.7, 1.3)  # Grippier footpad — narrowed from (0.3, 1.2)
+    # Terminate environments that have gone numerically unstable (NaN physics).
+    # MuJoCo can produce NaN joint positions on extreme contact impulses.
+    # Terminating immediately resets to a valid state before NaN propagates
+    # into the observation buffer and corrupts network weights.
+    cfg.terminations["nan_state"] = TerminationTermCfg(
+        func=microduck_mdp.robot_state_is_nan,
+        time_out=False,
+    )
+
     cfg.events["reset_base"].params["pose_range"]["z"] = (0.12, 0.13)
 
     # Velocity-based pushes for robustness training
