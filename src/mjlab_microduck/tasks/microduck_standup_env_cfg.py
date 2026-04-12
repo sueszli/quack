@@ -31,7 +31,7 @@ IMU_ORIENTATION_RANDOMIZATION_ANGLE = 1.0
 # Nominal standing CoM height (midpoint of [0.08, 0.11] m)
 BODY_CMD_NOMINAL_HEIGHT = 0.095
 # Tight height range for the standup com_height_target reward.
-# Must exclude face-down reset heights (0.12–0.15 m) so the robot is always
+# Must exclude face-down reset heights (0.20–0.25 m) so the robot is always
 # penalized for lying flat and must stand up to earn this reward.
 # Decoupled from BODY_CMD_MAX_Z intentionally — do NOT use the formula here.
 STANDUP_HEIGHT_MIN = 0.075   # below this: quadratic penalty
@@ -284,10 +284,12 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
         mode="reset",
     )
 
-    # Robot is pitched 90° forward (belly/front facing ground). Trunk CoM sits
-    # at roughly the body's half-depth above the ground. Set z high enough that
-    # the neck/head don't clip the floor given HOME_FRAME neck joint angles.
-    cfg.events["reset_base"].params["pose_range"]["z"] = (0.12, 0.15)
+    # Robot is pitched 90° forward (belly/front facing ground). At z=0.12 the
+    # head collision mesh (≈12–15 cm along neck chain from trunk CoM) clips into
+    # the floor, causing immediate MuJoCo NaN. Use z=0.20–0.25 to ensure full
+    # clearance. Heights above STANDUP_HEIGHT_MAX still generate a penalty, so
+    # the task reward structure is preserved.
+    cfg.events["reset_base"].params["pose_range"]["z"] = (0.20, 0.25)
     cfg.events["foot_friction"].params["asset_cfg"].geom_names = foot_frictions_geom_names
 
     # Override orientation: randomly face-down (belly) or face-up (back), with random yaw.
