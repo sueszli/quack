@@ -64,7 +64,7 @@ from mjlab.utils.noise import UniformNoiseCfg as Unoise
 
 from mjlab_microduck.robot.microduck_constants import MICRODUCK_STANDUP_ROBOT_CFG
 from mjlab_microduck.tasks import mdp as microduck_mdp
-from mjlab_microduck.tasks.microduck_velocity_env_cfg import MICRODUCK_ROUGH_TERRAINS_CFG
+from mjlab_microduck.tasks.microduck_velocity_env_cfg import MICRODUCK_ROUGH_TERRAINS_CFG, NECK_OFFSET_INTERVAL_S
 from mjlab_microduck.tasks.symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
 
 
@@ -153,6 +153,7 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
     joint_pos_action = cfg.actions["joint_pos"]
     assert isinstance(joint_pos_action, JointPositionActionCfg)
     joint_pos_action.scale = 1.0
+    cfg.actions["joint_pos"] = microduck_mdp.NeckOffsetJointPositionActionCfg(**vars(joint_pos_action))
 
     # === OBSERVATIONS ===
     del cfg.observations["policy"].terms["base_lin_vel"]
@@ -340,6 +341,18 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
     cfg.events["set_face_down"] = EventTermCfg(
         func=microduck_mdp.set_random_prone_orientation,
         mode="reset",
+    )
+
+    # Neck offset randomization (not in base vel env; added explicitly here)
+    cfg.events["reset_neck_offset"] = EventTermCfg(
+        func=microduck_mdp.reset_neck_offset,
+        mode="reset",
+    )
+    cfg.events["randomize_neck_offset_target"] = EventTermCfg(
+        func=microduck_mdp.randomize_neck_offset_target,
+        mode="interval",
+        interval_range_s=NECK_OFFSET_INTERVAL_S,
+        params={"max_offset": 0.0},  # curriculum ramps this up
     )
 
     # Domain randomization
