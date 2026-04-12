@@ -9,10 +9,25 @@ import mujoco
 
 from mjlab.envs.manager_based_rl_env import ManagerBasedRlEnv
 from mjlab.managers.scene_entity_config import SceneEntityCfg
+from mjlab.managers.reward_manager import RewardManager as _RewardManager
 from mjlab.entity import Entity
 from mjlab.tasks.velocity.mdp.velocity_command import UniformVelocityCommand, UniformVelocityCommandCfg
 from mjlab.utils.lab_api.math import matrix_from_quat
 from mjlab.envs.mdp.actions import JointPositionActionCfg as _JointPositionActionCfg
+
+# Patch RewardManager.compute to sanitize NaN rewards before they enter the
+# PPO buffer.  mjlab computes rewards BEFORE resetting environments, so any
+# reward term that operates on a NaN physics state (e.g. after MuJoCo contact
+# instability) returns NaN.  That NaN propagates: NaN reward → NaN advantage
+# → NaN loss → NaN gradient → NaN log_std → crash in torch.normal on the
+# next mini-batch.  Replacing NaN rewards with 0.0 breaks the chain without
+# altering the training signal for healthy environments.
+_orig_reward_compute = _RewardManager.compute
+
+def _nan_safe_reward_compute(self, dt: float) -> torch.Tensor:
+    return torch.nan_to_num(_orig_reward_compute(self, dt), nan=0.0)
+
+_RewardManager.compute = _nan_safe_reward_compute
 
 if TYPE_CHECKING:
     from mjlab.viewer.debug_visualizer import DebugVisualizer
