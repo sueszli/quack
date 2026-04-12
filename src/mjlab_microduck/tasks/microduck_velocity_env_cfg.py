@@ -76,24 +76,22 @@ MICRODUCK_ROUGH_TERRAINS_CFG = TerrainGeneratorCfg(
     sub_terrains={
         "flat": terrain_gen.BoxFlatTerrainCfg(proportion=0.3),
         "pyramid_stairs": terrain_gen.BoxPyramidStairsTerrainCfg(
-            proportion=0.2,
+            proportion=0.3,  # increased from 0.2 (absorbed inverted pyramid's share)
             step_height_range=(0.0, 0.015),  # max 1.5 cm (vs 10 cm default)
             step_width=0.15,
             platform_width=2.0,
             border_width=1.0,
         ),
-        "pyramid_stairs_inv": terrain_gen.BoxInvertedPyramidStairsTerrainCfg(
-            proportion=0.2,
-            step_height_range=(0.0, 0.015),  # max 1.5 cm
-            step_width=0.15,
-            platform_width=2.0,
-            border_width=1.0,
-        ),
+        # NOTE: BoxInvertedPyramidStairsTerrainCfg removed — it sets env_origin_z to the pit
+        # bottom (negative), causing resets at root_z = 0.12 + env_origin_z ≈ −0.10 m which
+        # places the robot below the pit floor and makes it fall through the ground.
         # Uneven cobblestone-like ground: random per-cell height offsets.
-        # grid_width ~= robot footprint; grid_height_range kept to ≤1 cm.
+        # grid_width=0.12 on an 8m patch = 66×66 = 4 356 boxes/patch → ~261 K total → OOM.
+        # 0.45 m gives 17×17 = 289 boxes/patch → ~17 K total (border = 0.35 m ✓).
+        # Must not divide evenly into terrain size (8.0 m): 0.45 × 17 = 7.65 ✓
         "random_grid": terrain_gen.BoxRandomGridTerrainCfg(
-            proportion=0.3,
-            grid_width=0.12,  # must not divide evenly into terrain size (8.0m)
+            proportion=0.4,  # increased from 0.3 (absorbed inverted pyramid's share)
+            grid_width=0.45,
             grid_height_range=(0.0, 0.010),  # max 1 cm
             platform_width=1.5,
         ),

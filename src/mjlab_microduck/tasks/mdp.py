@@ -482,7 +482,7 @@ def com_upward_velocity(
     incentive to keep squatting to farm upward-velocity reward.
     """
     asset: Entity = env.scene[asset_cfg.name]
-    com_z = asset.data.root_link_pos_w[:, 2]
+    com_z = asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2]
     vz = asset.data.root_link_lin_vel_w[:, 2]
     below_target = (com_z < max_height).float()
     return torch.clamp(vz, min=0.0) * below_target
@@ -522,8 +522,9 @@ def com_height_target(
     """
     asset: Entity = env.scene[asset_cfg.name]
 
-    # Get center of mass height (z position of root link)
-    com_height = asset.data.root_link_pos_w[:, 2]
+    # Height above terrain spawn origin (world z minus terrain z).
+    # env_origins[:, 2] is 0 for flat ground, so this is safe unconditionally.
+    com_height = asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2]
 
     # Reward when in range, penalty when outside
     # Use smooth penalty that increases quadratically with distance from range
@@ -2153,8 +2154,8 @@ def body_pose_tracking(
     dpitch_cmd = cmd[:, 1]
     droll_cmd = cmd[:, 2]
 
-    # Height tracking
-    z = asset.data.root_link_pos_w[:, 2]
+    # Height above terrain spawn origin (world z minus terrain z).
+    z = asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2]
     z_reward = torch.exp(-((z - (nominal_height + dz_cmd)) / z_std) ** 2)
 
     # Pitch and roll from quaternion (ZYX Euler angles)
