@@ -22,6 +22,7 @@ ENABLE_IMU_ORIENTATION_RANDOMIZATION = True
 
 # Domain randomization ranges
 COM_RANDOMIZATION_RANGE = 0.003
+STANDUP_NECK_OFFSET_MAX_ANGLE = 1.0
 MASS_INERTIA_RANDOMIZATION_RANGE = (0.95, 1.05)
 KP_RANDOMIZATION_RANGE = (0.85, 1.15)
 KD_RANDOMIZATION_RANGE = (0.9, 1.1)
@@ -431,6 +432,19 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
                 {"step": 0,          "max_z": 0.0,                     "max_angle": 0.0},
                 {"step": 1000 * 24,  "max_z": 0.010,                   "max_angle": math.radians(10)},
                 {"step": 2000 * 24,  "max_z": BODY_CMD_MAX_Z,          "max_angle": BODY_CMD_MAX_ANGLE},
+            ],
+        },
+    )
+
+    # Override neck offset curriculum: higher max and faster ramp than vel env.
+    cfg.curriculum["neck_offset_magnitude"] = CurriculumTermCfg(
+        func=microduck_mdp.neck_offset_curriculum,
+        params={
+            "event_name": "randomize_neck_offset_target",
+            "offset_stages": [
+                {"step": 0,          "max_offset": 0.0},
+                {"step": 1000 * 24,  "max_offset": 0.5},
+                {"step": 2000 * 24,  "max_offset": STANDUP_NECK_OFFSET_MAX_ANGLE},
             ],
         },
     )
