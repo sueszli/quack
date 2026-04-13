@@ -605,7 +605,8 @@ def make_microduck_velocity_env_cfg(
                 {"step": 500 * 24,   "lin_vel_range": 0.35, "ang_vel_range": 1.6},
                 {"step": 1000 * 24,  "lin_vel_range": 0.4,  "ang_vel_range": 1.7},
                 {"step": 1500 * 24,  "lin_vel_range": 0.5,  "ang_vel_range": 2.0},
-                # {"step": 2000 * 24,  "lin_vel_range": 1.0,  "ang_vel_range": 2.5},
+                {"step": 1750 * 24,  "lin_vel_range": 0.6,  "ang_vel_range": 2.0},
+                {"step": 2000 * 24,  "lin_vel_range": 0.7,  "ang_vel_range": 2.0},
             ],
         },
     )
