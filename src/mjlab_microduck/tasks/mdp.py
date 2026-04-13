@@ -74,6 +74,8 @@ def _safe_update_distribution(self, obs: torch.Tensor) -> None:
 
 _ActorCritic._update_distribution = _safe_update_distribution
 
+print("[mdp] Patches 1-3 active: NaN-safe reward/advantage/std")
+
 if TYPE_CHECKING:
     from mjlab.viewer.debug_visualizer import DebugVisualizer
 
