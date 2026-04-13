@@ -25,7 +25,12 @@ from mjlab.envs.mdp.actions import JointPositionActionCfg as _JointPositionActio
 _orig_reward_compute = _RewardManager.compute
 
 def _nan_safe_reward_compute(self, dt: float) -> torch.Tensor:
-    return torch.nan_to_num(_orig_reward_compute(self, dt), nan=0.0)
+    result = _orig_reward_compute(self, dt)
+    # _episode_sums is updated inside compute() before nan_to_num can act.
+    # Sanitize in-place so per-term metrics don't show NaN.
+    for key in self._episode_sums:
+        torch.nan_to_num_(self._episode_sums[key], nan=0.0)
+    return torch.nan_to_num(result, nan=0.0)
 
 _RewardManager.compute = _nan_safe_reward_compute
 
