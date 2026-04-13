@@ -258,6 +258,10 @@ def reset_action_history(
             forces = env.scene.sensors["feet_ground_contact"].data.found[env_ids, :2].squeeze(-1)
             env._prev_foot_forces[env_ids] = forces
 
+    # Reset actuator torque rate tracking
+    if hasattr(env, '_prev_actuator_forces'):
+        env._prev_actuator_forces[env_ids] = asset.data.actuator_force[env_ids].clone()
+
 
 def joint_accelerations_l2(
     env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG
@@ -680,6 +684,60 @@ def joint_torques_l2(
 
     # Return L2 squared norm
     return torch.sum(torch.square(actuator_forces), dim=1)
+
+
+def joint_torque_rate_l2(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """Penalize rate of change in actuator torques (proxy for gearbox shock).
+
+    Sudden torque spikes occur when the robot impacts the ground and actuators
+    resist the impulse. Penalising this rate encourages soft landings and smooth
+    force transitions that protect gearboxes.
+
+    Returns the sum of squared torque differences from the previous step.
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    current = asset.data.actuator_force  # (num_envs, num_actuators)
+
+    if not hasattr(env, '_prev_actuator_forces'):
+        env._prev_actuator_forces = current.clone()
+        return torch.zeros(env.num_envs, device=env.device)
+
+    rate = current - env._prev_actuator_forces
+    env._prev_actuator_forces = current.clone()
+    return torch.sum(torch.square(rate), dim=1)
+
+
+def body_impact_cost(
+    env: ManagerBasedRlEnv,
+    sensor_name: str,
+    threshold: float = 1.0,
+) -> torch.Tensor:
+    """Penalize terrain contact forces above a threshold on protected body parts.
+
+    Used to discourage slamming the trunk shell or head into the ground during
+    falls. The sensor should cover the relevant body or subtree with
+    reduce='netforce'. Forces below threshold are free; above that the penalty
+    grows linearly.
+
+    Args:
+        sensor_name: Name of a ContactSensorCfg with fields=("force",),
+            reduce="netforce".
+        threshold: Contact force (N) below which no penalty is applied.
+
+    Returns:
+        Penalty tensor (num_envs,) — N above threshold per step.
+    """
+    if sensor_name not in env.scene.sensors:
+        return torch.zeros(env.num_envs, device=env.device)
+
+    sensor = env.scene.sensors[sensor_name]
+    forces = sensor.data.force  # (num_envs, N_bodies, 3)
+    total_force = forces.sum(dim=1)  # sum over bodies in the subtree
+    force_mag = torch.norm(total_force, dim=1)
+    return torch.clamp(force_mag - threshold, min=0.0)
 
 
 def wheel_speed_reward(

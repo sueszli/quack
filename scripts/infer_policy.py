@@ -164,14 +164,14 @@ class PolicyInference:
 
         # Body pose mode (like head mode but for standing body pose control)
         self.body_pose_mode = False
-        self.body_cmd_step_z = 0.001              # 1 mm per keypress
-        self.body_cmd_step_angle = math.radians(1) # 1° per keypress
+        self.body_cmd_step_z = 0.01               # 10 mm per keypress (~3 to max)
+        self.body_cmd_step_angle = math.radians(10) # 10° per keypress (~3 to max)
 
         # Head control mode
         self.head_mode = False
         self.head_offset = np.zeros(4, dtype=np.float32)
         self.head_max = 2.5
-        self.head_step = 0.1
+        self.head_step = 0.83                     # ~3 presses to max
 
         # Action delay buffer
         self.use_delay = self.delay_max_lag > 0
@@ -230,8 +230,8 @@ class PolicyInference:
         if self.body_pose_mode:
             print("Body pose mode: ON")
             print(f"  UP/DOWN: Δz ±{self.body_cmd_step_z*1000:.0f}mm  (max ±{BODY_CMD_MAX_Z*1000:.0f}mm)")
-            print(f"  LEFT/RIGHT: Δpitch ±1°  (max ±{math.degrees(BODY_CMD_MAX_ANGLE):.0f}°)")
-            print(f"  A/E: Δroll ±1°  (max ±{math.degrees(BODY_CMD_MAX_ANGLE):.0f}°)")
+            print(f"  LEFT/RIGHT: Δpitch ±{math.degrees(self.body_cmd_step_angle):.0f}°  (max ±{math.degrees(BODY_CMD_MAX_ANGLE):.0f}°)")
+            print(f"  A/E: Δroll ±{math.degrees(self.body_cmd_step_angle):.0f}°  (max ±{math.degrees(BODY_CMD_MAX_ANGLE):.0f}°)")
             print(f"  SPACE: reset body pose to zero")
             print(f"  Current: z={self.body_cmd[0]*1000:.1f}mm  pitch={math.degrees(self.body_cmd[1]):.1f}°  roll={math.degrees(self.body_cmd[2]):.1f}°")
         else:
@@ -649,9 +649,9 @@ def main():
     print("  SPACE:            coast (zero all commands)")
     print("  G:                trigger ground pick (requires --ground-pick)")
     print("  [ Body pose mode — press B to toggle (requires --standing) ]")
-    print(f"  UP/DOWN arrow:    Δz ±1mm  (max ±{BODY_CMD_MAX_Z*1000:.0f}mm)")
-    print(f"  LEFT/RIGHT arrow: Δpitch ±1°  (max ±{math.degrees(BODY_CMD_MAX_ANGLE):.0f}°)")
-    print(f"  A / E:            Δroll ±1°  (max ±{math.degrees(BODY_CMD_MAX_ANGLE):.0f}°)")
+    print(f"  UP/DOWN arrow:    Δz ±10mm  (max ±{BODY_CMD_MAX_Z*1000:.0f}mm)")
+    print(f"  LEFT/RIGHT arrow: Δpitch ±10°  (max ±{math.degrees(BODY_CMD_MAX_ANGLE):.0f}°)")
+    print(f"  A / E:            Δroll ±10°  (max ±{math.degrees(BODY_CMD_MAX_ANGLE):.0f}°)")
     print("  SPACE:            reset body pose to zero")
     print("  [ Head mode — press H to toggle ]")
     print("  Z / S:            neck_pitch ±step")
