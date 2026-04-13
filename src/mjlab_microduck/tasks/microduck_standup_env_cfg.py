@@ -356,6 +356,7 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
         mode="interval",
         interval_range_s=NECK_OFFSET_INTERVAL_S,
         params={"max_offset": 0.0},  # curriculum ramps this up
+    )
 
     # Terminate environments where MuJoCo physics went NaN (contact instability).
     # The standup task is especially prone to this: the robot starts face-down and
