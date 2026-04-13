@@ -9,10 +9,72 @@ import mujoco
 
 from mjlab.envs.manager_based_rl_env import ManagerBasedRlEnv
 from mjlab.managers.scene_entity_config import SceneEntityCfg
+from mjlab.managers.reward_manager import RewardManager as _RewardManager
 from mjlab.entity import Entity
 from mjlab.tasks.velocity.mdp.velocity_command import UniformVelocityCommand, UniformVelocityCommandCfg
 from mjlab.utils.lab_api.math import matrix_from_quat
 from mjlab.envs.mdp.actions import JointPositionActionCfg as _JointPositionActionCfg
+from rsl_rl.algorithms.ppo import PPO as _PPO
+from rsl_rl.modules.actor_critic import ActorCritic as _ActorCritic
+
+# ---------------------------------------------------------------------------
+# Patch 1: RewardManager.compute — sanitize NaN rewards before they enter the
+# PPO buffer.  mjlab computes rewards BEFORE resetting environments, so any
+# reward term operating on a NaN physics state returns NaN.  That NaN
+# propagates: NaN reward → NaN advantage → NaN loss → NaN gradient →
+# NaN/negative std → crash in torch.normal on the next mini-batch.
+# ---------------------------------------------------------------------------
+_orig_reward_compute = _RewardManager.compute
+
+def _nan_safe_reward_compute(self, dt: float) -> torch.Tensor:
+    result = _orig_reward_compute(self, dt)
+    # _episode_sums is updated inside compute() before nan_to_num can act.
+    # Sanitize in-place so per-term metrics don't show NaN.
+    for key in self._episode_sums:
+        torch.nan_to_num_(self._episode_sums[key], nan=0.0)
+    return torch.nan_to_num(result, nan=0.0)
+
+_RewardManager.compute = _nan_safe_reward_compute
+
+# ---------------------------------------------------------------------------
+# Patch 2: PPO.compute_returns — sanitize advantages before normalization.
+# At a sudden curriculum step (e.g. reward weight ×2.5) the value function is
+# badly wrong: all TD errors shift by the same amount, std(advantages) → tiny,
+# and (A − mean) / (std + 1e-8) → huge.  That blows up the gradient for std,
+# which the optimizer then pushes below zero.  Zeroing NaN/Inf advantages
+# before normalization keeps them in a safe range.
+# ---------------------------------------------------------------------------
+_orig_compute_returns = _PPO.compute_returns
+
+def _safe_compute_returns(self, obs) -> None:
+    _orig_compute_returns(self, obs)
+    st = self.storage
+    torch.nan_to_num_(st.advantages, nan=0.0, posinf=0.0, neginf=0.0)
+    torch.nan_to_num_(st.returns,    nan=0.0, posinf=0.0, neginf=0.0)
+
+_PPO.compute_returns = _safe_compute_returns
+
+# ---------------------------------------------------------------------------
+# Patch 3: ActorCritic._update_distribution — clamp std before creating the
+# Normal distribution.  If a NaN/negative gradient slipped through and updated
+# the scalar std parameter below zero (noise_std_type="scalar"), or NaN'd the
+# log_std parameter (noise_std_type="log"), torch.normal crashes at sample().
+# Clamping/restoring here prevents the crash and keeps training alive.
+# ---------------------------------------------------------------------------
+_orig_update_dist = _ActorCritic._update_distribution
+
+def _safe_update_distribution(self, obs: torch.Tensor) -> None:
+    if not self.state_dependent_std:
+        with torch.no_grad():
+            if self.noise_std_type == "scalar" and hasattr(self, "std"):
+                self.std.data.clamp_(min=1e-3).nan_to_num_(nan=1e-3)
+            elif self.noise_std_type == "log" and hasattr(self, "log_std"):
+                self.log_std.data.nan_to_num_(nan=math.log(1e-3))
+    _orig_update_dist(self, obs)
+
+_ActorCritic._update_distribution = _safe_update_distribution
+
+print("[mdp] Patches 1-3 active: NaN-safe reward/advantage/std")
 
 if TYPE_CHECKING:
     from mjlab.viewer.debug_visualizer import DebugVisualizer
@@ -486,10 +548,37 @@ def com_upward_velocity(
     incentive to keep squatting to farm upward-velocity reward.
     """
     asset: Entity = env.scene[asset_cfg.name]
-    com_z = asset.data.root_link_pos_w[:, 2]
-    vz = asset.data.root_link_lin_vel_w[:, 2]
+    # nan_to_num: MuJoCo can produce NaN on contact instability; treat as z=0
+    com_z = torch.nan_to_num(
+        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
+    )
+    vz = torch.nan_to_num(asset.data.root_link_lin_vel_w[:, 2], nan=0.0)
     below_target = (com_z < max_height).float()
     return torch.clamp(vz, min=0.0) * below_target
+
+
+def robot_state_is_nan(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """Terminate environments where MuJoCo produced NaN joint positions.
+
+    MuJoCo's contact solver can overflow to NaN under extreme penetration or
+    impulse (e.g. robot landing at high velocity). A NaN simulation state
+    propagates into observations, corrupting the policy network weights.
+
+    Terminating immediately resets the environment before the cascade spreads:
+    - The observation returned to the runner is from the valid reset state.
+    - NaN rewards are avoided on subsequent steps.
+
+    Note: the reward at THIS terminal step may still be NaN from the simulation;
+    mjlab computes rewards before resetting (see manager_based_rl_env.py step()).
+    Our custom reward functions guard against NaN internally with nan_to_num,
+    but standard mjlab rewards can still be NaN here. One NaN reward is
+    tolerable because done=True prevents it propagating backward through GAE.
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    return torch.any(torch.isnan(asset.data.joint_pos), dim=1)
 
 
 def is_alive(env: ManagerBasedRlEnv) -> torch.Tensor:
@@ -526,8 +615,13 @@ def com_height_target(
     """
     asset: Entity = env.scene[asset_cfg.name]
 
-    # Get center of mass height (z position of root link)
-    com_height = asset.data.root_link_pos_w[:, 2]
+    # Height above terrain spawn origin (world z minus terrain z).
+    # env_origins[:, 2] is 0 for flat ground, so this is safe unconditionally.
+    # nan_to_num: MuJoCo can produce NaN on contact instability; treat as z=0
+    # so the penalty is finite (small, since 0 is near the target range).
+    com_height = torch.nan_to_num(
+        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
+    )
 
     # Reward when in range, penalty when outside
     # Use smooth penalty that increases quadratically with distance from range
@@ -2211,8 +2305,11 @@ def body_pose_tracking(
     dpitch_cmd = cmd[:, 1]
     droll_cmd = cmd[:, 2]
 
-    # Height tracking
-    z = asset.data.root_link_pos_w[:, 2]
+    # Height above terrain spawn origin (world z minus terrain z).
+    # nan_to_num: MuJoCo can produce NaN on contact instability; treat as z=0.
+    z = torch.nan_to_num(
+        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
+    )
     z_reward = torch.exp(-((z - (nominal_height + dz_cmd)) / z_std) ** 2)
 
     # Pitch and roll from quaternion (ZYX Euler angles)

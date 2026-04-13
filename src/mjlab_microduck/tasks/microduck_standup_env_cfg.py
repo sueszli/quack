@@ -32,7 +32,7 @@ IMU_ORIENTATION_RANDOMIZATION_ANGLE = 1.0
 # Nominal standing CoM height (midpoint of [0.08, 0.11] m)
 BODY_CMD_NOMINAL_HEIGHT = 0.095
 # Tight height range for the standup com_height_target reward.
-# Must exclude face-down reset heights (0.12–0.15 m) so the robot is always
+# Must exclude face-down reset heights (0.20–0.25 m) so the robot is always
 # penalized for lying flat and must stand up to earn this reward.
 # Decoupled from BODY_CMD_MAX_Z intentionally — do NOT use the formula here.
 STANDUP_HEIGHT_MIN = 0.075   # below this: quadratic penalty
@@ -51,6 +51,7 @@ from mjlab.managers.manager_term_config import (
     EventTermCfg,
     ObservationTermCfg,
     RewardTermCfg,
+    TerminationTermCfg,
 )
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.rl import (
@@ -331,10 +332,12 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
         mode="reset",
     )
 
-    # Robot is pitched 90° forward (belly/front facing ground). Trunk CoM sits
-    # at roughly the body's half-depth above the ground. Set z high enough that
-    # the neck/head don't clip the floor given HOME_FRAME neck joint angles.
-    cfg.events["reset_base"].params["pose_range"]["z"] = (0.12, 0.15)
+    # Robot is pitched 90° forward (belly/front facing ground). At z=0.12 the
+    # head collision mesh (≈12–15 cm along neck chain from trunk CoM) clips into
+    # the floor, causing immediate MuJoCo NaN. Use z=0.20–0.25 to ensure full
+    # clearance. Heights above STANDUP_HEIGHT_MAX still generate a penalty, so
+    # the task reward structure is preserved.
+    cfg.events["reset_base"].params["pose_range"]["z"] = (0.20, 0.25)
     cfg.events["foot_friction"].params["asset_cfg"].geom_names = foot_frictions_geom_names
 
     # Override orientation: randomly face-down (belly) or face-up (back), with random yaw.
@@ -353,6 +356,14 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
         mode="interval",
         interval_range_s=NECK_OFFSET_INTERVAL_S,
         params={"max_offset": 0.0},  # curriculum ramps this up
+
+    # Terminate environments where MuJoCo physics went NaN (contact instability).
+    # The standup task is especially prone to this: the robot starts face-down and
+    # generates large contact forces while flipping over. NaN states corrupt network
+    # weights — terminating immediately ensures the observation buffer stays finite.
+    cfg.terminations["nan_state"] = TerminationTermCfg(
+        func=microduck_mdp.robot_state_is_nan,
+        time_out=False,
     )
 
     # Domain randomization
@@ -423,7 +434,9 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
         },
     )
 
-    # Body pose tracking weight — starts at 0, ramps up after the robot is standing
+    # Body pose tracking weight — starts at 0, ramps up after the robot is standing.
+    # Gradual steps prevent the sudden ×2.5 jump that would blow up advantages
+    # when the value function hasn't caught up with the new reward scale.
     cfg.curriculum["body_pose_tracking_weight"] = CurriculumTermCfg(
         func=velocity_mdp.reward_weight,
         params={
@@ -431,20 +444,22 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
             "weight_stages": [
                 {"step": 0,          "weight": 0.0},
                 {"step": 1000 * 24,  "weight": 2.0},
+                {"step": 1500 * 24,  "weight": 3.5},
                 {"step": 2000 * 24,  "weight": 5.0},
             ],
         },
     )
 
-    # Body pose command range — starts at 0, expanded by curriculum alongside weight
+    # Body pose command range — expanded in step with weight above.
     cfg.curriculum["body_pose_cmd_range"] = CurriculumTermCfg(
         func=microduck_mdp.body_pose_cmd_range_curriculum,
         params={
             "command_name": "twist",
             "range_stages": [
-                {"step": 0,          "max_z": 0.0,                     "max_angle": 0.0},
-                {"step": 1000 * 24,  "max_z": 0.010,                   "max_angle": math.radians(10)},
-                {"step": 2000 * 24,  "max_z": BODY_CMD_MAX_Z,          "max_angle": BODY_CMD_MAX_ANGLE},
+                {"step": 0,          "max_z": 0.0,                             "max_angle": 0.0},
+                {"step": 1000 * 24,  "max_z": 0.010,                           "max_angle": math.radians(10)},
+                {"step": 1500 * 24,  "max_z": 0.020,                           "max_angle": math.radians(20)},
+                {"step": 2000 * 24,  "max_z": BODY_CMD_MAX_Z,                  "max_angle": BODY_CMD_MAX_ANGLE},
             ],
         },
     )
@@ -528,7 +543,7 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
 
 MicroduckStandUpRlCfg = RslRlOnPolicyRunnerCfg(
     policy=RslRlPpoActorCriticCfg(
-        init_noise_std=1.0,
+        init_noise_std=0.3,  # conservative: face-down start + scale=1.0 → init_noise_std=1.0 causes MuJoCo NaN
         actor_obs_normalization=False,
         critic_obs_normalization=False,
         actor_hidden_dims=(512, 256, 128),
