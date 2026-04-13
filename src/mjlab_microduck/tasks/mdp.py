@@ -14,14 +14,16 @@ from mjlab.entity import Entity
 from mjlab.tasks.velocity.mdp.velocity_command import UniformVelocityCommand, UniformVelocityCommandCfg
 from mjlab.utils.lab_api.math import matrix_from_quat
 from mjlab.envs.mdp.actions import JointPositionActionCfg as _JointPositionActionCfg
+from rsl_rl.algorithms.ppo import PPO as _PPO
+from rsl_rl.modules.actor_critic import ActorCritic as _ActorCritic
 
-# Patch RewardManager.compute to sanitize NaN rewards before they enter the
+# ---------------------------------------------------------------------------
+# Patch 1: RewardManager.compute — sanitize NaN rewards before they enter the
 # PPO buffer.  mjlab computes rewards BEFORE resetting environments, so any
-# reward term that operates on a NaN physics state (e.g. after MuJoCo contact
-# instability) returns NaN.  That NaN propagates: NaN reward → NaN advantage
-# → NaN loss → NaN gradient → NaN log_std → crash in torch.normal on the
-# next mini-batch.  Replacing NaN rewards with 0.0 breaks the chain without
-# altering the training signal for healthy environments.
+# reward term operating on a NaN physics state returns NaN.  That NaN
+# propagates: NaN reward → NaN advantage → NaN loss → NaN gradient →
+# NaN/negative std → crash in torch.normal on the next mini-batch.
+# ---------------------------------------------------------------------------
 _orig_reward_compute = _RewardManager.compute
 
 def _nan_safe_reward_compute(self, dt: float) -> torch.Tensor:
@@ -33,6 +35,44 @@ def _nan_safe_reward_compute(self, dt: float) -> torch.Tensor:
     return torch.nan_to_num(result, nan=0.0)
 
 _RewardManager.compute = _nan_safe_reward_compute
+
+# ---------------------------------------------------------------------------
+# Patch 2: PPO.compute_returns — sanitize advantages before normalization.
+# At a sudden curriculum step (e.g. reward weight ×2.5) the value function is
+# badly wrong: all TD errors shift by the same amount, std(advantages) → tiny,
+# and (A − mean) / (std + 1e-8) → huge.  That blows up the gradient for std,
+# which the optimizer then pushes below zero.  Zeroing NaN/Inf advantages
+# before normalization keeps them in a safe range.
+# ---------------------------------------------------------------------------
+_orig_compute_returns = _PPO.compute_returns
+
+def _safe_compute_returns(self, obs) -> None:
+    _orig_compute_returns(self, obs)
+    st = self.storage
+    torch.nan_to_num_(st.advantages, nan=0.0, posinf=0.0, neginf=0.0)
+    torch.nan_to_num_(st.returns,    nan=0.0, posinf=0.0, neginf=0.0)
+
+_PPO.compute_returns = _safe_compute_returns
+
+# ---------------------------------------------------------------------------
+# Patch 3: ActorCritic._update_distribution — clamp std before creating the
+# Normal distribution.  If a NaN/negative gradient slipped through and updated
+# the scalar std parameter below zero (noise_std_type="scalar"), or NaN'd the
+# log_std parameter (noise_std_type="log"), torch.normal crashes at sample().
+# Clamping/restoring here prevents the crash and keeps training alive.
+# ---------------------------------------------------------------------------
+_orig_update_dist = _ActorCritic._update_distribution
+
+def _safe_update_distribution(self, obs: torch.Tensor) -> None:
+    if not self.state_dependent_std:
+        with torch.no_grad():
+            if self.noise_std_type == "scalar" and hasattr(self, "std"):
+                self.std.data.clamp_(min=1e-3).nan_to_num_(nan=1e-3)
+            elif self.noise_std_type == "log" and hasattr(self, "log_std"):
+                self.log_std.data.nan_to_num_(nan=math.log(1e-3))
+    _orig_update_dist(self, obs)
+
+_ActorCritic._update_distribution = _safe_update_distribution
 
 if TYPE_CHECKING:
     from mjlab.viewer.debug_visualizer import DebugVisualizer
