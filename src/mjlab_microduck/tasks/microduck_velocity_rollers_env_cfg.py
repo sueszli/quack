@@ -285,7 +285,17 @@ def make_microduck_velocity_rollers_env_cfg(
     cfg.observations["policy"].terms["base_ang_vel"].noise = Unoise(n_min=-0.024, n_max=0.024)
     cfg.observations["policy"].terms[gravity_term_name].noise = Unoise(n_min=-0.007, n_max=0.007)
     cfg.observations["policy"].terms["joint_pos"].noise = Unoise(n_min=-0.0006, n_max=0.0006)
-    cfg.observations["policy"].terms["joint_vel"].noise = Unoise(n_min=-0.024, n_max=0.024)
+    cfg.observations["policy"].terms["joint_vel"].noise = Unoise(n_min=-0.24, n_max=0.24)
+
+    # 1-ctrl-step lag on joint_vel: the Dynamixel firmware computes
+    # present_velocity via a moving-average over the previous position-sample
+    # window, so the value the policy actually reads is ~1 control period old.
+    cfg.observations["policy"].terms["joint_vel"] = deepcopy(
+        cfg.observations["policy"].terms["joint_vel"]
+    )
+    cfg.observations["policy"].terms["joint_vel"].delay_min_lag = 1
+    cfg.observations["policy"].terms["joint_vel"].delay_max_lag = 1
+    cfg.observations["policy"].terms["joint_vel"].delay_update_period = 0
 
     passive_excluded = SceneEntityCfg("robot", joint_names=(r"^(?!passive_).*",))
     cfg.observations["policy"].terms["joint_pos"].params["asset_cfg"] = passive_excluded
