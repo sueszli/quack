@@ -1,14 +1,17 @@
-"""Load BAM M6 parameters from JSON and create actuator configs."""
+"""Load BAM M4/M6 parameters from JSON and create actuator configs."""
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
-from mjlab_microduck.actuator.bam_actuator import BamM6ActuatorCfg
+from mjlab_microduck.actuator.bam_actuator import (
+    BamM4ActuatorCfg,
+    BamM6ActuatorCfg,
+)
 
 
-# New M6 params from clean data identification (m6_new.json)
+# M6 params from clean data identification (m6_new.json)
 DEFAULT_XL330_M6 = {
     "kt": 0.24702827088535634,
     "R": 2.436537942885361,
@@ -27,12 +30,35 @@ DEFAULT_XL330_M6 = {
 }
 
 
-def load_bam_m6_params(json_path: str | Path) -> dict:
-    """Load BAM M6 parameters from a JSON file."""
+# M4 params (xl330_test/m4.json from Rhoban/bam)
+DEFAULT_XL330_M4 = {
+    "kt": 0.3324098185451011,
+    "R": 2.9005276147882526,
+    "armature": 0.0017385897027252174,
+    "friction_base": 1.6231287421325795e-06,
+    "friction_stribeck": 0.0017691220671164389,
+    "load_friction_base": 0.20029656199595902,
+    "load_friction_stribeck": 0.15018128260850544,
+    "dtheta_stribeck": 0.045948728647684824,
+    "alpha": 1.5375406629376966,
+    "friction_viscous": 0.011746694068695218,
+}
+
+
+def _load_params(json_path: str | Path, expected_model: str) -> dict:
     with open(json_path) as f:
         params = json.load(f)
-    assert params.get("model") == "m6", f"Expected M6 model, got {params.get('model')}"
+    got = params.get("model")
+    assert got == expected_model, f"Expected {expected_model} model, got {got}"
     return params
+
+
+def load_bam_m6_params(json_path: str | Path) -> dict:
+    return _load_params(json_path, "m6")
+
+
+def load_bam_m4_params(json_path: str | Path) -> dict:
+    return _load_params(json_path, "m4")
 
 
 def make_bam_m6_actuator_cfg(
@@ -42,15 +68,7 @@ def make_bam_m6_actuator_cfg(
     vin: float = 7.4,
     kp_fw: float = 200.0,
 ) -> BamM6ActuatorCfg:
-    """Create a BamM6ActuatorCfg from BAM parameters.
-
-    Args:
-        joint_names_expr: Joint name patterns to control.
-        params: Dict of M6 params. If None, uses DEFAULT_XL330_M6.
-        json_path: Path to BAM M6 JSON. Overrides params if provided.
-        vin: Supply voltage.
-        kp_fw: Firmware position P gain.
-    """
+    """Create a BamM6ActuatorCfg from BAM M6 parameters."""
     if json_path is not None:
         p = load_bam_m6_params(json_path)
     elif params is not None:
@@ -76,4 +94,36 @@ def make_bam_m6_actuator_cfg(
         load_friction_external_stribeck=p["load_friction_external_stribeck"],
         load_friction_motor_quad=p["load_friction_motor_quad"],
         load_friction_external_quad=p["load_friction_external_quad"],
+    )
+
+
+def make_bam_m4_actuator_cfg(
+    joint_names_expr: tuple[str, ...] = (r".*",),
+    params: dict | None = None,
+    json_path: str | Path | None = None,
+    vin: float = 7.4,
+    kp_fw: float = 200.0,
+) -> BamM4ActuatorCfg:
+    """Create a BamM4ActuatorCfg from BAM M4 parameters."""
+    if json_path is not None:
+        p = load_bam_m4_params(json_path)
+    elif params is not None:
+        p = params
+    else:
+        p = DEFAULT_XL330_M4
+
+    return BamM4ActuatorCfg(
+        joint_names_expr=joint_names_expr,
+        armature=p["armature"],
+        kt=p["kt"],
+        R=p["R"],
+        vin=vin,
+        kp_fw=kp_fw,
+        friction_base=p["friction_base"],
+        friction_stribeck=p["friction_stribeck"],
+        dtheta_stribeck=p["dtheta_stribeck"],
+        alpha=p["alpha"],
+        friction_viscous=p["friction_viscous"],
+        load_friction_base=p["load_friction_base"],
+        load_friction_stribeck=p["load_friction_stribeck"],
     )

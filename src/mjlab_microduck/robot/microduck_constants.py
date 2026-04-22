@@ -3,7 +3,7 @@ from pathlib import Path
 
 import mujoco
 from mjlab.actuator import DelayedActuatorCfg, XmlPositionActuatorCfg
-from mjlab_microduck.actuator.bam_params import make_bam_m6_actuator_cfg
+from mjlab_microduck.actuator.bam_params import make_bam_m6_actuator_cfg, make_bam_m4_actuator_cfg
 from mjlab.entity import EntityArticulationInfoCfg, EntityCfg
 from mjlab.utils.spec_config import CollisionCfg
 
@@ -72,10 +72,17 @@ FULL_COLLISION = CollisionCfg(
 # )
 
 # -- BAM M6 actuator (full voltage control + load-dependent friction) --
+# actuators = DelayedActuatorCfg(
+    # delay_min_lag=0,
+    # delay_max_lag=3,
+    # base_cfg=make_bam_m6_actuator_cfg(),
+# )
+
+# -- BAM M4 actuator
 actuators = DelayedActuatorCfg(
     delay_min_lag=0,
     delay_max_lag=3,
-    base_cfg=make_bam_m6_actuator_cfg(),
+    base_cfg=make_bam_m4_actuator_cfg(),
 )
 
 MICRODUCK_WALK_ROBOT_CFG = EntityCfg(
