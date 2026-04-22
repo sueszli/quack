@@ -32,16 +32,16 @@ DEFAULT_XL330_M6 = {
 
 # M4 params (xl330_test/m4.json from Rhoban/bam)
 DEFAULT_XL330_M4 = {
-    "kt": 0.3324098185451011,
-    "R": 2.9005276147882526,
-    "armature": 0.0017385897027252174,
-    "friction_base": 1.6231287421325795e-06,
-    "friction_stribeck": 0.0017691220671164389,
-    "load_friction_base": 0.20029656199595902,
-    "load_friction_stribeck": 0.15018128260850544,
-    "dtheta_stribeck": 0.045948728647684824,
-    "alpha": 1.5375406629376966,
-    "friction_viscous": 0.011746694068695218,
+    "kt": 0.40807008666379696,
+    "R": 2.8004973357212677,
+    "armature": 0.0014905005069671938,
+    "friction_base": 0.00944647379388224,
+    "friction_stribeck": 0.0026283903757616453,
+    "load_friction_base": 0.19194381271212732,
+    "load_friction_stribeck": 0.07555177546287972,
+    "dtheta_stribeck": 0.6445896028101025,
+    "alpha": 2.450581810840127,
+    "friction_viscous": 0.002447363938065353,
 }
 
 
