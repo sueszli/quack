@@ -804,12 +804,14 @@ source = { editable = "." }
 dependencies = [
     { name = "mjlab" },
     { name = "onnxruntime" },
+    { name = "rustypot" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "mjlab", git = "https://github.com/mujocolab/mjlab.git?rev=d1d32d8b86e68fe317356de2561f4efc63ffcc29" },
     { name = "onnxruntime", specifier = ">=1.24.4" },
+    { name = "rustypot", specifier = ">=1.4.2" },
 ]
 
 [[package]]
@@ -1662,6 +1664,36 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/e9/a4/c2292b95246b9165cc43a0c3757e80995d58bc9b43da5cb47ad6e3535213/rtree-1.4.1-py3-none-musllinux_1_2_x86_64.whl", hash = "sha256:f155bc8d6bac9dcd383481dee8c130947a4866db1d16cb6dff442329a038a0dc", size = 1555140, upload-time = "2025-08-13T19:31:58.031Z" },
     { url = "https://files.pythonhosted.org/packages/74/25/5282c8270bfcd620d3e73beb35b40ac4ab00f0a898d98ebeb41ef0989ec8/rtree-1.4.1-py3-none-win_amd64.whl", hash = "sha256:efe125f416fd27150197ab8521158662943a40f87acab8028a1aac4ad667a489", size = 389358, upload-time = "2025-08-13T19:31:59.247Z" },
     { url = "https://files.pythonhosted.org/packages/3f/50/0a9e7e7afe7339bd5e36911f0ceb15fed51945836ed803ae5afd661057fd/rtree-1.4.1-py3-none-win_arm64.whl", hash = "sha256:3d46f55729b28138e897ffef32f7ce93ac335cb67f9120125ad3742a220800f0", size = 355253, upload-time = "2025-08-13T19:32:00.296Z" },
+]
+
+[[package]]
+name = "rustypot"
+version = "1.4.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/1a/0c/35edc5f7801122b52a14211fa16d36bbcc763cfecfc4688c1692ef090d6c/rustypot-1.4.2.tar.gz", hash = "sha256:12b4128431b13818d0c38e9db54294ca62b583cc70d82b0c16dff399cc43a17b", size = 59390, upload-time = "2026-01-07T09:41:59.098Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e0/45/57872fb09cfb48a1662762625d44c1d5d9a7b98d7d9741f2fd4e5188250b/rustypot-1.4.2-cp312-cp312-macosx_10_12_x86_64.whl", hash = "sha256:cc71c0cd50f719321a42ddb14ca60662a3853370c0e4899b5bb4b04ba3bd1d84", size = 1666768, upload-time = "2026-01-07T09:41:36.062Z" },
+    { url = "https://files.pythonhosted.org/packages/99/d8/e91cfb6fde9b37fb9884e0ed0b6becc9b2d98293e8c3255579999a8cc734/rustypot-1.4.2-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:fbd72500f9834fa1304c00d82df4c85477bd239415d79f737672acb6aef2baff", size = 1512017, upload-time = "2026-01-07T09:41:29.686Z" },
+    { url = "https://files.pythonhosted.org/packages/ec/6b/bfa2e5a16d7b9977c6cf65acf50eb2beb90199df8ef70abb6766d41b7d2b/rustypot-1.4.2-cp312-cp312-manylinux_2_24_aarch64.whl", hash = "sha256:ae4a379886ce710bf052c45ab06cffcd30302654c8d706e135c5fa22220bd1af", size = 1636908, upload-time = "2026-01-07T09:41:08.661Z" },
+    { url = "https://files.pythonhosted.org/packages/fa/4f/51f2a89390a750ccf66234ce5fe56f97756aa22a2da24f1413aa7baf826f/rustypot-1.4.2-cp312-cp312-manylinux_2_24_armv7l.whl", hash = "sha256:43b11428e522adf2c64329f8480fd1e8fc786b05a4b395c6fc87b6be4199dc14", size = 1659767, upload-time = "2026-01-07T09:41:13.889Z" },
+    { url = "https://files.pythonhosted.org/packages/b2/7f/6ed8e9a7db96637bc10f3c9f0addcc0ba28925c70208c5782cbc3dc1166a/rustypot-1.4.2-cp312-cp312-manylinux_2_24_i686.whl", hash = "sha256:04a500c3cf946debf12c836f50b14b4f52a19c935b0b436834e7436f2d3a28b5", size = 1691761, upload-time = "2026-01-07T09:41:19.463Z" },
+    { url = "https://files.pythonhosted.org/packages/69/7d/5cd09ada4c979035348188efdb454df14ea032e4ebaa8745d579a56b0cf6/rustypot-1.4.2-cp312-cp312-manylinux_2_24_x86_64.whl", hash = "sha256:a40f2431fecd92684490f304c15a940c27b022c18b246a0fd62cfbdeb40a8d84", size = 1723816, upload-time = "2026-01-07T09:41:25.224Z" },
+    { url = "https://files.pythonhosted.org/packages/c9/2e/7d7ee1467597e7ac14ed90213844f7d01c271084a98958907e7ec1da268c/rustypot-1.4.2-cp312-cp312-musllinux_1_2_aarch64.whl", hash = "sha256:a4d5e107be97e051315a0a6a77ac14006d684dcfe05faa80d3e0862330473096", size = 1824045, upload-time = "2026-01-07T09:41:42.187Z" },
+    { url = "https://files.pythonhosted.org/packages/05/35/0330993c8e8742859018ce44b0b856c344d4e1fe67dc0f3c05beb1676fe5/rustypot-1.4.2-cp312-cp312-musllinux_1_2_armv7l.whl", hash = "sha256:6a99cb53a3c4db14bffb3d3273aec03a46acd4e1eff83fced19c3949e15331f5", size = 1931122, upload-time = "2026-01-07T09:41:46.877Z" },
+    { url = "https://files.pythonhosted.org/packages/a7/8d/92752d8502b319b65bdc3794689306327dc71f9a767d7f3c4e19daa3172d/rustypot-1.4.2-cp312-cp312-musllinux_1_2_i686.whl", hash = "sha256:3e5e90c1e50e1cc2c47a4c9329063d33c599f158e519638c53054d71c1a64c37", size = 1853302, upload-time = "2026-01-07T09:41:51.932Z" },
+    { url = "https://files.pythonhosted.org/packages/a1/0e/d9fee1730c7e1bd892406fd28ccf268f2981af94931cac6727651a8c00c2/rustypot-1.4.2-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:ba33c766e1b933fdf293e1b20a6000704230bcfc8b00079887bc55735c186c96", size = 1952690, upload-time = "2026-01-07T09:41:56.592Z" },
+    { url = "https://files.pythonhosted.org/packages/11/cb/60e4be7b67dd8e0adfe73d0d30c11977ca1a2639ce0b852d880852cae4bc/rustypot-1.4.2-cp312-cp312-win_amd64.whl", hash = "sha256:d5310a6394cfcb47ff9759484783aba33fe5f2684948d5308d207f78ee999bb9", size = 1658232, upload-time = "2026-01-07T09:42:03.339Z" },
+    { url = "https://files.pythonhosted.org/packages/c5/73/df9162cdc6002738d185cdb4a7461c259fba1b5c33b8c807a21f37a7460d/rustypot-1.4.2-cp313-cp313-macosx_10_12_x86_64.whl", hash = "sha256:c499227be1aaf40fea508c9ea7d67f771c0809784460cf586ca2b30e8aeccfb4", size = 1665893, upload-time = "2026-01-07T09:41:37.055Z" },
+    { url = "https://files.pythonhosted.org/packages/1c/af/57d4c73ee6d7c9328b1290addd98b8f77583c1e906c61f5929c7ed433b67/rustypot-1.4.2-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:529a1e8a313bf581e7152351ec4d20e906cde82471935e2f8103da7c698a47f0", size = 1512566, upload-time = "2026-01-07T09:41:30.8Z" },
+    { url = "https://files.pythonhosted.org/packages/98/5c/15f5da535414fd7434146bdbc155c00e471f1ad037907a7f6a01d56c4134/rustypot-1.4.2-cp313-cp313-manylinux_2_24_aarch64.whl", hash = "sha256:5694befe8dae0115ec763528a6294f7e05f7934932a9a655da6c5787d6ec295b", size = 1637339, upload-time = "2026-01-07T09:41:10.051Z" },
+    { url = "https://files.pythonhosted.org/packages/df/41/b9e16e65cc4b4ce5122c1f4a44e948726b51d7f3ecaa9f801c2f870a47c8/rustypot-1.4.2-cp313-cp313-manylinux_2_24_armv7l.whl", hash = "sha256:be164d8cb14881076371fef705ac09a358425684a79d7cbab5c695d6daaf1095", size = 1660412, upload-time = "2026-01-07T09:41:15.654Z" },
+    { url = "https://files.pythonhosted.org/packages/a5/d7/078c4f5c5f5a901d30a9b08847e7b71c57211c2466cd65514e029a392a13/rustypot-1.4.2-cp313-cp313-manylinux_2_24_i686.whl", hash = "sha256:a0b0065069f87c5f57553bc6bcf938ea4b8023d619428982de0988a464caff68", size = 1690070, upload-time = "2026-01-07T09:41:20.593Z" },
+    { url = "https://files.pythonhosted.org/packages/81/7e/3938ac984d4bc30bd4d5e6c49d26a345fa3d40450f55f0d9674592d1e5b9/rustypot-1.4.2-cp313-cp313-manylinux_2_24_x86_64.whl", hash = "sha256:362a612265b25cc522f6de7bcdcac39b801bef9fb3027d37443bcaf7fbd0a5d2", size = 1724544, upload-time = "2026-01-07T09:41:26.552Z" },
+    { url = "https://files.pythonhosted.org/packages/8d/c9/d955acbadb39f7aa85c3f09015dfa12174246ab84b515b44593eb29b7642/rustypot-1.4.2-cp313-cp313-musllinux_1_2_aarch64.whl", hash = "sha256:91bd2d3922a959c2232e5163d93f4135643bbf235bdd5b85447fb15f5fc19256", size = 1824098, upload-time = "2026-01-07T09:41:43.369Z" },
+    { url = "https://files.pythonhosted.org/packages/01/2b/0e8296db54f632d460964423b2521b996ab43e10b49f80dca31833d795a4/rustypot-1.4.2-cp313-cp313-musllinux_1_2_armv7l.whl", hash = "sha256:f8c0f03afcaaacdf9c49d59190f440117b4a4fa217bc2a09e532aa2ca2fa250d", size = 1931591, upload-time = "2026-01-07T09:41:48.262Z" },
+    { url = "https://files.pythonhosted.org/packages/63/79/ec11f7b79381a7155c9eaea9a1a8c6e8874eb5431f3ca46e5db83cd5785e/rustypot-1.4.2-cp313-cp313-musllinux_1_2_i686.whl", hash = "sha256:4cc816be52129005c2df9e84f109fe69f9b7a10269d097bdecfb968bbcf9e87d", size = 1852196, upload-time = "2026-01-07T09:41:53.13Z" },
+    { url = "https://files.pythonhosted.org/packages/e9/79/bc533cccabc719ee0215d82efd80dde251b7712f5a849476db44a502350f/rustypot-1.4.2-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:bd2cf6d8e0c381fc446e3a2f8c6733a26bad3b0d50c521a1a1775000a252bc26", size = 1953656, upload-time = "2026-01-07T09:41:57.697Z" },
+    { url = "https://files.pythonhosted.org/packages/62/9d/4a0bfb3659c31dd15805b695dc4b6121e7d7aeb9430c422deb9f86080996/rustypot-1.4.2-cp313-cp313-win_amd64.whl", hash = "sha256:5f22012d2927849c7241840acf7af98c2175ca1bb3db8b3df2ed6c7bccb7cef1", size = 1657884, upload-time = "2026-01-07T09:42:04.368Z" },
 ]
 
 [[package]]

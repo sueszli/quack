@@ -516,6 +516,17 @@ def make_microduck_velocity_env_cfg(
     cfg.observations["policy"].terms["joint_pos"].noise = Unoise(n_min=-0.0006, n_max=0.0006)  # was 0.05
     cfg.observations["policy"].terms["joint_vel"].noise = Unoise(n_min=-0.024, n_max=0.024)  # was 2.0
 
+    # 1-ctrl-step lag on joint_vel: the Dynamixel firmware computes
+    # present_velocity via a moving-average over the previous position-sample
+    # window, so the value the policy actually reads is ~1 control period old.
+    # Matches reality and stops the policy relying on instantaneous qdot feedback.
+    cfg.observations["policy"].terms["joint_vel"] = deepcopy(
+        cfg.observations["policy"].terms["joint_vel"]
+    )
+    cfg.observations["policy"].terms["joint_vel"].delay_min_lag = 1
+    cfg.observations["policy"].terms["joint_vel"].delay_max_lag = 1
+    cfg.observations["policy"].terms["joint_vel"].delay_update_period = 0
+
     # Commands — deepcopy to avoid shared-state corruption from other env cfgs
     # (make_velocity_env_cfg() returns objects with shared mutable references;
     # standup/ground_pick envs mutate commands["twist"] in place, zeroing ranges)

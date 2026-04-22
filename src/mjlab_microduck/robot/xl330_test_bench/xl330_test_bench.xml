@@ -48,8 +48,10 @@
       <!-- Link arm -->
       <body name="arm" pos="0.105 0 0.211" quat="0.5 0.5 -0.5 -0.5">
         <!-- Joint from bench_holder to arm -->
-        <joint axis="0 0 1" name="1" type="hinge" class="chosen_actuator"/>
-        <inertial pos="-0 -0.0965688 0.0140442" mass="0.557207" fullinertia="0.000483288 0.000365391 0.000801549 0 0 -8.71515e-07"/>
+        <joint axis="0 0 1" name="1" type="hinge" class="chosen_actuator" range="-1.3962634 1.3962634"/>
+        <!-- Real device has a 100 g payload on the arm.  Inertia scaled from the
+             onshape export (original mass 0.557207) by 0.1 / 0.557207 ≈ 0.17946. -->
+        <inertial pos="-0 -0.0965688 0.0140442" mass="0.1" fullinertia="8.6729e-05 6.5566e-05 1.43854e-04 0 0 -1.5639e-07"/>
         <!-- Part weight -->
         <geom type="mesh" class="visual" pos="-0 0 0.0215" quat="0.5 -0.5 0.5 0.5" mesh="weight" material="weight_material"/>
         <!-- Part spacer -->

@@ -32,6 +32,10 @@ from .microduck_velocity_rollers_env_cfg import (
     make_microduck_velocity_rollers_env_cfg,
     MicroduckRollersRlCfg,
 )
+from .testbench_env_cfg import (
+    make_testbench_env_cfg,
+    MicroduckTestbenchRlCfg,
+)
 
 def _make_roller_get_base_metadata():
     """Return a get_base_metadata replacement that skips joints with no actuator.
@@ -158,3 +162,13 @@ register_mjlab_task(
     runner_cls=MicroduckOnPolicyRunner,
 )
 print("✓ Ground pick task registered: Mjlab-GroundPick-Rough-MicroDuck")
+
+# XL330 test-bench task — single-DOF sim2real validation rig
+register_mjlab_task(
+    task_id="Mjlab-Testbench-XL330",
+    env_cfg=make_testbench_env_cfg(),
+    play_env_cfg=make_testbench_env_cfg(play=True),
+    rl_cfg=MicroduckTestbenchRlCfg,
+    runner_cls=MicroduckOnPolicyRunner,
+)
+print("✓ Testbench task registered: Mjlab-Testbench-XL330")
