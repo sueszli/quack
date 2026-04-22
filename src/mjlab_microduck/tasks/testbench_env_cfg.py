@@ -121,22 +121,35 @@ def target_angle_tracking(
 def make_testbench_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     asset_cfg_full = SceneEntityCfg("robot", joint_names=("1",))
 
-    # Observations (noise copied from microduck velocity env)
+    # Observations (base noise copied from microduck velocity env; joint_vel
+    # noise here is 10× larger to mirror the noisy XL330 firmware velocity read).
+    joint_pos_term = ObservationTermCfg(
+        func=base_mdp.joint_pos_rel,
+        noise=Unoise(n_min=-0.0006, n_max=0.0006),
+    )
+    joint_vel_term = ObservationTermCfg(
+        func=base_mdp.joint_vel_rel,
+        # 10× the microduck velocity env's joint_vel noise (0.024 → 0.24) — the
+        # XL330 firmware velocity read is much noisier than MuJoCo's instantaneous
+        # qdot, so we inject more observation corruption to force robustness.
+        noise=Unoise(n_min=-0.24, n_max=0.24),
+        delay_min_lag=1,
+        delay_max_lag=1,
+        delay_update_period=0,
+    )
+    actions_term = ObservationTermCfg(func=base_mdp.last_action)
+    command_term = ObservationTermCfg(
+        func=base_mdp.generated_commands,
+        params={"command_name": "target_angle"},
+    )
+
     policy_terms = {
-        "joint_pos": ObservationTermCfg(
-            func=base_mdp.joint_pos_rel,
-            noise=Unoise(n_min=-0.0006, n_max=0.0006),
-        ),
-        "joint_vel": ObservationTermCfg(
-            func=base_mdp.joint_vel_rel,
-            noise=Unoise(n_min=-0.024, n_max=0.024),
-        ),
-        "actions": ObservationTermCfg(func=base_mdp.last_action),
-        "command": ObservationTermCfg(
-            func=base_mdp.generated_commands,
-            params={"command_name": "target_angle"},
-        ),
+        "joint_pos": joint_pos_term,
+        "joint_vel": joint_vel_term,
+        "actions": actions_term,
+        "command": command_term,
     }
+    critic_terms = dict(policy_terms)
 
     observations = {
         "policy": ObservationGroupCfg(
@@ -145,7 +158,7 @@ def make_testbench_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
             enable_corruption=True,
         ),
         "critic": ObservationGroupCfg(
-            terms=dict(policy_terms),
+            terms=critic_terms,
             concatenate_terms=True,
             enable_corruption=False,
         ),

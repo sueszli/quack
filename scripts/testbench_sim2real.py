@@ -80,6 +80,8 @@ class PolicyRunner:
         self.last_action[:] = 0.0
 
     def step(self, q: float, qd: float, target: float) -> float:
+        # Matches the testbench env's policy obs layout:
+        #   [joint_pos_rel, joint_vel_rel, last_action, command]  (4-d).
         obs = np.array(
             [q - DEFAULT_POS, qd, self.last_action[0], target],
             dtype=np.float32,

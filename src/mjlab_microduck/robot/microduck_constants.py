@@ -72,18 +72,18 @@ FULL_COLLISION = CollisionCfg(
 # )
 
 # -- BAM M6 actuator (full voltage control + load-dependent friction) --
-# actuators = DelayedActuatorCfg(
-    # delay_min_lag=0,
-    # delay_max_lag=3,
-    # base_cfg=make_bam_m6_actuator_cfg(),
-# )
-
-# -- BAM M4 actuator
 actuators = DelayedActuatorCfg(
     delay_min_lag=0,
     delay_max_lag=3,
-    base_cfg=make_bam_m4_actuator_cfg(),
+    base_cfg=make_bam_m6_actuator_cfg(),
 )
+
+# -- BAM M4 actuator
+# actuators = DelayedActuatorCfg(
+    # delay_min_lag=0,
+    # delay_max_lag=3,
+    # base_cfg=make_bam_m4_actuator_cfg(),
+# )
 
 MICRODUCK_WALK_ROBOT_CFG = EntityCfg(
     spec_fn=get_walk_spec,
