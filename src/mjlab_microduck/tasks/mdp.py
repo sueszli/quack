@@ -76,6 +76,53 @@ _ActorCritic._update_distribution = _safe_update_distribution
 
 print("[mdp] Patches 1-3 active: NaN-safe reward/advantage/std")
 
+# ---------------------------------------------------------------------------
+# Patch 4: exporter_utils.get_base_metadata — the new microduck model has
+# passive joints (jaw linkage closed via equality constraints) that are part
+# of the articulation but have no XML actuator.  The upstream exporter
+# iterates robot.joint_names (16) and indexes joint_name_to_ctrl_id (14),
+# crashing with KeyError on passive_*.  Filter passive joints out of the
+# exported metadata so policies stay consistent with the 14-dim action space.
+# ---------------------------------------------------------------------------
+from mjlab.rl import exporter_utils as _exporter_utils  # noqa: E402
+from mjlab.envs.mdp.actions.joint_actions import JointAction as _JointAction  # noqa: E402
+
+def _get_base_metadata_no_passive(env, run_path):
+    robot = env.scene["robot"]
+    joint_action = env.action_manager.get_term("joint_pos")
+    assert isinstance(joint_action, _JointAction)
+    full_names = list(robot.joint_names)
+    keep_idx = [i for i, n in enumerate(full_names) if not n.startswith("passive_")]
+    joint_names = [full_names[i] for i in keep_idx]
+    joint_name_to_ctrl_id = {a.target.split("/")[-1]: a.id for a in robot.spec.actuators}
+    ctrl_ids = [joint_name_to_ctrl_id[n] for n in joint_names]
+    stiffness = env.sim.mj_model.actuator_gainprm[ctrl_ids, 0]
+    damping = -env.sim.mj_model.actuator_biasprm[ctrl_ids, 2]
+    default_jp = robot.data.default_joint_pos[0].cpu().tolist()
+    return {
+        "run_path": run_path,
+        "joint_names": joint_names,
+        "joint_stiffness": stiffness.tolist(),
+        "joint_damping": damping.tolist(),
+        "default_joint_pos": [default_jp[i] for i in keep_idx],
+        "command_names": list(env.command_manager.active_terms),
+        "observation_names": env.observation_manager.active_terms["policy"],
+        "action_scale": joint_action._scale[0].cpu().tolist()
+        if isinstance(joint_action._scale, torch.Tensor)
+        else joint_action._scale,
+    }
+
+_exporter_utils.get_base_metadata = _get_base_metadata_no_passive
+# Also patch the already-imported reference in the velocity task exporter.
+try:
+    from mjlab.tasks.velocity.rl import exporter as _vel_exporter  # noqa: E402
+    if hasattr(_vel_exporter, "get_base_metadata"):
+        _vel_exporter.get_base_metadata = _get_base_metadata_no_passive
+except Exception:
+    pass
+
+print("[mdp] Patch 4 active: ONNX export filters passive_* joints")
+
 if TYPE_CHECKING:
     from mjlab.viewer.debug_visualizer import DebugVisualizer
 
