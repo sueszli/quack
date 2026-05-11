@@ -65,6 +65,13 @@
     </default>
     <equality solref="0.002 1" solimp="0.99 0.999 0.0005 0.5 2"/>
   </default>
+  <contact>
+    <!-- Jaw collision mesh overlaps the head shell because the closed-loop
+         linkage positions it inside the head. Exclude this pair so MuJoCo
+         doesn't report a persistent self-contact (which gives a permanent
+         penalty under the self_collisions reward in the standup env). -->
+    <exclude body1="jaw" body2="head_plate"/>
+  </contact>
   <worldbody>
     <!-- Link trunk_base -->
     <body name="trunk_base" pos="0 0 0.12" quat="1 0 0 0" childclass="microduck">
