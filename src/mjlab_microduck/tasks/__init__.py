@@ -24,6 +24,10 @@ from .microduck_ground_pick_env_cfg import (
     make_microduck_ground_pick_env_cfg,
     MicroduckGroundPickRlCfg,
 )
+from .microduck_sitstand_env_cfg import (
+    make_microduck_sitstand_env_cfg,
+    MicroduckSitStandRlCfg,
+)
 from .microduck_standup_env_cfg import (
     make_microduck_standup_env_cfg,
     MicroduckStandUpRlCfg,
@@ -162,6 +166,25 @@ register_mjlab_task(
     runner_cls=MicroduckOnPolicyRunner,
 )
 print("✓ Ground pick task registered: Mjlab-GroundPick-Rough-MicroDuck")
+
+# Sit/stand task — episodic policy: deep squat down then stand back up
+register_mjlab_task(
+    task_id="Mjlab-SitStand-Flat-MicroDuck",
+    env_cfg=make_microduck_sitstand_env_cfg(),
+    play_env_cfg=make_microduck_sitstand_env_cfg(play=True),
+    rl_cfg=MicroduckSitStandRlCfg,
+    runner_cls=MicroduckOnPolicyRunner,
+)
+print("✓ Sit/stand task registered: Mjlab-SitStand-Flat-MicroDuck")
+
+register_mjlab_task(
+    task_id="Mjlab-SitStand-Rough-MicroDuck",
+    env_cfg=make_microduck_sitstand_env_cfg(rough=True),
+    play_env_cfg=make_microduck_sitstand_env_cfg(play=True, rough=True),
+    rl_cfg=MicroduckSitStandRlCfg,
+    runner_cls=MicroduckOnPolicyRunner,
+)
+print("✓ Sit/stand task registered: Mjlab-SitStand-Rough-MicroDuck")
 
 # XL330 test-bench task — single-DOF sim2real validation rig
 register_mjlab_task(

@@ -1089,6 +1089,48 @@ def mouth_perpendicular_to_ground(
     return approach_weight * alignment
 
 
+def phase_pose_match(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    std: float = 0.3,
+    command_name: str = "twist",
+    joint_indices: Optional[list] = None,
+    target_overrides: Optional[dict] = None,
+    phase: str = "approach",
+) -> torch.Tensor:
+    """Reward matching a target pose, weighted by phase-cycle command.
+
+    Generic helper for phase-conditioned tasks (e.g. sit/stand). The command
+    encodes phase as [cos(2π·phase), sin(2π·phase), 0]:
+      - "approach" weight = max(0, sin(2π·phase)) — peaks at phase 0.25.
+      - "return"   weight = max(0,-sin(2π·phase)) — peaks at phase 0.75.
+
+    Args:
+        std: Gaussian std per joint (rad).
+        joint_indices: Optional subset of joints to evaluate (rest ignored).
+        target_overrides: {joint_index: angle_rad}. Joints not listed default
+            to asset.data.default_joint_pos (the home/standing pose).
+        phase: "approach" or "return".
+    """
+    asset = env.scene[asset_cfg.name]
+    joint_pos = asset.data.joint_pos
+    target = asset.data.default_joint_pos.clone()
+    if target_overrides:
+        for idx, val in target_overrides.items():
+            target[:, idx] = val
+    if joint_indices is not None:
+        joint_pos = joint_pos[:, joint_indices]
+        target = target[:, joint_indices]
+    pose_reward = torch.exp(-((joint_pos - target) / std) ** 2).mean(dim=-1)
+
+    cmd = env.command_manager.get_command(command_name)
+    if phase == "approach":
+        weight = torch.clamp(cmd[:, 1], min=0.0)
+    else:
+        weight = torch.clamp(-cmd[:, 1], min=0.0)
+    return weight * pose_reward
+
+
 def ground_pick_return_pose(
     env: ManagerBasedRlEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,

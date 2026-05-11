@@ -197,6 +197,15 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
     cfg.observations["policy"].terms["joint_vel"].delay_update_period = 0
     cfg.observations["policy"].enable_corruption = not play
 
+    # Exclude passive_* joints (jaw linkage) so the joint_pos/vel obs is 14-dim
+    # (matches action space). Without this the policy sees the unactuated jaw
+    # joints flopping freely via the equality constraint, adding noise to obs.
+    passive_excluded = SceneEntityCfg("robot", joint_names=(r"^(?!passive_).*",))
+    cfg.observations["policy"].terms["joint_pos"].params["asset_cfg"] = passive_excluded
+    cfg.observations["policy"].terms["joint_vel"].params["asset_cfg"] = deepcopy(passive_excluded)
+    cfg.observations["critic"].terms["joint_pos"].params["asset_cfg"] = deepcopy(passive_excluded)
+    cfg.observations["critic"].terms["joint_vel"].params["asset_cfg"] = deepcopy(passive_excluded)
+
     # === COMMANDS ===
     # Repurpose the 3 velocity command slots as body pose control:
     #   [Δz (m), Δpitch (rad), Δroll (rad)]
@@ -282,7 +291,9 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
             func=velocity_mdp.variable_posture,
             weight=1.0,
             params={
-                "asset_cfg": SceneEntityCfg("robot", joint_names=(r".*",)),
+                "asset_cfg": SceneEntityCfg(
+                    "robot", joint_names=(r"^(?!passive_).*",)
+                ),
                 "command_name": "twist",
                 "std_standing": {r".*": 0.5},
                 "std_walking": {r".*": 0.5},

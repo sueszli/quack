@@ -26,20 +26,20 @@ BODY_CMD_MAX_ANGLE = math.radians(30)  # ±30°
 # - Actions are offsets from (motor_target = DEFAULT_POSE + action * scale)
 # - Joint observations are relative to (obs_joint_pos = current_pos - DEFAULT_POSE)
 DEFAULT_POSE = np.array([
-    0.0,   # left_hip_yaw
-    0.0,   # left_hip_roll
-    0.6,   # left_hip_pitch
-    -1.2,  # left_knee
-    0.6,   # left_ankle
-    -0.3491,  # neck_pitch (was -0.5)
-    0.3491,   # head_pitch (was 0.5)
-    0.0,   # head_yaw
-    0.0,   # head_roll
-    0.0,   # right_hip_yaw
-    0.0,   # right_hip_roll
-    -0.6,  # right_hip_pitch
-    1.2,   # right_knee
-    -0.6,  # right_ankle
+    0.0,      # left_hip_yaw
+    -0.0873,  # left_hip_roll
+    -0.5236,  # left_hip_pitch
+    0.0,      # left_knee
+    0.5236,   # left_ankle
+    0.3491,   # neck_pitch
+    -0.3491,  # head_pitch
+    0.0,      # head_yaw
+    0.0,      # head_roll
+    0.0,      # right_hip_yaw
+    0.0873,   # right_hip_roll
+    0.5236,   # right_hip_pitch
+    0.0,      # right_knee
+    -0.5236,  # right_ankle
 ], dtype=np.float32)
 
 
