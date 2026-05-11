@@ -118,7 +118,7 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
         name="head_impact_contact",
         primary=ContactMatch(
             mode="subtree",
-            pattern="long_neck_plate2",
+            pattern="neck",
             entity="robot",
         ),
         secondary=ContactMatch(mode="body", pattern="terrain"),
