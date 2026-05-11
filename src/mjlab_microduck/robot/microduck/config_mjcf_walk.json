@@ -1,5 +1,5 @@
 {
-    "url": "https://cad.onshape.com/documents/804927696f06d877f3f1803e/w/3df6f6a8dcea50fb5658e3c0/e/e9ad89ea0c0270c6f03a5522",
+    "url": "https://cad.onshape.com/documents/804927696f06d877f3f1803e/w/3239ba0df7349fc5129ac49f/e/5e56598923b6e0d9c566370f",
     "outputFormat": "mujoco",
     "robot_name": "microduck",
     "output_filename": "robot_walk",
@@ -7,7 +7,8 @@
     "max_stl_size": 1.0,
     "ignore": {
         "*": "collision",
-        "!foot_tpu_bottom": "collision"
+        "!left_foot": "collision",
+        "!right_foot": "collision"
     },
     "additional_xml": [
         "joints_properties.xml",
@@ -16,8 +17,8 @@
     ],
     "post_import_commands": [
         "sed -i 's/body name=\"trunk_base\" pos=\"[^\"]*\"/body name=\"trunk_base\" pos=\"0 0 0.12\"/' robot_walk.xml",
-        "sed -i '/<!-- Part foot_tpu_bottom -->/{n; n; s/class=\"collision\"/name=\"left_foot_collision\" class=\"collision\"/}' robot_walk.xml",
-        "sed -i '/<!-- Part foot_tpu_bottom_2 -->/{n; n; s/class=\"collision\"/name=\"right_foot_collision\" class=\"collision\"/}' robot_walk.xml",
+        "sed -i '/<!-- Part left_foot -->/{n; n; s/class=\"collision\"/name=\"left_foot_collision\" class=\"collision\"/}' robot_walk.xml",
+        "sed -i '/<!-- Part right_foot -->/{n; n; s/class=\"collision\"/name=\"right_foot_collision\" class=\"collision\"/}' robot_walk.xml",
         "sed -i 's/ inheritrange=\"1\"//g' robot_walk.xml",
         "sed -i 's|<site[^>]*name=\"torso_camera\"[^>]*pos=\"\\([^\"]*\\)\"[^>]*/>|&\\n      <camera name=\"torso_camera\" pos=\"\\1\" quat=\"0.5 0.5 -0.5 -0.5\"/>|' robot_walk.xml",
         "sed -i 's|<site[^>]*name=\"head_camera\"[^>]*pos=\"\\([^\"]*\\)\"[^>]*/>|&\\n              <camera name=\"head_camera\" pos=\"\\1\" quat=\"0 0 -1 0\"/>|' robot_walk.xml"
@@ -25,6 +26,10 @@
     "joint_properties": {
         "default": {
             "class": "chosen_actuator"
+        },
+        "passive*": {
+          "actuated": false,
+          "class" : "passive_joint"
         }
     }
 }

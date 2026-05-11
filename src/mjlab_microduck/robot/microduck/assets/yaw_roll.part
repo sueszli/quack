@@ -4,10 +4,10 @@
     "documentMicroversion": "f28467123d1c2cd676b5e73f",
     "elementId": "5fd0388e73a8818b09677c77",
     "fullConfiguration": "default",
-    "id": "M/hyvgCOU5RgRCqNR",
+    "id": "M9qgsWbBDaDngO/ff",
     "isStandardContent": false,
-    "name": "camshaft <1>",
-    "partId": "RWTD",
+    "name": "yaw_roll <1>",
+    "partId": "RrVD",
     "suppressed": false,
     "type": "Part"
 }

@@ -4,10 +4,10 @@
     "documentMicroversion": "f28467123d1c2cd676b5e73f",
     "elementId": "5fd0388e73a8818b09677c77",
     "fullConfiguration": "default",
-    "id": "M/hyvgCOU5RgRCqNR",
+    "id": "M9GpK2zmieSvPLno+",
     "isStandardContent": false,
-    "name": "camshaft <1>",
-    "partId": "RWTD",
+    "name": "cam_support <1>",
+    "partId": "RqSD",
     "suppressed": false,
     "type": "Part"
 }

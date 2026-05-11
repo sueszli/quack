@@ -2,12 +2,12 @@
     "configuration": "default",
     "documentId": "804927696f06d877f3f1803e",
     "documentMicroversion": "f28467123d1c2cd676b5e73f",
-    "elementId": "5fd0388e73a8818b09677c77",
+    "elementId": "451317b8e3aacc7f88e8f8ed",
     "fullConfiguration": "default",
-    "id": "M/hyvgCOU5RgRCqNR",
+    "id": "MAszFQS4WPVR8298x",
     "isStandardContent": false,
-    "name": "camshaft <1>",
-    "partId": "RWTD",
+    "name": "right_foot <1>",
+    "partId": "RPGH",
     "suppressed": false,
     "type": "Part"
 }

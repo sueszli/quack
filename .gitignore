@@ -26,6 +26,7 @@ artifacts/
 *.npz
 
 src/mjlab_microduck/robot/microduck.bak/*
+src/mjlab_microduck/robot/microduck_test/*
 data/
 *.pt
 
