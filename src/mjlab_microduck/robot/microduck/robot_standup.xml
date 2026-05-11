@@ -103,7 +103,7 @@
       <!-- Link seeed_bearing__configuration__22x16x4 -->
       <body name="seeed_bearing__configuration__22x16x4" pos="0.006 0.0175 -0.002" quat="0 0.707107 0.707107 0">
         <!-- Joint from trunk_base to seeed_bearing__configuration__22x16x4 -->
-        <joint axis="0 0 1" name="left_hip_yaw" type="hinge" range="-0.08726646259971647 0.5235987755982944" class="chosen_actuator"/>
+        <joint axis="0 0 1" name="left_hip_yaw" type="hinge" range="-0.26179938779915385 0.5235987755982944" class="chosen_actuator"/>
         <inertial pos="-7.7e-11 0.000956788 0.0188951" mass="0.0229727" fullinertia="4.16063e-06 3.38857e-06 2.30634e-06 0 -0 -5.9927e-08"/>
         <!-- Part seeed_bearing__configuration__22x16x4_3 -->
         <geom type="mesh" class="visual" pos="-0 0.0123 0.01445" quat="0.5 -0.5 -0.5 -0.5" mesh="seeed_bearing__configuration__22x16x4" material="seeed_bearing__configuration__22x16x4_material"/>
@@ -265,7 +265,7 @@
       <!-- Link xl330 -->
       <body name="xl330" pos="0.006 -0.0175 -0.002" quat="0 0.707107 0.707107 0">
         <!-- Joint from trunk_base to xl330 -->
-        <joint axis="0 0 1" name="right_hip_yaw" type="hinge" range="-0.5235987755982988 0.08726646259971647" class="chosen_actuator"/>
+        <joint axis="0 0 1" name="right_hip_yaw" type="hinge" range="-0.5235987755982988 0.2617993877991494" class="chosen_actuator"/>
         <inertial pos="-7.7e-11 0.000956788 0.0188951" mass="0.0229727" fullinertia="4.16063e-06 3.38857e-06 2.30634e-06 0 -0 -5.9927e-08"/>
         <!-- Part seeed_bearing__configuration__22x16x4_6 -->
         <geom type="mesh" class="visual" pos="-0 0.0123 0.01445" quat="0.5 -0.5 -0.5 -0.5" mesh="seeed_bearing__configuration__22x16x4" material="seeed_bearing__configuration__22x16x4_material"/>

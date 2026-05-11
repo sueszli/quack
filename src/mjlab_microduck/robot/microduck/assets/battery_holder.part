@@ -2,12 +2,12 @@
     "configuration": "default",
     "documentId": "804927696f06d877f3f1803e",
     "documentMicroversion": "38a10dea82083b06cbf000fa",
-    "elementId": "451317b8e3aacc7f88e8f8ed",
+    "elementId": "6a7320ab42427c3c6d1a75ee",
     "fullConfiguration": "default",
-    "id": "MQ6ExVWTurZx9xUu5",
+    "id": "MIgDJ2LApPVskUplu",
     "isStandardContent": false,
-    "name": "yaw2roll <2>",
-    "partId": "RpCD",
+    "name": "battery_holder <1>",
+    "partId": "RXQD",
     "suppressed": false,
     "type": "Part"
 }

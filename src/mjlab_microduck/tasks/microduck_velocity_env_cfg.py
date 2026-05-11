@@ -238,6 +238,16 @@ def make_microduck_velocity_env_cfg(
     # Body dynamics rewards
     cfg.rewards["soft_landing"].weight = -1e-05
 
+    # Self-collision penalty: discourages legs from crashing into the trunk
+    # battery holder (the self_collision_only-classed geoms on leg, leg_2,
+    # battery_holder). With proper joint-range limits the policy can't actually
+    # reach the body, but a positive signal here keeps it well clear.
+    cfg.rewards["self_collisions"] = RewardTermCfg(
+        func=mdp.self_collision_cost,
+        weight=-1.0,
+        params={"sensor_name": self_collision_cfg.name},
+    )
+
 
     cfg.rewards["air_time"].weight = 5.0
     cfg.rewards["air_time"].params["command_threshold"] = 0.01
