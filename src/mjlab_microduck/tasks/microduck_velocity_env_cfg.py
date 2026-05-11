@@ -215,6 +215,9 @@ def make_microduck_velocity_env_cfg(
     cfg.rewards["pose"].params["std_standing"] = std_standing  # tight when command=0
     cfg.rewards["pose"].params["std_walking"] = std_walking
     cfg.rewards["pose"].params["std_running"] = std_walking
+    cfg.rewards["pose"].params["asset_cfg"] = SceneEntityCfg(
+        "robot", joint_names=(r"^(?!passive_).*",)
+    )
     cfg.rewards["pose"].params["walking_threshold"] = 0.01
     cfg.rewards["pose"].weight = 2.0  # was 1.0
 
@@ -526,6 +529,14 @@ def make_microduck_velocity_env_cfg(
     cfg.observations["policy"].terms["joint_vel"].delay_min_lag = 1
     cfg.observations["policy"].terms["joint_vel"].delay_max_lag = 1
     cfg.observations["policy"].terms["joint_vel"].delay_update_period = 0
+
+    # Exclude passive_* joints (jaw linkage) from joint_pos/vel obs so the
+    # observation dim matches the action dim (14) instead of the raw articulation (16).
+    passive_excluded = SceneEntityCfg("robot", joint_names=(r"^(?!passive_).*",))
+    cfg.observations["policy"].terms["joint_pos"].params["asset_cfg"] = passive_excluded
+    cfg.observations["policy"].terms["joint_vel"].params["asset_cfg"] = deepcopy(passive_excluded)
+    cfg.observations["critic"].terms["joint_pos"].params["asset_cfg"] = deepcopy(passive_excluded)
+    cfg.observations["critic"].terms["joint_vel"].params["asset_cfg"] = deepcopy(passive_excluded)
 
     # Commands — deepcopy to avoid shared-state corruption from other env cfgs
     # (make_velocity_env_cfg() returns objects with shared mutable references;

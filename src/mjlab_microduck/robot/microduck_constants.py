@@ -12,8 +12,8 @@ _ROBOT_DIR: Path = Path(os.path.dirname(__file__)) / "microduck"
 
 MICRODUCK_WALK_XML: Path = _ROBOT_DIR / "robot_walk.xml"
 MICRODUCK_STANDUP_XML: Path = _ROBOT_DIR / "robot_standup.xml"
-MICRODUCK_GROUND_PICK_XML: Path = _ROBOT_DIR / "robot_ground_pick.xml"
-MICRODUCK_WALK_ROLLERS_XML: Path = _ROBOT_DIR / "robot_walk_rollers.xml"
+MICRODUCK_GROUND_PICK_XML: Path = _ROBOT_DIR / "robot_standup.xml"
+MICRODUCK_WALK_ROLLERS_XML: Path = _ROBOT_DIR / "robot_standup.xml"
 
 assert MICRODUCK_WALK_XML.exists(), f"XML not found: {MICRODUCK_WALK_XML}"
 assert MICRODUCK_STANDUP_XML.exists(), f"XML not found: {MICRODUCK_STANDUP_XML}"
@@ -39,18 +39,19 @@ def get_walk_rollers_spec() -> mujoco.MjSpec:
 
 HOME_FRAME = EntityCfg.InitialStateCfg(
     joint_pos={
-        # Lower body
+        # Lower body (matches STAND keyframe in scene.xml)
         r".*hip_yaw.*": 0.0,
-        r".*hip_roll.*": 0.0,
-        r".*left_hip_pitch.*": 0.6,
-        r".*right_hip_pitch.*": -0.6,
-        r".*left_knee.*": -1.2,
-        r".*right_knee.*": 1.2,
-        r".*left_ankle.*": 0.6,
-        r".*right_ankle.*": -0.6,
+        r".*left_hip_roll.*": -0.0873,
+        r".*right_hip_roll.*": 0.0873,
+        r".*left_hip_pitch.*": -0.5236,
+        r".*right_hip_pitch.*": 0.5236,
+        r".*left_knee.*": 0.0,
+        r".*right_knee.*": 0.0,
+        r".*left_ankle.*": 0.5236,
+        r".*right_ankle.*": -0.5236,
         # Head
-        r".*neck_pitch.*": -0.3491,
-        r".*head_pitch.*": 0.3491,
+        r".*neck_pitch.*": 0.3491,
+        r".*head_pitch.*": -0.3491,
         r".*head_yaw.*": 0.0,
         r".*head_roll.*": 0.0,
     },
@@ -72,10 +73,11 @@ FULL_COLLISION = CollisionCfg(
 # )
 
 # -- BAM M6 actuator (full voltage control + load-dependent friction) --
+# Exclude passive_* joints (jaw linkage in the new model has no XML actuator).
 actuators = DelayedActuatorCfg(
     delay_min_lag=0,
     delay_max_lag=3,
-    base_cfg=make_bam_m6_actuator_cfg(),
+    base_cfg=make_bam_m6_actuator_cfg(joint_names_expr=(r"^(?!passive_).*",)),
 )
 
 # -- BAM M4 actuator

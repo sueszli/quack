@@ -26,8 +26,8 @@
     ],
     "post_import_commands": [
         "sed -i 's/body name=\"trunk_base\" pos=\"[^\"]*\"/body name=\"trunk_base\" pos=\"0 0 0.12\"/' robot_standup.xml",
-        "sed -i '/<!-- Part left_foot -->/{n; n; s/class=\"collision\"/name=\"left_foot_collision\" class=\"collision\"/}' robot_standup.xml",
-        "sed -i '/<!-- Part right_foot -->/{n; n; s/class=\"collision\"/name=\"right_foot_collision\" class=\"collision\"/}' robot_standup.xml",
+        "sed -i '/<!-- Part left_foot_2 -->/{n; n; s/class=\"collision\"/name=\"left_foot_collision\" class=\"collision\"/}' robot_standup.xml",
+        "sed -i '/<!-- Part right_foot_2 -->/{n; n; s/class=\"collision\"/name=\"right_foot_collision\" class=\"collision\"/}' robot_standup.xml",
         "sed -i 's/ inheritrange=\"1\"//g' robot_standup.xml",
         "sed -i 's|<site[^>]*name=\"torso_camera\"[^>]*pos=\"\\([^\"]*\\)\"[^>]*/>|&\\n      <camera name=\"torso_camera\" pos=\"\\1\" quat=\"0.5 0.5 -0.5 -0.5\"/>|' robot_standup.xml",
         "sed -i 's|<site[^>]*name=\"head_camera\"[^>]*pos=\"\\([^\"]*\\)\"[^>]*/>|&\\n              <camera name=\"head_camera\" pos=\"\\1\" quat=\"0 0 -1 0\"/>|' robot_standup.xml"
