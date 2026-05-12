@@ -29,17 +29,15 @@ KD_RANDOMIZATION_RANGE = (0.9, 1.1)
 IMU_ORIENTATION_RANDOMIZATION_ANGLE = 1.0
 
 # Body pose command control
-# Nominal standing CoM height (midpoint of [0.06, 0.11] m).
-# Tuned for v1.5 — natural stable settled trunk_z is ~0.054, so the rewarded
-# range starts just above that to encourage modest active extension without
-# fighting the pose reward.
-BODY_CMD_NOMINAL_HEIGHT = 0.085
+# v1.5 robot CoM sits ~2 cm higher than the previous robot, so all standup-height
+# thresholds are shifted up by 0.02 m vs the main-branch values.
+BODY_CMD_NOMINAL_HEIGHT = 0.115  # was 0.095
 # Tight height range for the standup com_height_target reward.
 # Must exclude face-down reset heights (0.20–0.25 m) so the robot is always
 # penalized for lying flat and must stand up to earn this reward.
 # Decoupled from BODY_CMD_MAX_Z intentionally — do NOT use the formula here.
-STANDUP_HEIGHT_MIN = 0.060   # below this: quadratic penalty
-STANDUP_HEIGHT_MAX = 0.110   # above this: quadratic penalty (catches face-down)
+STANDUP_HEIGHT_MIN = 0.095   # below this: quadratic penalty (was 0.075)
+STANDUP_HEIGHT_MAX = 0.130   # above this: quadratic penalty (was 0.110)
 # Normalization constants for the policy observation (must match training)
 BODY_CMD_MAX_Z = 0.03          # ±30 mm height offset
 BODY_CMD_MAX_ANGLE = math.radians(30)  # ±30° pitch / roll
@@ -200,9 +198,7 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
     cfg.observations["policy"].terms["joint_vel"].delay_update_period = 0
     cfg.observations["policy"].enable_corruption = not play
 
-    # Exclude passive_* joints (jaw linkage) so the joint_pos/vel obs is 14-dim
-    # (matches action space). Without this the policy sees the unactuated jaw
-    # joints flopping freely via the equality constraint, adding noise to obs.
+    # v1.5: exclude passive_* jaw joints so obs is 14-dim (matches action space).
     passive_excluded = SceneEntityCfg("robot", joint_names=(r"^(?!passive_).*",))
     cfg.observations["policy"].terms["joint_pos"].params["asset_cfg"] = passive_excluded
     cfg.observations["policy"].terms["joint_vel"].params["asset_cfg"] = deepcopy(passive_excluded)
@@ -250,17 +246,8 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
         # which is ~0 at the 90° prone starting position.
         "upright_linear": RewardTermCfg(
             func=microduck_mdp.body_upright_linear,
-            weight=8.0,  # bumped 4 → 8: stronger pull to flip out of the face-up flat minimum
+            weight=4.0,
             params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))},
-        ),
-        # Positive reward for feet contacting the ground (0, +0.5, or +1.0 per step).
-        # Explicit signal that "feet planted = good"; complements the negative
-        # head_impact_penalty so the policy learns feet-only-on-ground is the
-        # right strategy (rather than just an option).
-        "feet_grounded": RewardTermCfg(
-            func=microduck_mdp.feet_grounded_reward,
-            weight=1.0,
-            params={"sensor_name": "feet_ground_contact"},
         ),
         # Reward upward CoM velocity: directly incentivizes the dynamic push needed
         # to go from prone to standing. Clamped to zero on the way down so the robot
@@ -270,7 +257,7 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
             weight=3.0,
             params={
                 "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
-                "max_height": 0.08,  # matches target_height_min — reward vanishes once standing
+                "max_height": 0.10,  # ≈ target_height_min — reward vanishes once standing (was 0.08, +2cm for v1.5)
             },
         ),
         # Height reward: quadratic penalty below target, +1 when in standing range.
@@ -301,13 +288,9 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
         # the dynamic standup phase, but reward the final upright pose).
         "pose": RewardTermCfg(
             func=velocity_mdp.variable_posture,
-            # Moderate: between original 1.0 and the over-tightened 3.0. Pose
-            # nudges joints toward HOME but doesn't kill exploration of flipping.
-            weight=1.5,
+            weight=1.0,
             params={
-                "asset_cfg": SceneEntityCfg(
-                    "robot", joint_names=(r"^(?!passive_).*",)
-                ),
+                "asset_cfg": SceneEntityCfg("robot", joint_names=(r"^(?!passive_).*",)),
                 "command_name": "twist",
                 "std_standing": {r".*": 0.5},
                 "std_walking": {r".*": 0.5},
@@ -342,16 +325,12 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
             weight=0.0,
             params={"sensor_name": trunk_impact_cfg.name, "threshold": 5.0},
         ),
-        # Penalize ANY sustained head/neck contact with the ground.
-        # Threshold lowered (2.0 → 0.5 N) so a resting head (~1.6 N) is clearly
-        # above threshold. Initial weight non-zero from step 0 (was 0 + late
-        # curriculum) and curriculum max bumped to -5.0 so head-on-ground is
-        # net-negative vs the +5 from com_height. Without this, the policy
-        # converges on head-prop tripod / downward-dog as a stable optimum.
+        # Penalize hard impacts of the head/neck against the ground.
+        # Higher weight than trunk because the head servo is more fragile.
         "head_impact_penalty": RewardTermCfg(
             func=microduck_mdp.body_impact_cost,
-            weight=-1.0,
-            params={"sensor_name": head_impact_cfg.name, "threshold": 0.5},
+            weight=0.0,
+            params={"sensor_name": head_impact_cfg.name, "threshold": 2.0},
         ),
         # Penalize sudden torque spikes (gearbox shock proxy).
         # Starts at 0; curriculum ramps up after standup is learned.
@@ -380,13 +359,9 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
     cfg.events["foot_friction"].params["asset_cfg"].geom_names = foot_frictions_geom_names
 
     # Override orientation: randomly face-down (belly) or face-up (back), with random yaw.
-    # face_down_prob starts at 0.8 (easier — most resets face-down where the legs/head
-    # can naturally tip the trunk toward upright) and is ramped to 0.5 by the
-    # face_down_prob_curriculum below.
     cfg.events["set_face_down"] = EventTermCfg(
         func=microduck_mdp.set_random_prone_orientation,
         mode="reset",
-        params={"face_down_prob": 0.8},
     )
 
     # Neck offset randomization (not in base vel env; added explicitly here)
@@ -508,22 +483,6 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
         },
     )
 
-    # Face-down/up reset bias: start 80% face-down so the policy can learn the easier
-    # task first (face-down naturally tips toward upright via the head/legs tipping),
-    # then ramp to 50/50 once the standup pattern is acquired.
-    cfg.curriculum["face_down_prob"] = CurriculumTermCfg(
-        func=microduck_mdp.face_down_prob_curriculum,
-        params={
-            "event_name": "set_face_down",
-            "prob_stages": [
-                {"step": 0,          "prob": 0.8},
-                {"step": 1000 * 24,  "prob": 0.7},
-                {"step": 2000 * 24,  "prob": 0.6},
-                {"step": 3000 * 24,  "prob": 0.5},
-            ],
-        },
-    )
-
     # Override neck offset curriculum: higher max and faster ramp than vel env.
     cfg.curriculum["neck_offset_magnitude"] = CurriculumTermCfg(
         func=microduck_mdp.neck_offset_curriculum,
@@ -545,11 +504,7 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
         params={
             "event_name": "push_robot",
             "push_stages": [
-                # Defer all pushes for the first 500 iters — let the policy learn the
-                # standup motion in peace before adding disturbance robustness.
-                {"step": 0,          "velocity_range": {"x": (0.0, 0.0),    "y": (0.0, 0.0)}},
-                {"step": 500 * 24,   "velocity_range": {"x": (-0.15, 0.15), "y": (-0.15, 0.15)}},
-                {"step": 1000 * 24,  "velocity_range": {"x": (-0.3, 0.3),   "y": (-0.3, 0.3)}},
+                {"step": 0,          "velocity_range": {"x": (-0.3, 0.3),   "y": (-0.3, 0.3)}},
                 {"step": 1500 * 24,  "velocity_range": {"x": (-0.6, 0.6),   "y": (-0.6, 0.6)}},
                 {"step": 2500 * 24,  "velocity_range": {"x": _MAX_PUSH,     "y": _MAX_PUSH}},
             ],
@@ -576,16 +531,15 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
         },
     )
 
-    # Head impact: start at -1.0 from step 0 (no warmup at zero) and ramp to -5.0
-    # so head-on-ground is clearly net-negative versus standing properly.
+    # Head is more fragile than the trunk — higher final weight.
     cfg.curriculum["head_impact_weight"] = CurriculumTermCfg(
         func=velocity_mdp.reward_weight,
         params={
             "reward_name": "head_impact_penalty",
             "weight_stages": [
-                {"step": 0,          "weight": -1.0},
-                {"step": 500 * 24,   "weight": -2.5},
-                {"step": 1000 * 24,  "weight": -5.0},
+                {"step": 0,          "weight": 0.0},
+                {"step": 1000 * 24,  "weight": -0.2},
+                {"step": 2000 * 24,  "weight": -1.0},
             ],
         },
     )
