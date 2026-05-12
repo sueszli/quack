@@ -496,20 +496,27 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
         },
     )
 
-    # Gradually increase push magnitude so the robot eventually practices full falls
-    # (not just balance recovery). Kicks in after standup is stable.
+    # Pushes disabled entirely for now — testing whether the partial-standup
+    # convergence is due to push instability. Re-enable by restoring the
+    # multi-stage curriculum below.
+    if "push_robot" in cfg.events:
+        cfg.events["push_robot"].params["velocity_range"] = {"x": (0.0, 0.0), "y": (0.0, 0.0)}
     _MAX_PUSH = (-1.0, 1.0)
     cfg.curriculum["push_magnitude"] = CurriculumTermCfg(
         func=microduck_mdp.push_curriculum,
         params={
             "event_name": "push_robot",
             "push_stages": [
-                {"step": 0,          "velocity_range": {"x": (-0.3, 0.3),   "y": (-0.3, 0.3)}},
-                {"step": 1500 * 24,  "velocity_range": {"x": (-0.6, 0.6),   "y": (-0.6, 0.6)}},
-                {"step": 2500 * 24,  "velocity_range": {"x": _MAX_PUSH,     "y": _MAX_PUSH}},
+                {"step": 0, "velocity_range": {"x": (0.0, 0.0), "y": (0.0, 0.0)}},
             ],
         },
     )
+    # Original curriculum (commented for easy restoration):
+    # "push_stages": [
+    #     {"step": 0,          "velocity_range": {"x": (-0.3, 0.3),   "y": (-0.3, 0.3)}},
+    #     {"step": 1500 * 24,  "velocity_range": {"x": (-0.6, 0.6),   "y": (-0.6, 0.6)}},
+    #     {"step": 2500 * 24,  "velocity_range": {"x": _MAX_PUSH,     "y": _MAX_PUSH}},
+    # ],
 
     # In play mode skip the curriculum and use the max push immediately.
     if play and "push_robot" in cfg.events:
