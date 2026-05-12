@@ -170,7 +170,10 @@ def make_microduck_sitstand_env_cfg(
             "command_name": "twist",
             "stand_z": 0.12,
             "sit_z": 0.07,
-            "std": 0.02,
+            # std=0.04: wide enough to provide a useful gradient from any trunk
+            # height (was 0.02, which left the policy without signal above z=0.10
+            # and stuck in a partial-squat).
+            "std": 0.04,
             "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
         },
     )
@@ -221,11 +224,10 @@ def make_microduck_sitstand_env_cfg(
     # ── Rewards: stability (kept across both phases) ──────────────────────────
     # Upright: enforced throughout — robot must keep trunk vertical even when sitting.
     cfg.rewards["upright"].params["asset_cfg"].body_names = ("trunk_base",)
-    # Halved 1.0 → 0.5: policy is allowed to lean/fold the trunk during the sit
-    # phase if that's the strategy it finds. The stand_pose_neck reward still
-    # pulls the head to HOME during the stand half, which keeps the trunk
-    # roughly vertical when standing.
-    cfg.rewards["upright"].weight = 0.5
+    # Dropped to 0.2: don't fight the natural trunk-fold needed to actually sit
+    # the body onto the ground. The phase-conditioned stand_pose rewards already
+    # enforce upright trunk during the stand half via joint targeting.
+    cfg.rewards["upright"].weight = 0.2
 
     cfg.rewards["body_ang_vel"].params["asset_cfg"].body_names = ("trunk_base",)
     cfg.rewards["body_ang_vel"].weight = -0.05
