@@ -284,11 +284,12 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
                 "angle_std": BODY_CMD_ANGLE_STD,
             },
         ),
-        # Pose reward. Bumped 1.0 → 2.0 so it competes with upright + com_height
-        # and pulls the policy toward HOME pose (legs straight, head at HOME).
+        # Pose reward. Bumped to 3.0 now that the flip is learned — pulls
+        # joints back to HOME so the policy stops using saturated hip_yaw /
+        # extreme knee/ankle angles to balance.
         "pose": RewardTermCfg(
             func=velocity_mdp.variable_posture,
-            weight=2.0,
+            weight=3.0,
             params={
                 "asset_cfg": SceneEntityCfg("robot", joint_names=(r"^(?!passive_).*",)),
                 "command_name": "twist",
@@ -573,7 +574,7 @@ MicroduckStandUpRlCfg = RslRlOnPolicyRunnerCfg(
         value_loss_coef=1.0,
         use_clipped_value_loss=True,
         clip_param=0.2,
-        entropy_coef=0.03,  # was 0.01 — encourage exploration of the back-flip motion (face-up "do nothing" local optimum)
+        entropy_coef=0.02,  # was 0.03 — reduce probing now that the back-flip is learned, so the standing pose can settle
         num_learning_epochs=5,
         num_mini_batches=4,
         learning_rate=1.0e-3,
