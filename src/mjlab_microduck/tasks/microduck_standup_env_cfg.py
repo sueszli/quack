@@ -42,8 +42,8 @@ STANDUP_HEIGHT_MAX = 0.130   # above this: quadratic penalty (was 0.110)
 BODY_CMD_MAX_Z = 0.03          # ±30 mm height offset
 BODY_CMD_MAX_ANGLE = math.radians(30)  # ±30° pitch / roll
 # Tracking reward std — tight to create strong gradients
-BODY_CMD_Z_STD = 0.01           # 10 mm
-BODY_CMD_ANGLE_STD = math.radians(5)   # 5°
+BODY_CMD_Z_STD = 0.02           # 20 mm (was 10 mm — wider to give gradient over the full standup descent)
+BODY_CMD_ANGLE_STD = math.radians(10)  # 10° (was 5° — at 50° tilt, 5° std → reward≈0, 10° std → reward≈10⁻⁴ with real gradient)
 
 from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.envs.mdp.actions import JointPositionActionCfg
@@ -257,7 +257,7 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
             weight=3.0,
             params={
                 "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
-                "max_height": 0.10,  # ≈ target_height_min — reward vanishes once standing (was 0.08, +2cm for v1.5)
+                "max_height": 0.115,  # = BODY_CMD_NOMINAL_HEIGHT — no dead zone above STANDUP_HEIGHT_MIN where upward velocity stops paying but com_height isn't yet maxed
             },
         ),
         # Height reward: quadratic penalty below target, +1 when in standing range.
@@ -453,20 +453,18 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
         },
     )
 
-    # Body pose tracking weight — ramps in to penalize trunk pitch/roll/z error.
-    # Shifted earlier (peak at iter 1000 instead of 2000) so the trunk-pitch
-    # pressure arrives while the policy is still flexible. The downward-dog
-    # local optimum has high body_pose_tracking error (50° tilt → near-zero
-    # reward), so this should push past it.
+    # Body pose tracking weight — starts at 0, ramps up after the robot is standing.
+    # Gradual steps prevent the sudden ×2.5 jump that would blow up advantages
+    # when the value function hasn't caught up with the new reward scale.
     cfg.curriculum["body_pose_tracking_weight"] = CurriculumTermCfg(
         func=velocity_mdp.reward_weight,
         params={
             "reward_name": "body_pose_tracking",
             "weight_stages": [
-                {"step": 0,         "weight": 0.0},
-                {"step": 300 * 24,  "weight": 2.0},
-                {"step": 600 * 24,  "weight": 3.5},
-                {"step": 1000 * 24, "weight": 5.0},
+                {"step": 0,          "weight": 0.0},
+                {"step": 1000 * 24,  "weight": 2.0},
+                {"step": 1500 * 24,  "weight": 3.5},
+                {"step": 2000 * 24,  "weight": 5.0},
             ],
         },
     )
@@ -477,10 +475,10 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
         params={
             "command_name": "twist",
             "range_stages": [
-                {"step": 0,         "max_z": 0.0,            "max_angle": 0.0},
-                {"step": 300 * 24,  "max_z": 0.010,          "max_angle": math.radians(10)},
-                {"step": 600 * 24,  "max_z": 0.020,          "max_angle": math.radians(20)},
-                {"step": 1000 * 24, "max_z": BODY_CMD_MAX_Z, "max_angle": BODY_CMD_MAX_ANGLE},
+                {"step": 0,          "max_z": 0.0,                             "max_angle": 0.0},
+                {"step": 1000 * 24,  "max_z": 0.010,                           "max_angle": math.radians(10)},
+                {"step": 1500 * 24,  "max_z": 0.020,                           "max_angle": math.radians(20)},
+                {"step": 2000 * 24,  "max_z": BODY_CMD_MAX_Z,                  "max_angle": BODY_CMD_MAX_ANGLE},
             ],
         },
     )
