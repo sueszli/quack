@@ -277,10 +277,10 @@ def make_microduck_sitstand_env_cfg(
     # ── Rewards: stability (kept across both phases) ──────────────────────────
     # Upright: enforced throughout — robot must keep trunk vertical even when sitting.
     cfg.rewards["upright"].params["asset_cfg"].body_names = ("trunk_base",)
-    # Dropped to 0.2: don't fight the natural trunk-fold needed to actually sit
-    # the body onto the ground. The phase-conditioned stand_pose rewards already
-    # enforce upright trunk during the stand half via joint targeting.
-    cfg.rewards["upright"].weight = 0.2
+    # Restored to 1.0: the SIT keyframe has the trunk vertical too, so upright
+    # doesn't fight sitting — but it does help the policy keep the trunk vertical
+    # during the harder sit→stand transition, where the robot was falling backwards.
+    cfg.rewards["upright"].weight = 1.0
 
     cfg.rewards["body_ang_vel"].params["asset_cfg"].body_names = ("trunk_base",)
     cfg.rewards["body_ang_vel"].weight = -0.05
