@@ -454,33 +454,32 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
         },
     )
 
-    # Body pose tracking weight — ramps in to dominate trunk pitch/roll/z once the
-    # rough standup motion is found. Shifted earlier (peak at iter 1000 instead of
-    # 2000) so the pressure to come fully vertical arrives before the policy
-    # commits to a downward-dog local optimum as the value-function maximum.
+    # Body pose tracking weight — starts at 0, ramps up after the robot is standing.
+    # Gradual steps prevent the sudden ×2.5 jump that would blow up advantages
+    # when the value function hasn't caught up with the new reward scale.
     cfg.curriculum["body_pose_tracking_weight"] = CurriculumTermCfg(
         func=velocity_mdp.reward_weight,
         params={
             "reward_name": "body_pose_tracking",
             "weight_stages": [
-                {"step": 0,         "weight": 0.0},
-                {"step": 300 * 24,  "weight": 2.0},
-                {"step": 600 * 24,  "weight": 3.5},
-                {"step": 1000 * 24, "weight": 5.0},
+                {"step": 0,          "weight": 0.0},
+                {"step": 1000 * 24,  "weight": 2.0},
+                {"step": 1500 * 24,  "weight": 3.5},
+                {"step": 2000 * 24,  "weight": 5.0},
             ],
         },
     )
 
-    # Body pose command range — expanded in step with weight above (matching ramp).
+    # Body pose command range — expanded in step with weight above.
     cfg.curriculum["body_pose_cmd_range"] = CurriculumTermCfg(
         func=microduck_mdp.body_pose_cmd_range_curriculum,
         params={
             "command_name": "twist",
             "range_stages": [
-                {"step": 0,         "max_z": 0.0,            "max_angle": 0.0},
-                {"step": 300 * 24,  "max_z": 0.010,          "max_angle": math.radians(10)},
-                {"step": 600 * 24,  "max_z": 0.020,          "max_angle": math.radians(20)},
-                {"step": 1000 * 24, "max_z": BODY_CMD_MAX_Z, "max_angle": BODY_CMD_MAX_ANGLE},
+                {"step": 0,          "max_z": 0.0,                             "max_angle": 0.0},
+                {"step": 1000 * 24,  "max_z": 0.010,                           "max_angle": math.radians(10)},
+                {"step": 1500 * 24,  "max_z": 0.020,                           "max_angle": math.radians(20)},
+                {"step": 2000 * 24,  "max_z": BODY_CMD_MAX_Z,                  "max_angle": BODY_CMD_MAX_ANGLE},
             ],
         },
     )
