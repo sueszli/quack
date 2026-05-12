@@ -29,15 +29,15 @@ KD_RANDOMIZATION_RANGE = (0.9, 1.1)
 IMU_ORIENTATION_RANDOMIZATION_ANGLE = 1.0
 
 # Body pose command control
-# v1.5 robot CoM sits ~2 cm higher than the previous robot, so all standup-height
-# thresholds are shifted up by 0.02 m vs the main-branch values.
-BODY_CMD_NOMINAL_HEIGHT = 0.115  # was 0.095
+# v1.5 robot CoM sits ~3 cm higher than the previous robot, so all standup-height
+# thresholds are shifted up by 0.03 m vs the main-branch values.
+BODY_CMD_NOMINAL_HEIGHT = 0.125  # was 0.095
 # Tight height range for the standup com_height_target reward.
 # Must exclude face-down reset heights (0.20–0.25 m) so the robot is always
 # penalized for lying flat and must stand up to earn this reward.
 # Decoupled from BODY_CMD_MAX_Z intentionally — do NOT use the formula here.
-STANDUP_HEIGHT_MIN = 0.095   # below this: quadratic penalty (was 0.075)
-STANDUP_HEIGHT_MAX = 0.130   # above this: quadratic penalty (was 0.110)
+STANDUP_HEIGHT_MIN = 0.105   # below this: quadratic penalty (was 0.075)
+STANDUP_HEIGHT_MAX = 0.140   # above this: quadratic penalty (was 0.110)
 # Normalization constants for the policy observation (must match training)
 BODY_CMD_MAX_Z = 0.03          # ±30 mm height offset
 BODY_CMD_MAX_ANGLE = math.radians(30)  # ±30° pitch / roll
@@ -257,7 +257,7 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
             weight=3.0,
             params={
                 "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
-                "max_height": 0.10,  # ≈ target_height_min — reward vanishes once standing (was 0.08, +2cm for v1.5)
+                "max_height": 0.11,  # ≈ target_height_min — reward vanishes once standing (was 0.08, +3cm for v1.5)
             },
         ),
         # Height reward: quadratic penalty below target, +1 when in standing range.
@@ -284,11 +284,12 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
                 "angle_std": BODY_CMD_ANGLE_STD,
             },
         ),
-        # Pose reward only once standing (std is loose — don't over-constrain during
-        # the dynamic standup phase, but reward the final upright pose).
+        # Pose reward. Bumped from 1.0 → 2.0 so the policy is pulled harder toward
+        # the standing HOME pose (legs straight, head at HOME) rather than parking in
+        # a partial squat. Std kept loose at 0.5 so flipping motions still pay.
         "pose": RewardTermCfg(
             func=velocity_mdp.variable_posture,
-            weight=1.0,
+            weight=2.0,
             params={
                 "asset_cfg": SceneEntityCfg("robot", joint_names=(r"^(?!passive_).*",)),
                 "command_name": "twist",
