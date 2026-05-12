@@ -246,7 +246,7 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
         # which is ~0 at the 90° prone starting position.
         "upright_linear": RewardTermCfg(
             func=microduck_mdp.body_upright_linear,
-            weight=6.0,  # 4 → 6: pull trunk closer to vertical
+            weight=4.0,
             params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))},
         ),
         # Reward upward CoM velocity: directly incentivizes the dynamic push needed
@@ -284,18 +284,17 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
                 "angle_std": BODY_CMD_ANGLE_STD,
             },
         ),
-        # Pose reward. Per-joint std: tight on neck/head (0.3) so the head can't
-        # rest on the ground without paying, loose on legs (0.5) so flipping
-        # motions and active extension stay cheap.
+        # Pose reward. Bumped 1.0 → 2.0 so it competes with upright + com_height
+        # and pulls the policy toward HOME pose (legs straight, head at HOME).
         "pose": RewardTermCfg(
             func=velocity_mdp.variable_posture,
             weight=2.0,
             params={
                 "asset_cfg": SceneEntityCfg("robot", joint_names=(r"^(?!passive_).*",)),
                 "command_name": "twist",
-                "std_standing": {r".*neck.*": 0.3, r".*head.*": 0.3, r".*hip.*": 0.5, r".*knee.*": 0.5, r".*ankle.*": 0.5},
-                "std_walking":  {r".*neck.*": 0.3, r".*head.*": 0.3, r".*hip.*": 0.5, r".*knee.*": 0.5, r".*ankle.*": 0.5},
-                "std_running":  {r".*neck.*": 0.3, r".*head.*": 0.3, r".*hip.*": 0.5, r".*knee.*": 0.5, r".*ankle.*": 0.5},
+                "std_standing": {r".*": 0.5},
+                "std_walking": {r".*": 0.5},
+                "std_running": {r".*": 0.5},
                 "walking_threshold": 0.01,
                 "running_threshold": 1.5,
             },
