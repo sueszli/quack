@@ -29,15 +29,15 @@ KD_RANDOMIZATION_RANGE = (0.9, 1.1)
 IMU_ORIENTATION_RANDOMIZATION_ANGLE = 1.0
 
 # Body pose command control
-# v1.5 robot CoM sits ~3 cm higher than the previous robot, so all standup-height
-# thresholds are shifted up by 0.03 m vs the main-branch values.
-BODY_CMD_NOMINAL_HEIGHT = 0.125  # was 0.095
+# v1.5 robot CoM sits ~2 cm higher than the previous robot, so all standup-height
+# thresholds are shifted up by 0.02 m vs the main-branch values.
+BODY_CMD_NOMINAL_HEIGHT = 0.115  # was 0.095
 # Tight height range for the standup com_height_target reward.
 # Must exclude face-down reset heights (0.20–0.25 m) so the robot is always
 # penalized for lying flat and must stand up to earn this reward.
 # Decoupled from BODY_CMD_MAX_Z intentionally — do NOT use the formula here.
-STANDUP_HEIGHT_MIN = 0.105   # below this: quadratic penalty (was 0.075)
-STANDUP_HEIGHT_MAX = 0.140   # above this: quadratic penalty (was 0.110)
+STANDUP_HEIGHT_MIN = 0.095   # below this: quadratic penalty (was 0.075)
+STANDUP_HEIGHT_MAX = 0.130   # above this: quadratic penalty (was 0.110)
 # Normalization constants for the policy observation (must match training)
 BODY_CMD_MAX_Z = 0.03          # ±30 mm height offset
 BODY_CMD_MAX_ANGLE = math.radians(30)  # ±30° pitch / roll
@@ -246,7 +246,7 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
         # which is ~0 at the 90° prone starting position.
         "upright_linear": RewardTermCfg(
             func=microduck_mdp.body_upright_linear,
-            weight=6.0,  # 4 → 6: pull trunk closer to vertical (was finishing at ~70° tilt)
+            weight=6.0,  # 4 → 6: pull trunk closer to vertical
             params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))},
         ),
         # Reward upward CoM velocity: directly incentivizes the dynamic push needed
@@ -257,7 +257,7 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
             weight=3.0,
             params={
                 "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
-                "max_height": 0.11,  # ≈ target_height_min — reward vanishes once standing (was 0.08, +3cm for v1.5)
+                "max_height": 0.10,  # ≈ target_height_min — reward vanishes once standing (was 0.08, +2cm for v1.5)
             },
         ),
         # Height reward: quadratic penalty below target, +1 when in standing range.
@@ -454,32 +454,33 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
         },
     )
 
-    # Body pose tracking weight — starts at 0, ramps up after the robot is standing.
-    # Gradual steps prevent the sudden ×2.5 jump that would blow up advantages
-    # when the value function hasn't caught up with the new reward scale.
+    # Body pose tracking weight — ramps in to dominate trunk pitch/roll/z once the
+    # rough standup motion is found. Shifted earlier (peak at iter 1000 instead of
+    # 2000) so the pressure to come fully vertical arrives before the policy
+    # commits to a downward-dog local optimum as the value-function maximum.
     cfg.curriculum["body_pose_tracking_weight"] = CurriculumTermCfg(
         func=velocity_mdp.reward_weight,
         params={
             "reward_name": "body_pose_tracking",
             "weight_stages": [
-                {"step": 0,          "weight": 0.0},
-                {"step": 1000 * 24,  "weight": 2.0},
-                {"step": 1500 * 24,  "weight": 3.5},
-                {"step": 2000 * 24,  "weight": 5.0},
+                {"step": 0,         "weight": 0.0},
+                {"step": 300 * 24,  "weight": 2.0},
+                {"step": 600 * 24,  "weight": 3.5},
+                {"step": 1000 * 24, "weight": 5.0},
             ],
         },
     )
 
-    # Body pose command range — expanded in step with weight above.
+    # Body pose command range — expanded in step with weight above (matching ramp).
     cfg.curriculum["body_pose_cmd_range"] = CurriculumTermCfg(
         func=microduck_mdp.body_pose_cmd_range_curriculum,
         params={
             "command_name": "twist",
             "range_stages": [
-                {"step": 0,          "max_z": 0.0,                             "max_angle": 0.0},
-                {"step": 1000 * 24,  "max_z": 0.010,                           "max_angle": math.radians(10)},
-                {"step": 1500 * 24,  "max_z": 0.020,                           "max_angle": math.radians(20)},
-                {"step": 2000 * 24,  "max_z": BODY_CMD_MAX_Z,                  "max_angle": BODY_CMD_MAX_ANGLE},
+                {"step": 0,         "max_z": 0.0,            "max_angle": 0.0},
+                {"step": 300 * 24,  "max_z": 0.010,          "max_angle": math.radians(10)},
+                {"step": 600 * 24,  "max_z": 0.020,          "max_angle": math.radians(20)},
+                {"step": 1000 * 24, "max_z": BODY_CMD_MAX_Z, "max_angle": BODY_CMD_MAX_ANGLE},
             ],
         },
     )
