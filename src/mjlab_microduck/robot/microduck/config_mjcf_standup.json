@@ -18,6 +18,7 @@
         "!leg": "collision",
         "!NP-F970": "collision",
         "!neck_support": "collision",
+        "!battery_holder": "collision"
     },
     "additional_xml": [
         "joints_properties.xml",
