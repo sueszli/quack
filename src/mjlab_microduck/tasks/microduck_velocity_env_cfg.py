@@ -308,9 +308,10 @@ def make_microduck_velocity_env_cfg(
     cfg.rewards["com_height_target"] = RewardTermCfg(
         func=microduck_mdp.com_height_target,
         weight=1.2,
+        # 0.1 -> 0.13 was ok
         params={
-            "target_height_min": 0.1, # was 0.08
-            "target_height_max": 0.13, # was 0.11
+            "target_height_min": 0.11, # was 0.08
+            "target_height_max": 0.14, # was 0.11
         },
     )
 

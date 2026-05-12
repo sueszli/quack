@@ -292,44 +292,17 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
         # the dynamic standup phase, but reward the final upright pose).
         "pose": RewardTermCfg(
             func=velocity_mdp.variable_posture,
-            # Bumped 1.0 → 3.0 so pose competes with upright (8) + com_height (5).
-            # With per-joint std below, the head-on-ground / splay-legs local optimum
-            # gets a near-zero pose reward, making it net-negative vs proper standing.
-            weight=3.0,
+            # Moderate: between original 1.0 and the over-tightened 3.0. Pose
+            # nudges joints toward HOME but doesn't kill exploration of flipping.
+            weight=1.5,
             params={
                 "asset_cfg": SceneEntityCfg(
                     "robot", joint_names=(r"^(?!passive_).*",)
                 ),
                 "command_name": "twist",
-                # Per-joint std: neck/head and hip_yaw kept tight (no reason to deviate
-                # when standing), legs have room to extend for the dynamic standup.
-                "std_standing": {
-                    r".*neck.*":      0.2,
-                    r".*head.*":      0.2,
-                    r".*hip_yaw.*":   0.2,
-                    r".*hip_roll.*":  0.3,
-                    r".*hip_pitch.*": 0.5,
-                    r".*knee.*":      0.5,
-                    r".*ankle.*":     0.4,
-                },
-                "std_walking": {
-                    r".*neck.*":      0.2,
-                    r".*head.*":      0.2,
-                    r".*hip_yaw.*":   0.2,
-                    r".*hip_roll.*":  0.3,
-                    r".*hip_pitch.*": 0.5,
-                    r".*knee.*":      0.5,
-                    r".*ankle.*":     0.4,
-                },
-                "std_running": {
-                    r".*neck.*":      0.2,
-                    r".*head.*":      0.2,
-                    r".*hip_yaw.*":   0.2,
-                    r".*hip_roll.*":  0.3,
-                    r".*hip_pitch.*": 0.5,
-                    r".*knee.*":      0.5,
-                    r".*ankle.*":     0.4,
-                },
+                "std_standing": {r".*": 0.5},
+                "std_walking": {r".*": 0.5},
+                "std_running": {r".*": 0.5},
                 "walking_threshold": 0.01,
                 "running_threshold": 1.5,
             },
@@ -360,12 +333,16 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
             weight=0.0,
             params={"sensor_name": trunk_impact_cfg.name, "threshold": 5.0},
         ),
-        # Penalize hard impacts of the head/neck against the ground.
-        # Higher weight than trunk because the head servo is more fragile.
+        # Penalize ANY sustained head/neck contact with the ground.
+        # Threshold lowered (2.0 → 0.5 N) so a resting head (~1.6 N) is clearly
+        # above threshold. Initial weight non-zero from step 0 (was 0 + late
+        # curriculum) and curriculum max bumped to -5.0 so head-on-ground is
+        # net-negative vs the +5 from com_height. Without this, the policy
+        # converges on head-prop tripod / downward-dog as a stable optimum.
         "head_impact_penalty": RewardTermCfg(
             func=microduck_mdp.body_impact_cost,
-            weight=0.0,
-            params={"sensor_name": head_impact_cfg.name, "threshold": 2.0},
+            weight=-1.0,
+            params={"sensor_name": head_impact_cfg.name, "threshold": 0.5},
         ),
         # Penalize sudden torque spikes (gearbox shock proxy).
         # Starts at 0; curriculum ramps up after standup is learned.
@@ -586,15 +563,16 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
         },
     )
 
-    # Head is more fragile than the trunk — higher final weight.
+    # Head impact: start at -1.0 from step 0 (no warmup at zero) and ramp to -5.0
+    # so head-on-ground is clearly net-negative versus standing properly.
     cfg.curriculum["head_impact_weight"] = CurriculumTermCfg(
         func=velocity_mdp.reward_weight,
         params={
             "reward_name": "head_impact_penalty",
             "weight_stages": [
-                {"step": 0,          "weight": 0.0},
-                {"step": 1000 * 24,  "weight": -0.2},
-                {"step": 2000 * 24,  "weight": -1.0},
+                {"step": 0,          "weight": -1.0},
+                {"step": 500 * 24,   "weight": -2.5},
+                {"step": 1000 * 24,  "weight": -5.0},
             ],
         },
     )
