@@ -29,13 +29,16 @@ KD_RANDOMIZATION_RANGE = (0.9, 1.1)
 IMU_ORIENTATION_RANDOMIZATION_ANGLE = 1.0
 
 # Body pose command control
-# Nominal standing CoM height (midpoint of [0.08, 0.11] m)
-BODY_CMD_NOMINAL_HEIGHT = 0.095
+# Nominal standing CoM height (midpoint of [0.06, 0.11] m).
+# Tuned for v1.5 — natural stable settled trunk_z is ~0.054, so the rewarded
+# range starts just above that to encourage modest active extension without
+# fighting the pose reward.
+BODY_CMD_NOMINAL_HEIGHT = 0.085
 # Tight height range for the standup com_height_target reward.
 # Must exclude face-down reset heights (0.20–0.25 m) so the robot is always
 # penalized for lying flat and must stand up to earn this reward.
 # Decoupled from BODY_CMD_MAX_Z intentionally — do NOT use the formula here.
-STANDUP_HEIGHT_MIN = 0.075   # below this: quadratic penalty
+STANDUP_HEIGHT_MIN = 0.060   # below this: quadratic penalty
 STANDUP_HEIGHT_MAX = 0.110   # above this: quadratic penalty (catches face-down)
 # Normalization constants for the policy observation (must match training)
 BODY_CMD_MAX_Z = 0.03          # ±30 mm height offset
@@ -247,7 +250,7 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
         # which is ~0 at the 90° prone starting position.
         "upright_linear": RewardTermCfg(
             func=microduck_mdp.body_upright_linear,
-            weight=4.0,
+            weight=8.0,  # bumped 4 → 8: stronger pull to flip out of the face-up flat minimum
             params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))},
         ),
         # Reward upward CoM velocity: directly incentivizes the dynamic push needed
@@ -295,9 +298,9 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
                     "robot", joint_names=(r"^(?!passive_).*",)
                 ),
                 "command_name": "twist",
-                "std_standing": {r".*": 0.5},
-                "std_walking": {r".*": 0.5},
-                "std_running": {r".*": 0.5},
+                "std_standing": {r".*": 0.8},  # loosened 0.5 → 0.8: don't fight standup leg extension
+                "std_walking": {r".*": 0.8},
+                "std_running": {r".*": 0.8},
                 "walking_threshold": 0.01,
                 "running_threshold": 1.5,
             },
@@ -362,9 +365,13 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
     cfg.events["foot_friction"].params["asset_cfg"].geom_names = foot_frictions_geom_names
 
     # Override orientation: randomly face-down (belly) or face-up (back), with random yaw.
+    # face_down_prob starts at 0.8 (easier — most resets face-down where the legs/head
+    # can naturally tip the trunk toward upright) and is ramped to 0.5 by the
+    # face_down_prob_curriculum below.
     cfg.events["set_face_down"] = EventTermCfg(
         func=microduck_mdp.set_random_prone_orientation,
         mode="reset",
+        params={"face_down_prob": 0.8},
     )
 
     # Neck offset randomization (not in base vel env; added explicitly here)
@@ -482,6 +489,22 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
                 {"step": 1000 * 24,  "max_z": 0.010,                           "max_angle": math.radians(10)},
                 {"step": 1500 * 24,  "max_z": 0.020,                           "max_angle": math.radians(20)},
                 {"step": 2000 * 24,  "max_z": BODY_CMD_MAX_Z,                  "max_angle": BODY_CMD_MAX_ANGLE},
+            ],
+        },
+    )
+
+    # Face-down/up reset bias: start 80% face-down so the policy can learn the easier
+    # task first (face-down naturally tips toward upright via the head/legs tipping),
+    # then ramp to 50/50 once the standup pattern is acquired.
+    cfg.curriculum["face_down_prob"] = CurriculumTermCfg(
+        func=microduck_mdp.face_down_prob_curriculum,
+        params={
+            "event_name": "set_face_down",
+            "prob_stages": [
+                {"step": 0,          "prob": 0.8},
+                {"step": 1000 * 24,  "prob": 0.7},
+                {"step": 2000 * 24,  "prob": 0.6},
+                {"step": 3000 * 24,  "prob": 0.5},
             ],
         },
     )

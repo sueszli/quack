@@ -2078,11 +2078,16 @@ def set_random_prone_orientation(
     env: ManagerBasedRlEnv,
     env_ids: torch.Tensor,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    face_down_prob: float = 0.5,
 ):
     """Randomly initialize each env as face-down (belly) or face-up (back), with random yaw.
 
     Face-down:  +90° pitch → quat = [s*cy, -s*sy,  s*cy,  s*sy]
     Face-up:    -90° pitch → quat = [s*cy,  s*sy, -s*cy,  s*sy]
+
+    Args:
+        face_down_prob: probability of sampling face-down (vs face-up). A curriculum
+            can ramp this from a high initial value (easier task) toward 0.5.
     """
     if env_ids is None or len(env_ids) == 0:
         return
@@ -2097,12 +2102,38 @@ def set_random_prone_orientation(
     face_down = torch.stack([ s * cy, -s * sy,  s * cy,  s * sy], dim=1)
     face_up   = torch.stack([ s * cy,  s * sy, -s * cy,  s * sy], dim=1)
 
-    # Randomly assign each env to face-down or face-up (50/50)
-    mask = torch.rand(num, device=env.device) < 0.5  # True → face-down
+    mask = torch.rand(num, device=env.device) < face_down_prob  # True → face-down
     new_quat = torch.where(mask.unsqueeze(1), face_down, face_up)
 
     env.sim.data.qpos[env_ids, 3:7] = new_quat
     env.sim.data.qvel[env_ids, :6] = 0.0
+
+
+def face_down_prob_curriculum(
+    env: ManagerBasedRlEnv,
+    env_ids: torch.Tensor,
+    event_name: str,
+    prob_stages: list[dict],
+) -> torch.Tensor:
+    """Ramp face_down_prob on a reset event over training.
+
+    Args:
+        event_name: name of the event term using set_random_prone_orientation
+        prob_stages: list of {step: int, prob: float}. Higher prob = more
+            face-down resets (easier task); ramp toward 0.5 as training proceeds.
+    """
+    del env_ids
+
+    assert event_name in env.cfg.events, f"Event '{event_name}' not found"
+    event_cfg = env.cfg.events[event_name]
+
+    current_prob = prob_stages[0]["prob"]
+    for stage in prob_stages:
+        if env.common_step_counter > stage["step"]:
+            current_prob = stage["prob"]
+
+    event_cfg.params["face_down_prob"] = current_prob
+    return torch.tensor([current_prob])
 
 
 class VelocityCommandCommandOnly(UniformVelocityCommand):
