@@ -453,18 +453,20 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
         },
     )
 
-    # Body pose tracking weight — starts at 0, ramps up after the robot is standing.
-    # Gradual steps prevent the sudden ×2.5 jump that would blow up advantages
-    # when the value function hasn't caught up with the new reward scale.
+    # Body pose tracking weight — ramps in to penalize trunk pitch/roll/z error.
+    # Shifted earlier (peak at iter 1000 instead of 2000) so the trunk-pitch
+    # pressure arrives while the policy is still flexible. The downward-dog
+    # local optimum has high body_pose_tracking error (50° tilt → near-zero
+    # reward), so this should push past it.
     cfg.curriculum["body_pose_tracking_weight"] = CurriculumTermCfg(
         func=velocity_mdp.reward_weight,
         params={
             "reward_name": "body_pose_tracking",
             "weight_stages": [
-                {"step": 0,          "weight": 0.0},
-                {"step": 1000 * 24,  "weight": 2.0},
-                {"step": 1500 * 24,  "weight": 3.5},
-                {"step": 2000 * 24,  "weight": 5.0},
+                {"step": 0,         "weight": 0.0},
+                {"step": 300 * 24,  "weight": 2.0},
+                {"step": 600 * 24,  "weight": 3.5},
+                {"step": 1000 * 24, "weight": 5.0},
             ],
         },
     )
@@ -475,10 +477,10 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
         params={
             "command_name": "twist",
             "range_stages": [
-                {"step": 0,          "max_z": 0.0,                             "max_angle": 0.0},
-                {"step": 1000 * 24,  "max_z": 0.010,                           "max_angle": math.radians(10)},
-                {"step": 1500 * 24,  "max_z": 0.020,                           "max_angle": math.radians(20)},
-                {"step": 2000 * 24,  "max_z": BODY_CMD_MAX_Z,                  "max_angle": BODY_CMD_MAX_ANGLE},
+                {"step": 0,         "max_z": 0.0,            "max_angle": 0.0},
+                {"step": 300 * 24,  "max_z": 0.010,          "max_angle": math.radians(10)},
+                {"step": 600 * 24,  "max_z": 0.020,          "max_angle": math.radians(20)},
+                {"step": 1000 * 24, "max_z": BODY_CMD_MAX_Z, "max_angle": BODY_CMD_MAX_ANGLE},
             ],
         },
     )
@@ -496,27 +498,20 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
         },
     )
 
-    # Pushes disabled entirely for now — testing whether the partial-standup
-    # convergence is due to push instability. Re-enable by restoring the
-    # multi-stage curriculum below.
-    if "push_robot" in cfg.events:
-        cfg.events["push_robot"].params["velocity_range"] = {"x": (0.0, 0.0), "y": (0.0, 0.0)}
+    # Gradually increase push magnitude so the robot eventually practices full falls
+    # (not just balance recovery). Kicks in after standup is stable.
     _MAX_PUSH = (-1.0, 1.0)
     cfg.curriculum["push_magnitude"] = CurriculumTermCfg(
         func=microduck_mdp.push_curriculum,
         params={
             "event_name": "push_robot",
             "push_stages": [
-                {"step": 0, "velocity_range": {"x": (0.0, 0.0), "y": (0.0, 0.0)}},
+                {"step": 0,          "velocity_range": {"x": (-0.3, 0.3),   "y": (-0.3, 0.3)}},
+                {"step": 1500 * 24,  "velocity_range": {"x": (-0.6, 0.6),   "y": (-0.6, 0.6)}},
+                {"step": 2500 * 24,  "velocity_range": {"x": _MAX_PUSH,     "y": _MAX_PUSH}},
             ],
         },
     )
-    # Original curriculum (commented for easy restoration):
-    # "push_stages": [
-    #     {"step": 0,          "velocity_range": {"x": (-0.3, 0.3),   "y": (-0.3, 0.3)}},
-    #     {"step": 1500 * 24,  "velocity_range": {"x": (-0.6, 0.6),   "y": (-0.6, 0.6)}},
-    #     {"step": 2500 * 24,  "velocity_range": {"x": _MAX_PUSH,     "y": _MAX_PUSH}},
-    # ],
 
     # In play mode skip the curriculum and use the max push immediately.
     if play and "push_robot" in cfg.events:
