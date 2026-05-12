@@ -158,29 +158,20 @@ def make_microduck_sitstand_env_cfg(
         if name in cfg.rewards:
             del cfg.rewards[name]
 
-    # ── Rewards: sit-down phase (legs) ────────────────────────────────────────
-    cfg.rewards["sit_pose_legs"] = RewardTermCfg(
-        func=microduck_mdp.phase_pose_match,
-        weight=4.0,
+    # ── Rewards: sit phase — reward END-STATE (low trunk) not exact joints ────
+    # Replaces the previous sit_pose_legs + sit_pose_neck joint-matching rewards.
+    # The policy is free to find any motion strategy (deep squat, head-supported
+    # descent, body fold) as long as the trunk z reaches ~0.07 at sit peak.
+    # Target z interpolates smoothly: stand_z=0.12 ↔ sit_z=0.07 via sin(2π·phase).
+    cfg.rewards["phase_height_track"] = RewardTermCfg(
+        func=microduck_mdp.phase_height_track,
+        weight=5.0,
         params={
-            "std": 0.3,
             "command_name": "twist",
-            "joint_indices": _LEG_JOINTS,
-            "target_overrides": SITTING_TARGET_OVERRIDES,
-            "phase": "approach",
-        },
-    )
-
-    # Sit-down phase (neck): tight to keep head still and avoid clipping.
-    cfg.rewards["sit_pose_neck"] = RewardTermCfg(
-        func=microduck_mdp.phase_pose_match,
-        weight=4.0,
-        params={
-            "std": 0.15,
-            "command_name": "twist",
-            "joint_indices": _NECK_JOINTS,
-            "target_overrides": SITTING_TARGET_OVERRIDES,
-            "phase": "approach",
+            "stand_z": 0.12,
+            "sit_z": 0.07,
+            "std": 0.02,
+            "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
         },
     )
 
@@ -230,7 +221,11 @@ def make_microduck_sitstand_env_cfg(
     # ── Rewards: stability (kept across both phases) ──────────────────────────
     # Upright: enforced throughout — robot must keep trunk vertical even when sitting.
     cfg.rewards["upright"].params["asset_cfg"].body_names = ("trunk_base",)
-    cfg.rewards["upright"].weight = 1.0
+    # Halved 1.0 → 0.5: policy is allowed to lean/fold the trunk during the sit
+    # phase if that's the strategy it finds. The stand_pose_neck reward still
+    # pulls the head to HOME during the stand half, which keeps the trunk
+    # roughly vertical when standing.
+    cfg.rewards["upright"].weight = 0.5
 
     cfg.rewards["body_ang_vel"].params["asset_cfg"].body_names = ("trunk_base",)
     cfg.rewards["body_ang_vel"].weight = -0.05

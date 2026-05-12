@@ -1108,6 +1108,36 @@ def mouth_perpendicular_to_ground(
     return approach_weight * alignment
 
 
+def phase_height_track(
+    env: ManagerBasedRlEnv,
+    command_name: str,
+    stand_z: float,
+    sit_z: float,
+    std: float = 0.02,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """Reward trunk_z tracking a sin-interpolated target between stand and sit heights.
+
+    Used for the sitstand task instead of joint-angle matching for the sit pose —
+    rewards the END STATE (low trunk) without prescribing HOW the robot gets there.
+    The policy is free to find any motion strategy (deep squat, head-supported
+    descent, etc.).
+
+    Command (from GroundPickPhaseCommand): cmd[:, 1] = sin(2π·phase).
+    sin = +1 at phase 0.25 (sit peak) → target = sit_z.
+    sin = -1 at phase 0.75 (stand peak) → target = stand_z.
+    sin = 0 at transitions → target = midpoint.
+    """
+    cmd = env.command_manager.get_command(command_name)
+    sin_phase = cmd[:, 1]
+    target_z = (stand_z + sit_z) * 0.5 - (stand_z - sit_z) * 0.5 * sin_phase
+    asset = env.scene[asset_cfg.name]
+    z = torch.nan_to_num(
+        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
+    )
+    return torch.exp(-((z - target_z) / std) ** 2)
+
+
 def phase_pose_match(
     env: ManagerBasedRlEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
