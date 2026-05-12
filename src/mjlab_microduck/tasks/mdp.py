@@ -851,6 +851,25 @@ def joint_torque_rate_l2(
     return torch.sum(torch.square(rate), dim=1)
 
 
+def feet_grounded_reward(
+    env: ManagerBasedRlEnv,
+    sensor_name: str,
+) -> torch.Tensor:
+    """Positive reward for feet contacting the ground (0, +0.5, or +1.0).
+
+    Uses the contact sensor's `found` field. For the feet_ground_contact sensor
+    which has 2 primary foot geoms, `found` has shape (num_envs, 2) with per-foot
+    binary contact. We sum and normalize to [0, 1].
+    """
+    if sensor_name not in env.scene.sensors:
+        return torch.zeros(env.num_envs, device=env.device)
+    sensor = env.scene.sensors[sensor_name]
+    found = sensor.data.found  # (num_envs, num_feet) or (num_envs, 1)
+    if found.dim() > 1:
+        found = found.sum(dim=-1)  # collapse foot dimension
+    return torch.clamp(found, 0.0, 2.0) / 2.0
+
+
 def body_impact_cost(
     env: ManagerBasedRlEnv,
     sensor_name: str,

@@ -253,6 +253,15 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
             weight=8.0,  # bumped 4 → 8: stronger pull to flip out of the face-up flat minimum
             params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))},
         ),
+        # Positive reward for feet contacting the ground (0, +0.5, or +1.0 per step).
+        # Explicit signal that "feet planted = good"; complements the negative
+        # head_impact_penalty so the policy learns feet-only-on-ground is the
+        # right strategy (rather than just an option).
+        "feet_grounded": RewardTermCfg(
+            func=microduck_mdp.feet_grounded_reward,
+            weight=1.0,
+            params={"sensor_name": "feet_ground_contact"},
+        ),
         # Reward upward CoM velocity: directly incentivizes the dynamic push needed
         # to go from prone to standing. Clamped to zero on the way down so the robot
         # isn't penalized for settling once upright.
@@ -536,7 +545,11 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
         params={
             "event_name": "push_robot",
             "push_stages": [
-                {"step": 0,          "velocity_range": {"x": (-0.3, 0.3),   "y": (-0.3, 0.3)}},
+                # Defer all pushes for the first 500 iters — let the policy learn the
+                # standup motion in peace before adding disturbance robustness.
+                {"step": 0,          "velocity_range": {"x": (0.0, 0.0),    "y": (0.0, 0.0)}},
+                {"step": 500 * 24,   "velocity_range": {"x": (-0.15, 0.15), "y": (-0.15, 0.15)}},
+                {"step": 1000 * 24,  "velocity_range": {"x": (-0.3, 0.3),   "y": (-0.3, 0.3)}},
                 {"step": 1500 * 24,  "velocity_range": {"x": (-0.6, 0.6),   "y": (-0.6, 0.6)}},
                 {"step": 2500 * 24,  "velocity_range": {"x": _MAX_PUSH,     "y": _MAX_PUSH}},
             ],
