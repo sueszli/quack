@@ -292,15 +292,44 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
         # the dynamic standup phase, but reward the final upright pose).
         "pose": RewardTermCfg(
             func=velocity_mdp.variable_posture,
-            weight=1.0,
+            # Bumped 1.0 → 3.0 so pose competes with upright (8) + com_height (5).
+            # With per-joint std below, the head-on-ground / splay-legs local optimum
+            # gets a near-zero pose reward, making it net-negative vs proper standing.
+            weight=3.0,
             params={
                 "asset_cfg": SceneEntityCfg(
                     "robot", joint_names=(r"^(?!passive_).*",)
                 ),
                 "command_name": "twist",
-                "std_standing": {r".*": 0.8},  # loosened 0.5 → 0.8: don't fight standup leg extension
-                "std_walking": {r".*": 0.8},
-                "std_running": {r".*": 0.8},
+                # Per-joint std: neck/head and hip_yaw kept tight (no reason to deviate
+                # when standing), legs have room to extend for the dynamic standup.
+                "std_standing": {
+                    r".*neck.*":      0.2,
+                    r".*head.*":      0.2,
+                    r".*hip_yaw.*":   0.2,
+                    r".*hip_roll.*":  0.3,
+                    r".*hip_pitch.*": 0.5,
+                    r".*knee.*":      0.5,
+                    r".*ankle.*":     0.4,
+                },
+                "std_walking": {
+                    r".*neck.*":      0.2,
+                    r".*head.*":      0.2,
+                    r".*hip_yaw.*":   0.2,
+                    r".*hip_roll.*":  0.3,
+                    r".*hip_pitch.*": 0.5,
+                    r".*knee.*":      0.5,
+                    r".*ankle.*":     0.4,
+                },
+                "std_running": {
+                    r".*neck.*":      0.2,
+                    r".*head.*":      0.2,
+                    r".*hip_yaw.*":   0.2,
+                    r".*hip_roll.*":  0.3,
+                    r".*hip_pitch.*": 0.5,
+                    r".*knee.*":      0.5,
+                    r".*ankle.*":     0.4,
+                },
                 "walking_threshold": 0.01,
                 "running_threshold": 1.5,
             },
