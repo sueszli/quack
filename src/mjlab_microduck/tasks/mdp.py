@@ -1108,6 +1108,50 @@ def mouth_perpendicular_to_ground(
     return approach_weight * alignment
 
 
+def sit_grounded(
+    env: ManagerBasedRlEnv,
+    command_name: str,
+    sensor_name: str,
+    sin_threshold: float = 0.7,
+) -> torch.Tensor:
+    """Positive reward for trunk-ground contact during the sit window.
+
+    Active when sin(2π·phase) > sin_threshold (= the slice of the cycle near the
+    sit peak). Returns 1.0 if any matching contact, 0.0 otherwise. Encourages
+    actually resting the body on the ground rather than hovering above it.
+    """
+    cmd = env.command_manager.get_command(command_name)
+    in_sit_window = (cmd[:, 1] > sin_threshold).float()
+    if sensor_name not in env.scene.sensors:
+        return torch.zeros(env.num_envs, device=env.device)
+    sensor = env.scene.sensors[sensor_name]
+    found = sensor.data.found
+    if found.dim() > 1:
+        found = found.sum(dim=-1)
+    has_contact = (found > 0).float()
+    return in_sit_window * has_contact
+
+
+def sit_stability(
+    env: ManagerBasedRlEnv,
+    command_name: str,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    ang_vel_std: float = 0.5,
+    sin_threshold: float = 0.7,
+) -> torch.Tensor:
+    """Bonus for low body angular velocity during the sit window.
+
+    Encourages a stable rest once seated — the policy should commit to a still
+    sitting pose, not bounce or twitch.
+    """
+    cmd = env.command_manager.get_command(command_name)
+    in_sit_window = (cmd[:, 1] > sin_threshold).float()
+    asset = env.scene[asset_cfg.name]
+    ang_vel_norm = asset.data.root_link_ang_vel_w.norm(dim=-1)
+    stillness = torch.exp(-((ang_vel_norm / ang_vel_std) ** 2))
+    return in_sit_window * stillness
+
+
 def phase_height_track(
     env: ManagerBasedRlEnv,
     command_name: str,
@@ -2349,30 +2393,32 @@ def forward_lean_reward(
 
 
 class GroundPickPhaseCommand(UniformVelocityCommand):
-    """Phase-encoding command for the ground pick task.
+    """Phase-encoding command for the ground pick / sit-stand tasks.
 
     Replaces the velocity command with a cyclic phase signal:
         command = [cos(2π*phase), sin(2π*phase), 0]
 
-    Phase ∈ [0, 0.5]: approach (go down, touch ground with mouth).
-    Phase ∈ [0.5, 1.0]: return (stand back up).
+    Phase ∈ [0, 0.5]: approach (go down).
+    Phase ∈ [0.5, 1.0]: return (come back up).
 
     Phase is randomized per environment on episode reset to decorrelate envs.
-    Period is 4 seconds by default (2 s down + 2 s up).
+    Period defaults to 4s; override via the cfg.period field (sitstand uses 8s
+    for a slower, gentler sit-down).
     """
 
-    PERIOD: float = 4.0  # seconds per full cycle
+    PERIOD: float = 4.0  # default; cfg.period overrides
 
     def __init__(self, cfg, env: ManagerBasedRlEnv):
         super().__init__(cfg, env)
         self._gp_phase = torch.zeros(self.num_envs, device=self.device)
+        self._period = float(getattr(cfg, "period", self.PERIOD))
 
     @property
     def command(self) -> torch.Tensor:
         return self.vel_command_b
 
     def compute(self, dt: float) -> None:
-        self._gp_phase = (self._gp_phase + dt / self.PERIOD) % 1.0
+        self._gp_phase = (self._gp_phase + dt / self._period) % 1.0
         self.vel_command_b[:, 0] = torch.cos(2 * torch.pi * self._gp_phase)
         self.vel_command_b[:, 1] = torch.sin(2 * torch.pi * self._gp_phase)
         self.vel_command_b[:, 2] = 0.0
@@ -2392,8 +2438,12 @@ class GroundPickPhaseCommand(UniformVelocityCommand):
         pass  # No velocity tracking metrics for ground pick
 
 
+from dataclasses import dataclass as _dataclass
+
+@_dataclass(kw_only=True)
 class GroundPickPhaseCommandCfg(UniformVelocityCommandCfg):
     class_type: type = GroundPickPhaseCommand
+    period: float = 4.0  # cycle length in seconds; sitstand uses 8.0
 
     def build(self, env: ManagerBasedRlEnv) -> "GroundPickPhaseCommand":
         return GroundPickPhaseCommand(self, env)

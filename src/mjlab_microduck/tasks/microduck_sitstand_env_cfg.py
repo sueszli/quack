@@ -9,7 +9,7 @@ Phase encoding (in the command slot, 3-D):
     phase ∈ [0.5, 1]  → stand-up (target = standing pose, peaks at phase 0.75)
 
 Phase is randomised per-env on episode reset to decorrelate environments.
-PERIOD = 4 s (2 s sit-down + 2 s stand-up).
+PERIOD = 8 s (4 s sit-down + ~1.5 s rest-window + 4 s stand-up).
 
 Joint layout (16 entries in asset.data.joint_pos; 14 actuated + 2 passive):
     0-4 : left  leg (hip_yaw, hip_roll, hip_pitch, knee, ankle)
@@ -127,6 +127,16 @@ def make_microduck_sitstand_env_cfg(
         num_slots=1,
     )
 
+    # Trunk-ground contact: detects "butt on ground" during the sit phase.
+    trunk_ground_cfg = ContactSensorCfg(
+        name="trunk_ground_contact",
+        primary=ContactMatch(mode="body", pattern="trunk_base", entity="robot"),
+        secondary=ContactMatch(mode="body", pattern="terrain"),
+        fields=("found", "force"),
+        reduce="netforce",
+        num_slots=1,
+    )
+
     foot_frictions_geom_names = ("left_foot_collision", "right_foot_collision")
 
     # ── Base config ───────────────────────────────────────────────────────────
@@ -136,7 +146,7 @@ def make_microduck_sitstand_env_cfg(
     # upper legs, neck_support, np_f970, battery_holder) needed to physically rest
     # the body on the ground during the deep-squat sit phase.
     cfg.scene.entities = {"robot": MICRODUCK_STANDUP_ROBOT_CFG}
-    cfg.scene.sensors  = (feet_ground_cfg, self_collision_cfg)
+    cfg.scene.sensors  = (feet_ground_cfg, self_collision_cfg, trunk_ground_cfg)
     cfg.viewer.body_name = "trunk_base"
 
     # ── Actions ───────────────────────────────────────────────────────────────
@@ -170,12 +180,55 @@ def make_microduck_sitstand_env_cfg(
             "command_name": "twist",
             "stand_z": 0.12,
             "sit_z": 0.07,
-            # std=0.04: wide enough to provide a useful gradient from any trunk
-            # height (was 0.02, which left the policy without signal above z=0.10
-            # and stuck in a partial-squat).
             "std": 0.04,
             "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
         },
+    )
+
+    # Reward butt-on-ground during the sit window (sin > 0.7 ≈ ±1.5 s around
+    # sit peak with PERIOD=8s). Direct positive signal for the actual goal.
+    cfg.rewards["sit_grounded"] = RewardTermCfg(
+        func=microduck_mdp.sit_grounded,
+        weight=5.0,
+        params={
+            "command_name": "twist",
+            "sensor_name": trunk_ground_cfg.name,
+            "sin_threshold": 0.7,
+        },
+    )
+
+    # Bonus for stillness once seated — encourages "rest" rather than twitching.
+    cfg.rewards["sit_stability"] = RewardTermCfg(
+        func=microduck_mdp.sit_stability,
+        weight=3.0,
+        params={
+            "command_name": "twist",
+            "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
+            "ang_vel_std": 0.5,
+            "sin_threshold": 0.7,
+        },
+    )
+
+    # Soft sit pose hint — the keyframe joint angles are a suggestion, not a
+    # constraint. Wide std + low weight means the policy is free to find any
+    # ergonomic sit; this just biases toward the designed pose.
+    cfg.rewards["sit_pose_soft"] = RewardTermCfg(
+        func=microduck_mdp.phase_pose_match,
+        weight=1.0,
+        params={
+            "std": 0.5,
+            "command_name": "twist",
+            "joint_indices": _LEG_JOINTS + _NECK_JOINTS,
+            "target_overrides": SITTING_TARGET_OVERRIDES,
+            "phase": "approach",
+        },
+    )
+
+    # Penalize hard trunk landings — encourages gentle descent.
+    cfg.rewards["trunk_impact_penalty"] = RewardTermCfg(
+        func=microduck_mdp.body_impact_cost,
+        weight=-0.05,
+        params={"sensor_name": trunk_ground_cfg.name, "threshold": 8.0},
     )
 
     # ── Rewards: stand-up phase (legs) ────────────────────────────────────────
@@ -307,13 +360,14 @@ def make_microduck_sitstand_env_cfg(
     cfg.observations["critic"].terms["joint_vel"].params["asset_cfg"] = deepcopy(passive_excluded)
 
     # ── Command: cyclic phase encoding (reuse GroundPickPhaseCommand) ─────────
-    # PERIOD = 4 s; phase ∈ [0,0.5]→sit, phase ∈ [0.5,1]→stand. Phase randomized
-    # per env on reset to decorrelate environments.
+    # PERIOD = 8 s — gives the policy time for a gentle sit-down with a ~1.5 s
+    # rest window at the sit peak (where sin > 0.7). Phase randomized per env
+    # on reset to decorrelate environments.
     command: UniformVelocityCommandCfg = cfg.commands["twist"]
     command.rel_standing_envs = 0.0
     command.rel_heading_envs  = 0.0
     cfg.commands["twist"] = microduck_mdp.GroundPickPhaseCommandCfg(
-        **{**vars(command), "class_type": microduck_mdp.GroundPickPhaseCommand}
+        **{**vars(command), "class_type": microduck_mdp.GroundPickPhaseCommand, "period": 8.0}
     )
 
     # ── Events ────────────────────────────────────────────────────────────────
