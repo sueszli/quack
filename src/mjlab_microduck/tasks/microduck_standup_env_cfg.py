@@ -311,7 +311,7 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
         "head_pose_tracking": RewardTermCfg(
             func=microduck_mdp.head_pose_tracking,
             weight=0.0,
-            params={"command_name": "head_pose", "std": 0.15},
+            params={"command_name": "head_pose", "std": 0.5},
         ),
         # Pose reward. Bumped to 3.0 now that the flip is learned — pulls
         # joints back to HOME so the policy stops using saturated hip_yaw /
@@ -320,7 +320,8 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
             func=velocity_mdp.variable_posture,
             weight=3.0,
             params={
-                "asset_cfg": SceneEntityCfg("robot", joint_names=(r"^(?!passive_).*",)),
+                # Legs only — head/neck are command-driven via head_pose_tracking.
+                "asset_cfg": SceneEntityCfg("robot", joint_names=(r"^(?!passive_|.*neck.*|.*head.*).*",)),
                 "command_name": "twist",
                 "std_standing": {r".*": 0.5},
                 "std_walking": {r".*": 0.5},

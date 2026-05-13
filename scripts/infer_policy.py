@@ -47,7 +47,8 @@ class PolicyInference:
     def __init__(self, model, data, walking_onnx_path=None, action_scale=1.0,
                  delay_min_lag=0, delay_max_lag=0,
                  standing_onnx_path=None, switch_threshold=0.05,
-                 use_projected_gravity=False, ground_pick_onnx_path=None, ground_pick_period=4.0):
+                 use_projected_gravity=False, ground_pick_onnx_path=None, ground_pick_period=4.0,
+                 new_cmd_obs=False):
         self.model = model
         self.data = data
         self.action_scale = action_scale
@@ -55,6 +56,10 @@ class PolicyInference:
         self.delay_min_lag = delay_min_lag
         self.delay_max_lag = delay_max_lag
         self.switch_threshold = switch_threshold
+        # When True: emit the unified 13D command vector and treat head_offset /
+        # body_cmd as policy COMMANDS (no add to ctrl, no joint_pos correction).
+        # When False: legacy behaviour (3D command, head_offset added to ctrl[5:9]).
+        self.new_cmd_obs = new_cmd_obs
 
         # Load walking policy
         self.walking_session = None
@@ -159,19 +164,25 @@ class PolicyInference:
         self.vel_max_ang = 1.5
         # Body pose command [Δz (m), Δpitch (rad), Δroll (rad)] — physical units
         self.body_cmd = np.zeros(3, dtype=np.float32)
-        # Normalized obs command (set by _update_command)
-        self.command = np.zeros(3, dtype=np.float32)
+        # Obs command vector (3D in legacy mode, 13D when new_cmd_obs=True).
+        self.command = np.zeros(13 if self.new_cmd_obs else 3, dtype=np.float32)
 
         # Body pose mode (like head mode but for standing body pose control)
         self.body_pose_mode = False
         self.body_cmd_step_z = 0.01               # 10 mm per keypress (~3 to max)
         self.body_cmd_step_angle = math.radians(10) # 10° per keypress (~3 to max)
 
-        # Head control mode
+        # Head control mode. In legacy mode head_offset is added on top of
+        # ctrl[5:9]; in new_cmd_obs mode it's a *command* fed to the policy and
+        # must stay within the training distribution (±1.0 rad).
         self.head_mode = False
         self.head_offset = np.zeros(4, dtype=np.float32)
-        self.head_max = 2.5
-        self.head_step = 0.83                     # ~3 presses to max
+        if self.new_cmd_obs:
+            self.head_max = 1.0
+            self.head_step = 0.1   # 10 presses to max — explore the response curve
+        else:
+            self.head_max = 2.5
+            self.head_step = 0.83
 
         # Action delay buffer
         self.use_delay = self.delay_max_lag > 0
@@ -190,7 +201,34 @@ class PolicyInference:
             self.current_lag = 0
 
     def _update_command(self):
-        """Update self.command (fed into obs) based on current policy and commands."""
+        """Update self.command (fed into obs) based on current policy and commands.
+
+        Legacy mode (new_cmd_obs=False): self.command is 3D.
+        New mode (new_cmd_obs=True): self.command is 13D:
+            [vx, vy, vtheta,                                  ← twist
+             neck_pitch, head_pitch, head_yaw, head_roll,     ← head_pose deltas
+             body_x, body_y, body_z, body_roll, body_pitch, body_yaw]  ← body_pose
+        We keep the existing keyboard mappings: head_offset (4D) drives the head
+        slots; body_cmd[0..2] currently mean (Δz, Δpitch, Δroll) and are routed
+        into body_pose slots [z, pitch, roll]; x/y/yaw stay 0 (not exposed on
+        keyboard yet). ground_pick still owns slots [0..2] for phase encoding.
+        """
+        if self.new_cmd_obs:
+            cmd = np.zeros(13, dtype=np.float32)
+            # twist slot (or phase encoding for ground_pick — overwritten there)
+            if self.current_policy == "walking":
+                cmd[0:3] = self.vel_cmd
+            # else standing/ground_pick: leave twist 0 (ground_pick writes phase later)
+            cmd[3:7] = self.head_offset
+            # body_cmd legacy meaning is [Δz, Δpitch, Δroll]; map into 6D body slot
+            cmd[9]  = self.body_cmd[0]  # z
+            cmd[10] = self.body_cmd[2]  # roll
+            cmd[11] = self.body_cmd[1]  # pitch
+            # cmd[7]=x, cmd[8]=y, cmd[12]=yaw stay 0 (no keyboard binding)
+            self.command = cmd
+            return
+
+        # Legacy 3D command
         if self.current_policy == "walking":
             self.command = self.vel_cmd.copy()
         elif self.current_policy == "standing":
@@ -276,17 +314,9 @@ class PolicyInference:
         return self.data.sensordata[sensor_adr:sensor_adr + 3].copy().astype(np.float32)
 
     def get_joint_pos_relative(self):
-        """Get joint positions relative to default pose.
-
-        Mirrors training's joint_pos_rel_neck_decoupled: subtracts the externally
-        applied head offset (ctrl[5:9] += self.head_offset) from the neck/head
-        entries so the policy sees its own commanded head pose, not the
-        externally displaced one — matching the obs distribution it trained on.
-        """
+        """Get joint positions relative to default pose."""
         current_pos = self.data.qpos[self.joint_qpos_indices].copy().astype(np.float32)
-        rel = current_pos - self.default_pose
-        rel[5:9] -= self.head_offset
-        return rel
+        return current_pos - self.default_pose
 
     def get_joint_vel(self):
         """Get joint velocities."""
@@ -356,6 +386,8 @@ class PolicyInference:
             self._end_ground_pick()
             return
         self.ground_pick_phase = new_phase
+        # ground_pick policies use the first 3 slots (twist) as phase encoding.
+        # Higher slots (head/body) stay at whatever _update_command set them to.
         self.command[0] = np.cos(2 * np.pi * self.ground_pick_phase)
         self.command[1] = np.sin(2 * np.pi * self.ground_pick_phase)
         self.command[2] = 0.0
@@ -390,7 +422,11 @@ class PolicyInference:
             target_positions = self.default_pose + action * self.action_scale
 
         self.data.ctrl[:] = target_positions
-        self.data.ctrl[5:9] += self.head_offset
+        # Legacy mode: head_offset is an external perturbation added on top of
+        # the policy output. New mode: head_offset is a COMMAND fed into the
+        # policy's obs, so the policy itself produces the offset head pose.
+        if not self.new_cmd_obs:
+            self.data.ctrl[5:9] += self.head_offset
 
 
 def main():
@@ -410,6 +446,10 @@ def main():
     parser.add_argument("--record", type=str, default=None, help="Enable recording mode: save observations to pickle file on Ctrl+C")
     parser.add_argument("--switch-threshold", type=float, default=0.05, help="Vel command magnitude threshold for walking/standing switch (default: 0.05)")
     parser.add_argument("--ground-pick-period", type=float, default=4.0, help="Ground pick phase period in seconds (default: 4.0)")
+    parser.add_argument("--new-cmd-obs", action="store_true",
+                        help="Use the unified 13D command obs layout (twist+head_pose+body_pose). "
+                             "Required for policies trained with the new pose-command-tracking setup. "
+                             "Old policies (51D obs, head_offset added to ctrl) need this flag OFF.")
     args = parser.parse_args()
 
     if not args.walking and not args.standing:
@@ -451,6 +491,7 @@ def main():
         use_projected_gravity=not args.raw_accelerometer,
         ground_pick_onnx_path=args.ground_pick,
         ground_pick_period=args.ground_pick_period,
+        new_cmd_obs=args.new_cmd_obs,
     )
     policy.set_vel_cmd(args.lin_vel_x, args.lin_vel_y, args.ang_vel_z)
 
@@ -495,8 +536,12 @@ def main():
 
     # Verify observation size
     test_obs = policy.get_observations()
-    expected_obs_size = 3 + 3 + policy.n_joints + policy.n_joints + policy.n_joints + 3
-    breakdown = f"3(ang_vel) + 3(proj_grav) + {policy.n_joints}(joint_pos) + {policy.n_joints}(joint_vel) + {policy.n_joints}(last_action) + 3(command)"
+    cmd_dim = 13 if policy.new_cmd_obs else 3
+    expected_obs_size = 3 + 3 + policy.n_joints + policy.n_joints + policy.n_joints + cmd_dim
+    breakdown = (
+        f"3(ang_vel) + 3(proj_grav) + {policy.n_joints}(joint_pos) + "
+        f"{policy.n_joints}(joint_vel) + {policy.n_joints}(last_action) + {cmd_dim}(command)"
+    )
 
     if test_obs.size != expected_obs_size:
         print(f"\nWARNING: Observation size mismatch!")

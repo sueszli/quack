@@ -2438,14 +2438,21 @@ def zero_command_padding(
 def head_pose_tracking(
     env: ManagerBasedRlEnv,
     command_name: str = "head_pose",
-    std: float = 0.15,
+    std: float = 0.5,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
 ) -> torch.Tensor:
-    """Gaussian reward for matching commanded neck/head joint deltas-from-HOME.
+    """Per-joint Gaussian reward for matching commanded neck/head deltas.
 
-    Sums squared error across the 4 neck/head joints, applies one Gaussian.
-    Result is (N,) in [0, 1]. cmd has shape (N, 4) = deltas from default joint
-    positions in the order [neck_pitch, head_pitch, head_yaw, head_roll].
+    Mean over the 4 neck/head joints of exp(-(err/std)^2). Result is (N,) in
+    [0, 1]. Mean form (vs sum-of-squares) keeps gradient alive when only one
+    joint is off — vs SOS where a single big error kills the whole reward.
+
+    `std` is the per-joint tolerance: at err=std the per-joint reward is 1/e
+    (~0.37). Pick std on the order of the command range so the gradient
+    doesn't die as the curriculum widens.
+
+    cmd has shape (N, 4) = deltas from default joint positions in the order
+    [neck_pitch, head_pitch, head_yaw, head_roll].
     """
     asset: Entity = env.scene[asset_cfg.name]
     cmd = env.command_manager.get_command(command_name)  # (N, 4)
@@ -2457,7 +2464,8 @@ def head_pose_tracking(
     neck_ids = env._head_pose_neck_ids
     actual = asset.data.joint_pos[:, neck_ids] - asset.data.default_joint_pos[:, neck_ids]
     err = actual - cmd
-    return torch.exp(-(err * err).sum(dim=-1) / (std * std))
+    per_joint = torch.exp(-(err / std) ** 2)
+    return per_joint.mean(dim=-1)
 
 
 def body_pose_tracking_6d(

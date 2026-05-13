@@ -216,8 +216,13 @@ def make_microduck_velocity_env_cfg(
     cfg.rewards["pose"].params["std_standing"] = std_standing  # tight when command=0
     cfg.rewards["pose"].params["std_walking"] = std_walking
     cfg.rewards["pose"].params["std_running"] = std_walking
+    # Pose reward operates on LEG joints only. Head/neck are command-driven
+    # (head_pose_tracking) — if they were in this reward too, it would pull
+    # them to HOME while head_pose_tracking pulls them to the command, and the
+    # policy converges to "ignore the command" because pose reward dominates
+    # once head_pose_tracking's gradient dies at large commands.
     cfg.rewards["pose"].params["asset_cfg"] = SceneEntityCfg(
-        "robot", joint_names=(r"^(?!passive_).*",)
+        "robot", joint_names=(r"^(?!passive_|.*neck.*|.*head.*).*",)
     )
     cfg.rewards["pose"].params["walking_threshold"] = 0.01
     cfg.rewards["pose"].weight = 2.0  # was 1.0
@@ -593,10 +598,15 @@ def make_microduck_velocity_env_cfg(
 
     # === Pose tracking rewards ===
     # head_pose: primary objective in vel env — the whole point of the rewrite.
+    # std=0.5 with per-joint Gaussian (see head_pose_tracking in mdp.py): at the
+    # full ±1.0 rad command, a non-tracking policy still sees per-joint reward
+    # exp(-(1/0.5)²)=exp(-4)≈0.018 — a small but non-zero gradient — so the
+    # curriculum widening doesn't kill the signal. Final reward is the mean
+    # over 4 joints, so partial tracking is partial reward (no all-or-nothing).
     cfg.rewards["head_pose_tracking"] = RewardTermCfg(
         func=microduck_mdp.head_pose_tracking,
-        weight=2.0,
-        params={"command_name": "head_pose", "std": 0.15},
+        weight=3.0,
+        params={"command_name": "head_pose", "std": 0.5},
     )
     # body_pose: tiny weight so the input neurons get gradient but the policy
     # isn't pushed off its walking objective. Standup env overrides this.
