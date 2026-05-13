@@ -1,4 +1,12 @@
-"""Microduck velocity environment — roller skate variant"""
+"""Microduck velocity environment — roller skate variant.
+
+TODO(new_cmd_obs branch): this env still uses the legacy 51D obs layout (twist
+only, 3D command). It needs migration to the unified 13D command vector
+(twist + head_pose + body_pose, total 61D obs) before its policies can be
+loaded by the new microduck_runtime --new-cmd-obs path. See
+project_new_cmd_obs.md for the layout and reference the migration done in
+microduck_velocity_env_cfg.py.
+"""
 
 from copy import deepcopy
 

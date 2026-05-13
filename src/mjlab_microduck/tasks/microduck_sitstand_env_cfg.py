@@ -359,6 +359,18 @@ def make_microduck_sitstand_env_cfg(
     cfg.observations["critic"].terms["joint_pos"].params["asset_cfg"] = deepcopy(passive_excluded)
     cfg.observations["critic"].terms["joint_vel"].params["asset_cfg"] = deepcopy(passive_excluded)
 
+    # ── Pad command vector to the unified 13D layout ──────────────────────────
+    # Sitstand doesn't actively use head/body pose commands, but every microduck
+    # policy carries the same 61D obs shape so the runtime can feed a single
+    # command buffer. The 10 trailing slots (4 head + 6 body) are constant zero.
+    for group in ("policy", "critic"):
+        cfg.observations[group].terms["head_command"] = ObservationTermCfg(
+            func=microduck_mdp.zero_command_padding, params={"dim": 4},
+        )
+        cfg.observations[group].terms["body_command"] = ObservationTermCfg(
+            func=microduck_mdp.zero_command_padding, params={"dim": 6},
+        )
+
     # ── Command: cyclic phase encoding (reuse GroundPickPhaseCommand) ─────────
     # PERIOD = 8 s — gives the policy time for a gentle sit-down with a ~1.5 s
     # rest window at the sit peak (where sin > 0.7). Phase randomized per env

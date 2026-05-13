@@ -16,11 +16,14 @@ ENABLE_JOINT_DAMPING_RANDOMIZATION = False  # Too disruptive - affects joint dyn
 ENABLE_VELOCITY_PUSHES = True  # Velocity-based pushes for robustness training
 ENABLE_IMU_ORIENTATION_RANDOMIZATION = True  # Simulates mounting errors
 ENABLE_BASE_ORIENTATION_RANDOMIZATION = False  # Randomize initial tilt to force reactive behavior
-ENABLE_NECK_OFFSET_RANDOMIZATION = True  # Random neck offsets for head-motion robustness
 
-# Neck offset randomization parameters
-NECK_OFFSET_MAX_ANGLE = 1.0
-NECK_OFFSET_INTERVAL_S = (2.0, 5.0)  # Sample new random target every 2–5 seconds
+# Head/body pose command tracking (replaces the old neck-offset disturbance scheme).
+# Head pose: 4D deltas-from-HOME on neck/head joints; vel env tracks these as a
+# primary objective. Body pose: 6D delta in [x, y, z, roll, pitch, yaw]; vel env
+# samples small ranges + tiny reward weight so input neurons stay alive but
+# tracking isn't the priority (standup env raises the weight).
+HEAD_POSE_CMD_RESAMPLE_S = (2.0, 5.0)
+BODY_POSE_CMD_RESAMPLE_S = (2.0, 5.0)
 
 # Observation configuration
 USE_PROJECTED_GRAVITY = True  # If True, use projected gravity instead of raw accelerometer
@@ -207,11 +210,6 @@ def make_microduck_velocity_env_cfg(
     joint_pos_action = cfg.actions["joint_pos"]
     assert isinstance(joint_pos_action, JointPositionActionCfg)
     joint_pos_action.scale = 1.0
-    if ENABLE_NECK_OFFSET_RANDOMIZATION:
-        cfg.actions["joint_pos"] = microduck_mdp.NeckOffsetJointPositionActionCfg(**vars(joint_pos_action))
-        # Decouple joint_pos obs from neck offset so the policy can't cancel
-        # the disturbance via counter-commands — see joint_pos_rel_neck_decoupled.
-        cfg.observations["policy"].terms["joint_pos"].func = microduck_mdp.joint_pos_rel_neck_decoupled
 
     # === REWARDS ===
     # Pose reward configuration
@@ -350,19 +348,6 @@ def make_microduck_velocity_env_cfg(
         func=microduck_mdp.reset_action_history,
         mode="reset",
     )
-
-    # Neck offset randomization: randomly offset head joints to train robustness
-    if ENABLE_NECK_OFFSET_RANDOMIZATION:
-        cfg.events["reset_neck_offset"] = EventTermCfg(
-            func=microduck_mdp.reset_neck_offset,
-            mode="reset",
-        )
-        cfg.events["randomize_neck_offset_target"] = EventTermCfg(
-            func=microduck_mdp.randomize_neck_offset_target,
-            mode="interval",
-            interval_range_s=NECK_OFFSET_INTERVAL_S,
-            params={"max_offset": NECK_OFFSET_MAX_ANGLE},
-        )
 
     cfg.events["foot_friction"].params[
         "asset_cfg"
@@ -565,6 +550,68 @@ def make_microduck_velocity_env_cfg(
     command.viz.z_offset = 0.5
     cfg.commands["twist"] = microduck_mdp.VelocityCommandCommandOnlyCfg(**vars(command))
 
+    # Head pose command (4D deltas from HOME, in joint order:
+    #   neck_pitch, head_pitch, head_yaw, head_roll). Tracked as a primary
+    # reward — see "head_pose_tracking" added below. Initial ranges are small
+    # non-zero so input neurons stay alive from step 0; curriculum widens them.
+    cfg.commands["head_pose"] = microduck_mdp.UniformPoseCommandCfg(
+        resampling_time_range=HEAD_POSE_CMD_RESAMPLE_S,
+        ranges=(
+            (-0.05, 0.05),  # neck_pitch
+            (-0.05, 0.05),  # head_pitch
+            (-0.05, 0.05),  # head_yaw
+            (-0.05, 0.05),  # head_roll
+        ),
+    )
+    # Body pose command (6D delta from nominal standing: [x, y, z, roll, pitch, yaw]).
+    # Vel env carries this slot for runtime obs-shape parity; tracked at a tiny
+    # weight to keep the input neurons alive but not steer the policy. The
+    # standup env raises the weight + widens the ranges.
+    cfg.commands["body_pose"] = microduck_mdp.UniformPoseCommandCfg(
+        resampling_time_range=BODY_POSE_CMD_RESAMPLE_S,
+        ranges=(
+            (-0.005, 0.005),  # x (m)
+            (-0.005, 0.005),  # y (m)
+            (-0.005, 0.005),  # z (m)
+            (-0.05, 0.05),    # roll (rad)
+            (-0.05, 0.05),    # pitch (rad)
+            (-0.05, 0.05),    # yaw (rad)
+        ),
+    )
+
+    # Append head + body command obs terms to both policy and critic groups.
+    # Order matters for the runtime obs layout: [twist(3), head_pose(4), body_pose(6)].
+    for group in ("policy", "critic"):
+        cfg.observations[group].terms["head_command"] = ObservationTermCfg(
+            func=mdp.generated_commands,
+            params={"command_name": "head_pose"},
+        )
+        cfg.observations[group].terms["body_command"] = ObservationTermCfg(
+            func=mdp.generated_commands,
+            params={"command_name": "body_pose"},
+        )
+
+    # === Pose tracking rewards ===
+    # head_pose: primary objective in vel env — the whole point of the rewrite.
+    cfg.rewards["head_pose_tracking"] = RewardTermCfg(
+        func=microduck_mdp.head_pose_tracking,
+        weight=2.0,
+        params={"command_name": "head_pose", "std": 0.15},
+    )
+    # body_pose: tiny weight so the input neurons get gradient but the policy
+    # isn't pushed off its walking objective. Standup env overrides this.
+    cfg.rewards["body_pose_tracking"] = RewardTermCfg(
+        func=microduck_mdp.body_pose_tracking_6d,
+        weight=0.05,
+        params={
+            "command_name": "body_pose",
+            "nominal_height": 0.095,
+            "xy_std": 0.05,
+            "z_std": 0.02,
+            "angle_std": math.radians(15),
+        },
+    )
+
     # Terrain
     if not rough:
         cfg.scene.terrain.terrain_type = "plane"
@@ -686,22 +733,40 @@ def make_microduck_velocity_env_cfg(
         },
     )
 
-    # Neck offset magnitude curriculum - start at 0, ramp up gradually
-    # Disabled for standing
-    if ENABLE_NECK_OFFSET_RANDOMIZATION:
-        cfg.curriculum["neck_offset_magnitude"] = CurriculumTermCfg(
-            func=microduck_mdp.neck_offset_curriculum,
-            params={
-                "event_name": "randomize_neck_offset_target",
-                "offset_stages": [
-                    {"step": 0,          "max_offset": 0.0},
-                    {"step": 500 * 24,   "max_offset": 0.15},
-                    {"step": 1000 * 24,  "max_offset": 0.35},
-                    {"step": 1500 * 24,  "max_offset": 0.65},
-                    {"step": 2000 * 24,  "max_offset": NECK_OFFSET_MAX_ANGLE},
-                ],
-            },
-        )
+    # Head pose command range curriculum: small at start, widen to ±1.0 rad
+    # by iter 2000. Initial range is non-zero so input neurons stay alive.
+    cfg.curriculum["head_pose_range"] = CurriculumTermCfg(
+        func=microduck_mdp.pose_command_range_curriculum,
+        params={
+            "command_name": "head_pose",
+            "range_stages": [
+                {"step": 0,         "ranges": ((-0.05, 0.05),) * 4},
+                {"step": 500 * 24,  "ranges": ((-0.15, 0.15),) * 4},
+                {"step": 1000 * 24, "ranges": ((-0.35, 0.35),) * 4},
+                {"step": 1500 * 24, "ranges": ((-0.65, 0.65),) * 4},
+                {"step": 2000 * 24, "ranges": ((-1.0, 1.0),) * 4},
+            ],
+        },
+    )
+
+    # Body pose command range curriculum: stay small in vel env. Standup env
+    # overrides this curriculum with wide ranges + heavy reward weight.
+    cfg.curriculum["body_pose_range"] = CurriculumTermCfg(
+        func=microduck_mdp.pose_command_range_curriculum,
+        params={
+            "command_name": "body_pose",
+            "range_stages": [
+                {"step": 0, "ranges": (
+                    (-0.005, 0.005),  # x (m)
+                    (-0.005, 0.005),  # y (m)
+                    (-0.005, 0.005),  # z (m)
+                    (-0.05, 0.05),    # roll
+                    (-0.05, 0.05),    # pitch
+                    (-0.05, 0.05),    # yaw
+                )},
+            ],
+        },
+    )
 
     # CoM randomization range curriculum - start small, ramp up
     if ENABLE_COM_RANDOMIZATION:

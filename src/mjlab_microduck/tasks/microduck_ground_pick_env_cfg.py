@@ -252,6 +252,18 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     cfg.observations["policy"].terms["joint_vel"].delay_max_lag = 1
     cfg.observations["policy"].terms["joint_vel"].delay_update_period = 0
 
+    # ── Pad command vector to the unified 13D layout ──────────────────────────
+    # Ground-pick doesn't actively use head/body pose commands, but all
+    # microduck policies share the same 61D obs shape so the runtime can feed
+    # a single command buffer. The 10 trailing slots are constant zero.
+    for group in ("policy", "critic"):
+        cfg.observations[group].terms["head_command"] = ObservationTermCfg(
+            func=microduck_mdp.zero_command_padding, params={"dim": 4},
+        )
+        cfg.observations[group].terms["body_command"] = ObservationTermCfg(
+            func=microduck_mdp.zero_command_padding, params={"dim": 6},
+        )
+
     # ── Command: cyclic phase encoding ────────────────────────────────────────
     command: UniformVelocityCommandCfg = cfg.commands["twist"]
     command.rel_standing_envs = 0.0

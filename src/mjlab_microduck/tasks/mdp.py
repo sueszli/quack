@@ -12,7 +12,9 @@ from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.managers.reward_manager import RewardManager as _RewardManager
 from mjlab.entity import Entity
 from mjlab.tasks.velocity.mdp.velocity_command import UniformVelocityCommand, UniformVelocityCommandCfg
-from mjlab.utils.lab_api.math import matrix_from_quat
+from mjlab.managers.command_manager import CommandTerm
+from mjlab.managers.manager_term_config import CommandTermCfg
+from mjlab.utils.lab_api.math import matrix_from_quat, wrap_to_pi
 from mjlab.envs.mdp.actions import JointPositionActionCfg as _JointPositionActionCfg
 from rsl_rl.algorithms.ppo import PPO as _PPO
 from rsl_rl.modules.actor_critic import ActorCritic as _ActorCritic
@@ -129,136 +131,9 @@ if TYPE_CHECKING:
 
 _DEFAULT_ASSET_CFG = SceneEntityCfg("robot")
 
-# Name patterns to look up neck/head joint entity-local IDs at runtime.
-# Must use names rather than ctrl indices because joint_pos_target is indexed
-# by entity-local joint order, which differs from ctrl order.
+# Name patterns matching the 4 neck/head actuated joints. Used by head_pose
+# tracking reward and by UniformPoseCommand asset hookups.
 _NECK_JOINT_PATTERNS = [r".*neck_pitch.*", r".*head_pitch.*", r".*head_yaw.*", r".*head_roll.*"]
-# Time constant (seconds) for smooth offset interpolation toward target
-_NECK_OFFSET_SMOOTHING_TAU = 0.5
-
-class NeckOffsetJointPositionAction(_JointPositionActionCfg.class_type):
-    """JointPositionAction that adds a random offset to neck/head joint targets.
-
-    After the policy output is applied as joint position targets, adds
-    env._neck_offset to the joint_pos_target buffer for neck joints.
-    This trains robustness to external head movement and enables independent
-    head control at deployment (add any offset on top of policy output).
-
-    The offset smoothly follows env._neck_offset_target, which is updated by
-    randomize_neck_offset_target() interval events.
-    """
-
-    def apply_actions(self) -> None:
-        # Apply standard joint position control from policy output.
-        # In new mjlab this writes to entity.data.joint_pos_target (not ctrl directly).
-        # entity.write_data_to_sim() then copies joint_pos_target → ctrl after all
-        # apply_actions() calls, so the offset must be added here to joint_pos_target.
-        super().apply_actions()
-
-        env = self._env
-
-        # Initialize offset tensors on first call
-        if not hasattr(env, "_neck_offset"):
-            env._neck_offset = torch.zeros(env.num_envs, 4, device=env.device)
-            env._neck_offset_target = torch.zeros(env.num_envs, 4, device=env.device)
-
-        # Cache entity-local neck joint IDs (looked up by name, not ctrl index)
-        if not hasattr(self, "_neck_joint_ids"):
-            ids, _ = self._entity.find_joints_by_actuator_names(_NECK_JOINT_PATTERNS)
-            self._neck_joint_ids = torch.tensor(ids, device=env.device, dtype=torch.long)
-
-        # Exponential smoothing: offset tracks target with time constant tau
-        alpha = min(1.0, env.step_dt / _NECK_OFFSET_SMOOTHING_TAU)
-        env._neck_offset.lerp_(env._neck_offset_target, alpha)
-
-        # Add offset to joint_pos_target — the buffer super().apply_actions() wrote to
-        self._entity.data.joint_pos_target[:, self._neck_joint_ids] += env._neck_offset
-
-
-class NeckOffsetJointPositionActionCfg(_JointPositionActionCfg):
-    def build(self, env: ManagerBasedRlEnv) -> "NeckOffsetJointPositionAction":
-        return NeckOffsetJointPositionAction(self, env)
-
-
-def reset_neck_offset(
-    env: ManagerBasedRlEnv,
-    env_ids: torch.Tensor,
-):
-    """Reset neck joint offsets to zero at episode start."""
-    if not hasattr(env, "_neck_offset"):
-        env._neck_offset = torch.zeros(env.num_envs, 4, device=env.device)
-        env._neck_offset_target = torch.zeros(env.num_envs, 4, device=env.device)
-
-    if len(env_ids) > 0:
-        env._neck_offset[env_ids] = 0.0
-        env._neck_offset_target[env_ids] = 0.0
-
-
-def randomize_neck_offset_target(
-    env: ManagerBasedRlEnv,
-    env_ids: torch.Tensor,
-    max_offset: float = 0.3,
-):
-    """Sample new random neck offset targets (called at intervals).
-
-    Draws uniform random targets in [-max_offset, max_offset] for each of the
-    4 neck/head joints. The offset smoothly interpolates toward the new target.
-    """
-    if not hasattr(env, "_neck_offset_target"):
-        env._neck_offset = torch.zeros(env.num_envs, 4, device=env.device)
-        env._neck_offset_target = torch.zeros(env.num_envs, 4, device=env.device)
-
-    if len(env_ids) > 0:
-        env._neck_offset_target[env_ids] = (
-            torch.rand(len(env_ids), 4, device=env.device) * 2 - 1
-        ) * max_offset
-
-
-def joint_pos_rel_neck_decoupled(
-    env: ManagerBasedRlEnv,
-    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
-) -> torch.Tensor:
-    """Like joint_pos_rel, but subtracts the applied neck offset from neck joints.
-
-    With NeckOffsetJointPositionAction, joint_pos_target gets `+ env._neck_offset`
-    added on top of the policy's commanded neck targets. Without correction, the
-    policy observes the displaced head via joint_pos_rel and learns to output
-    `-offset` on its neck actions to cancel the disturbance — defeating the
-    point of the randomization (the head no longer moves, the body never learns
-    robustness to head pose changes).
-
-    Subtracting `env._neck_offset` from the neck entries of joint_pos_rel makes
-    the observation look as if the offset never happened from the policy's
-    point of view: it sees "head is where I commanded it," so it has no incentive
-    to fight the offset. The body still feels the dynamics of a displaced head
-    (because the head physically moved in sim), forcing it to learn robustness.
-
-    Requires NeckOffsetJointPositionAction to be the active joint_pos action.
-    Assumes asset_cfg.joint_ids is slice(None) (the default) — i.e. the obs
-    covers all entity joints in natural order. If you pass a custom joint
-    subset, the neck indices won't align and the assertion will fire.
-    """
-    asset: Entity = env.scene[asset_cfg.name]
-    default_joint_pos = asset.data.default_joint_pos
-    assert default_joint_pos is not None
-    jnt_ids = asset_cfg.joint_ids
-    rel = asset.data.joint_pos[:, jnt_ids] - default_joint_pos[:, jnt_ids]
-
-    if not hasattr(env, "_neck_offset"):
-        return rel
-
-    # Resolve neck joint entity-local IDs once and cache on env.
-    if not hasattr(env, "_neck_obs_joint_ids"):
-        ids, _ = asset.find_joints_by_actuator_names(_NECK_JOINT_PATTERNS)
-        env._neck_obs_joint_ids = torch.tensor(ids, device=env.device, dtype=torch.long)
-
-    assert isinstance(jnt_ids, slice), (
-        "joint_pos_rel_neck_decoupled assumes asset_cfg.joint_ids is slice(None); "
-        "pass a custom obs term if you need a joint subset."
-    )
-
-    rel[:, env._neck_obs_joint_ids] -= env._neck_offset
-    return rel
 
 
 def reset_with_forward_velocity(
@@ -1199,6 +1074,24 @@ def sit_stability(
     return in_sit_window * stillness
 
 
+def joint_deviation_l1(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """L1 penalty for joint positions deviating from their default (HOME).
+
+    Returns sum of |joint_pos - default| over the selected joints. Unlike the
+    Gaussian `pose` reward (which saturates near 1.0 for any small deviation),
+    this gives a *linear* gradient at all deviation magnitudes — useful as a
+    focused penalty on a subset of joints (e.g. hip_yaw / hip_roll) to prevent
+    them drifting to wide-base stances even when other joints are near HOME.
+    """
+    asset = env.scene[asset_cfg.name]
+    jnt_ids = asset_cfg.joint_ids
+    err = asset.data.joint_pos[:, jnt_ids] - asset.data.default_joint_pos[:, jnt_ids]
+    return torch.sum(torch.abs(err), dim=-1)
+
+
 def phase_height_track(
     env: ManagerBasedRlEnv,
     command_name: str,
@@ -1596,61 +1489,6 @@ def wheel_friction_curriculum(
 
     env.event_manager.get_term_cfg(event_name).params["ranges"] = current_ranges
     return torch.tensor([current_ranges[0]])
-
-
-def neck_offset_curriculum(
-    env: ManagerBasedRlEnv,
-    env_ids: torch.Tensor,
-    event_name: str,
-    offset_stages: list[dict],
-) -> torch.Tensor:
-    """Update neck offset magnitude based on training progress.
-
-    Gradually increases the max random neck offset so the robot first learns
-    to walk with no head disturbance, then progressively harder ones.
-
-    Args:
-        env: The RL environment
-        env_ids: Environment IDs (unused, but required by curriculum interface)
-        event_name: Name of the neck offset event (e.g., "randomize_neck_offset_target")
-        offset_stages: List of dicts with 'step' and 'max_offset' keys
-            Example: [
-                {"step": 0,         "max_offset": 0.0},
-                {"step": 500 * 24,  "max_offset": 0.1},
-                {"step": 1000 * 24, "max_offset": 0.2},
-                {"step": 1500 * 24, "max_offset": 0.3},
-            ]
-
-    Returns:
-        Current max_offset value as a tensor (for logging)
-    """
-    del env_ids  # Unused
-
-    # NOTE: must update the live EventManager term_cfg, not env.cfg.events —
-    # EventManager.__init__ does deepcopy(cfg), so mutating env.cfg.events is a no-op.
-    event_cfg = env.event_manager.get_term_cfg(event_name)
-
-    current_offset = offset_stages[0]["max_offset"]
-    for stage in offset_stages:
-        if env.common_step_counter > stage["step"]:
-            current_offset = stage["max_offset"]
-
-    event_cfg.params["max_offset"] = current_offset
-
-    # Also report the live applied offset magnitude so we can verify in wandb
-    # that the offset is actually being added to joint targets.
-    if hasattr(env, "_neck_offset"):
-        live_abs_mean = env._neck_offset.abs().mean().item()
-        live_abs_max = env._neck_offset.abs().max().item()
-    else:
-        live_abs_mean = 0.0
-        live_abs_max = 0.0
-
-    return {
-        "max_offset_cfg": current_offset,
-        "live_abs_mean": live_abs_mean,
-        "live_abs_max": live_abs_max,
-    }
 
 
 def com_range_curriculum(
@@ -2513,135 +2351,191 @@ class GroundPickPhaseCommandCfg(UniformVelocityCommandCfg):
         return GroundPickPhaseCommand(self, env)
 
 
-class BodyPoseCommand(UniformVelocityCommand):
-    """Body pose command for standing control: [Δz (m), Δpitch (rad), Δroll (rad)].
+# --------------------------------------------------------------------------- #
+# Unified pose command machinery                                               #
+# --------------------------------------------------------------------------- #
+#
+# Background: we deprecated the old NeckOffsetJointPositionAction +
+# disturbance-randomization approach (where head/body movement was an external
+# perturbation the policy was supposed to be robust to). That trained a weak,
+# indirect signal — see `project_neck_offset_decoupling.md` for the
+# post-mortem.
+#
+# Replacement: head and body pose are now *commands* — direct, dense policy
+# inputs with tracking rewards. At deployment, the runtime feeds those slots
+# with whatever pose the user requests; at training, they're sampled uniformly
+# from per-dim ranges (kept non-zero from step 0 so input neurons stay alive)
+# and ramped via curriculum.
+#
+# Layout, unified across all microduck policies for runtime obs compatibility:
+#   command vector (13D) = [vx, vy, vtheta,           ← "twist" (velocity)
+#                           neck_pitch, head_pitch,   ← "head_pose" (deltas)
+#                           head_yaw, head_roll,
+#                           body_x, body_y, body_z,   ← "body_pose" (deltas)
+#                           body_roll, body_pitch, body_yaw]
+# Total policy obs becomes 61D (51 - 3 + 13).
+# --------------------------------------------------------------------------- #
 
-    Repurposes the 3-slot velocity command to control body height offset, pitch,
-    and roll while the robot is standing. The command is sampled uniformly from the
-    configured ranges and resampled at the configured interval.
 
-    Mapping:
-        vel_command_b[:, 0] = Δz      (height offset in meters, + = up)
-        vel_command_b[:, 1] = Δpitch  (pitch offset in radians, + = forward tilt)
-        vel_command_b[:, 2] = Δroll   (roll offset in radians, + = right lean)
+from dataclasses import dataclass, field
 
-    Configure via UniformVelocityCommandCfg ranges:
-        ranges.lin_vel_x = (-max_z, max_z)
-        ranges.lin_vel_y = (-max_pitch, max_pitch)
-        ranges.ang_vel_z = (-max_roll, max_roll)
 
-    Set rel_standing_envs=0.0 and heading_command=False so the parent never zeros
-    or heading-adjusts the command.
+class UniformPoseCommand(CommandTerm):
+    """Generic N-dim uniform pose command.
+
+    Samples each dim independently uniform in cfg.ranges[i] = (lo, hi) and holds
+    the value between resamples. No metrics, no debug viz — keep it lightweight
+    since we have many of these.
     """
+
+    cfg: "UniformPoseCommandCfg"
+
+    def __init__(self, cfg: "UniformPoseCommandCfg", env: ManagerBasedRlEnv):
+        super().__init__(cfg, env)
+        self.dim = len(cfg.ranges)
+        self._command = torch.zeros(self.num_envs, self.dim, device=self.device)
+
+    @property
+    def command(self) -> torch.Tensor:
+        return self._command
 
     def _update_metrics(self) -> None:
-        pass  # Body pose has no velocity tracking metrics
+        pass
 
-    def _debug_vis_impl(self, visualizer: "DebugVisualizer") -> None:
-        pass  # No visualization needed
+    def _update_command(self) -> None:
+        pass
+
+    def _resample_command(self, env_ids: torch.Tensor) -> None:
+        n = len(env_ids)
+        if n == 0:
+            return
+        r = torch.empty(n, device=self.device)
+        for i, (lo, hi) in enumerate(self.cfg.ranges):
+            self._command[env_ids, i] = r.uniform_(lo, hi)
 
 
-class BodyPoseCommandCfg(UniformVelocityCommandCfg):
-    def build(self, env: ManagerBasedRlEnv) -> "BodyPoseCommand":
-        return BodyPoseCommand(self, env)
+@dataclass(kw_only=True)
+class UniformPoseCommandCfg(CommandTermCfg):
+    """Per-dim uniform ranges; class_type is fixed."""
+    class_type: type = field(default=UniformPoseCommand)
+    # Tuple of (lo, hi) per dim. Length defines the command dim.
+    ranges: tuple[tuple[float, float], ...] = ()
 
 
-def body_pose_cmd_obs(
+def zero_command_padding(
     env: ManagerBasedRlEnv,
-    command_name: str = "twist",
-    max_z: float = 0.025,
-    max_angle: float = math.radians(20),
+    dim: int,
 ) -> torch.Tensor:
-    """Normalized body pose command observation: [Δz/max_z, Δpitch/max_angle, Δroll/max_angle].
+    """Constant-zero obs term of width `dim`.
 
-    Returns a 3D vector in [-1, 1] when commands are within their configured ranges,
-    preserving the same 3-slot obs shape as the original velocity command.
+    Used by envs that don't actively track head/body commands (e.g. sitstand,
+    ground_pick) but still need the unified 61D obs shape so the runtime can
+    feed all policies with the same buffer layout.
     """
-    cmd = env.command_manager.get_command(command_name)  # (N, 3)
-    norm = torch.tensor([max_z, max_angle, max_angle], device=env.device)
-    return cmd[:, :3] / norm
+    return torch.zeros(env.num_envs, dim, device=env.device)
 
 
-def body_pose_tracking(
+def head_pose_tracking(
     env: ManagerBasedRlEnv,
+    command_name: str = "head_pose",
+    std: float = 0.15,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
-    command_name: str = "twist",
-    nominal_height: float = 0.095,
-    z_std: float = 0.01,
-    angle_std: float = math.radians(5),
 ) -> torch.Tensor:
-    """Gaussian reward for tracking commanded body pose (z height, pitch, roll).
+    """Gaussian reward for matching commanded neck/head joint deltas-from-HOME.
 
-    Returns the mean of three independent Gaussian rewards:
-        - z:     actual CoM height vs (nominal_height + Δz_cmd)
-        - pitch: actual body pitch vs Δpitch_cmd  (ZYX Euler, + = forward tilt)
-        - roll:  actual body roll  vs Δroll_cmd   (ZYX Euler, + = right lean)
-
-    Args:
-        nominal_height: Nominal standing CoM height in meters.
-        z_std:          Std for height tracking Gaussian (meters).
-        angle_std:      Std for pitch/roll tracking Gaussians (radians).
+    Sums squared error across the 4 neck/head joints, applies one Gaussian.
+    Result is (N,) in [0, 1]. cmd has shape (N, 4) = deltas from default joint
+    positions in the order [neck_pitch, head_pitch, head_yaw, head_roll].
     """
     asset: Entity = env.scene[asset_cfg.name]
-    cmd = env.command_manager.get_command(command_name)  # (N, 3)
-    dz_cmd = cmd[:, 0]
-    dpitch_cmd = cmd[:, 1]
-    droll_cmd = cmd[:, 2]
+    cmd = env.command_manager.get_command(command_name)  # (N, 4)
 
-    # Height above terrain spawn origin (world z minus terrain z).
-    # nan_to_num: MuJoCo can produce NaN on contact instability; treat as z=0.
-    z = torch.nan_to_num(
-        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
-    )
-    z_reward = torch.exp(-((z - (nominal_height + dz_cmd)) / z_std) ** 2)
+    if not hasattr(env, "_head_pose_neck_ids"):
+        ids, _ = asset.find_joints_by_actuator_names(_NECK_JOINT_PATTERNS)
+        env._head_pose_neck_ids = torch.tensor(ids, device=env.device, dtype=torch.long)
 
-    # Pitch and roll from quaternion (ZYX Euler angles)
-    quat = asset.data.root_link_quat_w  # (N, 4): [w, x, y, z]
+    neck_ids = env._head_pose_neck_ids
+    actual = asset.data.joint_pos[:, neck_ids] - asset.data.default_joint_pos[:, neck_ids]
+    err = actual - cmd
+    return torch.exp(-(err * err).sum(dim=-1) / (std * std))
+
+
+def body_pose_tracking_6d(
+    env: ManagerBasedRlEnv,
+    command_name: str = "body_pose",
+    nominal_height: float = 0.095,
+    xy_std: float = 0.02,
+    z_std: float = 0.01,
+    angle_std: float = math.radians(8),
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """Mean of 6 per-axis Gaussian rewards for tracking commanded body pose.
+
+    cmd has shape (N, 6) = [x, y, z, roll, pitch, yaw] all as deltas from the
+    nominal standing pose (xy delta from spawn origin, z delta from
+    nominal_height, angles delta from upright = 0).
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    cmd = env.command_manager.get_command(command_name)  # (N, 6)
+    dx, dy, dz = cmd[:, 0], cmd[:, 1], cmd[:, 2]
+    droll, dpitch, dyaw = cmd[:, 3], cmd[:, 4], cmd[:, 5]
+
+    # Position relative to env spawn origin. nan_to_num because MuJoCo can
+    # produce NaN on contact instability and we don't want to taint the reward.
+    pos_w = asset.data.root_link_pos_w
+    origin = env.scene.terrain.env_origins
+    rel = torch.nan_to_num(pos_w - origin, nan=0.0)
+    x_err = rel[:, 0] - dx
+    y_err = rel[:, 1] - dy
+    z_err = rel[:, 2] - (nominal_height + dz)
+
+    # ZYX Euler from quat.
+    quat = asset.data.root_link_quat_w
     qw, qx, qy, qz = quat[:, 0], quat[:, 1], quat[:, 2], quat[:, 3]
-    roll = torch.atan2(2.0 * (qw * qx + qy * qz), 1.0 - 2.0 * (qx ** 2 + qy ** 2))
+    roll  = torch.atan2(2.0 * (qw * qx + qy * qz), 1.0 - 2.0 * (qx * qx + qy * qy))
     pitch = torch.asin(torch.clamp(2.0 * (qw * qy - qz * qx), -1.0, 1.0))
+    yaw   = torch.atan2(2.0 * (qw * qz + qx * qy), 1.0 - 2.0 * (qy * qy + qz * qz))
 
-    pitch_reward = torch.exp(-((pitch - dpitch_cmd) / angle_std) ** 2)
-    roll_reward = torch.exp(-((roll - droll_cmd) / angle_std) ** 2)
+    roll_err  = roll  - droll
+    pitch_err = pitch - dpitch
+    yaw_err   = wrap_to_pi(yaw - dyaw)
 
-    return (z_reward + pitch_reward + roll_reward) / 3.0
+    r_x = torch.exp(-(x_err / xy_std) ** 2)
+    r_y = torch.exp(-(y_err / xy_std) ** 2)
+    r_z = torch.exp(-(z_err / z_std) ** 2)
+    r_r = torch.exp(-(roll_err  / angle_std) ** 2)
+    r_p = torch.exp(-(pitch_err / angle_std) ** 2)
+    r_w = torch.exp(-(yaw_err   / angle_std) ** 2)
+
+    return (r_x + r_y + r_z + r_r + r_p + r_w) / 6.0
 
 
-def body_pose_cmd_range_curriculum(
+def pose_command_range_curriculum(
     env: ManagerBasedRlEnv,
     env_ids: torch.Tensor,
     command_name: str,
     range_stages: list[dict],
 ) -> torch.Tensor:
-    """Update body pose command ranges based on training progress.
+    """Ramp a UniformPoseCommand's per-dim ranges over training.
 
-    Args:
-        command_name: Name of the command term (e.g., "twist").
-        range_stages: List of dicts with 'step', 'max_z' (m), 'max_angle' (rad) keys.
-            Example: [
-                {"step": 0,          "max_z": 0.0,   "max_angle": 0.0},
-                {"step": 1000 * 24,  "max_z": 0.01,  "max_angle": 0.087},
-                {"step": 3000 * 24,  "max_z": 0.025, "max_angle": 0.349},
-            ]
+    range_stages: list of {step: int, ranges: tuple[(lo, hi), ...]}.
+    The first stage applies before its step; latest passed stage wins.
+    Always uses the live CommandManager term cfg (NOT env.cfg.commands) so
+    updates take effect — CommandManager keeps its own term refs and reads
+    `term.cfg.ranges` each resample.
     """
-    del env_ids  # Unused
+    del env_ids
 
-    from mjlab.tasks.velocity.mdp import UniformVelocityCommandCfg
-    from typing import cast
+    term = env.command_manager.get_term(command_name)
+    assert term is not None, f"Command term '{command_name}' not found"
+    cfg = term.cfg  # type: ignore[assignment]
 
-    command_term = env.command_manager.get_term(command_name)
-    assert command_term is not None, f"Command term '{command_name}' not found"
-    cfg = cast(UniformVelocityCommandCfg, command_term.cfg)
-
-    current_z = range_stages[0]["max_z"]
-    current_angle = range_stages[0]["max_angle"]
+    current = range_stages[0]["ranges"]
     for stage in range_stages:
         if env.common_step_counter >= stage["step"]:
-            current_z = stage["max_z"]
-            current_angle = stage["max_angle"]
+            current = stage["ranges"]
 
-    cfg.ranges.lin_vel_x = (-current_z, current_z)
-    cfg.ranges.lin_vel_y = (-current_angle, current_angle)
-    cfg.ranges.ang_vel_z = (-current_angle, current_angle)
-
-    return torch.tensor(current_z)
+    cfg.ranges = tuple(current)
+    # Return the max abs range as a scalar for wandb visibility.
+    max_abs = max((max(abs(lo), abs(hi)) for lo, hi in current), default=0.0)
+    return torch.tensor(max_abs)

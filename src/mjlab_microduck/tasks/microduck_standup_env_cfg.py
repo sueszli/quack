@@ -3,8 +3,11 @@
 The robot is initialized lying on its back (body inverted 180° from upright)
 and must learn to right itself and reach a stable standing posture.
 
-Phase 2 (body control): once standing, the repurposed velocity command slot
-drives body pose control — [Δz (m), Δpitch (rad), Δroll (rad)].
+Command layout is unified with the velocity env (13D, see mdp.py):
+  twist (3)     : velocity commands — kept at ~0 here (we're standing)
+  head_pose (4) : neck/head joint deltas from HOME (tracked)
+  body_pose (6) : body delta [x, y, z, roll, pitch, yaw] from nominal standing
+                  pose (tracked — primary objective once upright).
 """
 
 import math
@@ -22,7 +25,6 @@ ENABLE_IMU_ORIENTATION_RANDOMIZATION = True
 
 # Domain randomization ranges
 COM_RANDOMIZATION_RANGE = 0.003
-STANDUP_NECK_OFFSET_MAX_ANGLE = 1.0
 MASS_INERTIA_RANDOMIZATION_RANGE = (0.95, 1.05)
 KP_RANDOMIZATION_RANGE = (0.85, 1.15)
 KD_RANDOMIZATION_RANGE = (0.9, 1.1)
@@ -31,19 +33,24 @@ IMU_ORIENTATION_RANDOMIZATION_ANGLE = 1.0
 # Body pose command control
 # v1.5 robot CoM sits ~2 cm higher than the previous robot, so all standup-height
 # thresholds are shifted up by 0.02 m vs the main-branch values.
-BODY_CMD_NOMINAL_HEIGHT = 0.115  # was 0.095
+BODY_CMD_NOMINAL_HEIGHT = 0.115
 # Tight height range for the standup com_height_target reward.
 # Must exclude face-down reset heights (0.20–0.25 m) so the robot is always
 # penalized for lying flat and must stand up to earn this reward.
-# Decoupled from BODY_CMD_MAX_Z intentionally — do NOT use the formula here.
-STANDUP_HEIGHT_MIN = 0.095   # below this: quadratic penalty (was 0.075)
-STANDUP_HEIGHT_MAX = 0.130   # above this: quadratic penalty (was 0.110)
-# Normalization constants for the policy observation (must match training)
-BODY_CMD_MAX_Z = 0.03          # ±30 mm height offset
-BODY_CMD_MAX_ANGLE = math.radians(30)  # ±30° pitch / roll
-# Tracking reward std — tight to create strong gradients
-BODY_CMD_Z_STD = 0.02           # 20 mm (was 10 mm — wider to give gradient over the full standup descent)
-BODY_CMD_ANGLE_STD = math.radians(10)  # 10° (was 5° — at 50° tilt, 5° std → reward≈0, 10° std → reward≈10⁻⁴ with real gradient)
+STANDUP_HEIGHT_MIN = 0.095
+STANDUP_HEIGHT_MAX = 0.130
+
+# Final body-pose command ranges (reached at end of curriculum). Body pose is
+# tracked as a delta from the nominal standing pose.
+BODY_CMD_MAX_XY        = 0.02                # ±20 mm lateral/forward
+BODY_CMD_MAX_Z         = 0.03                # ±30 mm height
+BODY_CMD_MAX_ANGLE     = math.radians(30)    # ±30° per Euler axis
+# Head pose final magnitude
+HEAD_CMD_MAX_ANGLE     = 1.0                 # ±1.0 rad per neck/head joint
+
+# Resampling intervals for the pose commands
+HEAD_POSE_CMD_RESAMPLE_S = (2.0, 5.0)
+BODY_POSE_CMD_RESAMPLE_S = (4.0, 8.0)
 
 from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.envs.mdp.actions import JointPositionActionCfg
@@ -66,7 +73,7 @@ from mjlab.utils.noise import UniformNoiseCfg as Unoise
 
 from mjlab_microduck.robot.microduck_constants import MICRODUCK_STANDUP_ROBOT_CFG
 from mjlab_microduck.tasks import mdp as microduck_mdp
-from mjlab_microduck.tasks.microduck_velocity_env_cfg import MICRODUCK_ROUGH_TERRAINS_CFG, NECK_OFFSET_INTERVAL_S
+from mjlab_microduck.tasks.microduck_velocity_env_cfg import MICRODUCK_ROUGH_TERRAINS_CFG
 from mjlab_microduck.tasks.symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
 
 
@@ -155,7 +162,6 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
     joint_pos_action = cfg.actions["joint_pos"]
     assert isinstance(joint_pos_action, JointPositionActionCfg)
     joint_pos_action.scale = 1.0
-    cfg.actions["joint_pos"] = microduck_mdp.NeckOffsetJointPositionActionCfg(**vars(joint_pos_action))
 
     # === OBSERVATIONS ===
     del cfg.observations["policy"].terms["base_lin_vel"]
@@ -206,38 +212,54 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
     cfg.observations["critic"].terms["joint_vel"].params["asset_cfg"] = deepcopy(passive_excluded)
 
     # === COMMANDS ===
-    # Repurpose the 3 velocity command slots as body pose control:
-    #   [Δz (m), Δpitch (rad), Δroll (rad)]
-    # Ranges start at zero; curriculum gradually expands them.
+    # twist: kept around for runtime obs-shape parity (3 slots) but mostly idle —
+    # standing robot, no walking. Tiny non-zero range to keep input neurons alive.
     command = cfg.commands["twist"]
-    command.rel_standing_envs = 0.0   # BodyPoseCommand never zeros the command
+    command.rel_standing_envs = 0.0
     command.rel_heading_envs = 0.0
     command.heading_command = False
     command.ranges.heading = None
     command.resampling_time_range = (4.0, 8.0)
     command.debug_vis = False
-    cfg.commands["twist"] = microduck_mdp.BodyPoseCommandCfg(**vars(command))
-    command.ranges.lin_vel_x = (0.0, 0.0)   # Δz:     expanded by curriculum
-    command.ranges.lin_vel_y = (0.0, 0.0)   # Δpitch: expanded by curriculum
-    command.ranges.ang_vel_z = (0.0, 0.0)   # Δroll:  expanded by curriculum
+    command.ranges.lin_vel_x = (-0.01, 0.01)
+    command.ranges.lin_vel_y = (-0.01, 0.01)
+    command.ranges.ang_vel_z = (-0.05, 0.05)
+    cfg.commands["twist"] = microduck_mdp.VelocityCommandCommandOnlyCfg(**vars(command))
 
-    # Override policy command observation with normalized body pose cmd
-    cfg.observations["policy"].terms["command"] = ObservationTermCfg(
-        func=microduck_mdp.body_pose_cmd_obs,
-        params={
-            "command_name": "twist",
-            "max_z": BODY_CMD_MAX_Z,
-            "max_angle": BODY_CMD_MAX_ANGLE,
-        },
+    # Head pose command (4D deltas from HOME).
+    cfg.commands["head_pose"] = microduck_mdp.UniformPoseCommandCfg(
+        resampling_time_range=HEAD_POSE_CMD_RESAMPLE_S,
+        ranges=(
+            (-0.05, 0.05),  # neck_pitch
+            (-0.05, 0.05),  # head_pitch
+            (-0.05, 0.05),  # head_yaw
+            (-0.05, 0.05),  # head_roll
+        ),
     )
-    cfg.observations["critic"].terms["command"] = ObservationTermCfg(
-        func=microduck_mdp.body_pose_cmd_obs,
-        params={
-            "command_name": "twist",
-            "max_z": BODY_CMD_MAX_Z,
-            "max_angle": BODY_CMD_MAX_ANGLE,
-        },
+    # Body pose command (6D delta from nominal standing pose).
+    cfg.commands["body_pose"] = microduck_mdp.UniformPoseCommandCfg(
+        resampling_time_range=BODY_POSE_CMD_RESAMPLE_S,
+        ranges=(
+            (-0.005, 0.005),  # x (m)
+            (-0.005, 0.005),  # y (m)
+            (-0.005, 0.005),  # z (m)
+            (-0.05, 0.05),    # roll
+            (-0.05, 0.05),    # pitch
+            (-0.05, 0.05),    # yaw
+        ),
     )
+
+    # Append head + body command obs terms to both policy and critic groups
+    # so the obs vector ends with [twist(3), head(4), body(6)].
+    for group in ("policy", "critic"):
+        cfg.observations[group].terms["head_command"] = ObservationTermCfg(
+            func=velocity_mdp.generated_commands,
+            params={"command_name": "head_pose"},
+        )
+        cfg.observations[group].terms["body_command"] = ObservationTermCfg(
+            func=velocity_mdp.generated_commands,
+            params={"command_name": "body_pose"},
+        )
 
     # === REWARDS ===
     cfg.rewards = {
@@ -271,18 +293,25 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
                 "target_height_max": STANDUP_HEIGHT_MAX,
             },
         ),
-        # Body pose tracking reward: Gaussian on z, pitch, roll vs commanded values.
-        # Weight starts at 0; curriculum kicks it in once the robot can stand reliably.
+        # Body pose tracking: 6D Gaussian (x, y, z, roll, pitch, yaw) — primary
+        # objective once standing. Weight starts at 0; curriculum kicks it in.
         "body_pose_tracking": RewardTermCfg(
-            func=microduck_mdp.body_pose_tracking,
+            func=microduck_mdp.body_pose_tracking_6d,
             weight=0.0,
             params={
-                "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
-                "command_name": "twist",
+                "command_name": "body_pose",
                 "nominal_height": BODY_CMD_NOMINAL_HEIGHT,
-                "z_std": BODY_CMD_Z_STD,
-                "angle_std": BODY_CMD_ANGLE_STD,
+                "xy_std": 0.02,
+                "z_std": 0.02,
+                "angle_std": math.radians(10),
             },
+        ),
+        # Head pose tracking: Gaussian over the 4 neck/head joint deltas.
+        # Weight ramped by curriculum once standup is solved.
+        "head_pose_tracking": RewardTermCfg(
+            func=microduck_mdp.head_pose_tracking,
+            weight=0.0,
+            params={"command_name": "head_pose", "std": 0.15},
         ),
         # Pose reward. Bumped to 3.0 now that the flip is learned — pulls
         # joints back to HOME so the policy stops using saturated hip_yaw /
@@ -313,6 +342,20 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
         "dof_pos_limits": RewardTermCfg(
             func=velocity_mdp.joint_pos_limits,
             weight=-1.0,
+        ),
+        # Focused L1 penalty on hip_yaw + hip_roll deviation from HOME.
+        # Fights the wide-base stance the policy converges to: pose reward
+        # (Gaussian) saturates near 1 for any small deviation, and dof_pos_limits
+        # only fires past the 90% soft limit — so the policy can splay legs
+        # outward to ~25° without paying. L1 gives linear gradient everywhere.
+        "hip_yaw_roll_deviation": RewardTermCfg(
+            func=microduck_mdp.joint_deviation_l1,
+            weight=-2.0,
+            params={
+                "asset_cfg": SceneEntityCfg(
+                    "robot", joint_names=(r".*hip_yaw.*", r".*hip_roll.*")
+                ),
+            },
         ),
         "self_collisions": RewardTermCfg(
             func=velocity_mdp.self_collision_cost,
@@ -363,18 +406,6 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
     cfg.events["set_face_down"] = EventTermCfg(
         func=microduck_mdp.set_random_prone_orientation,
         mode="reset",
-    )
-
-    # Neck offset randomization (not in base vel env; added explicitly here)
-    cfg.events["reset_neck_offset"] = EventTermCfg(
-        func=microduck_mdp.reset_neck_offset,
-        mode="reset",
-    )
-    cfg.events["randomize_neck_offset_target"] = EventTermCfg(
-        func=microduck_mdp.randomize_neck_offset_target,
-        mode="interval",
-        interval_range_s=NECK_OFFSET_INTERVAL_S,
-        params={"max_offset": 0.0},  # curriculum ramps this up
     )
 
     # Terminate environments where MuJoCo physics went NaN (contact instability).
@@ -482,27 +513,68 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
         },
     )
 
-    cfg.curriculum["body_pose_cmd_range"] = CurriculumTermCfg(
-        func=microduck_mdp.body_pose_cmd_range_curriculum,
+    # Body pose command range: ramped from "alive" tiny range up to the full
+    # final range once the standup phase is complete.
+    cfg.curriculum["body_pose_range"] = CurriculumTermCfg(
+        func=microduck_mdp.pose_command_range_curriculum,
         params={
-            "command_name": "twist",
+            "command_name": "body_pose",
             "range_stages": [
-                {"step": 0,          "max_z": 0.0,                             "max_angle": 0.0},
-                {"step": 1000 * 24,  "max_z": 0.010,                           "max_angle": math.radians(10)},
-                {"step": 1500 * 24,  "max_z": 0.020,                           "max_angle": math.radians(20)},
-                {"step": 2000 * 24,  "max_z": BODY_CMD_MAX_Z,                  "max_angle": BODY_CMD_MAX_ANGLE},
+                {"step": 0, "ranges": (
+                    (-0.005, 0.005),  # x
+                    (-0.005, 0.005),  # y
+                    (-0.005, 0.005),  # z
+                    (-0.05, 0.05),    # roll
+                    (-0.05, 0.05),    # pitch
+                    (-0.05, 0.05),    # yaw
+                )},
+                {"step": 1000 * 24, "ranges": (
+                    (-0.010, 0.010), (-0.010, 0.010), (-0.010, 0.010),
+                    (-math.radians(10), math.radians(10)),
+                    (-math.radians(10), math.radians(10)),
+                    (-math.radians(10), math.radians(10)),
+                )},
+                {"step": 1500 * 24, "ranges": (
+                    (-0.015, 0.015), (-0.015, 0.015), (-0.020, 0.020),
+                    (-math.radians(20), math.radians(20)),
+                    (-math.radians(20), math.radians(20)),
+                    (-math.radians(20), math.radians(20)),
+                )},
+                {"step": 2000 * 24, "ranges": (
+                    (-BODY_CMD_MAX_XY, BODY_CMD_MAX_XY),
+                    (-BODY_CMD_MAX_XY, BODY_CMD_MAX_XY),
+                    (-BODY_CMD_MAX_Z,  BODY_CMD_MAX_Z),
+                    (-BODY_CMD_MAX_ANGLE, BODY_CMD_MAX_ANGLE),
+                    (-BODY_CMD_MAX_ANGLE, BODY_CMD_MAX_ANGLE),
+                    (-BODY_CMD_MAX_ANGLE, BODY_CMD_MAX_ANGLE),
+                )},
             ],
         },
     )
 
-    cfg.curriculum["neck_offset_magnitude"] = CurriculumTermCfg(
-        func=microduck_mdp.neck_offset_curriculum,
+    # Head pose command range: same shape as vel env.
+    cfg.curriculum["head_pose_range"] = CurriculumTermCfg(
+        func=microduck_mdp.pose_command_range_curriculum,
         params={
-            "event_name": "randomize_neck_offset_target",
-            "offset_stages": [
-                {"step": 0,          "max_offset": 0.0},
-                {"step": 1000 * 24,  "max_offset": 0.5},
-                {"step": 2000 * 24,  "max_offset": STANDUP_NECK_OFFSET_MAX_ANGLE},
+            "command_name": "head_pose",
+            "range_stages": [
+                {"step": 0,         "ranges": ((-0.05, 0.05),) * 4},
+                {"step": 1000 * 24, "ranges": ((-0.5, 0.5),) * 4},
+                {"step": 2000 * 24, "ranges": ((-HEAD_CMD_MAX_ANGLE, HEAD_CMD_MAX_ANGLE),) * 4},
+            ],
+        },
+    )
+
+    # Head pose tracking weight — ramped after standup is solved.
+    cfg.curriculum["head_pose_tracking_weight"] = CurriculumTermCfg(
+        func=velocity_mdp.reward_weight,
+        params={
+            "reward_name": "head_pose_tracking",
+            "weight_stages": [
+                {"step": 0,          "weight": 0.0},
+                {"step": 1000 * 24,  "weight": 1.0},
+                {"step": 1500 * 24,  "weight": 2.0},
+                {"step": 2000 * 24,  "weight": 3.0},
             ],
         },
     )
