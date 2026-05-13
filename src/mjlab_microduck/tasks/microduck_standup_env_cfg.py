@@ -316,7 +316,7 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
         ),
         "self_collisions": RewardTermCfg(
             func=velocity_mdp.self_collision_cost,
-            weight=-1.0,
+            weight=-3.0,  # bumped -1 → -3: policy was saturating hip_yaw, causing leg-into-trunk contacts; stronger penalty makes that net-negative vs the gain from saturated stance
             params={"sensor_name": self_collision_cfg.name},
         ),
         # Penalize hard impacts of the trunk shell against the ground.
