@@ -1514,9 +1514,9 @@ def push_curriculum(
     """
     del env_ids  # Unused
 
-    # Access event configuration directly from environment config
-    assert event_name in env.cfg.events, f"Event '{event_name}' not found"
-    event_cfg = env.cfg.events[event_name]
+    # NOTE: must update the live EventManager term_cfg, not env.cfg.events —
+    # EventManager.__init__ does deepcopy(cfg), so mutating env.cfg.events is a no-op.
+    event_cfg = env.event_manager.get_term_cfg(event_name)
 
     # Update velocity_range based on current step
     current_range = push_stages[0]["velocity_range"]  # Default to first stage
@@ -1579,8 +1579,9 @@ def neck_offset_curriculum(
     """
     del env_ids  # Unused
 
-    assert event_name in env.cfg.events, f"Event '{event_name}' not found"
-    event_cfg = env.cfg.events[event_name]
+    # NOTE: must update the live EventManager term_cfg, not env.cfg.events —
+    # EventManager.__init__ does deepcopy(cfg), so mutating env.cfg.events is a no-op.
+    event_cfg = env.event_manager.get_term_cfg(event_name)
 
     current_offset = offset_stages[0]["max_offset"]
     for stage in offset_stages:
@@ -1588,7 +1589,21 @@ def neck_offset_curriculum(
             current_offset = stage["max_offset"]
 
     event_cfg.params["max_offset"] = current_offset
-    return torch.tensor([current_offset])
+
+    # Also report the live applied offset magnitude so we can verify in wandb
+    # that the offset is actually being added to joint targets.
+    if hasattr(env, "_neck_offset"):
+        live_abs_mean = env._neck_offset.abs().mean().item()
+        live_abs_max = env._neck_offset.abs().max().item()
+    else:
+        live_abs_mean = 0.0
+        live_abs_max = 0.0
+
+    return {
+        "max_offset_cfg": current_offset,
+        "live_abs_mean": live_abs_mean,
+        "live_abs_max": live_abs_max,
+    }
 
 
 def com_range_curriculum(
@@ -1618,8 +1633,9 @@ def com_range_curriculum(
     """
     del env_ids
 
-    assert event_name in env.cfg.events, f"Event '{event_name}' not found"
-    event_cfg = env.cfg.events[event_name]
+    # NOTE: must update the live EventManager term_cfg, not env.cfg.events —
+    # EventManager.__init__ does deepcopy(cfg), so mutating env.cfg.events is a no-op.
+    event_cfg = env.event_manager.get_term_cfg(event_name)
 
     current_range = range_stages[0]["range"]
     for stage in range_stages:
@@ -2217,8 +2233,9 @@ def face_down_prob_curriculum(
     """
     del env_ids
 
-    assert event_name in env.cfg.events, f"Event '{event_name}' not found"
-    event_cfg = env.cfg.events[event_name]
+    # NOTE: must update the live EventManager term_cfg, not env.cfg.events —
+    # EventManager.__init__ does deepcopy(cfg), so mutating env.cfg.events is a no-op.
+    event_cfg = env.event_manager.get_term_cfg(event_name)
 
     current_prob = prob_stages[0]["prob"]
     for stage in prob_stages:
