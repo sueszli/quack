@@ -45,8 +45,8 @@ STANDUP_HEIGHT_MAX = 0.130
 BODY_CMD_MAX_XY        = 0.02                # ±20 mm lateral/forward
 BODY_CMD_MAX_Z         = 0.03                # ±30 mm height
 BODY_CMD_MAX_ANGLE     = math.radians(30)    # ±30° per Euler axis
-# Head pose final magnitude
-HEAD_CMD_MAX_ANGLE     = 1.0                 # ±1.0 rad per neck/head joint
+# Head pose: per-joint final caps come from the mechanical XML limits minus
+# HOME offset, with ~10% safety margin. See the curriculum below for values.
 
 # Resampling intervals for the pose commands
 HEAD_POSE_CMD_RESAMPLE_S = (2.0, 5.0)
@@ -226,14 +226,15 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
     command.ranges.ang_vel_z = (-0.05, 0.05)
     cfg.commands["twist"] = microduck_mdp.VelocityCommandCommandOnlyCfg(**vars(command))
 
-    # Head pose command (4D deltas from HOME).
+    # Head pose command (4D deltas from HOME). Per-joint final caps reflect
+    # mechanical limits — see microduck_velocity_env_cfg.py for the full table.
     cfg.commands["head_pose"] = microduck_mdp.UniformPoseCommandCfg(
         resampling_time_range=HEAD_POSE_CMD_RESAMPLE_S,
         ranges=(
-            (-0.05, 0.05),  # neck_pitch
-            (-0.05, 0.05),  # head_pitch
-            (-0.05, 0.05),  # head_yaw
-            (-0.05, 0.05),  # head_roll
+            (-0.05, 0.05),    # neck_pitch
+            (-0.05, 0.05),    # head_pitch
+            (-0.07, 0.07),    # head_yaw
+            (-0.015, 0.015),  # head_roll
         ),
     )
     # Body pose command (6D delta from nominal standing pose).
@@ -553,15 +554,17 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
         },
     )
 
-    # Head pose command range: same shape as vel env.
+    # Head pose command range: per-joint, same final caps as vel env.
+    # neck/head pitch ±1.10, head_yaw ±1.40, head_roll ±0.31 (mechanical limit).
     cfg.curriculum["head_pose_range"] = CurriculumTermCfg(
         func=microduck_mdp.pose_command_range_curriculum,
         params={
             "command_name": "head_pose",
             "range_stages": [
-                {"step": 0,         "ranges": ((-0.05, 0.05),) * 4},
-                {"step": 1000 * 24, "ranges": ((-0.5, 0.5),) * 4},
-                {"step": 2000 * 24, "ranges": ((-HEAD_CMD_MAX_ANGLE, HEAD_CMD_MAX_ANGLE),) * 4},
+                # step,                ranges = ((neck_pitch), (head_pitch), (head_yaw),  (head_roll))
+                {"step": 0,         "ranges": ((-0.05, 0.05),  (-0.05, 0.05),  (-0.07, 0.07),  (-0.015, 0.015))},
+                {"step": 1000 * 24, "ranges": ((-0.55, 0.55),  (-0.55, 0.55),  (-0.70, 0.70),  (-0.15, 0.15))},
+                {"step": 2000 * 24, "ranges": ((-1.10, 1.10),  (-1.10, 1.10),  (-1.40, 1.40),  (-0.31, 0.31))},
             ],
         },
     )

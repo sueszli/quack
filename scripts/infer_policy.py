@@ -173,13 +173,15 @@ class PolicyInference:
         self.body_cmd_step_angle = math.radians(10) # 10° per keypress (~3 to max)
 
         # Head control mode. In legacy mode head_offset is added on top of
-        # ctrl[5:9]; in new_cmd_obs mode it's a *command* fed to the policy and
-        # must stay within the training distribution (±1.0 rad).
+        # ctrl[5:9]; in new_cmd_obs mode it's a *command* fed to the policy.
+        # Final per-joint training caps: neck/head_pitch ±1.1, head_yaw ±1.4,
+        # head_roll ±0.31. Slider max = widest joint cap; head_roll naturally
+        # gets clipped by the policy since it was never trained beyond 0.31.
         self.head_mode = False
         self.head_offset = np.zeros(4, dtype=np.float32)
         if self.new_cmd_obs:
-            self.head_max = 1.0
-            self.head_step = 0.1   # 10 presses to max — explore the response curve
+            self.head_max = 1.4
+            self.head_step = 0.1
         else:
             self.head_max = 2.5
             self.head_step = 0.83
@@ -599,6 +601,7 @@ def main():
             if key == GLFW_KEY_UP:
                 if policy.head_mode:
                     policy.head_offset[1] = np.clip(policy.head_offset[1] + policy.head_step, -policy.head_max, policy.head_max)
+                    policy._update_command()
                     print(f"Head offset: neck={policy.head_offset[0]:.2f} pitch={policy.head_offset[1]:.2f} yaw={policy.head_offset[2]:.2f} roll={policy.head_offset[3]:.2f}")
                 elif policy.body_pose_mode:
                     policy.body_cmd[0] = np.clip(policy.body_cmd[0] + policy.body_cmd_step_z, -BODY_CMD_MAX_Z, BODY_CMD_MAX_Z)
@@ -609,6 +612,7 @@ def main():
             elif key == GLFW_KEY_DOWN:
                 if policy.head_mode:
                     policy.head_offset[1] = np.clip(policy.head_offset[1] - policy.head_step, -policy.head_max, policy.head_max)
+                    policy._update_command()
                     print(f"Head offset: neck={policy.head_offset[0]:.2f} pitch={policy.head_offset[1]:.2f} yaw={policy.head_offset[2]:.2f} roll={policy.head_offset[3]:.2f}")
                 elif policy.body_pose_mode:
                     policy.body_cmd[0] = np.clip(policy.body_cmd[0] - policy.body_cmd_step_z, -BODY_CMD_MAX_Z, BODY_CMD_MAX_Z)
@@ -619,6 +623,7 @@ def main():
             elif key == GLFW_KEY_RIGHT:
                 if policy.head_mode:
                     policy.head_offset[2] = np.clip(policy.head_offset[2] - policy.head_step, -policy.head_max, policy.head_max)
+                    policy._update_command()
                     print(f"Head offset: neck={policy.head_offset[0]:.2f} pitch={policy.head_offset[1]:.2f} yaw={policy.head_offset[2]:.2f} roll={policy.head_offset[3]:.2f}")
                 elif policy.body_pose_mode:
                     policy.body_cmd[1] = np.clip(policy.body_cmd[1] - policy.body_cmd_step_angle, -BODY_CMD_MAX_ANGLE, BODY_CMD_MAX_ANGLE)
@@ -632,6 +637,7 @@ def main():
             elif key == GLFW_KEY_LEFT:
                 if policy.head_mode:
                     policy.head_offset[2] = np.clip(policy.head_offset[2] + policy.head_step, -policy.head_max, policy.head_max)
+                    policy._update_command()
                     print(f"Head offset: neck={policy.head_offset[0]:.2f} pitch={policy.head_offset[1]:.2f} yaw={policy.head_offset[2]:.2f} roll={policy.head_offset[3]:.2f}")
                 elif policy.body_pose_mode:
                     policy.body_cmd[1] = np.clip(policy.body_cmd[1] + policy.body_cmd_step_angle, -BODY_CMD_MAX_ANGLE, BODY_CMD_MAX_ANGLE)
@@ -645,6 +651,7 @@ def main():
             elif key == GLFW_KEY_SPACE:
                 if policy.head_mode:
                     policy.head_offset[:] = 0.0
+                    policy._update_command()
                     print("Head offset reset to zero")
                 elif policy.body_pose_mode:
                     policy.body_cmd[:] = 0.0
@@ -661,6 +668,7 @@ def main():
             elif key == GLFW_KEY_A:
                 if policy.head_mode:
                     policy.head_offset[3] = np.clip(policy.head_offset[3] + policy.head_step, -policy.head_max, policy.head_max)
+                    policy._update_command()
                     print(f"Head offset: neck={policy.head_offset[0]:.2f} pitch={policy.head_offset[1]:.2f} yaw={policy.head_offset[2]:.2f} roll={policy.head_offset[3]:.2f}")
                 elif policy.body_pose_mode:
                     policy.body_cmd[2] = np.clip(policy.body_cmd[2] + policy.body_cmd_step_angle, -BODY_CMD_MAX_ANGLE, BODY_CMD_MAX_ANGLE)
@@ -671,6 +679,7 @@ def main():
             elif key == GLFW_KEY_E:
                 if policy.head_mode:
                     policy.head_offset[3] = np.clip(policy.head_offset[3] - policy.head_step, -policy.head_max, policy.head_max)
+                    policy._update_command()
                     print(f"Head offset: neck={policy.head_offset[0]:.2f} pitch={policy.head_offset[1]:.2f} yaw={policy.head_offset[2]:.2f} roll={policy.head_offset[3]:.2f}")
                 elif policy.body_pose_mode:
                     policy.body_cmd[2] = np.clip(policy.body_cmd[2] - policy.body_cmd_step_angle, -BODY_CMD_MAX_ANGLE, BODY_CMD_MAX_ANGLE)
@@ -681,10 +690,12 @@ def main():
             elif key == GLFW_KEY_Z:
                 if policy.head_mode:
                     policy.head_offset[0] = np.clip(policy.head_offset[0] + policy.head_step, -policy.head_max, policy.head_max)
+                    policy._update_command()
                     print(f"Head offset: neck={policy.head_offset[0]:.2f} pitch={policy.head_offset[1]:.2f} yaw={policy.head_offset[2]:.2f} roll={policy.head_offset[3]:.2f}")
             elif key == GLFW_KEY_S:
                 if policy.head_mode:
                     policy.head_offset[0] = np.clip(policy.head_offset[0] - policy.head_step, -policy.head_max, policy.head_max)
+                    policy._update_command()
                     print(f"Head offset: neck={policy.head_offset[0]:.2f} pitch={policy.head_offset[1]:.2f} yaw={policy.head_offset[2]:.2f} roll={policy.head_offset[3]:.2f}")
         except Exception as e:
             print(f"Key press error: {e}")
