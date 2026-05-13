@@ -439,47 +439,45 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
         del cfg.curriculum["terrain_levels"]
     del cfg.curriculum["command_vel"]
 
-    # Curricula compressed to finish by iter ~2500 (was up to 4000). The policy
-    # learns the basic standup by iter ~1000, so refinement (pose, head_impact)
-    # is shifted earlier so it bites while there's still flexibility.
     cfg.curriculum["action_rate_weight"] = CurriculumTermCfg(
         func=velocity_mdp.reward_weight,
         params={
             "reward_name": "action_rate_l2",
             "weight_stages": [
                 {"step": 0,          "weight": -0.01},
-                {"step": 300 * 24,   "weight": -0.1},
-                {"step": 600 * 24,   "weight": -0.3},
-                {"step": 1000 * 24,  "weight": -0.6},
-                {"step": 1500 * 24,  "weight": -0.8},
+                {"step": 500 * 24,   "weight": -0.1},
+                {"step": 1000 * 24,  "weight": -0.3},
+                {"step": 1500 * 24,  "weight": -0.6},
+                {"step": 2000 * 24,  "weight": -0.8},
                 {"step": 2500 * 24,  "weight": -1.0},
             ],
         },
     )
 
+    # Body pose tracking weight — starts at 0, ramps up after the robot is standing.
     cfg.curriculum["body_pose_tracking_weight"] = CurriculumTermCfg(
         func=velocity_mdp.reward_weight,
         params={
             "reward_name": "body_pose_tracking",
             "weight_stages": [
                 {"step": 0,          "weight": 0.0},
-                {"step": 500 * 24,   "weight": 2.0},
-                {"step": 1000 * 24,  "weight": 3.5},
-                {"step": 1500 * 24,  "weight": 5.0},
+                {"step": 1000 * 24,  "weight": 2.0},
+                {"step": 1500 * 24,  "weight": 3.5},
+                {"step": 2000 * 24,  "weight": 5.0},
             ],
         },
     )
 
-    # Pose reward ramp — late bump to refine joints back to HOME after the flip
-    # behavior is learned. Final at iter 2500 (was 4000).
+    # Pose reward weight ramp — kept flat at 3.0 until iter 2000 (so the flip
+    # exploration phase is unchanged), then bumped late to drive joints to HOME.
     cfg.curriculum["pose_weight"] = CurriculumTermCfg(
         func=velocity_mdp.reward_weight,
         params={
             "reward_name": "pose",
             "weight_stages": [
                 {"step": 0,          "weight": 3.0},
-                {"step": 1500 * 24,  "weight": 5.0},
-                {"step": 2500 * 24,  "weight": 7.0},
+                {"step": 3000 * 24,  "weight": 5.0},
+                {"step": 4000 * 24,  "weight": 7.0},
             ],
         },
     )
@@ -489,10 +487,10 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
         params={
             "command_name": "twist",
             "range_stages": [
-                {"step": 0,          "max_z": 0.0,            "max_angle": 0.0},
-                {"step": 500 * 24,   "max_z": 0.010,          "max_angle": math.radians(10)},
-                {"step": 1000 * 24,  "max_z": 0.020,          "max_angle": math.radians(20)},
-                {"step": 1500 * 24,  "max_z": BODY_CMD_MAX_Z, "max_angle": BODY_CMD_MAX_ANGLE},
+                {"step": 0,          "max_z": 0.0,                             "max_angle": 0.0},
+                {"step": 1000 * 24,  "max_z": 0.010,                           "max_angle": math.radians(10)},
+                {"step": 1500 * 24,  "max_z": 0.020,                           "max_angle": math.radians(20)},
+                {"step": 2000 * 24,  "max_z": BODY_CMD_MAX_Z,                  "max_angle": BODY_CMD_MAX_ANGLE},
             ],
         },
     )
@@ -503,8 +501,8 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
             "event_name": "randomize_neck_offset_target",
             "offset_stages": [
                 {"step": 0,          "max_offset": 0.0},
-                {"step": 750 * 24,   "max_offset": 0.5},
-                {"step": 1500 * 24,  "max_offset": STANDUP_NECK_OFFSET_MAX_ANGLE},
+                {"step": 1000 * 24,  "max_offset": 0.5},
+                {"step": 2000 * 24,  "max_offset": STANDUP_NECK_OFFSET_MAX_ANGLE},
             ],
         },
     )
@@ -516,8 +514,8 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
             "event_name": "push_robot",
             "push_stages": [
                 {"step": 0,          "velocity_range": {"x": (-0.3, 0.3),   "y": (-0.3, 0.3)}},
-                {"step": 1000 * 24,  "velocity_range": {"x": (-0.6, 0.6),   "y": (-0.6, 0.6)}},
-                {"step": 2000 * 24,  "velocity_range": {"x": _MAX_PUSH,     "y": _MAX_PUSH}},
+                {"step": 1500 * 24,  "velocity_range": {"x": (-0.6, 0.6),   "y": (-0.6, 0.6)}},
+                {"step": 2500 * 24,  "velocity_range": {"x": _MAX_PUSH,     "y": _MAX_PUSH}},
             ],
         },
     )
@@ -534,8 +532,8 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
             "reward_name": "trunk_impact_penalty",
             "weight_stages": [
                 {"step": 0,          "weight": 0.0},
-                {"step": 750 * 24,   "weight": -0.05},
-                {"step": 1500 * 24,  "weight": -0.2},
+                {"step": 1000 * 24,  "weight": -0.05},
+                {"step": 2000 * 24,  "weight": -0.2},
             ],
         },
     )
@@ -546,9 +544,9 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
             "reward_name": "head_impact_penalty",
             "weight_stages": [
                 {"step": 0,          "weight": 0.0},
-                {"step": 500 * 24,   "weight": -0.2},
-                {"step": 1500 * 24,  "weight": -1.0},
-                {"step": 2500 * 24,  "weight": -2.5},
+                {"step": 1000 * 24,  "weight": -0.2},
+                {"step": 2000 * 24,  "weight": -1.0},
+                {"step": 3000 * 24,  "weight": -2.5},  # late: kill remaining head-on-ground tendency
             ],
         },
     )
@@ -559,8 +557,8 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
             "reward_name": "joint_torque_rate_l2",
             "weight_stages": [
                 {"step": 0,          "weight": 0.0},
-                {"step": 750 * 24,   "weight": -1e-4},
-                {"step": 1500 * 24,  "weight": -5e-4},
+                {"step": 1000 * 24,  "weight": -1e-4},
+                {"step": 2000 * 24,  "weight": -5e-4},
             ],
         },
     )
