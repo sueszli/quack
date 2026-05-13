@@ -139,8 +139,6 @@ def make_microduck_velocity_env_cfg(
         r".*hip_pitch.*": 0.15,
         r".*knee.*": 0.15,
         r".*ankle.*": 0.1,
-        r".*neck.*": 0.1,
-        r".*head.*": 0.1,
     }
 
     std_walking = {
@@ -150,9 +148,6 @@ def make_microduck_velocity_env_cfg(
         r".*hip_pitch.*": 0.4,
         r".*knee.*": 0.4,
         r".*ankle.*": 0.25, # was 0.15
-        # Head — relaxed because random offsets are applied during training
-        r".*neck.*": 0.1, # Was 0.1
-        r".*head.*": 0.1, # Was 0.1
     }
 
     site_names = ["left_foot", "right_foot"]
