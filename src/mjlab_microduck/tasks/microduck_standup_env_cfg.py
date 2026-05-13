@@ -470,6 +470,21 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
         },
     )
 
+    # Pose reward weight ramp — kept flat at 3.0 until iter 2000 (so the flip
+    # exploration phase is unchanged), then bumped late to drive joints to HOME
+    # rather than parking at a saturated stance.
+    cfg.curriculum["pose_weight"] = CurriculumTermCfg(
+        func=velocity_mdp.reward_weight,
+        params={
+            "reward_name": "pose",
+            "weight_stages": [
+                {"step": 0,          "weight": 3.0},
+                {"step": 3000 * 24,  "weight": 5.0},
+                {"step": 4000 * 24,  "weight": 7.0},
+            ],
+        },
+    )
+
     # Body pose command range — expanded in step with weight above.
     cfg.curriculum["body_pose_cmd_range"] = CurriculumTermCfg(
         func=microduck_mdp.body_pose_cmd_range_curriculum,
@@ -541,6 +556,7 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
                 {"step": 0,          "weight": 0.0},
                 {"step": 1000 * 24,  "weight": -0.2},
                 {"step": 2000 * 24,  "weight": -1.0},
+                {"step": 3000 * 24,  "weight": -2.5},  # late: kill remaining head-on-ground tendency
             ],
         },
     )
