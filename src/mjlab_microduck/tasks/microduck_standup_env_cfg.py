@@ -439,81 +439,76 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
         del cfg.curriculum["terrain_levels"]
     del cfg.curriculum["command_vel"]
 
+    # Curricula compressed to finish by iter ~2500 (was up to 4000). The policy
+    # learns the basic standup by iter ~1000, so refinement (pose, head_impact)
+    # is shifted earlier so it bites while there's still flexibility.
     cfg.curriculum["action_rate_weight"] = CurriculumTermCfg(
         func=velocity_mdp.reward_weight,
         params={
             "reward_name": "action_rate_l2",
             "weight_stages": [
                 {"step": 0,          "weight": -0.01},
-                {"step": 500 * 24,   "weight": -0.1},
-                {"step": 1000 * 24,  "weight": -0.3},
-                {"step": 1500 * 24,  "weight": -0.6},
-                {"step": 2000 * 24,  "weight": -0.8},
+                {"step": 300 * 24,   "weight": -0.1},
+                {"step": 600 * 24,   "weight": -0.3},
+                {"step": 1000 * 24,  "weight": -0.6},
+                {"step": 1500 * 24,  "weight": -0.8},
                 {"step": 2500 * 24,  "weight": -1.0},
             ],
         },
     )
 
-    # Body pose tracking weight — starts at 0, ramps up after the robot is standing.
-    # Gradual steps prevent the sudden ×2.5 jump that would blow up advantages
-    # when the value function hasn't caught up with the new reward scale.
     cfg.curriculum["body_pose_tracking_weight"] = CurriculumTermCfg(
         func=velocity_mdp.reward_weight,
         params={
             "reward_name": "body_pose_tracking",
             "weight_stages": [
                 {"step": 0,          "weight": 0.0},
-                {"step": 1000 * 24,  "weight": 2.0},
-                {"step": 1500 * 24,  "weight": 3.5},
-                {"step": 2000 * 24,  "weight": 5.0},
+                {"step": 500 * 24,   "weight": 2.0},
+                {"step": 1000 * 24,  "weight": 3.5},
+                {"step": 1500 * 24,  "weight": 5.0},
             ],
         },
     )
 
-    # Pose reward weight ramp — kept flat at 3.0 until iter 2000 (so the flip
-    # exploration phase is unchanged), then bumped late to drive joints to HOME
-    # rather than parking at a saturated stance.
+    # Pose reward ramp — late bump to refine joints back to HOME after the flip
+    # behavior is learned. Final at iter 2500 (was 4000).
     cfg.curriculum["pose_weight"] = CurriculumTermCfg(
         func=velocity_mdp.reward_weight,
         params={
             "reward_name": "pose",
             "weight_stages": [
                 {"step": 0,          "weight": 3.0},
-                {"step": 3000 * 24,  "weight": 5.0},
-                {"step": 4000 * 24,  "weight": 7.0},
+                {"step": 1500 * 24,  "weight": 5.0},
+                {"step": 2500 * 24,  "weight": 7.0},
             ],
         },
     )
 
-    # Body pose command range — expanded in step with weight above.
     cfg.curriculum["body_pose_cmd_range"] = CurriculumTermCfg(
         func=microduck_mdp.body_pose_cmd_range_curriculum,
         params={
             "command_name": "twist",
             "range_stages": [
-                {"step": 0,          "max_z": 0.0,                             "max_angle": 0.0},
-                {"step": 1000 * 24,  "max_z": 0.010,                           "max_angle": math.radians(10)},
-                {"step": 1500 * 24,  "max_z": 0.020,                           "max_angle": math.radians(20)},
-                {"step": 2000 * 24,  "max_z": BODY_CMD_MAX_Z,                  "max_angle": BODY_CMD_MAX_ANGLE},
+                {"step": 0,          "max_z": 0.0,            "max_angle": 0.0},
+                {"step": 500 * 24,   "max_z": 0.010,          "max_angle": math.radians(10)},
+                {"step": 1000 * 24,  "max_z": 0.020,          "max_angle": math.radians(20)},
+                {"step": 1500 * 24,  "max_z": BODY_CMD_MAX_Z, "max_angle": BODY_CMD_MAX_ANGLE},
             ],
         },
     )
 
-    # Override neck offset curriculum: higher max and faster ramp than vel env.
     cfg.curriculum["neck_offset_magnitude"] = CurriculumTermCfg(
         func=microduck_mdp.neck_offset_curriculum,
         params={
             "event_name": "randomize_neck_offset_target",
             "offset_stages": [
                 {"step": 0,          "max_offset": 0.0},
-                {"step": 1000 * 24,  "max_offset": 0.5},
-                {"step": 2000 * 24,  "max_offset": STANDUP_NECK_OFFSET_MAX_ANGLE},
+                {"step": 750 * 24,   "max_offset": 0.5},
+                {"step": 1500 * 24,  "max_offset": STANDUP_NECK_OFFSET_MAX_ANGLE},
             ],
         },
     )
 
-    # Gradually increase push magnitude so the robot eventually practices full falls
-    # (not just balance recovery). Kicks in after standup is stable.
     _MAX_PUSH = (-1.0, 1.0)
     cfg.curriculum["push_magnitude"] = CurriculumTermCfg(
         func=microduck_mdp.push_curriculum,
@@ -521,55 +516,51 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
             "event_name": "push_robot",
             "push_stages": [
                 {"step": 0,          "velocity_range": {"x": (-0.3, 0.3),   "y": (-0.3, 0.3)}},
-                {"step": 1500 * 24,  "velocity_range": {"x": (-0.6, 0.6),   "y": (-0.6, 0.6)}},
-                {"step": 2500 * 24,  "velocity_range": {"x": _MAX_PUSH,     "y": _MAX_PUSH}},
+                {"step": 1000 * 24,  "velocity_range": {"x": (-0.6, 0.6),   "y": (-0.6, 0.6)}},
+                {"step": 2000 * 24,  "velocity_range": {"x": _MAX_PUSH,     "y": _MAX_PUSH}},
             ],
         },
     )
 
-    # In play mode skip the curriculum and use the max push immediately.
     if play and "push_robot" in cfg.events:
         cfg.events["push_robot"].params["velocity_range"] = {
             "x": _MAX_PUSH,
             "y": _MAX_PUSH,
         }
 
-    # Ramp up trunk impact penalty after standup is stable.
     cfg.curriculum["trunk_impact_weight"] = CurriculumTermCfg(
         func=velocity_mdp.reward_weight,
         params={
             "reward_name": "trunk_impact_penalty",
             "weight_stages": [
                 {"step": 0,          "weight": 0.0},
-                {"step": 1000 * 24,  "weight": -0.05},
-                {"step": 2000 * 24,  "weight": -0.2},
+                {"step": 750 * 24,   "weight": -0.05},
+                {"step": 1500 * 24,  "weight": -0.2},
             ],
         },
     )
 
-    # Head is more fragile than the trunk — higher final weight.
     cfg.curriculum["head_impact_weight"] = CurriculumTermCfg(
         func=velocity_mdp.reward_weight,
         params={
             "reward_name": "head_impact_penalty",
             "weight_stages": [
                 {"step": 0,          "weight": 0.0},
-                {"step": 1000 * 24,  "weight": -0.2},
-                {"step": 2000 * 24,  "weight": -1.0},
-                {"step": 3000 * 24,  "weight": -2.5},  # late: kill remaining head-on-ground tendency
+                {"step": 500 * 24,   "weight": -0.2},
+                {"step": 1500 * 24,  "weight": -1.0},
+                {"step": 2500 * 24,  "weight": -2.5},
             ],
         },
     )
 
-    # Ramp up torque-rate penalty alongside impact penalties.
     cfg.curriculum["torque_rate_weight"] = CurriculumTermCfg(
         func=velocity_mdp.reward_weight,
         params={
             "reward_name": "joint_torque_rate_l2",
             "weight_stages": [
                 {"step": 0,          "weight": 0.0},
-                {"step": 1000 * 24,  "weight": -1e-4},
-                {"step": 2000 * 24,  "weight": -5e-4},
+                {"step": 750 * 24,   "weight": -1e-4},
+                {"step": 1500 * 24,  "weight": -5e-4},
             ],
         },
     )
