@@ -276,9 +276,17 @@ class PolicyInference:
         return self.data.sensordata[sensor_adr:sensor_adr + 3].copy().astype(np.float32)
 
     def get_joint_pos_relative(self):
-        """Get joint positions relative to default pose."""
+        """Get joint positions relative to default pose.
+
+        Mirrors training's joint_pos_rel_neck_decoupled: subtracts the externally
+        applied head offset (ctrl[5:9] += self.head_offset) from the neck/head
+        entries so the policy sees its own commanded head pose, not the
+        externally displaced one — matching the obs distribution it trained on.
+        """
         current_pos = self.data.qpos[self.joint_qpos_indices].copy().astype(np.float32)
-        return current_pos - self.default_pose
+        rel = current_pos - self.default_pose
+        rel[5:9] -= self.head_offset
+        return rel
 
     def get_joint_vel(self):
         """Get joint velocities."""

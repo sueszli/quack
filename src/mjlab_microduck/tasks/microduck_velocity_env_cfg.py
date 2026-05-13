@@ -209,6 +209,9 @@ def make_microduck_velocity_env_cfg(
     joint_pos_action.scale = 1.0
     if ENABLE_NECK_OFFSET_RANDOMIZATION:
         cfg.actions["joint_pos"] = microduck_mdp.NeckOffsetJointPositionActionCfg(**vars(joint_pos_action))
+        # Decouple joint_pos obs from neck offset so the policy can't cancel
+        # the disturbance via counter-commands — see joint_pos_rel_neck_decoupled.
+        cfg.observations["policy"].terms["joint_pos"].func = microduck_mdp.joint_pos_rel_neck_decoupled
 
     # === REWARDS ===
     # Pose reward configuration

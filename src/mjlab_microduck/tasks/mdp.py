@@ -214,6 +214,53 @@ def randomize_neck_offset_target(
         ) * max_offset
 
 
+def joint_pos_rel_neck_decoupled(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """Like joint_pos_rel, but subtracts the applied neck offset from neck joints.
+
+    With NeckOffsetJointPositionAction, joint_pos_target gets `+ env._neck_offset`
+    added on top of the policy's commanded neck targets. Without correction, the
+    policy observes the displaced head via joint_pos_rel and learns to output
+    `-offset` on its neck actions to cancel the disturbance — defeating the
+    point of the randomization (the head no longer moves, the body never learns
+    robustness to head pose changes).
+
+    Subtracting `env._neck_offset` from the neck entries of joint_pos_rel makes
+    the observation look as if the offset never happened from the policy's
+    point of view: it sees "head is where I commanded it," so it has no incentive
+    to fight the offset. The body still feels the dynamics of a displaced head
+    (because the head physically moved in sim), forcing it to learn robustness.
+
+    Requires NeckOffsetJointPositionAction to be the active joint_pos action.
+    Assumes asset_cfg.joint_ids is slice(None) (the default) — i.e. the obs
+    covers all entity joints in natural order. If you pass a custom joint
+    subset, the neck indices won't align and the assertion will fire.
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    default_joint_pos = asset.data.default_joint_pos
+    assert default_joint_pos is not None
+    jnt_ids = asset_cfg.joint_ids
+    rel = asset.data.joint_pos[:, jnt_ids] - default_joint_pos[:, jnt_ids]
+
+    if not hasattr(env, "_neck_offset"):
+        return rel
+
+    # Resolve neck joint entity-local IDs once and cache on env.
+    if not hasattr(env, "_neck_obs_joint_ids"):
+        ids, _ = asset.find_joints_by_actuator_names(_NECK_JOINT_PATTERNS)
+        env._neck_obs_joint_ids = torch.tensor(ids, device=env.device, dtype=torch.long)
+
+    assert isinstance(jnt_ids, slice), (
+        "joint_pos_rel_neck_decoupled assumes asset_cfg.joint_ids is slice(None); "
+        "pass a custom obs term if you need a joint subset."
+    )
+
+    rel[:, env._neck_obs_joint_ids] -= env._neck_offset
+    return rel
+
+
 def reset_with_forward_velocity(
     env: ManagerBasedRlEnv,
     env_ids: torch.Tensor,
