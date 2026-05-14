@@ -19,6 +19,7 @@ MICRODUCK_ROLLERS_XML = "src/mjlab_microduck/robot/microduck/scene_roller.xml"
 
 # Body pose command constants (must match training constants)
 BODY_CMD_MAX_Z = 0.03              # ±30 mm
+BODY_CMD_MAX_XY = 0.02             # ±20 mm
 BODY_CMD_MAX_ANGLE = math.radians(30)  # ±30°
 
 # Default pose used by the policy (legs flexed, standing position)
@@ -162,15 +163,19 @@ class PolicyInference:
         self.vel_max_y = 0.3
         self.vel_min_y = -0.3
         self.vel_max_ang = 1.5
-        # Body pose command [Δz (m), Δpitch (rad), Δroll (rad)] — physical units
-        self.body_cmd = np.zeros(3, dtype=np.float32)
+        # Body pose command. In new_cmd_obs mode this is 6D
+        #   [x, y, z, roll, pitch, yaw] (m, m, m, rad, rad, rad)
+        # In legacy mode only [z, pitch, roll] (first 3 indices reused as
+        # [z, pitch, roll] to keep the legacy normalization path working).
+        self.body_cmd = np.zeros(6 if self.new_cmd_obs else 3, dtype=np.float32)
         # Obs command vector (3D in legacy mode, 13D when new_cmd_obs=True).
         self.command = np.zeros(13 if self.new_cmd_obs else 3, dtype=np.float32)
 
         # Body pose mode (like head mode but for standing body pose control)
         self.body_pose_mode = False
-        self.body_cmd_step_z = 0.01               # 10 mm per keypress (~3 to max)
-        self.body_cmd_step_angle = math.radians(10) # 10° per keypress (~3 to max)
+        self.body_cmd_step_xy = 0.005             # 5 mm per keypress (4 to max)
+        self.body_cmd_step_z = 0.01               # 10 mm per keypress (3 to max)
+        self.body_cmd_step_angle = math.radians(10) # 10° per keypress (3 to max)
 
         # Head control mode. In legacy mode head_offset is added on top of
         # ctrl[5:9]; in new_cmd_obs mode it's a *command* fed to the policy.
@@ -221,12 +226,8 @@ class PolicyInference:
             if self.current_policy == "walking":
                 cmd[0:3] = self.vel_cmd
             # else standing/ground_pick: leave twist 0 (ground_pick writes phase later)
-            cmd[3:7] = self.head_offset
-            # body_cmd legacy meaning is [Δz, Δpitch, Δroll]; map into 6D body slot
-            cmd[9]  = self.body_cmd[0]  # z
-            cmd[10] = self.body_cmd[2]  # roll
-            cmd[11] = self.body_cmd[1]  # pitch
-            # cmd[7]=x, cmd[8]=y, cmd[12]=yaw stay 0 (no keyboard binding)
+            cmd[3:7]  = self.head_offset
+            cmd[7:13] = self.body_cmd  # [x, y, z, roll, pitch, yaw]
             self.command = cmd
             return
 
@@ -272,13 +273,41 @@ class PolicyInference:
             print(f"  UP/DOWN: Δz ±{self.body_cmd_step_z*1000:.0f}mm  (max ±{BODY_CMD_MAX_Z*1000:.0f}mm)")
             print(f"  LEFT/RIGHT: Δpitch ±{math.degrees(self.body_cmd_step_angle):.0f}°  (max ±{math.degrees(BODY_CMD_MAX_ANGLE):.0f}°)")
             print(f"  A/E: Δroll ±{math.degrees(self.body_cmd_step_angle):.0f}°  (max ±{math.degrees(BODY_CMD_MAX_ANGLE):.0f}°)")
+            if self.new_cmd_obs:
+                print(f"  Z/S: Δyaw ±{math.degrees(self.body_cmd_step_angle):.0f}°  (max ±{math.degrees(BODY_CMD_MAX_ANGLE):.0f}°)")
             print(f"  SPACE: reset body pose to zero")
-            print(f"  Current: z={self.body_cmd[0]*1000:.1f}mm  pitch={math.degrees(self.body_cmd[1]):.1f}°  roll={math.degrees(self.body_cmd[2]):.1f}°")
+            self._print_body_cmd()
         else:
             print("Body pose mode: OFF")
 
     def _print_body_cmd(self):
-        print(f"Body cmd: z={self.body_cmd[0]*1000:.1f}mm  pitch={math.degrees(self.body_cmd[1]):.1f}°  roll={math.degrees(self.body_cmd[2]):.1f}°")
+        if self.new_cmd_obs:
+            x, y, z, roll, pitch, yaw = self.body_cmd
+            print(
+                f"Body cmd: x={x*1000:5.1f}mm  y={y*1000:5.1f}mm  z={z*1000:5.1f}mm  "
+                f"roll={math.degrees(roll):5.1f}°  pitch={math.degrees(pitch):5.1f}°  "
+                f"yaw={math.degrees(yaw):5.1f}°"
+            )
+        else:
+            print(
+                f"Body cmd: z={self.body_cmd[0]*1000:.1f}mm  "
+                f"pitch={math.degrees(self.body_cmd[1]):.1f}°  "
+                f"roll={math.degrees(self.body_cmd[2]):.1f}°"
+            )
+
+    # --- body command bumpers (index differs between legacy 3D and new 6D) ---
+    def _body_idx(self, axis: str) -> int:
+        """Map an axis name to the body_cmd index, depending on the active mode."""
+        if self.new_cmd_obs:
+            return {"x": 0, "y": 1, "z": 2, "roll": 3, "pitch": 4, "yaw": 5}[axis]
+        return {"z": 0, "pitch": 1, "roll": 2}[axis]
+
+    def bump_body(self, axis: str, delta: float):
+        idx = self._body_idx(axis)
+        cap = BODY_CMD_MAX_Z if axis == "z" else BODY_CMD_MAX_XY if axis in ("x", "y") else BODY_CMD_MAX_ANGLE
+        self.body_cmd[idx] = float(np.clip(self.body_cmd[idx] + delta, -cap, cap))
+        self._update_command()
+        self._print_body_cmd()
 
     def quat_rotate_inverse(self, quat, vec):
         """Rotate a vector by the inverse of a quaternion [w, x, y, z]."""
@@ -604,9 +633,7 @@ def main():
                     policy._update_command()
                     print(f"Head offset: neck={policy.head_offset[0]:.2f} pitch={policy.head_offset[1]:.2f} yaw={policy.head_offset[2]:.2f} roll={policy.head_offset[3]:.2f}")
                 elif policy.body_pose_mode:
-                    policy.body_cmd[0] = np.clip(policy.body_cmd[0] + policy.body_cmd_step_z, -BODY_CMD_MAX_Z, BODY_CMD_MAX_Z)
-                    policy._update_command()
-                    policy._print_body_cmd()
+                    policy.bump_body("z", policy.body_cmd_step_z)
                 else:
                     policy.set_vel_cmd(policy.vel_max_x, policy.vel_cmd[1], policy.vel_cmd[2])
             elif key == GLFW_KEY_DOWN:
@@ -615,9 +642,7 @@ def main():
                     policy._update_command()
                     print(f"Head offset: neck={policy.head_offset[0]:.2f} pitch={policy.head_offset[1]:.2f} yaw={policy.head_offset[2]:.2f} roll={policy.head_offset[3]:.2f}")
                 elif policy.body_pose_mode:
-                    policy.body_cmd[0] = np.clip(policy.body_cmd[0] - policy.body_cmd_step_z, -BODY_CMD_MAX_Z, BODY_CMD_MAX_Z)
-                    policy._update_command()
-                    policy._print_body_cmd()
+                    policy.bump_body("z", -policy.body_cmd_step_z)
                 else:
                     policy.set_vel_cmd(policy.vel_min_x, policy.vel_cmd[1], policy.vel_cmd[2])
             elif key == GLFW_KEY_RIGHT:
@@ -626,9 +651,7 @@ def main():
                     policy._update_command()
                     print(f"Head offset: neck={policy.head_offset[0]:.2f} pitch={policy.head_offset[1]:.2f} yaw={policy.head_offset[2]:.2f} roll={policy.head_offset[3]:.2f}")
                 elif policy.body_pose_mode:
-                    policy.body_cmd[1] = np.clip(policy.body_cmd[1] - policy.body_cmd_step_angle, -BODY_CMD_MAX_ANGLE, BODY_CMD_MAX_ANGLE)
-                    policy._update_command()
-                    policy._print_body_cmd()
+                    policy.bump_body("pitch", -policy.body_cmd_step_angle)
                 elif args.roller:
                     new_ang = np.clip(policy.vel_cmd[2] - policy.vel_step_ang, -policy.vel_max_ang, policy.vel_max_ang)
                     policy.set_vel_cmd(policy.vel_cmd[0], policy.vel_cmd[1], new_ang)
@@ -640,9 +663,7 @@ def main():
                     policy._update_command()
                     print(f"Head offset: neck={policy.head_offset[0]:.2f} pitch={policy.head_offset[1]:.2f} yaw={policy.head_offset[2]:.2f} roll={policy.head_offset[3]:.2f}")
                 elif policy.body_pose_mode:
-                    policy.body_cmd[1] = np.clip(policy.body_cmd[1] + policy.body_cmd_step_angle, -BODY_CMD_MAX_ANGLE, BODY_CMD_MAX_ANGLE)
-                    policy._update_command()
-                    policy._print_body_cmd()
+                    policy.bump_body("pitch", policy.body_cmd_step_angle)
                 elif args.roller:
                     new_ang = np.clip(policy.vel_cmd[2] + policy.vel_step_ang, -policy.vel_max_ang, policy.vel_max_ang)
                     policy.set_vel_cmd(policy.vel_cmd[0], policy.vel_cmd[1], new_ang)
@@ -671,9 +692,7 @@ def main():
                     policy._update_command()
                     print(f"Head offset: neck={policy.head_offset[0]:.2f} pitch={policy.head_offset[1]:.2f} yaw={policy.head_offset[2]:.2f} roll={policy.head_offset[3]:.2f}")
                 elif policy.body_pose_mode:
-                    policy.body_cmd[2] = np.clip(policy.body_cmd[2] + policy.body_cmd_step_angle, -BODY_CMD_MAX_ANGLE, BODY_CMD_MAX_ANGLE)
-                    policy._update_command()
-                    policy._print_body_cmd()
+                    policy.bump_body("roll", policy.body_cmd_step_angle)
                 else:
                     policy.set_vel_cmd(policy.vel_cmd[0], policy.vel_cmd[1], policy.vel_max_ang)
             elif key == GLFW_KEY_E:
@@ -682,9 +701,7 @@ def main():
                     policy._update_command()
                     print(f"Head offset: neck={policy.head_offset[0]:.2f} pitch={policy.head_offset[1]:.2f} yaw={policy.head_offset[2]:.2f} roll={policy.head_offset[3]:.2f}")
                 elif policy.body_pose_mode:
-                    policy.body_cmd[2] = np.clip(policy.body_cmd[2] - policy.body_cmd_step_angle, -BODY_CMD_MAX_ANGLE, BODY_CMD_MAX_ANGLE)
-                    policy._update_command()
-                    policy._print_body_cmd()
+                    policy.bump_body("roll", -policy.body_cmd_step_angle)
                 else:
                     policy.set_vel_cmd(policy.vel_cmd[0], policy.vel_cmd[1], -policy.vel_max_ang)
             elif key == GLFW_KEY_Z:
@@ -692,11 +709,15 @@ def main():
                     policy.head_offset[0] = np.clip(policy.head_offset[0] + policy.head_step, -policy.head_max, policy.head_max)
                     policy._update_command()
                     print(f"Head offset: neck={policy.head_offset[0]:.2f} pitch={policy.head_offset[1]:.2f} yaw={policy.head_offset[2]:.2f} roll={policy.head_offset[3]:.2f}")
+                elif policy.body_pose_mode and policy.new_cmd_obs:
+                    policy.bump_body("yaw", policy.body_cmd_step_angle)
             elif key == GLFW_KEY_S:
                 if policy.head_mode:
                     policy.head_offset[0] = np.clip(policy.head_offset[0] - policy.head_step, -policy.head_max, policy.head_max)
                     policy._update_command()
                     print(f"Head offset: neck={policy.head_offset[0]:.2f} pitch={policy.head_offset[1]:.2f} yaw={policy.head_offset[2]:.2f} roll={policy.head_offset[3]:.2f}")
+                elif policy.body_pose_mode and policy.new_cmd_obs:
+                    policy.bump_body("yaw", -policy.body_cmd_step_angle)
         except Exception as e:
             print(f"Key press error: {e}")
 
@@ -712,10 +733,12 @@ def main():
         print("  A / E:            turn left/right (ang_vel_z)")
     print("  SPACE:            coast (zero all commands)")
     print("  G:                trigger ground pick (requires --ground-pick)")
-    print("  [ Body pose mode — press B to toggle (requires --standing) ]")
+    print("  [ Body pose mode — press B to toggle ]")
     print(f"  UP/DOWN arrow:    Δz ±10mm  (max ±{BODY_CMD_MAX_Z*1000:.0f}mm)")
     print(f"  LEFT/RIGHT arrow: Δpitch ±10°  (max ±{math.degrees(BODY_CMD_MAX_ANGLE):.0f}°)")
     print(f"  A / E:            Δroll ±10°  (max ±{math.degrees(BODY_CMD_MAX_ANGLE):.0f}°)")
+    if args.new_cmd_obs:
+        print(f"  Z / S:            Δyaw ±10°  (new_cmd_obs only, max ±{math.degrees(BODY_CMD_MAX_ANGLE):.0f}°)")
     print("  SPACE:            reset body pose to zero")
     print("  [ Head mode — press H to toggle ]")
     print("  Z / S:            neck_pitch ±step")

@@ -26,6 +26,7 @@ import math
 from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.managers.manager_term_config import (
     CurriculumTermCfg,
+    EventTermCfg,
     RewardTermCfg,
 )
 from mjlab.managers.scene_entity_config import SceneEntityCfg
@@ -47,6 +48,11 @@ from mjlab_microduck.tasks.symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
 # Phase boundaries (in PPO iterations; env step counter scales by num_steps_per_env=24)
 FELL_OVER_DISABLE_ITER = 500
 BODY_POSE_KICKIN_ITER  = 1500
+# Random prone-init: starts firing at iter PRONE_RAMP_START and reaches
+# 2/3 override probability (→ 33% upright / 33% face-down / 33% face-up) at
+# iter PRONE_RAMP_END. Combined with face_down_prob=0.5 under the override.
+PRONE_RAMP_START       = 1500
+PRONE_RAMP_END         = 3000
 NUM_STEPS_PER_ENV      = 24
 
 # Body pose final ranges (reached at end of curriculum)
@@ -64,6 +70,13 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
     # Build on top of the vel env so walk rewards / curricula stay in sync
     # automatically — we only add recovery + body-pose extensions here.
     cfg = make_microduck_velocity_env_cfg(play=play, rough=rough)
+
+    # In play mode the curriculum doesn't run (env starts at step 0), so the
+    # fall-termination disable wouldn't take effect via the curriculum below.
+    # Just delete the termination entirely — setting limit_angle=π would still
+    # let bad_orientation fire if any cached-params path bypasses the update.
+    if play:
+        cfg.terminations.pop("fell_over", None)
 
     # Switch to the full-collision standup XML. The walk XML has stripped
     # contacts on the trunk/head shells to make falling cheap; the standup XML
@@ -88,6 +101,17 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
         num_slots=1,
     )
     cfg.scene.sensors = (*cfg.scene.sensors, trunk_impact_cfg, head_impact_cfg)
+
+    # ── EVENTS: random prone init (ramped in by curriculum) ─────────────────
+    # On reset, with probability `prone_prob`, override the upright orientation
+    # set by reset_base with face-down or face-up (50/50). prone_prob starts at
+    # 0 and the curriculum ramps it up over iters PRONE_RAMP_START → PRONE_RAMP_END,
+    # ending at 2/3 → balanced 33/33/33 mixture of upright/face-down/face-up.
+    cfg.events["random_prone_init"] = EventTermCfg(
+        func=microduck_mdp.maybe_set_random_prone_orientation,
+        mode="reset",
+        params={"prone_prob": 0.0, "face_down_prob": 0.5},
+    )
 
     # ── REWARDS: fall recovery layer ─────────────────────────────────────────
     # These all sit at high reward when standing normally (free reward while
@@ -125,11 +149,16 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
     # Override params to match the wider standing ranges + bump nominal height,
     # then set weight to 0 — phase 3 curriculum ramps it up.
     cfg.rewards["body_pose_tracking"].weight = 0.0
+    # std ≈ max command magnitude on each axis so reward = exp(-1) ≈ 0.37 at a
+    # full untracked miss. Keeps the gradient alive across the entire curriculum
+    # range — same recipe that fixed head_pose_tracking. With std much tighter
+    # than max command (e.g. z_std=0.01 vs max_z=0.03) the reward collapses to
+    # ~0 once the curriculum widens, and the policy gets no signal to improve.
     cfg.rewards["body_pose_tracking"].params.update({
         "nominal_height": BODY_CMD_NOMINAL_HEIGHT,
-        "xy_std": 0.02,
-        "z_std": 0.01,
-        "angle_std": math.radians(10),
+        "xy_std": BODY_CMD_MAX_XY,           # 0.02 m
+        "z_std":  BODY_CMD_MAX_Z,            # 0.03 m
+        "angle_std": BODY_CMD_MAX_ANGLE,     # 30°
     })
 
     # ── CURRICULUM ───────────────────────────────────────────────────────────
@@ -158,6 +187,23 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
                 {"step": BODY_POSE_KICKIN_ITER * NUM_STEPS_PER_ENV,  "weight": 1.0},
                 {"step": (BODY_POSE_KICKIN_ITER +  500) * NUM_STEPS_PER_ENV, "weight": 2.0},
                 {"step": (BODY_POSE_KICKIN_ITER + 1000) * NUM_STEPS_PER_ENV, "weight": 3.0},
+            ],
+        },
+    )
+
+    # Random prone-init ramp: linear from 0 at iter 1500 to 2/3 at iter 3000
+    # (33% upright / 33% face-down / 33% face-up). Without this the policy
+    # rarely sees fallen starts and the recovery rewards struggle to bootstrap.
+    cfg.curriculum["prone_init_prob"] = CurriculumTermCfg(
+        func=microduck_mdp.event_param_curriculum,
+        params={
+            "event_name": "random_prone_init",
+            "param_stages": [
+                {"step": 0,                                        "params": {"prone_prob": 0.0,  "face_down_prob": 0.5}},
+                {"step": PRONE_RAMP_START * NUM_STEPS_PER_ENV,     "params": {"prone_prob": 0.0,  "face_down_prob": 0.5}},
+                {"step": int((PRONE_RAMP_START + PRONE_RAMP_END) / 2) * NUM_STEPS_PER_ENV,
+                                                                   "params": {"prone_prob": 1/3, "face_down_prob": 0.5}},
+                {"step": PRONE_RAMP_END * NUM_STEPS_PER_ENV,       "params": {"prone_prob": 2/3, "face_down_prob": 0.5}},
             ],
         },
     )

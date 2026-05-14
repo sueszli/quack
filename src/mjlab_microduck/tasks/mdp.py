@@ -2103,6 +2103,67 @@ def set_random_prone_orientation(
     env.sim.data.qvel[env_ids, :6] = 0.0
 
 
+def maybe_set_random_prone_orientation(
+    env: ManagerBasedRlEnv,
+    env_ids: torch.Tensor,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    prone_prob: float = 0.0,
+    face_down_prob: float = 0.5,
+    prone_z_min: float = 0.20,
+    prone_z_max: float = 0.25,
+):
+    """Reset event that overrides orientation to prone with probability `prone_prob`.
+
+    With prob `prone_prob`, replaces the upright orientation (already set by
+    reset_base) with a prone orientation; otherwise leaves it upright. Among the
+    overridden envs, `face_down_prob` picks face-down (belly) vs face-up (back).
+
+    Also lifts z to [prone_z_min, prone_z_max] for the overridden envs so the
+    head/neck clearance is sufficient — the vel-env reset z (~0.125) would
+    clip the head through the ground at 90° pitch.
+
+    At prone_prob=2/3 and face_down_prob=0.5 you get a balanced 33/33/33 split
+    of upright/face-down/face-up resets, which is the standard mixture for
+    learning fall recovery alongside normal upright start.
+    """
+    if env_ids is None or len(env_ids) == 0 or prone_prob <= 0.0:
+        return
+    env_ids_t = env_ids.to(env.device, dtype=torch.long) if isinstance(env_ids, torch.Tensor) else torch.tensor(env_ids, device=env.device, dtype=torch.long)
+    apply_mask = torch.rand(len(env_ids_t), device=env.device) < prone_prob
+    selected = env_ids_t[apply_mask]
+    if len(selected) > 0:
+        set_random_prone_orientation(
+            env, selected, asset_cfg=asset_cfg, face_down_prob=face_down_prob
+        )
+        # Override z so the prone body has head/neck clearance when settling.
+        z = torch.rand(len(selected), device=env.device) * (prone_z_max - prone_z_min) + prone_z_min
+        env.sim.data.qpos[selected, 2] = z
+
+
+def event_param_curriculum(
+    env: ManagerBasedRlEnv,
+    env_ids: torch.Tensor,
+    event_name: str,
+    param_stages: list[dict],
+) -> torch.Tensor:
+    """Mutate an event term's params at scheduled steps.
+
+    Mirror of termination_param_curriculum but for events. Uses the live
+    EventManager term cfg via get_term_cfg, since env.cfg.events is a deepcopy.
+    param_stages: list of {step: int, params: dict}. Shallow-merged into the
+    live event term's params at the latest matching stage.
+    """
+    del env_ids
+    event_cfg = env.event_manager.get_term_cfg(event_name)
+    current = param_stages[0]["params"]
+    for stage in param_stages:
+        if env.common_step_counter >= stage["step"]:
+            current = stage["params"]
+    event_cfg.params.update(current)
+    first_val = next(iter(current.values()))
+    return torch.tensor(float(first_val) if isinstance(first_val, (int, float)) else 0.0)
+
+
 def face_down_prob_curriculum(
     env: ManagerBasedRlEnv,
     env_ids: torch.Tensor,
@@ -2537,6 +2598,9 @@ def termination_param_curriculum(
     """
     del env_ids
     tm = env.termination_manager
+    if term_name not in tm._term_names:
+        # Term was removed (e.g. play mode disables fell_over entirely).
+        return torch.tensor(0.0)
     idx = tm._term_names.index(term_name)
     term_cfg = tm._term_cfgs[idx]
 
