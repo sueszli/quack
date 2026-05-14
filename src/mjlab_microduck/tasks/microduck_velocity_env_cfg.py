@@ -544,8 +544,12 @@ def make_microduck_velocity_env_cfg(
     cfg.commands["twist"] = command
     command.rel_standing_envs = 0.02  # small but non-zero from the start, ramped up by curriculum
     command.rel_heading_envs = 0.0
-    command.ranges.lin_vel_x = (-0.3, 0.3)
-    command.ranges.lin_vel_y = (-0.3, 0.3)
+    # Linear velocity capped at ±0.1 initially, ramped to ±0.2 by curriculum.
+    # 0.7 m/s (the previous cap) was wildly unrealistic for this robot — it never
+    # ran that fast on real hardware, and the gait the policy converged to at
+    # those speeds didn't transfer.
+    command.ranges.lin_vel_x = (-0.1, 0.1)
+    command.ranges.lin_vel_y = (-0.1, 0.1)
     command.ranges.ang_vel_z = (-1.5, 1.5)
     command.viz.z_offset = 0.5
     cfg.commands["twist"] = microduck_mdp.VelocityCommandCommandOnlyCfg(**vars(command))
@@ -734,12 +738,13 @@ def make_microduck_velocity_env_cfg(
         params={
             "command_name": "twist",
             "velocity_stages": [
-                {"step": 0,          "lin_vel_range": 0.3,  "ang_vel_range": 1.5},
-                {"step": 500 * 24,   "lin_vel_range": 0.35, "ang_vel_range": 1.6},
-                {"step": 1000 * 24,  "lin_vel_range": 0.4,  "ang_vel_range": 1.7},
-                {"step": 1500 * 24,  "lin_vel_range": 0.5,  "ang_vel_range": 2.0},
-                {"step": 1750 * 24,  "lin_vel_range": 0.6,  "ang_vel_range": 2.0},
-                {"step": 2000 * 24,  "lin_vel_range": 0.7,  "ang_vel_range": 2.0},
+                # Linear velocity capped at 0.2 m/s — realistic for this robot.
+                # Angular still ramps to 2.0 rad/s (turning in place is fine).
+                {"step": 0,          "lin_vel_range": 0.10, "ang_vel_range": 1.5},
+                {"step": 500 * 24,   "lin_vel_range": 0.12, "ang_vel_range": 1.6},
+                {"step": 1000 * 24,  "lin_vel_range": 0.15, "ang_vel_range": 1.7},
+                {"step": 1500 * 24,  "lin_vel_range": 0.18, "ang_vel_range": 1.8},
+                {"step": 2000 * 24,  "lin_vel_range": 0.20, "ang_vel_range": 2.0},
             ],
         },
     )
