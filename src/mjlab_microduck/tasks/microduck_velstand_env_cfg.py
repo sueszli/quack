@@ -56,7 +56,12 @@ PRONE_RAMP_END         = 3000
 NUM_STEPS_PER_ENV      = 24
 
 # Body pose final ranges (reached at end of curriculum)
-BODY_CMD_MAX_XY        = 0.02                # ±20 mm lateral/forward
+BODY_CMD_MAX_XY        = 0.01                # ±10 mm lateral/forward (was 20 mm —
+                                              # 20 mm body lean while walking is
+                                              # mechanically too disruptive; the
+                                              # policy converged to "ignore xy"
+                                              # because the walking cost outweighed
+                                              # the tracking gain)
 BODY_CMD_MAX_Z         = 0.03                # ±30 mm height
 BODY_CMD_MAX_ANGLE     = math.radians(30)    # ±30° per Euler axis
 
@@ -130,10 +135,15 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
             "max_height": 0.115,
         },
     )
+    # Recovery-only height reward: rewards being "near standing height" regardless
+    # of body_pose z command. Range covers the full body_pose z command sweep
+    # (nominal_height ± BODY_CMD_MAX_Z ≈ 0.09–0.15) plus margin, so commanding
+    # the body up or down doesn't fight this reward. Below ~0.08 means
+    # genuinely fallen → 0 reward, which is what bootstraps fall recovery.
     cfg.rewards["com_height_recovery"] = RewardTermCfg(
         func=microduck_mdp.com_height_target,
         weight=3.0,
-        params={"target_height_min": 0.095, "target_height_max": 0.130},
+        params={"target_height_min": 0.08, "target_height_max": 0.16},
     )
     cfg.rewards["trunk_impact_penalty"] = RewardTermCfg(
         func=microduck_mdp.body_impact_cost,
