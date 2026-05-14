@@ -274,10 +274,15 @@ def make_microduck_velocity_env_cfg(
     cfg.rewards["angular_momentum"].weight = -0.02
 
     # Velocity tracking rewards
-    cfg.rewards["track_linear_velocity"].weight = 3.0 # Checkpoint : 3
-    cfg.rewards["track_linear_velocity"].params["std"] = math.sqrt(0.15) # Checkpoint 0.15
-    cfg.rewards["track_angular_velocity"].weight = 3.0 # Checkpoint : 3
-    cfg.rewards["track_angular_velocity"].params["std"] = math.sqrt(0.40) # Checkpoint 0.4
+    cfg.rewards["track_linear_velocity"].weight = 3.0
+    # std tightened to match the new 0.2 m/s command cap: with the old
+    # sqrt(0.15)=0.39 std the reward saturated near 1.0 even at 50% tracking,
+    # so the policy had no incentive to actually reach the commanded speed.
+    # std=0.11 keeps roughly the same std-to-max ratio (~0.55) we had at 0.7 cap.
+    cfg.rewards["track_linear_velocity"].params["std"] = 0.11
+    cfg.rewards["track_angular_velocity"].weight = 3.0
+    # Angular still ramps to 2.0 rad/s, so std=sqrt(0.4)~0.63 is fine.
+    cfg.rewards["track_angular_velocity"].params["std"] = math.sqrt(0.40)
 
     # Action smoothness
     cfg.rewards["action_rate_l2"].weight = -0.6 # was -0.4

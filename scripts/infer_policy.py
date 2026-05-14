@@ -547,10 +547,10 @@ def main():
         policy.vel_min_y = 0.0
         policy.vel_max_ang = 1.0      # ±1.0 rad heading error
     else:
-        policy.vel_max_x = 0.7
-        policy.vel_min_x = -0.7
-        policy.vel_max_y = 0.7
-        policy.vel_min_y = -0.7
+        policy.vel_max_x = 0.2
+        policy.vel_min_x = -0.2
+        policy.vel_max_y = 0.2
+        policy.vel_min_y = -0.2
         policy.vel_max_ang = 2.0
 
     # Set initial position to default pose
