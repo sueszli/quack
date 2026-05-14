@@ -618,8 +618,27 @@ def main():
     GLFW_KEY_E = 69
     GLFW_KEY_G = 71
     GLFW_KEY_H = 72
+    GLFW_KEY_P = 80
     GLFW_KEY_S = 83
     GLFW_KEY_Z = 90
+
+    # Cache the trunk freejoint qvel address so the push handler can write to
+    # the trunk's world-frame linear velocity directly (qvel[0..3]).
+    _freejoint_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "trunk_base_freejoint")
+    _trunk_qvel_adr = int(model.jnt_dofadr[_freejoint_id])
+    PUSH_MAX = 1.0   # matches the final velstand push_magnitude curriculum cap
+
+    def random_push():
+        """Set the trunk's world-frame xy velocity to a random vector of
+        magnitude PUSH_MAX, simulating the push_by_setting_velocity training
+        event. Doesn't accumulate — overwrites current linear velocity."""
+        import random
+        angle = random.uniform(0, 2 * np.pi)
+        vx = PUSH_MAX * np.cos(angle)
+        vy = PUSH_MAX * np.sin(angle)
+        data.qvel[_trunk_qvel_adr + 0] = vx
+        data.qvel[_trunk_qvel_adr + 1] = vy
+        print(f"PUSH applied: v=[{vx:.2f}, {vy:.2f}, 0] m/s (angle={np.degrees(angle):.0f}°)")
     GLFW_KEY_RIGHT = 262
     GLFW_KEY_LEFT = 263
     GLFW_KEY_DOWN = 264
@@ -686,6 +705,8 @@ def main():
                 policy.toggle_head_mode()
             elif key == GLFW_KEY_B:
                 policy.toggle_body_pose_mode()
+            elif key == GLFW_KEY_P:
+                random_push()
             elif key == GLFW_KEY_A:
                 if policy.head_mode:
                     policy.head_offset[3] = np.clip(policy.head_offset[3] + policy.head_step, -policy.head_max, policy.head_max)
@@ -733,6 +754,7 @@ def main():
         print("  A / E:            turn left/right (ang_vel_z)")
     print("  SPACE:            coast (zero all commands)")
     print("  G:                trigger ground pick (requires --ground-pick)")
+    print(f"  P:                random push (trunk vel = {PUSH_MAX:.1f} m/s in random direction)")
     print("  [ Body pose mode — press B to toggle ]")
     print(f"  UP/DOWN arrow:    Δz ±10mm  (max ±{BODY_CMD_MAX_Z*1000:.0f}mm)")
     print(f"  LEFT/RIGHT arrow: Δpitch ±10°  (max ±{math.degrees(BODY_CMD_MAX_ANGLE):.0f}°)")

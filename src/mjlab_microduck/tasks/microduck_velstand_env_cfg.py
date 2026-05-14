@@ -188,14 +188,15 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
     # for now. Keep the body_pose command term + obs slot for shape parity.
 
     # Push velocity ramp: starts at the inherited ±0.3 m/s (set by vel env's
-    # VELOCITY_PUSH_RANGE) and widens to ±0.7 m/s over iters 1000 → 2000. Once
-    # walking + recovery are solid, harder pushes train robustness without
-    # the policy collapsing during early training.
+    # VELOCITY_PUSH_RANGE) and widens to ±1.0 m/s over iters 1000 → 2000.
+    # Gentler ramp (10 stages of 0.07 m/s each over the 1000-iter window —
+    # one bump every ~100 iters) so each increase gives the policy time to
+    # adapt before the next.
     _push_max_start = 0.3   # inherited from VELOCITY_PUSH_RANGE
-    _push_max_end   = 0.7
+    _push_max_end   = 1.0
     _push_ramp_start_iter = 1000
     _push_ramp_end_iter   = 2000
-    _push_stages_n = 5
+    _push_stages_n = 10
     cfg.curriculum["push_magnitude"] = CurriculumTermCfg(
         func=microduck_mdp.event_param_curriculum,
         params={
