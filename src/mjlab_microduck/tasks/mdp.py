@@ -2621,6 +2621,7 @@ def body_pose_tracking_locomotion(
     xy_std: float = 0.02,
     z_std: float = 0.03,
     angle_std: float = math.radians(30),
+    axis_weights: tuple[float, float, float, float, float, float] = (1.0, 1.0, 1.0, 1.0, 1.0, 1.0),
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     feet_cfg: SceneEntityCfg = SceneEntityCfg("robot", site_names=("left_foot", "right_foot")),
 ) -> torch.Tensor:
@@ -2693,7 +2694,13 @@ def body_pose_tracking_locomotion(
     r_p = torch.exp(-(pitch_err / angle_std) ** 2)
     r_w = torch.exp(-(yaw_err   / angle_std) ** 2)
 
-    return (r_x + r_y + r_z + r_r + r_p + r_w) / 6.0
+    # Per-axis weighted mean. Pass axis_weights=(0,0,1,1,1,1) to disable xy
+    # tracking — useful when xy lean is mechanically coupled to pitch/roll on
+    # the robot, making independent xy commands a noise source rather than a
+    # learnable objective.
+    wx, wy, wz, wr, wp, wyaw = axis_weights
+    total_w = wx + wy + wz + wr + wp + wyaw
+    return (wx*r_x + wy*r_y + wz*r_z + wr*r_r + wp*r_p + wyaw*r_w) / max(total_w, 1e-6)
 
 
 def pose_command_range_curriculum(

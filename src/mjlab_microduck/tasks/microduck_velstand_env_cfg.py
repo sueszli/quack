@@ -176,9 +176,14 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
             # and never bothers to track. std=max/2 drops the baseline to ~0.44
             # so the marginal upside for tracking dominates other reward
             # competition (notably track_linear_velocity).
-            "xy_std":    BODY_CMD_MAX_XY    / 2.0,   # 0.01 m
+            "xy_std":    BODY_CMD_MAX_XY    / 2.0,   # 0.005 m
             "z_std":     BODY_CMD_MAX_Z     / 2.0,   # 0.015 m
             "angle_std": BODY_CMD_MAX_ANGLE / 2.0,   # 15°
+            # Mask out xy tracking: trunk x/y lean is mechanically coupled to
+            # pitch/roll (leaning forward shifts trunk AND pitches it), so
+            # independent xy commands fight the rotation gradients and the
+            # policy converges to ignoring xy. Track only z + roll + pitch + yaw.
+            "axis_weights": (0.0, 0.0, 1.0, 1.0, 1.0, 1.0),
             "feet_cfg":  SceneEntityCfg("robot", site_names=("left_foot", "right_foot")),
         },
     )
