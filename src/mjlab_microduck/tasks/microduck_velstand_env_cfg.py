@@ -160,12 +160,15 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
         params={
             "command_name": "body_pose",
             "nominal_height": BODY_CMD_NOMINAL_HEIGHT,
-            # std ≈ max command on each axis → exp(-1) at full untracked miss.
-            # Keeps gradient alive across the whole curriculum range (same
-            # recipe that fixed head_pose_tracking).
-            "xy_std":    BODY_CMD_MAX_XY,        # 0.02 m
-            "z_std":     BODY_CMD_MAX_Z,         # 0.03 m
-            "angle_std": BODY_CMD_MAX_ANGLE,     # 30°
+            # std = max/2 matches the head_pose_tracking recipe that actually
+            # learned. With std=max the baseline "do nothing at cmd=0" gives
+            # ~0.87 reward — too forgiving, so the policy collects the baseline
+            # and never bothers to track. std=max/2 drops the baseline to ~0.44
+            # so the marginal upside for tracking dominates other reward
+            # competition (notably track_linear_velocity).
+            "xy_std":    BODY_CMD_MAX_XY    / 2.0,   # 0.01 m
+            "z_std":     BODY_CMD_MAX_Z     / 2.0,   # 0.015 m
+            "angle_std": BODY_CMD_MAX_ANGLE / 2.0,   # 15°
             "feet_cfg":  SceneEntityCfg("robot", site_names=("left_foot", "right_foot")),
         },
     )
@@ -187,15 +190,19 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
     )
 
     # Phase 3: ramp body_pose_tracking weight starting at iter 1500.
+    # End at 5.0 (vs walking rewards each at 3.0) so the tracking gradient
+    # clearly dominates body-related action choices once it kicks in. Steeper
+    # ramp: jump straight to 2.0 instead of 1.0 — with std=max/2 the gradient
+    # is real and a 1.0 weight is barely above noise.
     cfg.curriculum["body_pose_tracking_weight"] = CurriculumTermCfg(
         func=velocity_mdp.reward_weight,
         params={
             "reward_name": "body_pose_tracking",
             "weight_stages": [
-                {"step": 0,                                          "weight": 0.0},
-                {"step": BODY_POSE_KICKIN_ITER * NUM_STEPS_PER_ENV,  "weight": 1.0},
-                {"step": (BODY_POSE_KICKIN_ITER +  500) * NUM_STEPS_PER_ENV, "weight": 2.0},
-                {"step": (BODY_POSE_KICKIN_ITER + 1000) * NUM_STEPS_PER_ENV, "weight": 3.0},
+                {"step": 0,                                                  "weight": 0.0},
+                {"step": BODY_POSE_KICKIN_ITER         * NUM_STEPS_PER_ENV,  "weight": 2.0},
+                {"step": (BODY_POSE_KICKIN_ITER +  500) * NUM_STEPS_PER_ENV, "weight": 3.5},
+                {"step": (BODY_POSE_KICKIN_ITER + 1000) * NUM_STEPS_PER_ENV, "weight": 5.0},
             ],
         },
     )
