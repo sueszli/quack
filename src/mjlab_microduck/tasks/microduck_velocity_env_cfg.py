@@ -265,7 +265,7 @@ def make_microduck_velocity_env_cfg(
         params={
             "command_name": "twist",
             "command_threshold": 0.01,
-            "vel_std": 0.1,  # tight: half-reward at ~0.1 m/s, near-zero at 0.2 m/s
+            "vel_std": 0.07,  # tighter: ~0.37 reward at 0.07 m/s, near-zero at 0.15 m/s
         },
     )
 

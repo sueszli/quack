@@ -187,41 +187,7 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
     # body_pose_tracking weight curriculum REMOVED — body tracking disabled
     # for now. Keep the body_pose command term + obs slot for shape parity.
 
-    # Push velocity ramp: starts at the inherited ±0.3 m/s (set by vel env's
-    # VELOCITY_PUSH_RANGE) and widens to ±1.0 m/s over iters 1000 → 2000.
-    # Gentler ramp (10 stages of 0.07 m/s each over the 1000-iter window —
-    # one bump every ~100 iters) so each increase gives the policy time to
-    # adapt before the next.
-    _push_max_start = 0.3   # inherited from VELOCITY_PUSH_RANGE
-    _push_max_end   = 1.0
-    _push_ramp_start_iter = 1000
-    _push_ramp_end_iter   = 2000
-    _push_stages_n = 10
-    cfg.curriculum["push_magnitude"] = CurriculumTermCfg(
-        func=microduck_mdp.event_param_curriculum,
-        params={
-            "event_name": "push_robot",
-            "param_stages": [
-                {"step": 0,
-                 "params": {"velocity_range": {"x": (-_push_max_start, _push_max_start),
-                                                "y": (-_push_max_start, _push_max_start)}}},
-                *(
-                    {
-                        "step": (_push_ramp_start_iter
-                                 + (k * (_push_ramp_end_iter - _push_ramp_start_iter)) // _push_stages_n
-                                ) * NUM_STEPS_PER_ENV,
-                        "params": {"velocity_range": {
-                            "x": (-(_push_max_start + (_push_max_end - _push_max_start) * k / _push_stages_n),
-                                  +(_push_max_start + (_push_max_end - _push_max_start) * k / _push_stages_n)),
-                            "y": (-(_push_max_start + (_push_max_end - _push_max_start) * k / _push_stages_n),
-                                  +(_push_max_start + (_push_max_end - _push_max_start) * k / _push_stages_n)),
-                        }},
-                    }
-                    for k in range(1, _push_stages_n + 1)
-                ),
-            ],
-        },
-    )
+    # Push velocity stays at the vel env's inherited ±0.3 m/s — no curriculum.
 
     # Random prone-init ramp: 0 until iter PRONE_RAMP_START, then climbs in
     # discrete stages of ~11% each up to 2/3 at iter PRONE_RAMP_END
