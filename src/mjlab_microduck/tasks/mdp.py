@@ -2518,6 +2518,38 @@ def body_pose_tracking_6d(
     return (r_x + r_y + r_z + r_r + r_p + r_w) / 6.0
 
 
+def termination_param_curriculum(
+    env: ManagerBasedRlEnv,
+    env_ids: torch.Tensor,
+    term_name: str,
+    param_stages: list[dict],
+) -> torch.Tensor:
+    """Mutate a termination term's params at scheduled steps.
+
+    TerminationManager keeps its own deepcopy of the cfg dict, so the live
+    term_cfgs list must be edited directly — env.cfg.terminations is a no-op.
+    Useful for disabling a termination later in training (e.g. set
+    bad_orientation's limit_angle to pi at iter N so the robot can fall over
+    without ending the episode and learn to recover).
+
+    param_stages: list of {step: int, params: dict}. The dict is shallow-merged
+    into the live term_cfg.params at the latest matching stage.
+    """
+    del env_ids
+    tm = env.termination_manager
+    idx = tm._term_names.index(term_name)
+    term_cfg = tm._term_cfgs[idx]
+
+    current = param_stages[0]["params"]
+    for stage in param_stages:
+        if env.common_step_counter >= stage["step"]:
+            current = stage["params"]
+    term_cfg.params.update(current)
+
+    first_val = next(iter(current.values()))
+    return torch.tensor(float(first_val) if isinstance(first_val, (int, float)) else 0.0)
+
+
 def pose_command_range_curriculum(
     env: ManagerBasedRlEnv,
     env_ids: torch.Tensor,

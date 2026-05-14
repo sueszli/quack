@@ -36,6 +36,10 @@ from .microduck_velocity_rollers_env_cfg import (
     make_microduck_velocity_rollers_env_cfg,
     MicroduckRollersRlCfg,
 )
+from .microduck_velstand_env_cfg import (
+    make_microduck_velstand_env_cfg,
+    MicroduckVelStandRlCfg,
+)
 from .testbench_env_cfg import (
     make_testbench_env_cfg,
     MicroduckTestbenchRlCfg,
@@ -128,6 +132,25 @@ register_mjlab_task(
     rl_cfg=MicroduckRlCfg,
     runner_cls=MicroduckOnPolicyRunner,
 )
+
+# VelStand — walking + fall recovery + body pose control in one policy.
+register_mjlab_task(
+    task_id="Mjlab-VelStand-Flat-MicroDuck",
+    env_cfg=make_microduck_velstand_env_cfg(),
+    play_env_cfg=make_microduck_velstand_env_cfg(play=True),
+    rl_cfg=MicroduckVelStandRlCfg,
+    runner_cls=MicroduckOnPolicyRunner,
+)
+print("✓ VelStand task registered: Mjlab-VelStand-Flat-MicroDuck")
+
+register_mjlab_task(
+    task_id="Mjlab-VelStand-Rough-MicroDuck",
+    env_cfg=make_microduck_velstand_env_cfg(rough=True),
+    play_env_cfg=make_microduck_velstand_env_cfg(play=True, rough=True),
+    rl_cfg=MicroduckVelStandRlCfg,
+    runner_cls=MicroduckOnPolicyRunner,
+)
+print("✓ VelStand task registered: Mjlab-VelStand-Rough-MicroDuck")
 
 # Stand-up task — robot starts inverted (lying on back) and must stand up
 register_mjlab_task(
