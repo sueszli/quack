@@ -19,6 +19,13 @@ three phases:
   Phase 3 (1500+ iters)
     Body-pose tracking weight + range curriculum kicks in. Same 6D command
     as standup env (x, y, z, roll, pitch, yaw).
+    
+    
+  Best checkpoint seems to be around 2250 (without body cmd) 
+      - we have nice stand still with no command
+      - nice walk (sometimes hard to get started)
+      - nice standup
+      - nice head control
 """
 
 import math
