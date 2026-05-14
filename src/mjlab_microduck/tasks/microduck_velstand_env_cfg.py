@@ -200,19 +200,28 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
         },
     )
 
-    # Random prone-init ramp: linear from 0 at iter 1500 to 2/3 at iter 3000
-    # (33% upright / 33% face-down / 33% face-up). Without this the policy
-    # rarely sees fallen starts and the recovery rewards struggle to bootstrap.
+    # Random prone-init ramp: 0 until iter PRONE_RAMP_START, then climbs in
+    # discrete stages of ~11% each up to 2/3 at iter PRONE_RAMP_END
+    # (= 33% upright / 33% face-down / 33% face-up).
+    # The intermediate stages make the rise visible in wandb instead of a
+    # single jump halfway through the window.
+    _prone_target = 2.0 / 3.0
+    _prone_stages_n = 6  # number of equal increments inside the ramp window
+    _prone_ramp_iters = PRONE_RAMP_END - PRONE_RAMP_START
     cfg.curriculum["prone_init_prob"] = CurriculumTermCfg(
         func=microduck_mdp.event_param_curriculum,
         params={
             "event_name": "random_prone_init",
             "param_stages": [
-                {"step": 0,                                        "params": {"prone_prob": 0.0,  "face_down_prob": 0.5}},
-                {"step": PRONE_RAMP_START * NUM_STEPS_PER_ENV,     "params": {"prone_prob": 0.0,  "face_down_prob": 0.5}},
-                {"step": int((PRONE_RAMP_START + PRONE_RAMP_END) / 2) * NUM_STEPS_PER_ENV,
-                                                                   "params": {"prone_prob": 1/3, "face_down_prob": 0.5}},
-                {"step": PRONE_RAMP_END * NUM_STEPS_PER_ENV,       "params": {"prone_prob": 2/3, "face_down_prob": 0.5}},
+                {"step": 0, "params": {"prone_prob": 0.0, "face_down_prob": 0.5}},
+                # Ramp stages: iter PRONE_RAMP_START + k*ramp/N → prob = k*target/N
+                *(
+                    {
+                        "step": (PRONE_RAMP_START + (k * _prone_ramp_iters) // _prone_stages_n) * NUM_STEPS_PER_ENV,
+                        "params": {"prone_prob": k * _prone_target / _prone_stages_n, "face_down_prob": 0.5},
+                    }
+                    for k in range(1, _prone_stages_n + 1)
+                ),
             ],
         },
     )
