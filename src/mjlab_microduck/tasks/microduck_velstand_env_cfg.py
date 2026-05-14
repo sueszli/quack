@@ -60,10 +60,11 @@ BODY_CMD_MAX_XY        = 0.02                # ±20 mm lateral/forward
 BODY_CMD_MAX_Z         = 0.03                # ±30 mm height
 BODY_CMD_MAX_ANGLE     = math.radians(30)    # ±30° per Euler axis
 
-# Body pose tracking nominal height — between vel-env walking height (~0.095)
-# and standup-env standing height (0.115). Tracking error is dominated by xy
-# and angle anyway, so the exact z reference matters less than the gradient.
-BODY_CMD_NOMINAL_HEIGHT = 0.105
+# Body pose tracking nominal height — matches the lower bound of the vel-env
+# reset_base z range (0.12–0.13), which is where the trunk sits during steady
+# upright walking. At cmd_z=0 this gives z_err≈0 → reward saturates at 1, so
+# the curriculum only kicks in when a non-zero z command is issued.
+BODY_CMD_NOMINAL_HEIGHT = 0.12
 
 
 def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> ManagerBasedRlEnvCfg:
@@ -148,18 +149,26 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
     # Body pose tracking: vel env defines this at weight=0.05 (kept-alive only).
     # Override params to match the wider standing ranges + bump nominal height,
     # then set weight to 0 — phase 3 curriculum ramps it up.
-    cfg.rewards["body_pose_tracking"].weight = 0.0
-    # std ≈ max command magnitude on each axis so reward = exp(-1) ≈ 0.37 at a
-    # full untracked miss. Keeps the gradient alive across the entire curriculum
-    # range — same recipe that fixed head_pose_tracking. With std much tighter
-    # than max command (e.g. z_std=0.01 vs max_z=0.03) the reward collapses to
-    # ~0 once the curriculum widens, and the policy gets no signal to improve.
-    cfg.rewards["body_pose_tracking"].params.update({
-        "nominal_height": BODY_CMD_NOMINAL_HEIGHT,
-        "xy_std": BODY_CMD_MAX_XY,           # 0.02 m
-        "z_std":  BODY_CMD_MAX_Z,            # 0.03 m
-        "angle_std": BODY_CMD_MAX_ANGLE,     # 30°
-    })
+    # Body pose tracking — replace the vel-env's body_pose_tracking_6d (which
+    # measures x/y/yaw against world spawn origin → kills gradient as soon as
+    # the robot walks) with the locomotion-relative version: x/y in body frame
+    # relative to feet centroid, yaw relative to feet-pointing direction.
+    # Weight starts at 0; curriculum ramps it up at phase 3.
+    cfg.rewards["body_pose_tracking"] = RewardTermCfg(
+        func=microduck_mdp.body_pose_tracking_locomotion,
+        weight=0.0,
+        params={
+            "command_name": "body_pose",
+            "nominal_height": BODY_CMD_NOMINAL_HEIGHT,
+            # std ≈ max command on each axis → exp(-1) at full untracked miss.
+            # Keeps gradient alive across the whole curriculum range (same
+            # recipe that fixed head_pose_tracking).
+            "xy_std":    BODY_CMD_MAX_XY,        # 0.02 m
+            "z_std":     BODY_CMD_MAX_Z,         # 0.03 m
+            "angle_std": BODY_CMD_MAX_ANGLE,     # 30°
+            "feet_cfg":  SceneEntityCfg("robot", site_names=("left_foot", "right_foot")),
+        },
+    )
 
     # ── CURRICULUM ───────────────────────────────────────────────────────────
     # Phase 1 → 2: disable fell_over termination at iter 500 by ramping its

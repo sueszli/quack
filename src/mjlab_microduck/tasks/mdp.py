@@ -2614,6 +2614,88 @@ def termination_param_curriculum(
     return torch.tensor(float(first_val) if isinstance(first_val, (int, float)) else 0.0)
 
 
+def body_pose_tracking_locomotion(
+    env: ManagerBasedRlEnv,
+    command_name: str = "body_pose",
+    nominal_height: float = 0.105,
+    xy_std: float = 0.02,
+    z_std: float = 0.03,
+    angle_std: float = math.radians(30),
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    feet_cfg: SceneEntityCfg = SceneEntityCfg("robot", site_names=("left_foot", "right_foot")),
+) -> torch.Tensor:
+    """Locomotion-aware 6D body pose tracking.
+
+    Same shape as body_pose_tracking_6d (6D cmd, mean of 6 Gaussians), but
+    x/y/yaw are measured *relative to the feet support polygon*, not the spawn
+    origin. This makes the reward meaningful while the robot walks (or stands):
+
+      x, y  : trunk position − feet-centroid, rotated into trunk body frame.
+              dx = +0.02 means "lean trunk 2 cm forward of foot centroid."
+      z     : trunk world height (− nominal_height) — locomotion-neutral.
+      roll  : trunk world roll                     — locomotion-neutral.
+      pitch : trunk world pitch                    — locomotion-neutral.
+      yaw   : trunk world yaw − circular-mean(feet site yaws). dyaw = +0.3 rad
+              means "twist the trunk 17° relative to where the feet point."
+
+    The body_pose_tracking_6d reward measures x/y/yaw vs spawn origin / world
+    yaw, which kills the gradient as soon as the robot translates or turns. This
+    version stays meaningful regardless of where in the world the robot is.
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    cmd = env.command_manager.get_command(command_name)  # (N, 6)
+    dx, dy, dz = cmd[:, 0], cmd[:, 1], cmd[:, 2]
+    droll, dpitch, dyaw = cmd[:, 3], cmd[:, 4], cmd[:, 5]
+
+    pos_w = asset.data.root_link_pos_w
+    quat = asset.data.root_link_quat_w
+    qw, qx, qy, qz = quat[:, 0], quat[:, 1], quat[:, 2], quat[:, 3]
+    trunk_yaw = torch.atan2(2.0 * (qw * qz + qx * qy), 1.0 - 2.0 * (qy * qy + qz * qz))
+    roll  = torch.atan2(2.0 * (qw * qx + qy * qz), 1.0 - 2.0 * (qx * qx + qy * qy))
+    pitch = torch.asin(torch.clamp(2.0 * (qw * qy - qz * qx), -1.0, 1.0))
+
+    # Feet centroid in world frame.
+    foot_pos = asset.data.site_pos_w[:, feet_cfg.site_ids]   # (N, 2, 3)
+    foot_quat = asset.data.site_quat_w[:, feet_cfg.site_ids] # (N, 2, 4)
+    feet_centroid = foot_pos.mean(dim=1)                     # (N, 3)
+
+    # Trunk xy in body frame relative to feet centroid (rotate world Δxy by −yaw).
+    dx_w = pos_w[:, 0] - feet_centroid[:, 0]
+    dy_w = pos_w[:, 1] - feet_centroid[:, 1]
+    cos_y = torch.cos(trunk_yaw)
+    sin_y = torch.sin(trunk_yaw)
+    x_body =  cos_y * dx_w + sin_y * dy_w
+    y_body = -sin_y * dx_w + cos_y * dy_w
+
+    # Z relative to spawn-origin terrain height (still in world).
+    origin = env.scene.terrain.env_origins
+    z_world = torch.nan_to_num(pos_w[:, 2] - origin[:, 2], nan=0.0)
+
+    # Feet yaws → circular mean. NOTE: this depends on the site orientation
+    # matching the foot pointing direction; if the site frame is rotated, this
+    # yaw reference may have an offset (constant per-env, so dyaw=0 still maps
+    # to "feet-aligned").
+    fqw, fqx, fqy, fqz = foot_quat[..., 0], foot_quat[..., 1], foot_quat[..., 2], foot_quat[..., 3]
+    foot_yaws = torch.atan2(2.0 * (fqw * fqz + fqx * fqy), 1.0 - 2.0 * (fqy * fqy + fqz * fqz))  # (N, 2)
+    mean_foot_yaw = torch.atan2(torch.sin(foot_yaws).mean(dim=1), torch.cos(foot_yaws).mean(dim=1))
+
+    x_err     = x_body - dx
+    y_err     = y_body - dy
+    z_err     = z_world - (nominal_height + dz)
+    roll_err  = roll  - droll
+    pitch_err = pitch - dpitch
+    yaw_err   = wrap_to_pi(trunk_yaw - mean_foot_yaw - dyaw)
+
+    r_x = torch.exp(-(x_err / xy_std) ** 2)
+    r_y = torch.exp(-(y_err / xy_std) ** 2)
+    r_z = torch.exp(-(z_err / z_std) ** 2)
+    r_r = torch.exp(-(roll_err  / angle_std) ** 2)
+    r_p = torch.exp(-(pitch_err / angle_std) ** 2)
+    r_w = torch.exp(-(yaw_err   / angle_std) ** 2)
+
+    return (r_x + r_y + r_z + r_r + r_p + r_w) / 6.0
+
+
 def pose_command_range_curriculum(
     env: ManagerBasedRlEnv,
     env_ids: torch.Tensor,
