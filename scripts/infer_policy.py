@@ -603,6 +603,12 @@ def main():
     control_step_count = 0
     control_dt = decimation * model.opt.timestep
 
+    # Rolling buffer of trunk world-frame xy velocity over the last 1 s, used
+    # to print a running average so we can compare commanded vs achieved speed.
+    from collections import deque
+    _vel_window_steps = max(1, int(round(1.0 / control_dt)))   # ≈ 50 @ 50 Hz
+    vel_history = deque(maxlen=_vel_window_steps)
+
     csv_data = [] if args.save_csv else None
     recorded_observations = [] if args.record else None
     policy_enabled = not args.record
@@ -810,6 +816,22 @@ def main():
                 policy.apply_action(action)
 
                 control_step_count += 1
+
+                # Track trunk world-frame xy velocity (qvel[0..2]) and print
+                # the 1-second moving average once per second.
+                vel_history.append((
+                    float(data.qvel[_trunk_qvel_adr + 0]),
+                    float(data.qvel[_trunk_qvel_adr + 1]),
+                ))
+                if control_step_count % _vel_window_steps == 0 and len(vel_history) > 0:
+                    avg_x = sum(v[0] for v in vel_history) / len(vel_history)
+                    avg_y = sum(v[1] for v in vel_history) / len(vel_history)
+                    speed = (avg_x ** 2 + avg_y ** 2) ** 0.5
+                    cmd_x, cmd_y = policy.vel_cmd[0], policy.vel_cmd[1]
+                    print(
+                        f"[vel 1s avg] world: x={avg_x:+.2f} y={avg_y:+.2f}  "
+                        f"|v|={speed:.2f} m/s   cmd: x={cmd_x:+.2f} y={cmd_y:+.2f}"
+                    )
 
                 if csv_data is not None:
                     obs = policy.get_observations()

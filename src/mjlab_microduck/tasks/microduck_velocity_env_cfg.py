@@ -274,7 +274,12 @@ def make_microduck_velocity_env_cfg(
     cfg.rewards["angular_momentum"].weight = -0.02
 
     # Velocity tracking rewards
-    cfg.rewards["track_linear_velocity"].weight = 3.0
+    # Bumped weight 3.0 → 4.5 so the policy is incentivized to actually reach
+    # commanded speed rather than collecting partial-credit reward at a slower
+    # gait (previous policy achieved ~0.19 m/s at cmd=0.3; new velstand
+    # converged to ~0.12 m/s with the same std). Keep the loose std to avoid
+    # the gradient-cliff problem we hit when std was tightened too aggressively.
+    cfg.rewards["track_linear_velocity"].weight = 4.5
     cfg.rewards["track_linear_velocity"].params["std"] = math.sqrt(0.15)
     cfg.rewards["track_angular_velocity"].weight = 3.0
     cfg.rewards["track_angular_velocity"].params["std"] = math.sqrt(0.40)
