@@ -48,12 +48,15 @@ from mjlab_microduck.tasks.symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
 # Phase boundaries (in PPO iterations; env step counter scales by num_steps_per_env=24)
 FELL_OVER_DISABLE_ITER = 500
 BODY_POSE_KICKIN_ITER  = 1500
-# Random prone-init: starts firing at iter PRONE_RAMP_START and reaches
-# 2/3 override probability (→ 33% upright / 33% face-down / 33% face-up) at
-# iter PRONE_RAMP_END. Combined with face_down_prob=0.5 under the override.
+NUM_STEPS_PER_ENV      = 24
+
+# Toggle for random prone initialization (episodes start face-down/up with
+# probability ramping from 0 at PRONE_RAMP_START → 2/3 at PRONE_RAMP_END,
+# giving a 33/33/33 split of upright/face-down/face-up resets). Useful for
+# bootstrapping fall recovery; disable to focus on walking first.
+ENABLE_PRONE_INIT      = False
 PRONE_RAMP_START       = 1500
 PRONE_RAMP_END         = 3000
-NUM_STEPS_PER_ENV      = 24
 
 # Body pose final ranges (reached at end of curriculum)
 BODY_CMD_MAX_XY        = 0.01                # ±10 mm lateral/forward (was 20 mm —
@@ -113,11 +116,12 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
     # set by reset_base with face-down or face-up (50/50). prone_prob starts at
     # 0 and the curriculum ramps it up over iters PRONE_RAMP_START → PRONE_RAMP_END,
     # ending at 2/3 → balanced 33/33/33 mixture of upright/face-down/face-up.
-    cfg.events["random_prone_init"] = EventTermCfg(
-        func=microduck_mdp.maybe_set_random_prone_orientation,
-        mode="reset",
-        params={"prone_prob": 0.0, "face_down_prob": 0.5},
-    )
+    if ENABLE_PRONE_INIT:
+        cfg.events["random_prone_init"] = EventTermCfg(
+            func=microduck_mdp.maybe_set_random_prone_orientation,
+            mode="reset",
+            params={"prone_prob": 0.0, "face_down_prob": 0.5},
+        )
 
     # ── REWARDS: fall recovery layer ─────────────────────────────────────────
     # These all sit at high reward when standing normally (free reward while
@@ -183,31 +187,64 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
     # body_pose_tracking weight curriculum REMOVED — body tracking disabled
     # for now. Keep the body_pose command term + obs slot for shape parity.
 
-    # Random prone-init ramp: 0 until iter PRONE_RAMP_START, then climbs in
-    # discrete stages of ~11% each up to 2/3 at iter PRONE_RAMP_END
-    # (= 33% upright / 33% face-down / 33% face-up).
-    # The intermediate stages make the rise visible in wandb instead of a
-    # single jump halfway through the window.
-    _prone_target = 2.0 / 3.0
-    _prone_stages_n = 6  # number of equal increments inside the ramp window
-    _prone_ramp_iters = PRONE_RAMP_END - PRONE_RAMP_START
-    cfg.curriculum["prone_init_prob"] = CurriculumTermCfg(
+    # Push velocity ramp: starts at the inherited ±0.3 m/s (set by vel env's
+    # VELOCITY_PUSH_RANGE) and widens to ±0.7 m/s over iters 1000 → 2000. Once
+    # walking + recovery are solid, harder pushes train robustness without
+    # the policy collapsing during early training.
+    _push_max_start = 0.3   # inherited from VELOCITY_PUSH_RANGE
+    _push_max_end   = 0.7
+    _push_ramp_start_iter = 1000
+    _push_ramp_end_iter   = 2000
+    _push_stages_n = 5
+    cfg.curriculum["push_magnitude"] = CurriculumTermCfg(
         func=microduck_mdp.event_param_curriculum,
         params={
-            "event_name": "random_prone_init",
+            "event_name": "push_robot",
             "param_stages": [
-                {"step": 0, "params": {"prone_prob": 0.0, "face_down_prob": 0.5}},
-                # Ramp stages: iter PRONE_RAMP_START + k*ramp/N → prob = k*target/N
+                {"step": 0,
+                 "params": {"velocity_range": {"x": (-_push_max_start, _push_max_start),
+                                                "y": (-_push_max_start, _push_max_start)}}},
                 *(
                     {
-                        "step": (PRONE_RAMP_START + (k * _prone_ramp_iters) // _prone_stages_n) * NUM_STEPS_PER_ENV,
-                        "params": {"prone_prob": k * _prone_target / _prone_stages_n, "face_down_prob": 0.5},
+                        "step": (_push_ramp_start_iter
+                                 + (k * (_push_ramp_end_iter - _push_ramp_start_iter)) // _push_stages_n
+                                ) * NUM_STEPS_PER_ENV,
+                        "params": {"velocity_range": {
+                            "x": (-(_push_max_start + (_push_max_end - _push_max_start) * k / _push_stages_n),
+                                  +(_push_max_start + (_push_max_end - _push_max_start) * k / _push_stages_n)),
+                            "y": (-(_push_max_start + (_push_max_end - _push_max_start) * k / _push_stages_n),
+                                  +(_push_max_start + (_push_max_end - _push_max_start) * k / _push_stages_n)),
+                        }},
                     }
-                    for k in range(1, _prone_stages_n + 1)
+                    for k in range(1, _push_stages_n + 1)
                 ),
             ],
         },
     )
+
+    # Random prone-init ramp: 0 until iter PRONE_RAMP_START, then climbs in
+    # discrete stages of ~11% each up to 2/3 at iter PRONE_RAMP_END
+    # (= 33% upright / 33% face-down / 33% face-up).
+    if ENABLE_PRONE_INIT:
+        _prone_target = 2.0 / 3.0
+        _prone_stages_n = 6
+        _prone_ramp_iters = PRONE_RAMP_END - PRONE_RAMP_START
+        cfg.curriculum["prone_init_prob"] = CurriculumTermCfg(
+            func=microduck_mdp.event_param_curriculum,
+            params={
+                "event_name": "random_prone_init",
+                "param_stages": [
+                    {"step": 0, "params": {"prone_prob": 0.0, "face_down_prob": 0.5}},
+                    *(
+                        {
+                            "step": (PRONE_RAMP_START + (k * _prone_ramp_iters) // _prone_stages_n) * NUM_STEPS_PER_ENV,
+                            "params": {"prone_prob": k * _prone_target / _prone_stages_n, "face_down_prob": 0.5},
+                        }
+                        for k in range(1, _prone_stages_n + 1)
+                    ),
+                ],
+            },
+        )
 
     # body_pose_range curriculum is inherited from the vel env (tiny ±5 mm/3°
     # "kept-alive" range only) — no override here since tracking is disabled.
