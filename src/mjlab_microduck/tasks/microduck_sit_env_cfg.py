@@ -188,9 +188,9 @@ def make_microduck_sit_env_cfg(
     # of the pose reward. This is what enforces the gentle descent.
     cfg.rewards["sit_pose_legs"] = RewardTermCfg(
         func=microduck_mdp.interpolated_pose_target_match,
-        weight=3.0,
+        weight=5.0,
         params={
-            "std": 0.3,
+            "std": 0.4,
             "joint_indices": _LEG_JOINTS,
             "source_overrides": None,                       # HOME = standing
             "target_overrides": SITTING_TARGET_OVERRIDES,
@@ -199,12 +199,14 @@ def make_microduck_sit_env_cfg(
         },
     )
 
-    # Tight std on knees+ankles so the joints that actually move converge fully.
+    # Knees+ankles converge fully. Std widened from 0.15 → 0.3 so the gradient
+    # stays informative even when the policy is off-target by 0.5+ rad
+    # mid-descent — exp(-(0.5/0.15)^2) ≈ 0 gives no signal.
     cfg.rewards["sit_pose_critical"] = RewardTermCfg(
         func=microduck_mdp.interpolated_pose_target_match,
-        weight=6.0,
+        weight=10.0,
         params={
-            "std": 0.15,
+            "std": 0.3,
             "joint_indices": _SIT_CRITICAL_JOINTS,
             "source_overrides": None,
             "target_overrides": SITTING_TARGET_OVERRIDES,
@@ -213,12 +215,12 @@ def make_microduck_sit_env_cfg(
         },
     )
 
-    # Neck/head: tight std (head pose is part of the sit aesthetic).
+    # Neck/head.
     cfg.rewards["sit_pose_neck"] = RewardTermCfg(
         func=microduck_mdp.interpolated_pose_target_match,
         weight=2.0,
         params={
-            "std": 0.2,
+            "std": 0.3,
             "joint_indices": _NECK_JOINTS,
             "source_overrides": None,
             "target_overrides": SITTING_TARGET_OVERRIDES,
@@ -227,14 +229,15 @@ def make_microduck_sit_env_cfg(
         },
     )
 
-    # Trunk z tracks the same interpolated ramp (stand_z → sit_z).
+    # Trunk z tracks the same interpolated ramp (stand_z → sit_z). Std widened
+    # 0.015 → 0.03 so an off-by-3cm robot still gets a usable gradient.
     cfg.rewards["height_target"] = RewardTermCfg(
         func=microduck_mdp.interpolated_height_target,
-        weight=3.0,
+        weight=5.0,
         params={
             "start_height": STAND_Z,
             "end_height":   SIT_Z,
-            "std":          0.015,
+            "std":          0.03,
             "asset_cfg":    SceneEntityCfg("robot", body_names=("trunk_base",)),
             "ramp_start_frac": 0.0,
             "ramp_end_frac": RAMP_END_FRAC,
@@ -266,26 +269,30 @@ def make_microduck_sit_env_cfg(
     )
 
     # ── Rewards: gentleness (STRONG from the start, no curriculum) ────────────
-    # Hard-impact penalties — the whole point of the env. Threshold low so even
-    # moderate landings are penalised.
+    # Hard-impact penalties. Threshold must sit ABOVE the resting body weight
+    # (~5–7 N) — otherwise the penalty fires continuously while the robot is
+    # seated and teaches the policy to never touch the floor. With threshold
+    # 15 N only true impacts (sudden landings, contact spikes) pay a cost.
     cfg.rewards["trunk_impact_penalty"] = RewardTermCfg(
         func=microduck_mdp.body_impact_cost,
         weight=-0.5,
-        params={"sensor_name": trunk_ground_cfg.name, "threshold": 3.0},
+        params={"sensor_name": trunk_ground_cfg.name, "threshold": 15.0},
     )
     cfg.rewards["head_impact_penalty"] = RewardTermCfg(
         func=microduck_mdp.body_impact_cost,
-        weight=-2.0,
-        params={"sensor_name": head_impact_cfg.name, "threshold": 2.0},
+        weight=-0.5,
+        params={"sensor_name": head_impact_cfg.name, "threshold": 8.0},
     )
 
-    # Action smoothness — high weight so the policy can't snap into the target
-    # pose. This is the primary "gentle" signal.
+    # Action smoothness — moderate weight. The interpolated pose target already
+    # enforces a slow trajectory; action_rate just suppresses high-frequency
+    # twitching on top of that. Earlier weight (-2.0) was strong enough to
+    # outweigh the pose-tracking gradient and the policy froze.
     cfg.rewards["action_rate_l2"] = RewardTermCfg(
-        func=mdp.action_rate_l2, weight=-2.0
+        func=mdp.action_rate_l2, weight=-0.5
     )
     cfg.rewards["neck_action_rate_l2"] = RewardTermCfg(
-        func=microduck_mdp.neck_action_rate_l2, weight=-1.0
+        func=microduck_mdp.neck_action_rate_l2, weight=-0.25
     )
 
     # Torque-rate penalty: proxy for jerk through the gearboxes.

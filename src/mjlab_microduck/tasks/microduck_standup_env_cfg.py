@@ -177,9 +177,9 @@ def make_microduck_standup_env_cfg(
     # off-target through the whole ramp and forfeits most of the pose reward.
     cfg.rewards["stand_pose_legs"] = RewardTermCfg(
         func=microduck_mdp.interpolated_pose_target_match,
-        weight=3.0,
+        weight=5.0,
         params={
-            "std": 0.3,
+            "std": 0.4,
             "joint_indices": _LEG_JOINTS,
             "source_overrides": SITTING_JOINT_OVERRIDES,
             "target_overrides": None,                     # HOME = standing
@@ -188,12 +188,13 @@ def make_microduck_standup_env_cfg(
         },
     )
 
-    # Tight std on knees+ankles so the joints that actually move converge fully.
+    # Knees+ankles. Std widened so the gradient stays informative when the
+    # policy is off-target by 0.5+ rad mid-ascent.
     cfg.rewards["stand_pose_critical"] = RewardTermCfg(
         func=microduck_mdp.interpolated_pose_target_match,
-        weight=6.0,
+        weight=10.0,
         params={
-            "std": 0.15,
+            "std": 0.3,
             "joint_indices": _SIT_CRITICAL_JOINTS,
             "source_overrides": SITTING_JOINT_OVERRIDES,
             "target_overrides": None,
@@ -202,12 +203,12 @@ def make_microduck_standup_env_cfg(
         },
     )
 
-    # Neck/head: tight std (head pose is part of the standing aesthetic).
+    # Neck/head.
     cfg.rewards["stand_pose_neck"] = RewardTermCfg(
         func=microduck_mdp.interpolated_pose_target_match,
         weight=2.0,
         params={
-            "std": 0.2,
+            "std": 0.3,
             "joint_indices": _NECK_JOINTS,
             "source_overrides": SITTING_JOINT_OVERRIDES,
             "target_overrides": None,
@@ -219,11 +220,11 @@ def make_microduck_standup_env_cfg(
     # Trunk z tracks the same interpolated ramp (sit_z → stand_z).
     cfg.rewards["height_target"] = RewardTermCfg(
         func=microduck_mdp.interpolated_height_target,
-        weight=3.0,
+        weight=5.0,
         params={
             "start_height": SIT_Z,
             "end_height":   STAND_Z,
-            "std":          0.015,
+            "std":          0.03,
             "asset_cfg":    SceneEntityCfg("robot", body_names=("trunk_base",)),
             "ramp_start_frac": 0.0,
             "ramp_end_frac": RAMP_END_FRAC,
@@ -244,22 +245,27 @@ def make_microduck_standup_env_cfg(
     )
 
     # ── Rewards: gentleness (STRONG from step 0, no curriculum) ───────────────
+    # Threshold must sit above resting body weight (~5–7 N) — otherwise the
+    # penalty fires continuously while the robot is seated at episode start
+    # and teaches the policy to never touch / never rise from the floor.
     cfg.rewards["trunk_impact_penalty"] = RewardTermCfg(
         func=microduck_mdp.body_impact_cost,
         weight=-0.5,
-        params={"sensor_name": trunk_ground_cfg.name, "threshold": 3.0},
+        params={"sensor_name": trunk_ground_cfg.name, "threshold": 15.0},
     )
     cfg.rewards["head_impact_penalty"] = RewardTermCfg(
         func=microduck_mdp.body_impact_cost,
-        weight=-2.0,
-        params={"sensor_name": head_impact_cfg.name, "threshold": 2.0},
+        weight=-0.5,
+        params={"sensor_name": head_impact_cfg.name, "threshold": 8.0},
     )
 
+    # The interpolated pose target already enforces a slow trajectory;
+    # action_rate just suppresses high-frequency twitching on top of that.
     cfg.rewards["action_rate_l2"] = RewardTermCfg(
-        func=mdp.action_rate_l2, weight=-2.0,
+        func=mdp.action_rate_l2, weight=-0.5,
     )
     cfg.rewards["neck_action_rate_l2"] = RewardTermCfg(
-        func=microduck_mdp.neck_action_rate_l2, weight=-1.0,
+        func=microduck_mdp.neck_action_rate_l2, weight=-0.25,
     )
     cfg.rewards["joint_torque_rate_l2"] = RewardTermCfg(
         func=microduck_mdp.joint_torque_rate_l2, weight=-5e-4,
