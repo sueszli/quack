@@ -217,18 +217,30 @@ def make_microduck_standup_env_cfg(
         },
     )
 
-    # Trunk z tracks the same interpolated ramp (sit_z → stand_z).
+    # Trunk z tracks the same interpolated ramp (sit_z → stand_z). Wide std
+    # so the Gaussian stays informative across the full 5 cm sit↔stand sweep.
     cfg.rewards["height_target"] = RewardTermCfg(
         func=microduck_mdp.interpolated_height_target,
         weight=5.0,
         params={
             "start_height": SIT_Z,
             "end_height":   STAND_Z,
-            "std":          0.03,
+            "std":          0.06,
             "asset_cfg":    SceneEntityCfg("robot", body_names=("trunk_base",)),
             "ramp_start_frac": 0.0,
             "ramp_end_frac": RAMP_END_FRAC,
         },
+    )
+
+    # Linear upright gradient — fires non-trivially at every tilt angle.
+    # Critical bootstrap signal: without it the joint-pose rewards can be
+    # fully satisfied while lying flat on the back (joint angles don't care
+    # about trunk orientation), and the policy converges to "extend the legs
+    # while supine" instead of actually standing up.
+    cfg.rewards["upright_linear"] = RewardTermCfg(
+        func=microduck_mdp.body_upright_linear,
+        weight=4.0,
+        params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))},
     )
 
     # Stillness once standing — only after the ramp window so the policy can't
