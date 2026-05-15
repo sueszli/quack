@@ -95,42 +95,55 @@ def make_microduck_pose_env_cfg(play: bool = False, rough: bool = False) -> Mana
         if name in cfg.rewards:
             cfg.rewards[name].weight = 0.0
 
-    # Keep the structural rewards that prevent the policy from degenerating:
-    # upright, leg pose (head/neck excluded → command-driven), com height,
-    # action smoothness, dof limits, self collisions, torque cost.
-    # `pose` already excludes head/neck (via regex set in vel env).
-    cfg.rewards["upright"].weight = 2.0
+    # === STRUCTURAL rewards — kept small so they don't fight tracking ===
+    # The leg-pose reward and upright reward both pull the robot toward HOME.
+    # In a walking env that's fine (they're a prior for clean gait); in a
+    # *pose-tracking* env they actively oppose any non-zero body command:
+    #   - Knee bends ~0.3 rad to squat 3 cm → with std_standing knee=0.15
+    #     pose reward drops to exp(-(0.3/0.15)²)=0.02 → -3.9 net at weight 2.0
+    #   - Upright Gaussian std≈0.45 punishes 30° pitch by ~0.74 → -1.5 at w=2.
+    # We slash both and crank body_pose_tracking so the tracking gradient
+    # dominates.
+    cfg.rewards["upright"].weight = 0.3   # was 2.0 — just enough to discourage faceplant
 
-    # com_height_target wide enough to allow z body commands (nominal ± max_z
-    # plus a margin) without the cliff that broke velstand.
-    cfg.rewards["com_height_target"].params["target_height_min"] = NOMINAL_HEIGHT - BODY_CMD_MAX_Z - 0.01
-    cfg.rewards["com_height_target"].params["target_height_max"] = NOMINAL_HEIGHT + BODY_CMD_MAX_Z + 0.01
-    cfg.rewards["com_height_target"].weight = 2.0
+    # Loosen leg-pose stds so leg motion required to follow body commands isn't
+    # punished. std_standing knee/hip_pitch were tight (0.15) for "perfect HOME
+    # when idle" walking-env behavior; here we WANT leg motion when commanded.
+    loose_std = {
+        r".*hip_yaw.*":  0.3,
+        r".*hip_roll.*": 0.3,
+        r".*hip_pitch.*":0.6,
+        r".*knee.*":     0.6,
+        r".*ankle.*":    0.4,
+    }
+    cfg.rewards["pose"].params["std_standing"] = loose_std
+    cfg.rewards["pose"].params["std_walking"]  = loose_std
+    cfg.rewards["pose"].params["std_running"]  = loose_std
+    cfg.rewards["pose"].weight = 0.5      # was 2.0
 
-    # Head pose tracking: already wired by vel env (weight 3, std 0.5).
-    # Bump it slightly to make sure it stays dominant on the head axes.
-    cfg.rewards["head_pose_tracking"].weight = 4.0
+    # com_height_target's [min, max] target window: in-range gives flat +1
+    # reward (no gradient), out-of-range gives quadratic penalty. We want the
+    # full z command sweep to be in-range, with margin, so this never fights.
+    cfg.rewards["com_height_target"].params["target_height_min"] = NOMINAL_HEIGHT - BODY_CMD_MAX_Z - 0.02
+    cfg.rewards["com_height_target"].params["target_height_max"] = NOMINAL_HEIGHT + BODY_CMD_MAX_Z + 0.02
+    cfg.rewards["com_height_target"].weight = 1.0
 
-    # Body pose tracking: vel env left it at weight 0.05 (kept-alive only).
-    # Replace with the locomotion-relative reward — no vel gating since the
-    # robot is always standing, but it lets us use the same function and the
-    # feet-centroid relative xy/yaw computations work fine when stationary.
+    # === TRACKING — primary objectives, large weights ===
+    cfg.rewards["head_pose_tracking"].weight = 6.0   # was 3.0 in vel env
+
+    # body_pose_tracking — locomotion-relative reward (works fine when robot is
+    # stationary since the relative-to-feet xy/yaw collapses to natural pose).
     cfg.rewards["body_pose_tracking"] = RewardTermCfg(
         func=microduck_mdp.body_pose_tracking_locomotion,
-        weight=6.0,
+        weight=12.0,   # big — needs to clearly dominate pose+upright
         params={
             "command_name": "body_pose",
             "nominal_height": NOMINAL_HEIGHT,
-            # std = max/2 keeps the gradient alive at full miss while making
-            # the baseline-at-cmd=0 reasonable (matches head_pose recipe).
             "xy_std":    BODY_CMD_MAX_XY    / 2.0,
             "z_std":     BODY_CMD_MAX_Z     / 2.0,
             "angle_std": BODY_CMD_MAX_ANGLE / 2.0,
-            # Track ALL 6 axes here — no walking conflict, the xy ↔ pitch/roll
-            # coupling is just a constraint the policy needs to navigate, not
-            # an active fight with another reward.
             "axis_weights": (1.0, 1.0, 1.0, 1.0, 1.0, 1.0),
-            # No vel gate — we're always standing.
+            # No vel gate — always standing.
             "feet_cfg":  SceneEntityCfg("robot", site_names=("left_foot", "right_foot")),
         },
     )
