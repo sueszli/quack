@@ -1035,13 +1035,16 @@ def sit_grounded(
     sensor_name: str,
     command_name: Optional[str] = None,
     sin_threshold: float = 0.7,
+    min_progress_frac: float = 0.0,
 ) -> torch.Tensor:
     """Positive reward for trunk-ground contact.
 
     When ``command_name`` is provided, the reward is gated to the sit window of
-    a phase command (active when sin(2π·phase) > sin_threshold). When it is
-    ``None`` (used by the episodic sit env), the reward is always-on. Returns
-    1.0 if any matching contact, 0.0 otherwise.
+    a phase command (active when sin(2π·phase) > sin_threshold). Otherwise the
+    reward is always-on, optionally gated to the late part of the episode via
+    ``min_progress_frac`` (episodic sit env: prevents the policy from claiming
+    the contact bonus by snapping to sit at t=0). Returns 1.0 if any matching
+    contact (within the gate), 0.0 otherwise.
     """
     if sensor_name not in env.scene.sensors:
         return torch.zeros(env.num_envs, device=env.device)
@@ -1051,6 +1054,10 @@ def sit_grounded(
         found = found.sum(dim=-1)
     has_contact = (found > 0).float()
     if command_name is None:
+        if min_progress_frac > 0.0:
+            progress = env.episode_length_buf.float() / float(env.max_episode_length)
+            late_enough = (progress >= min_progress_frac).float()
+            return late_enough * has_contact
         return has_contact
     cmd = env.command_manager.get_command(command_name)
     in_sit_window = (cmd[:, 1] > sin_threshold).float()
@@ -1063,16 +1070,22 @@ def sit_stability(
     command_name: Optional[str] = None,
     ang_vel_std: float = 0.5,
     sin_threshold: float = 0.7,
+    min_progress_frac: float = 0.0,
 ) -> torch.Tensor:
     """Bonus for low body angular velocity.
 
-    Phase-gated when ``command_name`` is set (sit window of a phase command);
-    always-on when ``command_name`` is None. Encourages a stable rest pose.
+    Phase-gated when ``command_name`` is set (sit window of a phase command).
+    Always-on otherwise, optionally restricted to the late part of the episode
+    via ``min_progress_frac``. Encourages a stable rest pose.
     """
     asset = env.scene[asset_cfg.name]
     ang_vel_norm = asset.data.root_link_ang_vel_w.norm(dim=-1)
     stillness = torch.exp(-((ang_vel_norm / ang_vel_std) ** 2))
     if command_name is None:
+        if min_progress_frac > 0.0:
+            progress = env.episode_length_buf.float() / float(env.max_episode_length)
+            late_enough = (progress >= min_progress_frac).float()
+            return late_enough * stillness
         return stillness
     cmd = env.command_manager.get_command(command_name)
     in_sit_window = (cmd[:, 1] > sin_threshold).float()
@@ -1156,6 +1169,84 @@ def pose_target_match(
         joint_pos = joint_pos[:, joint_indices]
         target = target[:, joint_indices]
     return torch.exp(-((joint_pos - target) / std) ** 2).mean(dim=-1)
+
+
+def interpolated_pose_target_match(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    std: float = 0.3,
+    joint_indices: Optional[list] = None,
+    source_overrides: Optional[dict] = None,
+    target_overrides: Optional[dict] = None,
+    ramp_start_frac: float = 0.0,
+    ramp_end_frac: float = 1.0,
+) -> torch.Tensor:
+    """Gaussian on joint positions vs a time-interpolated target pose.
+
+    Tracks a target that linearly interpolates from a source pose to a target
+    pose over the episode, between progress fractions ``ramp_start_frac`` and
+    ``ramp_end_frac``. Before/after the ramp the target is clamped to source /
+    final target respectively.
+
+    The point is to enforce smooth descent: snapping to the final target early
+    leaves the robot *off-target* relative to where the interpolated target
+    currently is, costing pose reward for the duration of the mismatch.
+
+    Args:
+        std: Gaussian std per joint (rad).
+        joint_indices: Optional subset of joints to evaluate.
+        source_overrides: ``{joint_index: angle_rad}`` defining the source pose
+            (start of the ramp). ``None`` = default/HOME pose.
+        target_overrides: same, for the target pose (end of the ramp).
+        ramp_start_frac, ramp_end_frac: episode-progress window in [0, 1] over
+            which the target moves from source to target.
+    """
+    asset = env.scene[asset_cfg.name]
+    joint_pos = asset.data.joint_pos
+    source = asset.data.default_joint_pos.clone()
+    target = asset.data.default_joint_pos.clone()
+    if source_overrides:
+        for idx, val in source_overrides.items():
+            source[:, idx] = val
+    if target_overrides:
+        for idx, val in target_overrides.items():
+            target[:, idx] = val
+
+    progress = env.episode_length_buf.float() / float(env.max_episode_length)
+    span = max(ramp_end_frac - ramp_start_frac, 1e-6)
+    tau = ((progress - ramp_start_frac) / span).clamp(0.0, 1.0).unsqueeze(-1)
+    interp = source * (1.0 - tau) + target * tau
+
+    if joint_indices is not None:
+        joint_pos = joint_pos[:, joint_indices]
+        interp = interp[:, joint_indices]
+    return torch.exp(-((joint_pos - interp) / std) ** 2).mean(dim=-1)
+
+
+def interpolated_height_target(
+    env: ManagerBasedRlEnv,
+    start_height: float,
+    end_height: float,
+    std: float = 0.02,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    ramp_start_frac: float = 0.0,
+    ramp_end_frac: float = 1.0,
+) -> torch.Tensor:
+    """Gaussian on trunk z vs a time-interpolated target height.
+
+    Companion to ``interpolated_pose_target_match`` — same time-interpolation
+    logic applied to the trunk height.
+    """
+    progress = env.episode_length_buf.float() / float(env.max_episode_length)
+    span = max(ramp_end_frac - ramp_start_frac, 1e-6)
+    tau = ((progress - ramp_start_frac) / span).clamp(0.0, 1.0)
+    target_z = start_height * (1.0 - tau) + end_height * tau
+
+    asset = env.scene[asset_cfg.name]
+    z = torch.nan_to_num(
+        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
+    )
+    return torch.exp(-((z - target_z) / std) ** 2)
 
 
 def phase_pose_match(

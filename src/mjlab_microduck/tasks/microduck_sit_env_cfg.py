@@ -43,6 +43,14 @@ IMU_ORIENTATION_RANDOMIZATION_ANGLE = 1.0
 # Episode length: long enough that "gentle 4s descent + 2s rest" is feasible.
 EPISODE_LENGTH_S = 6.0
 
+# Fraction of the episode over which the interpolated stand→sit target travels.
+# 0.0 → start at standing pose. RAMP_END_FRAC → reach the full sitting target.
+# The remaining tail (1.0 − RAMP_END_FRAC) is the "rest while seated" window.
+RAMP_END_FRAC = 0.7
+# sit_grounded / sit_stability only activate after this fraction so the policy
+# doesn't get paid for snapping to the floor at t=0.
+SIT_REWARD_MIN_PROGRESS = 0.65
+
 # ── Sitting target pose (asset.data.joint_pos index → angle in rad) ───────────
 # Matches the SIT keyframe in scene.xml.
 SITTING_TARGET_OVERRIDES = {
@@ -173,65 +181,79 @@ def make_microduck_sit_env_cfg(
         if name in cfg.rewards:
             del cfg.rewards[name]
 
-    # ── Rewards: track the sit pose (always-on, no phase weighting) ──────────
-    # Leg pose: relaxed std — the policy can choose any reasonable descent
-    # trajectory as long as the legs end up matching the sit keyframe.
+    # ── Rewards: track an interpolated stand→sit pose target over time ───────
+    # The target pose linearly travels from HOME (standing) to SITTING over
+    # [0, RAMP_END_FRAC] of the episode. Snapping to the final sit pose at t=0
+    # leaves the robot off-target for the entire ramp window and forfeits most
+    # of the pose reward. This is what enforces the gentle descent.
     cfg.rewards["sit_pose_legs"] = RewardTermCfg(
-        func=microduck_mdp.pose_target_match,
+        func=microduck_mdp.interpolated_pose_target_match,
         weight=3.0,
         params={
             "std": 0.3,
             "joint_indices": _LEG_JOINTS,
+            "source_overrides": None,                       # HOME = standing
             "target_overrides": SITTING_TARGET_OVERRIDES,
+            "ramp_start_frac": 0.0,
+            "ramp_end_frac": RAMP_END_FRAC,
         },
     )
 
-    # Focused tight-std reward on the joints that actually change between
-    # stand and sit (knees + ankles). Without this, the 6 leg joints that
-    # don't move dilute the average and the policy under-bends the knees.
+    # Tight std on knees+ankles so the joints that actually move converge fully.
     cfg.rewards["sit_pose_critical"] = RewardTermCfg(
-        func=microduck_mdp.pose_target_match,
+        func=microduck_mdp.interpolated_pose_target_match,
         weight=6.0,
         params={
             "std": 0.15,
             "joint_indices": _SIT_CRITICAL_JOINTS,
+            "source_overrides": None,
             "target_overrides": SITTING_TARGET_OVERRIDES,
+            "ramp_start_frac": 0.0,
+            "ramp_end_frac": RAMP_END_FRAC,
         },
     )
 
     # Neck/head: tight std (head pose is part of the sit aesthetic).
     cfg.rewards["sit_pose_neck"] = RewardTermCfg(
-        func=microduck_mdp.pose_target_match,
+        func=microduck_mdp.interpolated_pose_target_match,
         weight=2.0,
         params={
             "std": 0.2,
             "joint_indices": _NECK_JOINTS,
+            "source_overrides": None,
             "target_overrides": SITTING_TARGET_OVERRIDES,
+            "ramp_start_frac": 0.0,
+            "ramp_end_frac": RAMP_END_FRAC,
         },
     )
 
-    # CoM height: pull trunk down to the seated height.
-    cfg.rewards["com_height_target"] = RewardTermCfg(
-        func=microduck_mdp.com_height_target,
+    # Trunk z tracks the same interpolated ramp (stand_z → sit_z).
+    cfg.rewards["height_target"] = RewardTermCfg(
+        func=microduck_mdp.interpolated_height_target,
         weight=3.0,
         params={
-            "target_height_min": SIT_Z - 0.005,
-            "target_height_max": SIT_Z + 0.015,
+            "start_height": STAND_Z,
+            "end_height":   SIT_Z,
+            "std":          0.015,
+            "asset_cfg":    SceneEntityCfg("robot", body_names=("trunk_base",)),
+            "ramp_start_frac": 0.0,
+            "ramp_end_frac": RAMP_END_FRAC,
         },
     )
 
-    # Reward butt-on-ground once the descent is complete. Always-on (the env
-    # is episodic with a fixed target — no phase gating needed).
+    # Butt-on-ground bonus — gated to the late part of the episode so the
+    # policy can't farm it by collapsing to sit at t=0.
     cfg.rewards["sit_grounded"] = RewardTermCfg(
         func=microduck_mdp.sit_grounded,
         weight=4.0,
         params={
             "sensor_name": trunk_ground_cfg.name,
             "command_name": None,
+            "min_progress_frac": SIT_REWARD_MIN_PROGRESS,
         },
     )
 
-    # Stillness reward — encourages a stable rest.
+    # Stillness reward — same late gating.
     cfg.rewards["sit_stability"] = RewardTermCfg(
         func=microduck_mdp.sit_stability,
         weight=2.0,
@@ -239,6 +261,7 @@ def make_microduck_sit_env_cfg(
             "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
             "ang_vel_std": 0.5,
             "command_name": None,
+            "min_progress_frac": SIT_REWARD_MIN_PROGRESS,
         },
     )
 
