@@ -373,6 +373,12 @@ def make_microduck_sit_env_cfg(
     # Always start standing (matches STAND keyframe trunk z=0.12, home joints).
     cfg.events["reset_base"].params["pose_range"]["z"] = (0.115, 0.125)
 
+    # Disable fall termination: tilt-based termination would cut episodes short
+    # whenever the robot wobbles during the descent, robbing the policy of the
+    # impact-penalty signal that teaches it to land gently.
+    if "fell_over" in cfg.terminations:
+        del cfg.terminations["fell_over"]
+
     cfg.terminations["nan_state"] = TerminationTermCfg(
         func=microduck_mdp.robot_state_is_nan,
         time_out=False,
