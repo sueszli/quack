@@ -248,17 +248,21 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
         )
 
     if ENABLE_BODY_TRACKING:
-        # Weight ramp: 0 until iter BODY_POSE_KICKIN_ITER, then climbs to 3.0
-        # over 1000 iters. Gradient is gated to standing episodes only.
+        # Weight ramp: 0 until BODY_POSE_KICKIN_ITER, then climbs hard. With
+        # the gate, only ~25% of training samples (the standing envs) actually
+        # contribute body-tracking gradient — to compensate, the weight is set
+        # high enough that the gradient on those samples is strong.
+        # NB: do NOT bump standing_envs ratio to compensate — prior runs showed
+        # that >25% standing envs make the policy forget how to walk.
         cfg.curriculum["body_pose_tracking_weight"] = CurriculumTermCfg(
             func=velocity_mdp.reward_weight,
             params={
                 "reward_name": "body_pose_tracking",
                 "weight_stages": [
                     {"step": 0,                                                  "weight": 0.0},
-                    {"step": BODY_POSE_KICKIN_ITER         * NUM_STEPS_PER_ENV,  "weight": 1.5},
-                    {"step": (BODY_POSE_KICKIN_ITER +  500) * NUM_STEPS_PER_ENV, "weight": 2.5},
-                    {"step": (BODY_POSE_KICKIN_ITER + 1000) * NUM_STEPS_PER_ENV, "weight": 3.5},
+                    {"step": BODY_POSE_KICKIN_ITER         * NUM_STEPS_PER_ENV,  "weight": 4.0},
+                    {"step": (BODY_POSE_KICKIN_ITER +  500) * NUM_STEPS_PER_ENV, "weight": 6.0},
+                    {"step": (BODY_POSE_KICKIN_ITER + 1000) * NUM_STEPS_PER_ENV, "weight": 8.0},
                 ],
             },
         )
