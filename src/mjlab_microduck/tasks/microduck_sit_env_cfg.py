@@ -244,6 +244,35 @@ def make_microduck_sit_env_cfg(
         },
     )
 
+    # ── Bootstrap: L1 penalties for constant gradient toward the target ───────
+    # The Gaussian rewards above vanish far from target (exp(-large) ≈ 0),
+    # leaving the policy with no signal to move from HOME toward SITTING in
+    # the first place. L1 penalties give a constant gradient at every distance
+    # so the policy can discover "moving knees toward sit reduces cost"
+    # before the Gaussian reward becomes informative.
+    cfg.rewards["sit_pose_l1"] = RewardTermCfg(
+        func=microduck_mdp.interpolated_pose_l1_penalty,
+        weight=2.0,
+        params={
+            "joint_indices": _LEG_JOINTS + _NECK_JOINTS,
+            "source_overrides": None,
+            "target_overrides": SITTING_TARGET_OVERRIDES,
+            "ramp_start_frac": 0.0,
+            "ramp_end_frac": RAMP_END_FRAC,
+        },
+    )
+    cfg.rewards["height_target_l1"] = RewardTermCfg(
+        func=microduck_mdp.interpolated_height_l1_penalty,
+        weight=20.0,
+        params={
+            "start_height": STAND_Z,
+            "end_height":   SIT_Z,
+            "asset_cfg":    SceneEntityCfg("robot", body_names=("trunk_base",)),
+            "ramp_start_frac": 0.0,
+            "ramp_end_frac": RAMP_END_FRAC,
+        },
+    )
+
     # Butt-on-ground bonus — gated to the late part of the episode so the
     # policy can't farm it by collapsing to sit at t=0.
     cfg.rewards["sit_grounded"] = RewardTermCfg(

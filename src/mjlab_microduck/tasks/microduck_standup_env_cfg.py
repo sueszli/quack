@@ -243,6 +243,33 @@ def make_microduck_standup_env_cfg(
         params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))},
     )
 
+    # ── Bootstrap: L1 penalties for constant gradient toward the target ───────
+    # The Gaussian pose/height rewards above saturate to zero far from target,
+    # leaving the policy no gradient to discover the sit→stand motion. L1
+    # penalties give a constant gradient at every distance.
+    cfg.rewards["stand_pose_l1"] = RewardTermCfg(
+        func=microduck_mdp.interpolated_pose_l1_penalty,
+        weight=2.0,
+        params={
+            "joint_indices": _LEG_JOINTS + _NECK_JOINTS,
+            "source_overrides": SITTING_JOINT_OVERRIDES,
+            "target_overrides": None,                       # HOME = standing
+            "ramp_start_frac": 0.0,
+            "ramp_end_frac": RAMP_END_FRAC,
+        },
+    )
+    cfg.rewards["height_target_l1"] = RewardTermCfg(
+        func=microduck_mdp.interpolated_height_l1_penalty,
+        weight=20.0,
+        params={
+            "start_height": SIT_Z,
+            "end_height":   STAND_Z,
+            "asset_cfg":    SceneEntityCfg("robot", body_names=("trunk_base",)),
+            "ramp_start_frac": 0.0,
+            "ramp_end_frac": RAMP_END_FRAC,
+        },
+    )
+
     # Stillness once standing — only after the ramp window so the policy can't
     # earn it by sitting still (already still at t=0 in the sit pose).
     cfg.rewards["stand_stability"] = RewardTermCfg(

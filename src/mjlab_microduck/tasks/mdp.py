@@ -1223,6 +1223,71 @@ def interpolated_pose_target_match(
     return torch.exp(-((joint_pos - interp) / std) ** 2).mean(dim=-1)
 
 
+def interpolated_pose_l1_penalty(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    joint_indices: Optional[list] = None,
+    source_overrides: Optional[dict] = None,
+    target_overrides: Optional[dict] = None,
+    ramp_start_frac: float = 0.0,
+    ramp_end_frac: float = 1.0,
+) -> torch.Tensor:
+    """L1 distance from a time-interpolated target pose (negative — used as penalty).
+
+    Same interpolation schedule as ``interpolated_pose_target_match`` but
+    returns ``-mean(|joint_pos - interp|)`` instead of a Gaussian. The L1
+    gradient is constant everywhere — useful as a bootstrap signal when the
+    Gaussian variant saturates to zero far from target and leaves the policy
+    no gradient to discover the target direction.
+    """
+    asset = env.scene[asset_cfg.name]
+    joint_pos = asset.data.joint_pos
+    source = asset.data.default_joint_pos.clone()
+    target = asset.data.default_joint_pos.clone()
+    if source_overrides:
+        for idx, val in source_overrides.items():
+            source[:, idx] = val
+    if target_overrides:
+        for idx, val in target_overrides.items():
+            target[:, idx] = val
+
+    progress = env.episode_length_buf.float() / float(env.max_episode_length)
+    span = max(ramp_end_frac - ramp_start_frac, 1e-6)
+    tau = ((progress - ramp_start_frac) / span).clamp(0.0, 1.0).unsqueeze(-1)
+    interp = source * (1.0 - tau) + target * tau
+
+    if joint_indices is not None:
+        joint_pos = joint_pos[:, joint_indices]
+        interp = interp[:, joint_indices]
+    return -torch.abs(joint_pos - interp).mean(dim=-1)
+
+
+def interpolated_height_l1_penalty(
+    env: ManagerBasedRlEnv,
+    start_height: float,
+    end_height: float,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    ramp_start_frac: float = 0.0,
+    ramp_end_frac: float = 1.0,
+) -> torch.Tensor:
+    """L1 distance from a time-interpolated target height (negative — penalty).
+
+    Same role as ``interpolated_pose_l1_penalty`` but on trunk z. Provides a
+    constant gradient toward the target height regardless of how far off the
+    current z is, complementing the Gaussian ``interpolated_height_target``.
+    """
+    progress = env.episode_length_buf.float() / float(env.max_episode_length)
+    span = max(ramp_end_frac - ramp_start_frac, 1e-6)
+    tau = ((progress - ramp_start_frac) / span).clamp(0.0, 1.0)
+    target_z = start_height * (1.0 - tau) + end_height * tau
+
+    asset = env.scene[asset_cfg.name]
+    z = torch.nan_to_num(
+        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
+    )
+    return -torch.abs(z - target_z)
+
+
 def interpolated_height_target(
     env: ManagerBasedRlEnv,
     start_height: float,
