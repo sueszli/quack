@@ -57,6 +57,12 @@ FELL_OVER_DISABLE_ITER = 500
 BODY_POSE_KICKIN_ITER  = 1500
 NUM_STEPS_PER_ENV      = 24
 
+# Toggle body-pose tracking. When enabled, the reward is gated on linear
+# velocity command magnitude (only active when the robot is supposed to be
+# standing still), and curriculum ramps the weight up after the policy has
+# learned the walking + recovery basics.
+ENABLE_BODY_TRACKING   = True
+
 # Toggle for random prone initialization (episodes start face-down/up with
 # probability ramping from 0 at PRONE_RAMP_START → 2/3 at PRONE_RAMP_END,
 # giving a 33/33/33 split of upright/face-down/face-up resets). Useful for
@@ -167,13 +173,34 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
         params={"sensor_name": head_impact_cfg.name, "threshold": 2.0},
     )
 
-    # Body pose tracking: vel env defines this at weight=0.05 (kept-alive only).
-    # Body pose tracking — DISABLED for now. The body_pose command obs slot
-    # is still present (kept-alive by the vel env's tiny range so the obs
-    # shape stays unified at 61D for runtime compat), but no reward signal
-    # drives the policy to respond to body commands. Re-enable later by
-    # restoring this RewardTermCfg + the curriculum below.
-    cfg.rewards["body_pose_tracking"].weight = 0.0
+    # Body pose tracking, GATED on linear velocity command magnitude.
+    # When the robot is commanded to stand still (|vel_cmd_xy| ≈ 0) the gate
+    # opens and the policy is rewarded for matching the body_pose command.
+    # When commanded to walk the gate closes (≈0) and tracking has no effect.
+    # This sidesteps the body-vs-walking gradient conflict that prevented
+    # earlier runs from learning either well.
+    #
+    # xy tracking is masked out because trunk x/y lean is mechanically coupled
+    # to pitch/roll on this robot (leaning forward shifts trunk AND pitches
+    # it), so independent xy commands produce noise rather than useful gradient.
+    if ENABLE_BODY_TRACKING:
+        cfg.rewards["body_pose_tracking"] = RewardTermCfg(
+            func=microduck_mdp.body_pose_tracking_locomotion,
+            weight=0.0,  # curriculum ramps this up; tracking only active when standing
+            params={
+                "command_name": "body_pose",
+                "nominal_height": BODY_CMD_NOMINAL_HEIGHT,
+                "xy_std":    BODY_CMD_MAX_XY    / 2.0,
+                "z_std":     BODY_CMD_MAX_Z     / 2.0,
+                "angle_std": BODY_CMD_MAX_ANGLE / 2.0,
+                "axis_weights": (0.0, 0.0, 1.0, 1.0, 1.0, 1.0),  # z, roll, pitch, yaw only
+                "vel_gate_command_name": "twist",
+                "vel_gate_std": 0.05,   # gate≈1 at |vel_cmd_xy|=0; ≈0 by |vel_cmd_xy|≥0.15 m/s
+                "feet_cfg":  SceneEntityCfg("robot", site_names=("left_foot", "right_foot")),
+            },
+        )
+    else:
+        cfg.rewards["body_pose_tracking"].weight = 0.0
 
     # ── CURRICULUM ───────────────────────────────────────────────────────────
     # Phase 1 → 2: disable fell_over termination at iter 500 by ramping its
@@ -220,8 +247,44 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
             },
         )
 
-    # body_pose_range curriculum is inherited from the vel env (tiny ±5 mm/3°
-    # "kept-alive" range only) — no override here since tracking is disabled.
+    if ENABLE_BODY_TRACKING:
+        # Weight ramp: 0 until iter BODY_POSE_KICKIN_ITER, then climbs to 3.0
+        # over 1000 iters. Gradient is gated to standing episodes only.
+        cfg.curriculum["body_pose_tracking_weight"] = CurriculumTermCfg(
+            func=velocity_mdp.reward_weight,
+            params={
+                "reward_name": "body_pose_tracking",
+                "weight_stages": [
+                    {"step": 0,                                                  "weight": 0.0},
+                    {"step": BODY_POSE_KICKIN_ITER         * NUM_STEPS_PER_ENV,  "weight": 1.5},
+                    {"step": (BODY_POSE_KICKIN_ITER +  500) * NUM_STEPS_PER_ENV, "weight": 2.5},
+                    {"step": (BODY_POSE_KICKIN_ITER + 1000) * NUM_STEPS_PER_ENV, "weight": 3.5},
+                ],
+            },
+        )
+
+        # body_pose range widens at phase 3 (overrides vel env's kept-alive range).
+        # xy ranges stay tiny since axis_weights mask them out anyway.
+        cfg.curriculum["body_pose_range"].params["range_stages"] = [
+            {"step": 0, "ranges": (
+                (-0.005, 0.005), (-0.005, 0.005), (-0.005, 0.005),
+                (-0.05, 0.05), (-0.05, 0.05), (-0.05, 0.05),
+            )},
+            {"step": BODY_POSE_KICKIN_ITER * NUM_STEPS_PER_ENV, "ranges": (
+                (-0.005, 0.005), (-0.005, 0.005), (-0.015, 0.015),
+                (-math.radians(15), math.radians(15)),
+                (-math.radians(15), math.radians(15)),
+                (-math.radians(15), math.radians(15)),
+            )},
+            {"step": (BODY_POSE_KICKIN_ITER + 1000) * NUM_STEPS_PER_ENV, "ranges": (
+                (-BODY_CMD_MAX_XY, BODY_CMD_MAX_XY),
+                (-BODY_CMD_MAX_XY, BODY_CMD_MAX_XY),
+                (-BODY_CMD_MAX_Z,  BODY_CMD_MAX_Z),
+                (-BODY_CMD_MAX_ANGLE, BODY_CMD_MAX_ANGLE),
+                (-BODY_CMD_MAX_ANGLE, BODY_CMD_MAX_ANGLE),
+                (-BODY_CMD_MAX_ANGLE, BODY_CMD_MAX_ANGLE),
+            )},
+        ]
 
     return cfg
 

@@ -2890,6 +2890,8 @@ def body_pose_tracking_locomotion(
     z_std: float = 0.03,
     angle_std: float = math.radians(30),
     axis_weights: tuple[float, float, float, float, float, float] = (1.0, 1.0, 1.0, 1.0, 1.0, 1.0),
+    vel_gate_command_name: str | None = None,
+    vel_gate_std: float = 0.1,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     feet_cfg: SceneEntityCfg = SceneEntityCfg("robot", site_names=("left_foot", "right_foot")),
 ) -> torch.Tensor:
@@ -2968,7 +2970,23 @@ def body_pose_tracking_locomotion(
     # learnable objective.
     wx, wy, wz, wr, wp, wyaw = axis_weights
     total_w = wx + wy + wz + wr + wp + wyaw
-    return (wx*r_x + wy*r_y + wz*r_z + wr*r_r + wp*r_p + wyaw*r_w) / max(total_w, 1e-6)
+    reward = (wx*r_x + wy*r_y + wz*r_z + wr*r_r + wp*r_p + wyaw*r_w) / max(total_w, 1e-6)
+
+    # Optional gate: when vel_gate_command_name is set, scale the reward by a
+    # Gaussian on the velocity command's magnitude. With vel_gate_std ≈ 0.1,
+    # the gate is ~1 when commanded velocity is 0 and decays to ~exp(-9)≈0
+    # by |vel_cmd|≥0.3 — body tracking only meaningfully contributes when the
+    # robot is supposed to be standing still. Avoids the tracking vs walking
+    # conflict that prevented the previous run from learning either well.
+    if vel_gate_command_name is not None:
+        # Gate on commanded LINEAR velocity only (xy) — turning in place still
+        # leaves body pose meaningful, but walking forward/sideways doesn't.
+        vel_cmd = env.command_manager.get_command(vel_gate_command_name)  # (N, 3)
+        vel_mag = torch.linalg.vector_norm(vel_cmd[:, :2], dim=-1)
+        gate = torch.exp(-(vel_mag / vel_gate_std) ** 2)
+        reward = reward * gate
+
+    return reward
 
 
 def pose_command_range_curriculum(
