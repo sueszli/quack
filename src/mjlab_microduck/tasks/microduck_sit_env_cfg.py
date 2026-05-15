@@ -278,10 +278,13 @@ def make_microduck_sit_env_cfg(
         weight=-0.5,
         params={"sensor_name": trunk_ground_cfg.name, "threshold": 15.0},
     )
+    # Head impacts: heavy penalty + low threshold. The policy was using the
+    # head as a pivot to face-plant into the sit pose — head-first contact
+    # must cost more than the pose-tracking reward it would buy.
     cfg.rewards["head_impact_penalty"] = RewardTermCfg(
         func=microduck_mdp.body_impact_cost,
-        weight=-0.5,
-        params={"sensor_name": head_impact_cfg.name, "threshold": 8.0},
+        weight=-2.0,
+        params={"sensor_name": head_impact_cfg.name, "threshold": 4.0},
     )
 
     # Action smoothness — moderate weight. The interpolated pose target already
@@ -312,7 +315,18 @@ def make_microduck_sit_env_cfg(
     # ── Rewards: stability (kept throughout) ──────────────────────────────────
     cfg.rewards["upright"].params["asset_cfg"].body_names = ("trunk_base",)
     # Robot stays upright during AND after the descent (SIT keyframe is upright).
-    cfg.rewards["upright"].weight = 1.0
+    cfg.rewards["upright"].weight = 2.0
+
+    # Linear upright gradient — fires at every tilt angle, not just near vertical.
+    # The Gaussian ``upright`` saturates at 0 once the trunk tilts past its std,
+    # giving the policy no incentive to *un-tilt*. The linear variant pulls
+    # toward vertical from any orientation, which discourages the face-plant
+    # strategy (tip forward, head-pivot down).
+    cfg.rewards["upright_linear"] = RewardTermCfg(
+        func=microduck_mdp.body_upright_linear,
+        weight=4.0,
+        params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))},
+    )
 
     cfg.rewards["body_ang_vel"].params["asset_cfg"].body_names = ("trunk_base",)
     cfg.rewards["body_ang_vel"].weight = -0.1
