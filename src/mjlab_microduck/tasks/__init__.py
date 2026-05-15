@@ -40,6 +40,10 @@ from .microduck_velstand_env_cfg import (
     make_microduck_velstand_env_cfg,
     MicroduckVelStandRlCfg,
 )
+from .microduck_pose_env_cfg import (
+    make_microduck_pose_env_cfg,
+    MicroduckPoseRlCfg,
+)
 from .testbench_env_cfg import (
     make_testbench_env_cfg,
     MicroduckTestbenchRlCfg,
@@ -151,6 +155,16 @@ register_mjlab_task(
     runner_cls=MicroduckOnPolicyRunner,
 )
 print("✓ VelStand task registered: Mjlab-VelStand-Rough-MicroDuck")
+
+# Pose task — stand still + follow head + body pose commands. Animation playback policy.
+register_mjlab_task(
+    task_id="Mjlab-Pose-Flat-MicroDuck",
+    env_cfg=make_microduck_pose_env_cfg(),
+    play_env_cfg=make_microduck_pose_env_cfg(play=True),
+    rl_cfg=MicroduckPoseRlCfg,
+    runner_cls=MicroduckOnPolicyRunner,
+)
+print("✓ Pose task registered: Mjlab-Pose-Flat-MicroDuck")
 
 # Stand-up task — robot starts inverted (lying on back) and must stand up
 register_mjlab_task(

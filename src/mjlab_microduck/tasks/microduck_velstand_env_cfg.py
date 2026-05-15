@@ -61,7 +61,7 @@ NUM_STEPS_PER_ENV      = 24
 # velocity command magnitude (only active when the robot is supposed to be
 # standing still), and curriculum ramps the weight up after the policy has
 # learned the walking + recovery basics.
-ENABLE_BODY_TRACKING   = True
+ENABLE_BODY_TRACKING   = False
 
 # Toggle for random prone initialization (episodes start face-down/up with
 # probability ramping from 0 at PRONE_RAMP_START → 2/3 at PRONE_RAMP_END,
