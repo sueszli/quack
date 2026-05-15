@@ -626,6 +626,7 @@ def main():
     GLFW_KEY_H = 72
     GLFW_KEY_P = 80
     GLFW_KEY_S = 83
+    GLFW_KEY_T = 84
     GLFW_KEY_Z = 90
 
     # Cache the trunk freejoint qvel address so the push handler can write to
@@ -705,6 +706,13 @@ def main():
                     print("Body pose cmd reset to zero")
                 else:
                     policy.set_vel_cmd(0.0, 0.0, 0.0)
+            elif key == GLFW_KEY_T:
+                # Toggle policy inference on/off. When OFF the controller stops
+                # querying the ONNX policy and the motors hold the last applied
+                # target (no fresh ctrl writes).
+                nonlocal policy_enabled
+                policy_enabled = not policy_enabled
+                print(f"Policy inference: {'ON' if policy_enabled else 'OFF (paused)'}")
             elif key == GLFW_KEY_G:
                 policy.trigger_ground_pick()
             elif key == GLFW_KEY_H:
@@ -759,6 +767,7 @@ def main():
         print("  LEFT/RIGHT arrow: strafe left/right (lin_vel_y)")
         print("  A / E:            turn left/right (ang_vel_z)")
     print("  SPACE:            coast (zero all commands)")
+    print("  T:                toggle policy inference on/off (paused = motors hold last target)")
     print("  G:                trigger ground pick (requires --ground-pick)")
     print(f"  P:                random push (trunk vel = {PUSH_MAX:.1f} m/s in random direction)")
     print("  [ Body pose mode — press B to toggle ]")
@@ -811,9 +820,12 @@ def main():
 
                 if policy_enabled:
                     action = policy.infer()
+                    policy.apply_action(action)
                 else:
+                    # Paused: keep last ctrl, don't query the policy. Motors
+                    # hold position. Use a zero action just so downstream
+                    # logging (csv/debug) sees something consistent.
                     action = np.zeros(policy.n_joints, dtype=np.float32)
-                policy.apply_action(action)
 
                 control_step_count += 1
 
