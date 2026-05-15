@@ -1032,18 +1032,17 @@ def mouth_perpendicular_to_ground(
 
 def sit_grounded(
     env: ManagerBasedRlEnv,
-    command_name: str,
     sensor_name: str,
+    command_name: Optional[str] = None,
     sin_threshold: float = 0.7,
 ) -> torch.Tensor:
-    """Positive reward for trunk-ground contact during the sit window.
+    """Positive reward for trunk-ground contact.
 
-    Active when sin(2π·phase) > sin_threshold (= the slice of the cycle near the
-    sit peak). Returns 1.0 if any matching contact, 0.0 otherwise. Encourages
-    actually resting the body on the ground rather than hovering above it.
+    When ``command_name`` is provided, the reward is gated to the sit window of
+    a phase command (active when sin(2π·phase) > sin_threshold). When it is
+    ``None`` (used by the episodic sit env), the reward is always-on. Returns
+    1.0 if any matching contact, 0.0 otherwise.
     """
-    cmd = env.command_manager.get_command(command_name)
-    in_sit_window = (cmd[:, 1] > sin_threshold).float()
     if sensor_name not in env.scene.sensors:
         return torch.zeros(env.num_envs, device=env.device)
     sensor = env.scene.sensors[sensor_name]
@@ -1051,26 +1050,32 @@ def sit_grounded(
     if found.dim() > 1:
         found = found.sum(dim=-1)
     has_contact = (found > 0).float()
+    if command_name is None:
+        return has_contact
+    cmd = env.command_manager.get_command(command_name)
+    in_sit_window = (cmd[:, 1] > sin_threshold).float()
     return in_sit_window * has_contact
 
 
 def sit_stability(
     env: ManagerBasedRlEnv,
-    command_name: str,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    command_name: Optional[str] = None,
     ang_vel_std: float = 0.5,
     sin_threshold: float = 0.7,
 ) -> torch.Tensor:
-    """Bonus for low body angular velocity during the sit window.
+    """Bonus for low body angular velocity.
 
-    Encourages a stable rest once seated — the policy should commit to a still
-    sitting pose, not bounce or twitch.
+    Phase-gated when ``command_name`` is set (sit window of a phase command);
+    always-on when ``command_name`` is None. Encourages a stable rest pose.
     """
-    cmd = env.command_manager.get_command(command_name)
-    in_sit_window = (cmd[:, 1] > sin_threshold).float()
     asset = env.scene[asset_cfg.name]
     ang_vel_norm = asset.data.root_link_ang_vel_w.norm(dim=-1)
     stillness = torch.exp(-((ang_vel_norm / ang_vel_std) ** 2))
+    if command_name is None:
+        return stillness
+    cmd = env.command_manager.get_command(command_name)
+    in_sit_window = (cmd[:, 1] > sin_threshold).float()
     return in_sit_window * stillness
 
 
@@ -1120,6 +1125,37 @@ def phase_height_track(
         asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
     )
     return torch.exp(-((z - target_z) / std) ** 2)
+
+
+def pose_target_match(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    std: float = 0.3,
+    joint_indices: Optional[list] = None,
+    target_overrides: Optional[dict] = None,
+) -> torch.Tensor:
+    """Always-on Gaussian on joint positions vs a target pose.
+
+    Non-phase analog of ``phase_pose_match``: useful for episodic tasks (e.g.
+    the sit env) where there's no cyclic command to weight the reward by, and
+    the target pose is constant for the whole episode.
+
+    Args:
+        std: Gaussian std per joint (rad).
+        joint_indices: Optional subset of joints to evaluate.
+        target_overrides: ``{joint_index: angle_rad}``. Joints not listed default
+            to ``asset.data.default_joint_pos`` (the home/standing pose).
+    """
+    asset = env.scene[asset_cfg.name]
+    joint_pos = asset.data.joint_pos
+    target = asset.data.default_joint_pos.clone()
+    if target_overrides:
+        for idx, val in target_overrides.items():
+            target[:, idx] = val
+    if joint_indices is not None:
+        joint_pos = joint_pos[:, joint_indices]
+        target = target[:, joint_indices]
+    return torch.exp(-((joint_pos - target) / std) ** 2).mean(dim=-1)
 
 
 def phase_pose_match(
@@ -2101,6 +2137,82 @@ def set_random_prone_orientation(
 
     env.sim.data.qpos[env_ids, 3:7] = new_quat
     env.sim.data.qvel[env_ids, :6] = 0.0
+
+
+def set_random_ground_state(
+    env: ManagerBasedRlEnv,
+    env_ids: torch.Tensor,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    face_down_prob: float = 0.4,
+    face_up_prob: float = 0.4,
+    sitting_prob: float = 0.2,
+    prone_z_min: float = 0.20,
+    prone_z_max: float = 0.25,
+    sitting_z_min: float = 0.07,
+    sitting_z_max: float = 0.09,
+    sitting_joint_overrides: Optional[dict] = None,
+):
+    """Reset to a random ground state: face-down, face-up, or sitting keyframe.
+
+    Broader than ``set_random_prone_orientation`` — used by the stand-up env so
+    the policy learns to recover from any plausible "on the ground" pose,
+    including the sitting keyframe (the resting state of the sit policy).
+
+    Modes (probabilities should sum to 1.0):
+      - face-down (belly to floor): +90° pitch, random yaw, z in [prone_z_min, prone_z_max].
+      - face-up   (back to floor):  -90° pitch, random yaw, z in [prone_z_min, prone_z_max].
+      - sitting:                    upright (identity orientation), random yaw, z low,
+                                    joints set to ``sitting_joint_overrides``.
+
+    Args:
+        sitting_joint_overrides: ``{qpos_joint_index: angle_rad}`` to write into
+            ``qpos[7+idx]`` for envs sampled into the sitting bucket. ``None``
+            keeps joints at whatever ``reset_robot_joints`` already set.
+    """
+    if env_ids is None or len(env_ids) == 0:
+        return
+    env_ids = env_ids.to(env.device, dtype=torch.int)
+    num = len(env_ids)
+
+    total = face_down_prob + face_up_prob + sitting_prob
+    p_fd = face_down_prob / total
+    p_fu = (face_down_prob + face_up_prob) / total
+
+    yaw = torch.rand(num, device=env.device) * 2 * np.pi - np.pi
+    cy = torch.cos(yaw * 0.5)
+    sy = torch.sin(yaw * 0.5)
+    s = 2.0 ** -0.5  # sqrt(2)/2
+
+    face_down = torch.stack([ s * cy, -s * sy,  s * cy,  s * sy], dim=1)
+    face_up   = torch.stack([ s * cy,  s * sy, -s * cy,  s * sy], dim=1)
+    # Upright sitting: identity pitch/roll, only yaw.
+    sitting   = torch.stack([cy, torch.zeros_like(cy), torch.zeros_like(cy), sy], dim=1)
+
+    u = torch.rand(num, device=env.device)
+    is_fd  = u < p_fd
+    is_fu  = (u >= p_fd) & (u < p_fu)
+    is_sit = u >= p_fu
+
+    new_quat = face_down.clone()
+    new_quat[is_fu]  = face_up[is_fu]
+    new_quat[is_sit] = sitting[is_sit]
+
+    # Random z per env: prone heights for face-down/up, sitting height for sit.
+    z_prone = torch.rand(num, device=env.device) * (prone_z_max - prone_z_min) + prone_z_min
+    z_sit   = torch.rand(num, device=env.device) * (sitting_z_max - sitting_z_min) + sitting_z_min
+    new_z = torch.where(is_sit, z_sit, z_prone)
+
+    env.sim.data.qpos[env_ids, 2]   = new_z
+    env.sim.data.qpos[env_ids, 3:7] = new_quat
+    env.sim.data.qvel[env_ids, :6]  = 0.0
+
+    # Sitting-bucket joint overrides (e.g. knee/ankle bent to keyframe).
+    if sitting_joint_overrides:
+        sit_env_ids = env_ids[is_sit]
+        if len(sit_env_ids) > 0:
+            for jnt_idx, angle in sitting_joint_overrides.items():
+                # qpos layout: [x, y, z, qw, qx, qy, qz, joint_0, joint_1, ...]
+                env.sim.data.qpos[sit_env_ids, 7 + jnt_idx] = angle
 
 
 def maybe_set_random_prone_orientation(

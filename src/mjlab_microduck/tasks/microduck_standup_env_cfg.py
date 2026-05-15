@@ -1,7 +1,9 @@
 """Microduck stand-up environment configuration.
 
-The robot is initialized lying on its back (body inverted 180° from upright)
-and must learn to right itself and reach a stable standing posture.
+The robot is initialized in a random ground state — face-down, face-up, or the
+sitting keyframe — and must learn to right itself and reach a stable standing
+posture. The sitting reset state means this policy can also serve as the
+recovery path out of the sit policy's resting pose.
 
 Command layout is unified with the velocity env (13D, see mdp.py):
   twist (3)     : velocity commands — kept at ~0 here (we're standing)
@@ -9,6 +11,30 @@ Command layout is unified with the velocity env (13D, see mdp.py):
   body_pose (6) : body delta [x, y, z, roll, pitch, yaw] from nominal standing
                   pose (tracked — primary objective once upright).
 """
+
+# ── Ground-state reset mix ────────────────────────────────────────────────────
+# Probabilities for the three reset modes (must sum to ~1.0).
+FACE_DOWN_PROB = 0.4
+FACE_UP_PROB   = 0.4
+SITTING_PROB   = 0.2
+
+# Sitting target joint overrides — mirrored from microduck_sit_env_cfg.py.
+# Indices into asset.data.joint_pos (16 entries; passive_* at 9, 10).
+SITTING_JOINT_OVERRIDES = {
+    1:   0.0,      # left  hip_roll
+    3:   1.0472,   # left  knee
+    4:   0.0,      # left  ankle
+    5:   1.2217,   # neck_pitch
+    6:  -1.2217,   # head_pitch
+    12:  0.0,      # right hip_roll
+    14: -1.0472,   # right knee
+    15:  0.0,      # right ankle
+}
+
+# Random joint offset on reset (rad) — applied on top of default/keyframe pose
+# by the velocity-env `reset_robot_joints` event. Adds robustness to "random
+# joint configuration on the ground" starts without needing wholly random poses.
+RESET_JOINT_NOISE = 0.3
 
 import math
 from copy import deepcopy
@@ -404,10 +430,26 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
     cfg.events["reset_base"].params["pose_range"]["z"] = (0.20, 0.25)
     cfg.events["foot_friction"].params["asset_cfg"].geom_names = foot_frictions_geom_names
 
-    # Override orientation: randomly face-down (belly) or face-up (back), with random yaw.
-    cfg.events["set_face_down"] = EventTermCfg(
-        func=microduck_mdp.set_random_prone_orientation,
+    # Override orientation: mix of face-down, face-up, and sitting keyframe
+    # with random yaw. The sitting bucket also rewrites the relevant joint
+    # angles so the robot starts from the sit policy's resting pose.
+    # Inserted after ``reset_base`` so the z override (low for sitting,
+    # high for prone) takes effect.
+    cfg.events["set_ground_state"] = EventTermCfg(
+        func=microduck_mdp.set_random_ground_state,
         mode="reset",
+        params={
+            "face_down_prob": FACE_DOWN_PROB,
+            "face_up_prob":   FACE_UP_PROB,
+            "sitting_prob":   SITTING_PROB,
+            "sitting_joint_overrides": SITTING_JOINT_OVERRIDES,
+        },
+    )
+
+    # Small joint-position noise on reset — "any random joint configuration"
+    # robustness without sampling fully random (and likely self-colliding) poses.
+    cfg.events["reset_robot_joints"].params["position_range"] = (
+        -RESET_JOINT_NOISE, RESET_JOINT_NOISE,
     )
 
     # Terminate environments where MuJoCo physics went NaN (contact instability).
@@ -607,9 +649,11 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
         params={
             "reward_name": "trunk_impact_penalty",
             "weight_stages": [
-                {"step": 0,          "weight": 0.0},
-                {"step": 1000 * 24,  "weight": -0.05},
-                {"step": 2000 * 24,  "weight": -0.2},
+                # Non-zero from the start — discourages slamming the trunk
+                # during the early flip-exploration phase.
+                {"step": 0,          "weight": -0.02},
+                {"step": 1000 * 24,  "weight": -0.1},
+                {"step": 2000 * 24,  "weight": -0.3},
             ],
         },
     )
@@ -619,10 +663,12 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
         params={
             "reward_name": "head_impact_penalty",
             "weight_stages": [
-                {"step": 0,          "weight": 0.0},
-                {"step": 1000 * 24,  "weight": -0.2},
-                {"step": 2000 * 24,  "weight": -1.0},
-                {"step": 3000 * 24,  "weight": -2.5},  # late: kill remaining head-on-ground tendency
+                # Non-zero from the start: hardware-protection priority — no
+                # phase where "use face as pivot" is free.
+                {"step": 0,          "weight": -0.05},
+                {"step": 1000 * 24,  "weight": -0.3},
+                {"step": 2000 * 24,  "weight": -1.2},
+                {"step": 3000 * 24,  "weight": -2.5},
             ],
         },
     )
