@@ -186,26 +186,50 @@ def make_microduck_standup_env_cfg(
     )
 
     # Trunk height target — Gaussian + L1 toward STAND_Z.
+    # Std widened from 0.02 → 0.04: at the initial sit (5 cm below STAND_Z),
+    # std=0.02 gives reward ≈ 0.002 — saturated, no gradient. std=0.04 gives
+    # 0.21 — a meaningful pull. Once close to STAND_Z the policy still gets
+    # the sharp peak (reward ≈ 1 at exact height).
     cfg.rewards["height_stand"] = RewardTermCfg(
         func=microduck_mdp.height_target_gaussian,
         weight=4.0,
         params={
-            "std":           0.02,
+            "std":           0.04,
             "target_height": STAND_Z,
             "asset_cfg":     SceneEntityCfg("robot", body_names=("trunk_base",)),
         },
     )
+    # L1 bumped 10 → 30: previous run plateaued sitting still because the
+    # static-sit basin (-0.5 reward from L1 + everything else positive) was
+    # net positive. At weight 30, sitting still costs -1.5/step — net cost
+    # of "stay sitting" forces exploration.
     cfg.rewards["height_stand_l1"] = RewardTermCfg(
         func=microduck_mdp.height_l1_penalty,
-        weight=10.0,
+        weight=30.0,
         params={
             "target_height": STAND_Z,
             "asset_cfg":     SceneEntityCfg("robot", body_names=("trunk_base",)),
         },
     )
 
-    # Gentle rise — penalty on |a_z|. Smooth ascent has a_z ≈ 0; jerky
-    # launches and sudden falls (failed rises) produce spikes that get paid.
+    # Reward upward CoM velocity below STAND_Z — pays for the *motion* of
+    # rising, not just for the destination. Critical bootstrap: with only
+    # destination rewards, "stay sitting upright collecting most-of-pose +
+    # upright" was the dominant local optimum. Rewarding vz > 0 directly
+    # makes any rise attempt immediately positive. Gates off above
+    # max_height so the policy can't farm it by bobbing.
+    cfg.rewards["com_upward_velocity"] = RewardTermCfg(
+        func=microduck_mdp.com_upward_velocity,
+        weight=3.0,
+        params={
+            "asset_cfg":  SceneEntityCfg("robot", body_names=("trunk_base",)),
+            "max_height": 0.11,
+        },
+    )
+
+    # Gentle rise — penalty on |a_z|. Compatible with com_upward_velocity:
+    # constant positive vz collects upward-velocity reward AND has a_z = 0,
+    # so the two pressures together select for smooth constant-velocity rise.
     cfg.rewards["gentle_rise"] = RewardTermCfg(
         func=microduck_mdp.trunk_vertical_accel_penalty,
         weight=-0.02,
