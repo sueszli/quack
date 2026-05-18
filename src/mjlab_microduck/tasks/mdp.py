@@ -1036,15 +1036,21 @@ def sit_grounded(
     command_name: Optional[str] = None,
     sin_threshold: float = 0.7,
     min_progress_frac: float = 0.0,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    upright_cos_threshold: float = 0.5,
 ) -> torch.Tensor:
-    """Positive reward for trunk-ground contact.
+    """Positive reward for trunk-ground contact WHILE upright.
+
+    Gated additionally on the trunk's body-frame +Z axis pointing in roughly the
+    world-up direction (cosine >= ``upright_cos_threshold``, default 0.5 → up to
+    60° tilt accepted). Without this gate, the policy can earn the contact
+    bonus by tipping sideways or face-forward — the trunk hits the ground in
+    those weird poses, sit_grounded fires, and the policy converges to a
+    "fallen" mode that competes with the actual sit pose.
 
     When ``command_name`` is provided, the reward is gated to the sit window of
-    a phase command (active when sin(2π·phase) > sin_threshold). Otherwise the
-    reward is always-on, optionally gated to the late part of the episode via
-    ``min_progress_frac`` (episodic sit env: prevents the policy from claiming
-    the contact bonus by snapping to sit at t=0). Returns 1.0 if any matching
-    contact (within the gate), 0.0 otherwise.
+    a phase command. Otherwise it's always-on, optionally gated to the late
+    part of the episode via ``min_progress_frac``.
     """
     if sensor_name not in env.scene.sensors:
         return torch.zeros(env.num_envs, device=env.device)
@@ -1053,15 +1059,27 @@ def sit_grounded(
     if found.dim() > 1:
         found = found.sum(dim=-1)
     has_contact = (found > 0).float()
+
+    # Upright check: trunk body's +Z (world frame, third column of rotation matrix
+    # derived from the trunk quaternion) dot world-up = trunk's body-up · world-up.
+    # Equivalently: 1 - 2*(qx² + qy²) for a unit quaternion (w, x, y, z).
+    asset: Entity = env.scene[asset_cfg.name]
+    quat = asset.data.root_link_quat_w  # (N, 4) = (w, x, y, z)
+    qx, qy = quat[:, 1], quat[:, 2]
+    upright_cos = 1.0 - 2.0 * (qx * qx + qy * qy)
+    is_upright = (upright_cos >= upright_cos_threshold).float()
+
+    contact_upright = has_contact * is_upright
+
     if command_name is None:
         if min_progress_frac > 0.0:
             progress = env.episode_length_buf.float() / float(env.max_episode_length)
             late_enough = (progress >= min_progress_frac).float()
-            return late_enough * has_contact
-        return has_contact
+            return late_enough * contact_upright
+        return contact_upright
     cmd = env.command_manager.get_command(command_name)
     in_sit_window = (cmd[:, 1] > sin_threshold).float()
-    return in_sit_window * has_contact
+    return in_sit_window * contact_upright
 
 
 def sit_stability(
