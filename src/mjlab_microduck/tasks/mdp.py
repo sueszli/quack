@@ -558,6 +558,52 @@ def upright_gaussian_at_height(
     return upright_g * smooth
 
 
+def standing_composite_score(
+    env: ManagerBasedRlEnv,
+    target_height: float,
+    height_std: float,
+    upright_std: float,
+    pose_std: float,
+    joint_indices: list,
+    target_overrides: Optional[dict] = None,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """Smooth multiplicative goal-state score (product of three Gaussians).
+
+    Returns ``height_score * upright_score * pose_score``, each ∈ [0, 1].
+    Because the factors *multiply*, a deficiency in any one term collapses
+    the whole reward — the policy can't claim 80% of this by being perfect
+    on 2-of-3. Gradient is non-zero everywhere, so the score works during
+    the rise (not just at the goal like a binary bonus would).
+
+    Use to break Nash-equilibrium compromises (e.g., a "lean trunk at the
+    right height" basin that satisfies the additive rewards' partial sums).
+    """
+    asset = env.scene[asset_cfg.name]
+
+    z = torch.nan_to_num(
+        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
+    )
+    height_score = torch.exp(-((z - target_height) / height_std) ** 2)
+
+    quat = asset.data.root_link_quat_w
+    qx = quat[:, 1]
+    qy = quat[:, 2]
+    tilt_sq = 2.0 * (qx * qx + qy * qy)
+    upright_score = torch.exp(-tilt_sq / (upright_std * upright_std))
+
+    target = asset.data.default_joint_pos.clone()
+    if target_overrides:
+        for idx, val in target_overrides.items():
+            target[:, idx] = val
+    joint_pos = asset.data.joint_pos[:, joint_indices]
+    target = target[:, joint_indices]
+    pose_err_sq = ((joint_pos - target) ** 2).mean(dim=-1)
+    pose_score = torch.exp(-pose_err_sq / (pose_std * pose_std))
+
+    return height_score * upright_score * pose_score
+
+
 def standing_success_bonus(
     env: ManagerBasedRlEnv,
     target_height: float,

@@ -285,29 +285,32 @@ def make_microduck_standup_env_cfg(
         },
     )
 
-    # Discrete goal-state bonus: +10 only when the robot is *fully* standing
-    # (height, upright AND pose all within tolerance simultaneously). The
-    # surrounding gradient rewards bring the policy CLOSE to the goal but
-    # can't escape compromise basins (lean trunk to compensate head-forward
-    # CoM, park 1cm short of STAND_Z) — those compromises collect partial
-    # gradient credit but ZERO bonus. The bonus is the "carrot" that makes
-    # the genuine goal state strictly more valuable than the compromises.
-    cfg.rewards["standing_bonus"] = RewardTermCfg(
-        func=microduck_mdp.standing_success_bonus,
-        weight=10.0,
+    # Smooth multiplicative goal-state score. Replaces the binary bonus
+    # (which never fired — tolerances too tight to reach without already
+    # being there). Product of Gaussians ⇒ a deficiency in ANY factor
+    # collapses the whole reward, breaking the additive-sum compromise
+    # basin where the policy gets credit for being "close on 2-of-3".
+    cfg.rewards["standing_composite"] = RewardTermCfg(
+        func=microduck_mdp.standing_composite_score,
+        weight=15.0,
         params={
-            "target_height":     STAND_Z,
-            "height_tol":        0.01,    # ±1 cm
-            "upright_threshold": 0.97,    # within ≈ 14° of vertical
-            "pose_tol":          0.15,    # ≈ 8.6° per joint, max
-            "joint_indices":     _LEG_JOINTS + _NECK_JOINTS,
-            "target_overrides":  None,
-            "asset_cfg":         SceneEntityCfg("robot", body_names=("trunk_base",)),
+            "target_height":    STAND_Z,
+            "height_std":       0.015,   # tight ⇒ z really must reach STAND_Z
+            "upright_std":      0.15,    # ≈ 8.6° — vertical or near it
+            "pose_std":         0.20,    # joint-RMS, generous for transient drift
+            "joint_indices":    _LEG_JOINTS + _NECK_JOINTS,
+            "target_overrides": None,
+            "asset_cfg":        SceneEntityCfg("robot", body_names=("trunk_base",)),
         },
     )
 
     # ── Sim2real regularisers (smoothness) ────────────────────────────────────
-    cfg.rewards["action_rate_l2"]        = RewardTermCfg(func=mdp.action_rate_l2,                 weight=-0.5)
+    # action_rate dropped -0.5 → -0.2: active balance at the standing target
+    # requires small constant joint corrections (to counter head-forward CoM).
+    # -0.5 over-penalised that ongoing motion and selected for "passive lean"
+    # over "vertical with micro-corrections". -0.2 still suppresses high-freq
+    # twitching but allows the active stabilisation the goal pose needs.
+    cfg.rewards["action_rate_l2"]        = RewardTermCfg(func=mdp.action_rate_l2,                 weight=-0.2)
     cfg.rewards["joint_torque_rate_l2"]  = RewardTermCfg(func=microduck_mdp.joint_torque_rate_l2, weight=-5e-4)
     cfg.rewards["joint_torques_l2"]      = RewardTermCfg(func=microduck_mdp.joint_torques_l2,     weight=-5e-3)
 
