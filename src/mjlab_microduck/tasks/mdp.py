@@ -529,6 +529,35 @@ def body_upright_gaussian(
     return torch.exp(-tilt_sq / (std * std))
 
 
+def upright_gaussian_at_height(
+    env: ManagerBasedRlEnv,
+    std: float,
+    height_low: float,
+    height_high: float,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """``body_upright_gaussian`` weighted by smoothstep on trunk z.
+
+    Full Gaussian-upright reward when ``z >= height_high``, zero when
+    ``z <= height_low``, smoothstep in between. Use this when the upright
+    incentive should only apply at the target standing height — otherwise
+    the policy can find a "crouch low and vertical" local optimum that
+    collects upright reward without ever rising.
+    """
+    asset = env.scene[asset_cfg.name]
+    quat = asset.data.root_link_quat_w
+    qx = quat[:, 1]
+    qy = quat[:, 2]
+    tilt_sq = 2.0 * (qx * qx + qy * qy)
+    upright_g = torch.exp(-tilt_sq / (std * std))
+    z = torch.nan_to_num(
+        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
+    )
+    t = torch.clamp((z - height_low) / max(height_high - height_low, 1e-6), 0.0, 1.0)
+    smooth = t * t * (3.0 - 2.0 * t)
+    return upright_g * smooth
+
+
 def standing_success_bonus(
     env: ManagerBasedRlEnv,
     target_height: float,

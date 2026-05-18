@@ -269,12 +269,19 @@ def make_microduck_standup_env_cfg(
         weight=6.0,
         params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))},
     )
+    # Sharp Gaussian upright, gated by trunk z. Pays only when the robot is
+    # actually at the standing height — prevents the "crouch low and vertical"
+    # exploit that the un-gated sharp Gaussian created (policy collapsed to
+    # z ≈ 0.065 m while staying perfectly upright, collecting easy
+    # upright_sharp without ever rising).
     cfg.rewards["upright_sharp"] = RewardTermCfg(
-        func=microduck_mdp.body_upright_gaussian,
+        func=microduck_mdp.upright_gaussian_at_height,
         weight=6.0,
         params={
-            "std":       0.1,   # ≈ 5.7° — full reward only when near vertical
-            "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
+            "std":         0.1,           # ≈ 5.7°
+            "height_low":  SIT_Z,         # 0 reward at sit height
+            "height_high": STAND_Z,       # full reward at standing height
+            "asset_cfg":   SceneEntityCfg("robot", body_names=("trunk_base",)),
         },
     )
 
