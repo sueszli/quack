@@ -285,13 +285,16 @@ def make_microduck_sit_env_cfg(
         },
     )
 
-    # Stillness reward — same late gating.
+    # Stillness reward — late-gated. Previously weight=2, std=0.5 — the policy
+    # could wobble fairly visibly (ang_vel_norm ≈ 0.5 rad/s) and still get 0.37
+    # of the reward. Tightening std to 0.25 makes the policy actually settle:
+    # 0.25 rad/s wobble now gives 0.37; 0.5 rad/s gives only 0.02.
     cfg.rewards["sit_stability"] = RewardTermCfg(
         func=microduck_mdp.sit_stability,
-        weight=2.0,
+        weight=4.0,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
-            "ang_vel_std": 0.5,
+            "ang_vel_std": 0.25,
             "command_name": None,
             "min_progress_frac": SIT_REWARD_MIN_PROGRESS,
         },
@@ -358,7 +361,11 @@ def make_microduck_sit_env_cfg(
     )
 
     cfg.rewards["body_ang_vel"].params["asset_cfg"].body_names = ("trunk_base",)
-    cfg.rewards["body_ang_vel"].weight = -0.1
+    # Bumped from -0.1 → -0.3: previous run's policy descended into sit but
+    # then kept wobbling/overshooting (curves: sit_stability stalled at ~0.5
+    # and upright dropped from 1.7 → 1.0 mid-training). Higher angular-vel
+    # penalty makes "settle and stop moving" cheaper than continued motion.
+    cfg.rewards["body_ang_vel"].weight = -0.3
 
     cfg.rewards["angular_momentum"].weight = -0.02
 
