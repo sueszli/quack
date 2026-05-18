@@ -165,11 +165,16 @@ def make_microduck_standup_env_cfg(
     )
 
     # Pose target — neck/head at HOME.
+    # Bumped weight 4 → 8 and std 0.3 → 0.15: previous run converged with the
+    # head tilted back ~40° as a counterweight to head-heavy forward CoM (a
+    # valid balance strategy, just not the desired one). Tighter + heavier
+    # makes that strategy strictly costlier than head-at-HOME + active
+    # ankle/leg correction.
     cfg.rewards["pose_stand_neck"] = RewardTermCfg(
         func=microduck_mdp.pose_target_match,
-        weight=4.0,
+        weight=8.0,
         params={
-            "std": 0.3,
+            "std": 0.15,
             "joint_indices": _NECK_JOINTS,
             "target_overrides": None,
         },
