@@ -1332,6 +1332,35 @@ def interpolated_height_target(
     return torch.exp(-((z - target_z) / std) ** 2)
 
 
+def bilateral_symmetry_penalty(
+    env: ManagerBasedRlEnv,
+    left_indices: list,
+    right_indices: list,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """L1 penalty on left/right leg asymmetry.
+
+    For a bilaterally-symmetric robot the leg HOME and any symmetric target
+    (FOLD, SIT) satisfy ``q_left + q_right == 0`` on each matched joint pair
+    (because the left/right joints use mirrored sign conventions). This term
+    penalises departures from that constraint.
+
+    Useful when ``mean()`` of pose-target rewards lets the policy get away
+    with one-leg-correct solutions (you collect ~half the reward for free
+    and the gradient toward fixing the second leg is too weak to escape that
+    local minimum). The penalty here has constant L1 gradient regardless of
+    magnitude, so any asymmetry pays a cost and the unique zero is the
+    fully-symmetric configuration.
+
+    Returns ``-sum_i |q[left_i] + q[right_i]|`` averaged over the N pairs.
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    pos = asset.data.joint_pos
+    left = pos[:, left_indices]
+    right = pos[:, right_indices]
+    return -torch.abs(left + right).mean(dim=-1)
+
+
 def _multistage_target_pose(
     env: ManagerBasedRlEnv,
     asset_cfg: SceneEntityCfg,

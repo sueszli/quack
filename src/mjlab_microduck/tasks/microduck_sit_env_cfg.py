@@ -96,6 +96,9 @@ TRAJECTORY_WAYPOINTS = [
 
 # Articulation indices (account for passive_1, passive_2 at 9, 10).
 _LEG_JOINTS  = [0, 1, 2, 3, 4, 11, 12, 13, 14, 15]
+# Left/right leg index pairs (for bilateral symmetry penalty).
+_LEG_LEFT_INDICES  = [0, 1, 2, 3, 4]   # left:  hip_yaw, hip_roll, hip_pitch, knee, ankle
+_LEG_RIGHT_INDICES = [11, 12, 13, 14, 15]  # right: same five joints
 _NECK_JOINTS = [5, 6, 7, 8]
 # Joints with the largest sit↔stand deltas (knees + ankles, both legs).
 _SIT_CRITICAL_JOINTS = [3, 4, 14, 15]
@@ -242,12 +245,15 @@ def make_microduck_sit_env_cfg(
     )
 
     # Neck/head — waypoints don't override these, so target stays at HOME
-    # throughout the trajectory (head always forward-facing).
+    # throughout the trajectory (head always forward-facing). Bumped weight
+    # 2.0 → 4.0 and tightened std 0.3 → 0.2 because the previous run plateaued
+    # at ~75% match — head_pitch stuck ~0.35 rad off-target (likely sagging
+    # under gravity). Stronger pull required to get the head fully back up.
     cfg.rewards["sit_pose_neck"] = RewardTermCfg(
         func=microduck_mdp.multistage_pose_target_match,
-        weight=2.0,
+        weight=4.0,
         params={
-            "std": 0.3,
+            "std": 0.2,
             "joint_indices": _NECK_JOINTS,
             "waypoints": TRAJECTORY_WAYPOINTS,
         },
@@ -266,6 +272,20 @@ def make_microduck_sit_env_cfg(
                 {"frac": FOLD_FRAC, "height": SIT_Z},
                 {"frac": SIT_FRAC,  "height": SIT_Z},
             ],
+        },
+    )
+
+    # Bilateral leg symmetry — direct penalty on |q_left + q_right|. All sit
+    # trajectory targets (HOME, FOLD, SIT) satisfy q_left = -q_right per joint
+    # (mirrored convention), so this reward is zero at every waypoint and
+    # purely penalizes the asymmetric local minimum where only one leg folds.
+    cfg.rewards["leg_symmetry"] = RewardTermCfg(
+        func=microduck_mdp.bilateral_symmetry_penalty,
+        weight=-2.0,
+        params={
+            "left_indices":  _LEG_LEFT_INDICES,
+            "right_indices": _LEG_RIGHT_INDICES,
+            "asset_cfg":     SceneEntityCfg("robot"),
         },
     )
 
