@@ -255,16 +255,48 @@ def make_microduck_standup_env_cfg(
         params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))},
     )
 
-    # Upright — strong always-on. Unlike sit (where butt-down at low z is a
-    # legitimate final state), standup must stay vertical throughout the
-    # whole motion. Bumped from 4 → 6: previous run converged with trunk
-    # leaning forward ~30° (upright_linear plateau at 3.3/4) — the forward
-    # lean was being used as a balance strategy at partial-extension. Heavier
-    # weight makes the lean costlier than just finishing the rise.
+    # Upright — two-layer like the height reward.
+    #  - ``upright_linear``: cos(tilt). Strong gradient at high tilt (e.g.,
+    #    while inverted at the start of a recovery), weak near vertical.
+    #    Provides bootstrap pull from any orientation.
+    #  - ``upright_sharp``: exp(-tilt²/std²) with std ≈ 6°. Gradient is
+    #    STRONGEST in the near-vertical regime where the linear version
+    #    runs out of steam. Previous run converged at ~37° back-lean because
+    #    the linear pull at small tilt becomes weak; this term punishes that
+    #    exact regime.
     cfg.rewards["upright_linear"] = RewardTermCfg(
         func=microduck_mdp.body_upright_linear,
         weight=6.0,
         params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))},
+    )
+    cfg.rewards["upright_sharp"] = RewardTermCfg(
+        func=microduck_mdp.body_upright_gaussian,
+        weight=6.0,
+        params={
+            "std":       0.1,   # ≈ 5.7° — full reward only when near vertical
+            "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
+        },
+    )
+
+    # Discrete goal-state bonus: +10 only when the robot is *fully* standing
+    # (height, upright AND pose all within tolerance simultaneously). The
+    # surrounding gradient rewards bring the policy CLOSE to the goal but
+    # can't escape compromise basins (lean trunk to compensate head-forward
+    # CoM, park 1cm short of STAND_Z) — those compromises collect partial
+    # gradient credit but ZERO bonus. The bonus is the "carrot" that makes
+    # the genuine goal state strictly more valuable than the compromises.
+    cfg.rewards["standing_bonus"] = RewardTermCfg(
+        func=microduck_mdp.standing_success_bonus,
+        weight=10.0,
+        params={
+            "target_height":     STAND_Z,
+            "height_tol":        0.01,    # ±1 cm
+            "upright_threshold": 0.97,    # within ≈ 14° of vertical
+            "pose_tol":          0.15,    # ≈ 8.6° per joint, max
+            "joint_indices":     _LEG_JOINTS + _NECK_JOINTS,
+            "target_overrides":  None,
+            "asset_cfg":         SceneEntityCfg("robot", body_names=("trunk_base",)),
+        },
     )
 
     # ── Sim2real regularisers (smoothness) ────────────────────────────────────

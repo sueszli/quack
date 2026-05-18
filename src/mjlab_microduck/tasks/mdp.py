@@ -505,6 +505,74 @@ def body_upright_linear(
     return 1.0 - 2.0 * (qx * qx + qy * qy)
 
 
+def body_upright_gaussian(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    std: float = 0.1,
+) -> torch.Tensor:
+    """Gaussian reward on tilt magnitude — sharp pull toward fully vertical.
+
+    Complements ``body_upright_linear`` (which is ``cos(tilt)`` and whose
+    gradient ``sin(tilt)`` *vanishes* at the target). This Gaussian's
+    gradient is non-zero near vertical and tapers as you move away, so it
+    creates a strong differential pull in the regime where the linear
+    version is weakest.
+
+    Uses ``2*(qx² + qy²) = 1 - cos(tilt) ≈ tilt²/2`` as a tilt-squared
+    proxy and applies ``exp(-tilt²/std²)``. Default std=0.1 rad ≈ 5.7°.
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    quat = asset.data.root_link_quat_w
+    qx = quat[:, 1]
+    qy = quat[:, 2]
+    tilt_sq = 2.0 * (qx * qx + qy * qy)  # ≈ 1 − cos(tilt); small-angle: tilt²/2
+    return torch.exp(-tilt_sq / (std * std))
+
+
+def standing_success_bonus(
+    env: ManagerBasedRlEnv,
+    target_height: float,
+    height_tol: float,
+    upright_threshold: float,
+    pose_tol: float,
+    joint_indices: list,
+    target_overrides: Optional[dict] = None,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """Binary bonus: 1.0 iff height, uprightness AND pose are all within tol.
+
+    Creates a discrete goal-state attractor that gradient-based pose/upright/
+    height rewards can't fully match by themselves. Surrounding compromises
+    (lean trunk to balance head-forward CoM, park 1cm short of target z,
+    etc.) collect partial gradient credit but ZERO bonus — the bonus is
+    available only at the true goal state, so it changes the policy's
+    relative preference once the rest of the rewards have brought it close.
+    """
+    asset = env.scene[asset_cfg.name]
+
+    z = torch.nan_to_num(
+        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
+    )
+    height_ok = (z - target_height).abs() <= height_tol
+
+    quat = asset.data.root_link_quat_w
+    qx = quat[:, 1]
+    qy = quat[:, 2]
+    upright = 1.0 - 2.0 * (qx * qx + qy * qy)
+    upright_ok = upright >= upright_threshold
+
+    target = asset.data.default_joint_pos.clone()
+    if target_overrides:
+        for idx, val in target_overrides.items():
+            target[:, idx] = val
+    joint_pos = asset.data.joint_pos[:, joint_indices]
+    target = target[:, joint_indices]
+    pose_err = (joint_pos - target).abs().max(dim=-1).values  # tightest joint
+    pose_ok = pose_err <= pose_tol
+
+    return (height_ok & upright_ok & pose_ok).float()
+
+
 def com_upward_velocity(
     env: ManagerBasedRlEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
