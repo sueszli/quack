@@ -543,8 +543,16 @@ def make_microduck_sit_env_cfg(
         del cfg.curriculum["terrain_levels"]
     del cfg.curriculum["command_vel"]
 
-    # Push curriculum: zero pushes for 500 iterations (learn the descent
-    # cleanly), then ramp up to the modest final magnitude.
+    # Push curriculum — delayed significantly. The sit task is much more
+    # fragile to pushes than walking: a push mid-descent tips the robot
+    # into a configuration it can't recover from before the policy has
+    # consolidated the sit motion. Previous schedule (pushes at iter 500)
+    # caused exactly the failure mode seen in wandb: policy learns to sit
+    # by iter 250, pushes start at 500, episode rewards drop, policy
+    # unlearns sitting and converges to "just stand doing nothing".
+    #
+    # Hold pushes off until the policy has been sitting cleanly for a
+    # while (~iter 1500), then ramp gently to the final ±0.15 m/s.
     if ENABLE_VELOCITY_PUSHES:
         cfg.curriculum["push_magnitude"] = CurriculumTermCfg(
             func=microduck_mdp.push_curriculum,
@@ -552,8 +560,9 @@ def make_microduck_sit_env_cfg(
                 "event_name": "push_robot",
                 "push_stages": [
                     {"step": 0,         "velocity_range": {"x": (0.0, 0.0),    "y": (0.0, 0.0)}},
-                    {"step": 500 * 24,  "velocity_range": {"x": (-0.08, 0.08), "y": (-0.08, 0.08)}},
-                    {"step": 1000 * 24, "velocity_range": {"x": VELOCITY_PUSH_RANGE, "y": VELOCITY_PUSH_RANGE}},
+                    {"step": 1500 * 24, "velocity_range": {"x": (-0.05, 0.05), "y": (-0.05, 0.05)}},
+                    {"step": 2000 * 24, "velocity_range": {"x": (-0.10, 0.10), "y": (-0.10, 0.10)}},
+                    {"step": 2500 * 24, "velocity_range": {"x": VELOCITY_PUSH_RANGE, "y": VELOCITY_PUSH_RANGE}},
                 ],
             },
         )
