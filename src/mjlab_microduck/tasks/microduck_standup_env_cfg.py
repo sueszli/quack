@@ -218,12 +218,15 @@ def make_microduck_standup_env_cfg(
     # upright" was the dominant local optimum. Rewarding vz > 0 directly
     # makes any rise attempt immediately positive. Gates off above
     # max_height so the policy can't farm it by bobbing.
+    # max_height set just above STAND_Z (0.12 → 0.125) so the reward stays
+    # active through the final cm of rise. Earlier 0.11 caused the policy to
+    # park at ~0.108 (gate-off altitude) and never finish the climb.
     cfg.rewards["com_upward_velocity"] = RewardTermCfg(
         func=microduck_mdp.com_upward_velocity,
         weight=3.0,
         params={
             "asset_cfg":  SceneEntityCfg("robot", body_names=("trunk_base",)),
-            "max_height": 0.11,
+            "max_height": 0.125,
         },
     )
 
@@ -238,10 +241,13 @@ def make_microduck_standup_env_cfg(
 
     # Upright — strong always-on. Unlike sit (where butt-down at low z is a
     # legitimate final state), standup must stay vertical throughout the
-    # whole motion. Single-layer linear upright at weight 4 is enough.
+    # whole motion. Bumped from 4 → 6: previous run converged with trunk
+    # leaning forward ~30° (upright_linear plateau at 3.3/4) — the forward
+    # lean was being used as a balance strategy at partial-extension. Heavier
+    # weight makes the lean costlier than just finishing the rise.
     cfg.rewards["upright_linear"] = RewardTermCfg(
         func=microduck_mdp.body_upright_linear,
-        weight=4.0,
+        weight=6.0,
         params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))},
     )
 
