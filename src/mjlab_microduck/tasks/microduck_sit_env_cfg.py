@@ -52,8 +52,8 @@ EPISODE_LENGTH_S = 6.0
 # the robot must crouch with the trunk still vertical, then transition to
 # SIT from there. Reaching SIT by tipping over backward gives 0 reward at
 # the FOLD waypoint.
-FOLD_FRAC = 0.4
-SIT_FRAC  = 0.7
+FOLD_FRAC = 0.35
+SIT_FRAC  = 0.55
 # sit_grounded / sit_stability only activate after this fraction so the policy
 # doesn't get paid for snapping to the floor at t=0.
 SIT_REWARD_MIN_PROGRESS = 0.65
@@ -100,8 +100,12 @@ _LEG_JOINTS  = [0, 1, 2, 3, 4, 11, 12, 13, 14, 15]
 _LEG_LEFT_INDICES  = [0, 1, 2, 3, 4]   # left:  hip_yaw, hip_roll, hip_pitch, knee, ankle
 _LEG_RIGHT_INDICES = [11, 12, 13, 14, 15]  # right: same five joints
 _NECK_JOINTS = [5, 6, 7, 8]
-# Joints with the largest sit↔stand deltas (knees + ankles, both legs).
-_SIT_CRITICAL_JOINTS = [3, 4, 14, 15]
+# Joints with the largest deltas across the FOLD→SIT transition.
+# Knees + ankles change between FOLD and SIT (knee 1.57→1.05, ankle stays 0),
+# and CRITICALLY hip_pitch changes the most (1.57→0.52) — the policy must
+# rotate hips back out of the deep crouch to land butt-on-ground in the SIT
+# pose. Without strong gradient on hip_pitch, the policy gets stuck at FOLD.
+_SIT_CRITICAL_JOINTS = [2, 3, 4, 13, 14, 15]
 
 # Trunk height targets (m).
 STAND_Z = 0.12
