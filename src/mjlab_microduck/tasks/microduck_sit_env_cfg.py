@@ -575,18 +575,23 @@ MicroduckSitRlCfg = RslRlOnPolicyRunnerCfg(
     algorithm=PpoWithSymmetryCfg(
         value_loss_coef=1.0,
         use_clipped_value_loss=True,
-        clip_param=0.2,
-        entropy_coef=0.01,
+        # Tighter trust region than the default 0.2. Each update can change
+        # the policy by less, so post-convergence the policy can't blow up
+        # in a single batch.
+        clip_param=0.1,
+        # Less exploration past convergence — high entropy_coef pushes the
+        # policy to keep exploring action space, which late in training
+        # means deviating from the learned-sit policy.
+        entropy_coef=0.003,
         num_learning_epochs=5,
         num_mini_batches=4,
-        # Halved base LR + tighter KL target. The previous (1e-3, kl=0.01)
-        # config let PPO's adaptive schedule ramp LR up once the policy
-        # stabilized around iter 200–300, then a single bad batch produced
-        # a catastrophic update and the policy "unlearned" sitting (visible
-        # in wandb: sit_pose_critical peaks at iter ~200 then degrades with
-        # violent oscillations past iter 600).
-        learning_rate=5.0e-4,
-        schedule="adaptive",
+        # Fixed LR (no adaptive ramp). Adaptive schedule kept pushing LR up
+        # once policy stabilized, then a bad batch caused catastrophic
+        # forgetting (sit_pose_critical: 9 → 5 with oscillations around
+        # iter 600–800 across two runs). Constant 3e-4 stays gentle the
+        # whole way through.
+        learning_rate=3.0e-4,
+        schedule="constant",
         gamma=0.99,
         lam=0.95,
         desired_kl=0.005,
