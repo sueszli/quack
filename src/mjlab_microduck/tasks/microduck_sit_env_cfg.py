@@ -310,13 +310,23 @@ def make_microduck_sit_env_cfg(
         weight=-0.5,
         params={"sensor_name": trunk_ground_cfg.name, "threshold": 15.0},
     )
-    # Head impacts: heavy penalty + low threshold. The policy was using the
-    # head as a pivot to face-plant into the sit pose — head-first contact
-    # must cost more than the pose-tracking reward it would buy.
+    # Head impacts: the original (-2.0 weight, 4 N threshold) was set to
+    # stop the policy from face-planting into the sit pose. But with the
+    # SIT target's head_pitch = -1.22 rad the head is *commanded* to point
+    # down/forward, so any descent path that follows the interpolated head
+    # target will bring the head close to the ground. The penalty fires
+    # steadily at ~-0.25 per episode (with weight -2 → -0.5 raw reward
+    # cost) and acts as a permanent gradient pulling the policy back from
+    # descent. The "starts to sit then gives up" pattern is consistent
+    # with this.
+    #
+    # Loosen: weight -2 → -1, threshold 4 → 10 N. Hard face-planting
+    # (sudden impulsive forces ≫ 10 N) still pays cost, but the steady
+    # transitional brushes during descent are tolerated.
     cfg.rewards["head_impact_penalty"] = RewardTermCfg(
         func=microduck_mdp.body_impact_cost,
-        weight=-2.0,
-        params={"sensor_name": head_impact_cfg.name, "threshold": 4.0},
+        weight=-1.0,
+        params={"sensor_name": head_impact_cfg.name, "threshold": 10.0},
     )
 
     # Action smoothness — moderate weight. The interpolated pose target already
