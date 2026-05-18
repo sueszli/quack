@@ -231,13 +231,23 @@ def make_microduck_sit_env_cfg(
         params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))},
     )
 
-    # Upright while tall — full upright incentive above STAND_UPRIGHT_Z, fades
-    # to 0 by SIT_UPRIGHT_Z. Blocks the "tip backward to sit" exploit (which
-    # requires losing uprightness while still high) without fighting the
-    # natural butt-down orientation once the robot has committed.
+    # Two-layer upright pressure:
+    #  - ``upright_linear``: always-on linear upright reward. Holds the trunk
+    #    vertical at rest, including once the robot is seated at SIT_Z. Without
+    #    this floor, the policy had no orientation incentive at sit height and
+    #    let the trunk pitch forward (face-plant from sit pose).
+    #  - ``upright_while_tall``: additional booster active only while the robot
+    #    is still tall, to block the "tip backward while high" exploit during
+    #    the descent (which would otherwise farm height/pose reward via a
+    #    controlled fall).
+    cfg.rewards["upright_linear"] = RewardTermCfg(
+        func=microduck_mdp.body_upright_linear,
+        weight=2.0,
+        params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))},
+    )
     cfg.rewards["upright_while_tall"] = RewardTermCfg(
         func=microduck_mdp.upright_while_tall,
-        weight=4.0,
+        weight=3.0,
         params={
             "height_low":  SIT_UPRIGHT_Z,
             "height_high": STAND_UPRIGHT_Z,
