@@ -4,12 +4,12 @@ Episodic policy that gently rises from the sitting keyframe to the standing
 keyframe. Companion to the sit env — together they form a clean sit↔stand
 pair, each policy doing one direction.
 
-Reset:  sitting keyframe (trunk z ≈ 0.07, knees/ankles bent, head tucked).
+Reset:  sitting keyframe (trunk z ≈ 0.07, knees/ankles bent, head at HOME).
 Target: standing keyframe (trunk z ≈ 0.12, HOME joints).
-Gentleness is a first-class objective: strong action-rate, torque, and impact
-penalties are active from step 0 (no curriculum ramp), and the pose/height
-targets *travel* from sitting toward standing over the first RAMP_END_FRAC of
-the episode so snapping up is structurally unrewarded.
+Reward design (mirror of sit env): a single fixed target is rewarded from
+t=0 to end of episode; gentleness is enforced via |a_z| only; smoothness is
+enforced by the usual sim2real regularisers. No trajectory waypoints, no
+episode-progress gating — the policy is free to discover its own rise path.
 """
 
 from copy import deepcopy
@@ -37,34 +37,26 @@ IMU_ORIENTATION_RANDOMIZATION_ANGLE = 1.0
 # Episode length: long enough for a gentle rise + brief stabilisation.
 EPISODE_LENGTH_S = 6.0
 
-# Fraction of the episode over which the interpolated sit→stand target travels.
-RAMP_END_FRAC = 0.7
-# Rewards conditioned on "fully standing" only fire after this fraction.
-STAND_REWARD_MIN_PROGRESS = 0.65
-
 # ── Sitting source pose (asset.data.joint_pos index → angle in rad) ───────────
-# Mirrors the SIT keyframe — matches microduck_sit_env_cfg.SITTING_TARGET_OVERRIDES.
+# Must match the *actual end-state* of the sit policy (head at HOME, knees bent
+# ~60°, ankles 0). Neck/head intentionally omitted → reset stays at HOME so the
+# standup policy starts from exactly where the sit policy converges.
 SITTING_JOINT_OVERRIDES = {
     1:   0.0,      # left  hip_roll
     3:   1.0472,   # left  knee
     4:   0.0,      # left  ankle
-    5:   1.2217,   # neck_pitch
-    6:  -1.2217,   # head_pitch
     12:  0.0,      # right hip_roll
     14: -1.0472,   # right knee
     15:  0.0,      # right ankle
 }
 
 # Articulation indices (account for passive_1, passive_2 at 9, 10).
-_LEG_JOINTS          = [0, 1, 2, 3, 4, 11, 12, 13, 14, 15]
-_NECK_JOINTS         = [5, 6, 7, 8]
-_SIT_CRITICAL_JOINTS = [3, 4, 14, 15]   # knees + ankles (biggest sit↔stand delta)
+_LEG_JOINTS  = [0, 1, 2, 3, 4, 11, 12, 13, 14, 15]
+_NECK_JOINTS = [5, 6, 7, 8]
 
 # Trunk height targets (m).
 SIT_Z   = 0.07
 STAND_Z = 0.12
-
-import math
 
 from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.envs.mdp.actions import JointPositionActionCfg
@@ -122,33 +114,13 @@ def make_microduck_standup_env_cfg(
         num_slots=1,
     )
 
-    # Trunk-ground contact — starts active (sitting on the floor), should drop
-    # to no-contact once the robot is standing.
-    trunk_ground_cfg = ContactSensorCfg(
-        name="trunk_ground_contact",
-        primary=ContactMatch(mode="body", pattern="trunk_base", entity="robot"),
-        secondary=ContactMatch(mode="body", pattern="terrain"),
-        fields=("found", "force"),
-        reduce="netforce",
-        num_slots=1,
-    )
-
-    head_impact_cfg = ContactSensorCfg(
-        name="head_impact_contact",
-        primary=ContactMatch(mode="subtree", pattern="neck", entity="robot"),
-        secondary=ContactMatch(mode="body", pattern="terrain"),
-        fields=("force",),
-        reduce="netforce",
-        num_slots=1,
-    )
-
     foot_frictions_geom_names = ("left_foot_collision", "right_foot_collision")
 
     # ── Base config ───────────────────────────────────────────────────────────
     cfg = make_velocity_env_cfg()
 
     cfg.scene.entities = {"robot": MICRODUCK_STANDUP_ROBOT_CFG}
-    cfg.scene.sensors  = (feet_ground_cfg, self_collision_cfg, trunk_ground_cfg, head_impact_cfg)
+    cfg.scene.sensors  = (feet_ground_cfg, self_collision_cfg)
     cfg.viewer.body_name = "trunk_base"
 
     cfg.episode_length_s = EPISODE_LENGTH_S
@@ -171,159 +143,92 @@ def make_microduck_standup_env_cfg(
         if name in cfg.rewards:
             del cfg.rewards[name]
 
-    # ── Rewards: track an interpolated sit→stand pose target over time ───────
-    # The target pose linearly travels from SITTING to HOME over
-    # [0, RAMP_END_FRAC] of the episode. Snapping up at t=0 leaves the robot
-    # off-target through the whole ramp and forfeits most of the pose reward.
-    cfg.rewards["stand_pose_legs"] = RewardTermCfg(
-        func=microduck_mdp.interpolated_pose_target_match,
-        weight=5.0,
+    # ── Rewards: minimum-viable set for an organic standup policy ────────────
+    # Single fixed target (STAND = HOME pose + STAND_Z), active from t=0. No
+    # trajectory, no waypoints, no episode-progress gating. The policy is free
+    # to discover any rise path that satisfies:
+    #   (1) end-state matches the HOME pose + STAND_Z
+    #   (2) rise is gentle (low |a_z| throughout)
+    #   (3) trunk stays upright throughout (failure mode: tip backward while
+    #       extending legs; no "low z is safe" regime as in sit)
+    #   (4) joint/action motion stays smooth (sim2real regularisers)
+
+    # Pose target — legs+hips+knees+ankles. target_overrides=None → HOME.
+    cfg.rewards["pose_stand_legs"] = RewardTermCfg(
+        func=microduck_mdp.pose_target_match,
+        weight=8.0,
         params={
-            "std": 0.4,
+            "std": 0.5,
             "joint_indices": _LEG_JOINTS,
-            "source_overrides": SITTING_JOINT_OVERRIDES,
-            "target_overrides": None,                     # HOME = standing
-            "ramp_start_frac": 0.0,
-            "ramp_end_frac": RAMP_END_FRAC,
+            "target_overrides": None,   # HOME = standing
         },
     )
 
-    # Knees+ankles. Std widened so the gradient stays informative when the
-    # policy is off-target by 0.5+ rad mid-ascent.
-    cfg.rewards["stand_pose_critical"] = RewardTermCfg(
-        func=microduck_mdp.interpolated_pose_target_match,
-        weight=10.0,
-        params={
-            "std": 0.3,
-            "joint_indices": _SIT_CRITICAL_JOINTS,
-            "source_overrides": SITTING_JOINT_OVERRIDES,
-            "target_overrides": None,
-            "ramp_start_frac": 0.0,
-            "ramp_end_frac": RAMP_END_FRAC,
-        },
-    )
-
-    # Neck/head.
-    cfg.rewards["stand_pose_neck"] = RewardTermCfg(
-        func=microduck_mdp.interpolated_pose_target_match,
-        weight=2.0,
+    # Pose target — neck/head at HOME.
+    cfg.rewards["pose_stand_neck"] = RewardTermCfg(
+        func=microduck_mdp.pose_target_match,
+        weight=4.0,
         params={
             "std": 0.3,
             "joint_indices": _NECK_JOINTS,
-            "source_overrides": SITTING_JOINT_OVERRIDES,
             "target_overrides": None,
-            "ramp_start_frac": 0.0,
-            "ramp_end_frac": RAMP_END_FRAC,
         },
     )
 
-    # Trunk z tracks the same interpolated ramp (sit_z → stand_z). Wide std
-    # so the Gaussian stays informative across the full 5 cm sit↔stand sweep.
-    cfg.rewards["height_target"] = RewardTermCfg(
-        func=microduck_mdp.interpolated_height_target,
-        weight=5.0,
+    # L1 bootstrap — constant gradient even when far from HOME.
+    cfg.rewards["pose_stand_l1"] = RewardTermCfg(
+        func=microduck_mdp.pose_l1_penalty,
+        weight=2.0,
         params={
-            "start_height": SIT_Z,
-            "end_height":   STAND_Z,
-            "std":          0.06,
-            "asset_cfg":    SceneEntityCfg("robot", body_names=("trunk_base",)),
-            "ramp_start_frac": 0.0,
-            "ramp_end_frac": RAMP_END_FRAC,
+            "joint_indices": _LEG_JOINTS + _NECK_JOINTS,
+            "target_overrides": None,
         },
     )
 
-    # Linear upright gradient — fires non-trivially at every tilt angle.
-    # Critical bootstrap signal: without it the joint-pose rewards can be
-    # fully satisfied while lying flat on the back (joint angles don't care
-    # about trunk orientation), and the policy converges to "extend the legs
-    # while supine" instead of actually standing up.
+    # Trunk height target — Gaussian + L1 toward STAND_Z.
+    cfg.rewards["height_stand"] = RewardTermCfg(
+        func=microduck_mdp.height_target_gaussian,
+        weight=4.0,
+        params={
+            "std":           0.02,
+            "target_height": STAND_Z,
+            "asset_cfg":     SceneEntityCfg("robot", body_names=("trunk_base",)),
+        },
+    )
+    cfg.rewards["height_stand_l1"] = RewardTermCfg(
+        func=microduck_mdp.height_l1_penalty,
+        weight=10.0,
+        params={
+            "target_height": STAND_Z,
+            "asset_cfg":     SceneEntityCfg("robot", body_names=("trunk_base",)),
+        },
+    )
+
+    # Gentle rise — penalty on |a_z|. Smooth ascent has a_z ≈ 0; jerky
+    # launches and sudden falls (failed rises) produce spikes that get paid.
+    cfg.rewards["gentle_rise"] = RewardTermCfg(
+        func=microduck_mdp.trunk_vertical_accel_penalty,
+        weight=-0.02,
+        params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))},
+    )
+
+    # Upright — strong always-on. Unlike sit (where butt-down at low z is a
+    # legitimate final state), standup must stay vertical throughout the
+    # whole motion. Single-layer linear upright at weight 4 is enough.
     cfg.rewards["upright_linear"] = RewardTermCfg(
         func=microduck_mdp.body_upright_linear,
         weight=4.0,
         params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))},
     )
 
-    # ── Bootstrap: L1 penalties for constant gradient toward the target ───────
-    # The Gaussian pose/height rewards above saturate to zero far from target,
-    # leaving the policy no gradient to discover the sit→stand motion. L1
-    # penalties give a constant gradient at every distance.
-    cfg.rewards["stand_pose_l1"] = RewardTermCfg(
-        func=microduck_mdp.interpolated_pose_l1_penalty,
-        weight=2.0,
-        params={
-            "joint_indices": _LEG_JOINTS + _NECK_JOINTS,
-            "source_overrides": SITTING_JOINT_OVERRIDES,
-            "target_overrides": None,                       # HOME = standing
-            "ramp_start_frac": 0.0,
-            "ramp_end_frac": RAMP_END_FRAC,
-        },
-    )
-    cfg.rewards["height_target_l1"] = RewardTermCfg(
-        func=microduck_mdp.interpolated_height_l1_penalty,
-        weight=20.0,
-        params={
-            "start_height": SIT_Z,
-            "end_height":   STAND_Z,
-            "asset_cfg":    SceneEntityCfg("robot", body_names=("trunk_base",)),
-            "ramp_start_frac": 0.0,
-            "ramp_end_frac": RAMP_END_FRAC,
-        },
-    )
+    # ── Sim2real regularisers (smoothness) ────────────────────────────────────
+    cfg.rewards["action_rate_l2"]        = RewardTermCfg(func=mdp.action_rate_l2,                 weight=-0.5)
+    cfg.rewards["joint_torque_rate_l2"]  = RewardTermCfg(func=microduck_mdp.joint_torque_rate_l2, weight=-5e-4)
+    cfg.rewards["joint_torques_l2"]      = RewardTermCfg(func=microduck_mdp.joint_torques_l2,     weight=-5e-3)
 
-    # Stillness once standing — only after the ramp window so the policy can't
-    # earn it by sitting still (already still at t=0 in the sit pose).
-    cfg.rewards["stand_stability"] = RewardTermCfg(
-        func=microduck_mdp.sit_stability,  # general "low ang vel" reward, time-gated
-        weight=2.0,
-        params={
-            "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
-            "ang_vel_std": 0.5,
-            "command_name": None,
-            "min_progress_frac": STAND_REWARD_MIN_PROGRESS,
-        },
-    )
-
-    # ── Rewards: gentleness (STRONG from step 0, no curriculum) ───────────────
-    # Threshold must sit above resting body weight (~5–7 N) — otherwise the
-    # penalty fires continuously while the robot is seated at episode start
-    # and teaches the policy to never touch / never rise from the floor.
-    cfg.rewards["trunk_impact_penalty"] = RewardTermCfg(
-        func=microduck_mdp.body_impact_cost,
-        weight=-0.5,
-        params={"sensor_name": trunk_ground_cfg.name, "threshold": 15.0},
-    )
-    cfg.rewards["head_impact_penalty"] = RewardTermCfg(
-        func=microduck_mdp.body_impact_cost,
-        weight=-0.5,
-        params={"sensor_name": head_impact_cfg.name, "threshold": 8.0},
-    )
-
-    # The interpolated pose target already enforces a slow trajectory;
-    # action_rate just suppresses high-frequency twitching on top of that.
-    cfg.rewards["action_rate_l2"] = RewardTermCfg(
-        func=mdp.action_rate_l2, weight=-0.5,
-    )
-    cfg.rewards["neck_action_rate_l2"] = RewardTermCfg(
-        func=microduck_mdp.neck_action_rate_l2, weight=-0.25,
-    )
-    cfg.rewards["joint_torque_rate_l2"] = RewardTermCfg(
-        func=microduck_mdp.joint_torque_rate_l2, weight=-5e-4,
-    )
-    cfg.rewards["joint_torques_l2"] = RewardTermCfg(
-        func=microduck_mdp.joint_torques_l2, weight=-5e-3,
-    )
-
-    if "soft_landing" in cfg.rewards:
-        cfg.rewards["soft_landing"].weight = -1e-3
-
-    # ── Rewards: stability + posture ──────────────────────────────────────────
-    cfg.rewards["upright"].params["asset_cfg"].body_names = ("trunk_base",)
-    cfg.rewards["upright"].weight = 1.0  # sit AND stand are both upright
-
+    # ── Stability ─────────────────────────────────────────────────────────────
     cfg.rewards["body_ang_vel"].params["asset_cfg"].body_names = ("trunk_base",)
-    cfg.rewards["body_ang_vel"].weight = -0.1
-
-    cfg.rewards["angular_momentum"].weight = -0.02
+    cfg.rewards["body_ang_vel"].weight = -0.3
 
     cfg.rewards["self_collisions"] = RewardTermCfg(
         func=mdp.self_collision_cost,
@@ -331,7 +236,9 @@ def make_microduck_standup_env_cfg(
         params={"sensor_name": self_collision_cfg.name},
     )
 
-    # Linear penalty on hip_yaw / hip_roll drift — keep narrow base while rising.
+    # Hip yaw/roll drift penalty — keeps a narrow base while pushing up. Without
+    # it the policy can splay legs sideways while extending knees, which gives
+    # a low-cost "push trunk up via leg spread" exploit instead of a clean rise.
     cfg.rewards["hip_yaw_roll_deviation"] = RewardTermCfg(
         func=microduck_mdp.joint_deviation_l1,
         weight=-1.0,
@@ -341,6 +248,12 @@ def make_microduck_standup_env_cfg(
             ),
         },
     )
+
+    # Drop velocity-env terms that are either subsumed (upright Gaussian,
+    # angular_momentum, soft_landing) or irrelevant here.
+    for name in ("upright", "angular_momentum", "soft_landing"):
+        if name in cfg.rewards:
+            del cfg.rewards[name]
 
     # ── Observations (identical layout to walking / sit policies) ─────────────
     del cfg.observations["policy"].terms["base_lin_vel"]
