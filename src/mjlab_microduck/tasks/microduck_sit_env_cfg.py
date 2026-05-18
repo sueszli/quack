@@ -464,6 +464,21 @@ def make_microduck_sit_env_cfg(
         time_out=False,
     )
 
+    # MuJoCo physics robustness for the sit task. The standup XML has full
+    # collisions on every body, and the sit pose puts trunk + folded legs +
+    # head all in close contact with the ground and each other. Default
+    # nconmax=35 and solver iterations=10 overflow the contact solver on
+    # sit attempts, producing NaN. nan_state then terminates the episode,
+    # cutting the policy off mid-sit with zero future rewards.
+    #
+    # This is the real culprit behind the "learn-to-sit-by-iter-250-then-
+    # unlearn-it-by-iter-500" pattern: sit attempts crash the physics, NaN-
+    # terminated episodes accumulate negative gradient, policy backs off
+    # the descent.
+    cfg.sim.nconmax = 200
+    cfg.sim.mujoco.iterations = 30
+    cfg.sim.mujoco.ls_iterations = 50
+
     if ENABLE_VELOCITY_PUSHES:
         interval = (0.5, 1.0) if play else VELOCITY_PUSH_INTERVAL_S
         cfg.events["push_robot"] = EventTermCfg(
