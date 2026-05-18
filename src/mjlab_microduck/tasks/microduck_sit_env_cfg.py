@@ -40,76 +40,36 @@ VELOCITY_PUSH_INTERVAL_S            = (3.0, 6.0)
 VELOCITY_PUSH_RANGE                 = (-0.15, 0.15)
 IMU_ORIENTATION_RANDOMIZATION_ANGLE = 1.0
 
-# Episode length: long enough for stand → fold → sit + rest.
+# Episode length: long enough for a controlled descent + several seconds of rest.
 EPISODE_LENGTH_S = 6.0
 
-# Episode-progress milestones for the multi-stage trajectory:
-#   [0, FOLD_FRAC]:        STAND → FOLD (deep crouch through the FOLD keyframe)
-#   [FOLD_FRAC, SIT_FRAC]: FOLD → SIT (rotate out of the crouch onto the butt)
-#   [SIT_FRAC, 1.0]:       hold SIT (rest)
-# Going through FOLD as an intermediate stops the policy from finding the
-# "fall backward to sit" exploit — to satisfy the FOLD waypoint mid-episode
-# the robot must crouch with the trunk still vertical, then transition to
-# SIT from there. Reaching SIT by tipping over backward gives 0 reward at
-# the FOLD waypoint.
-FOLD_FRAC = 0.35
-SIT_FRAC  = 0.55
-# sit_grounded / sit_stability only activate after this fraction so the policy
-# doesn't get paid for snapping to the floor at t=0.
-SIT_REWARD_MIN_PROGRESS = 0.65
-
-# ── FOLD intermediate keyframe (matches FOLD in scene.xml) ───────────────────
-# Deep crouch with trunk vertical: hips and knees both flexed ~90°, ankles at 0.
-# joint_pos indices (passive_1/2 occupy 9-10): left leg = 0..4, neck/head = 5..8,
-# right leg = 11..15.
-FOLD_TARGET_OVERRIDES = {
-    1:   0.0,      # left  hip_roll  (HOME -0.0873)
-    2:   1.5708,   # left  hip_pitch (HOME -0.5236)  ← hip forward 90°+
-    3:   1.5708,   # left  knee      (HOME 0)        ← knee bend 90°
-    4:   0.0,      # left  ankle     (HOME +0.5236)
-    # neck/head: omitted → stay at HOME (head forward-facing).
-    12:  0.0,      # right hip_roll  (HOME +0.0873)
-    13: -1.5708,   # right hip_pitch (HOME +0.5236)
-    14: -1.5708,   # right knee      (HOME 0)
-    15:  0.0,      # right ankle     (HOME -0.5236)
-}
-
-# ── SIT final keyframe (joint_pos index → angle in rad) ──────────────────────
+# ── SIT keyframe (joint_pos index → angle in rad). Single fixed target. ─────
+# No intermediate waypoints — the policy is free to discover its own descent
+# path. Anything else than "land gently in this exact pose" pays a cost via
+# pose error + a_z penalty + smoothness regularisers.
 SITTING_TARGET_OVERRIDES = {
     1:   0.0,      # left  hip_roll  (HOME -0.0873)
     3:   1.0472,   # left  knee      (HOME 0)
     4:   0.0,      # left  ankle     (HOME +0.5236)
-    # neck_pitch / head_pitch INTENTIONALLY omitted — the SIT keyframe in
-    # scene.xml has these at ±1.22 rad which produces a "head-between-knees"
-    # tucked sit, not the upright "looking-forward sit" we actually want.
+    # neck/head intentionally omitted → stay at HOME (head forward-facing).
     12:  0.0,      # right hip_roll  (HOME +0.0873)
     14: -1.0472,   # right knee      (HOME 0)
     15:  0.0,      # right ankle     (HOME -0.5236)
 }
 
-# Multi-stage waypoint list passed to the multistage_pose_* rewards below.
-TRAJECTORY_WAYPOINTS = [
-    {"frac": 0.0,       "overrides": None},                       # HOME (standing)
-    {"frac": FOLD_FRAC, "overrides": FOLD_TARGET_OVERRIDES},      # crouch
-    {"frac": SIT_FRAC,  "overrides": SITTING_TARGET_OVERRIDES},   # sitting
-]
-
-# Articulation indices (account for passive_1, passive_2 at 9, 10).
+# Articulation indices (passive_1, passive_2 occupy 9, 10).
 _LEG_JOINTS  = [0, 1, 2, 3, 4, 11, 12, 13, 14, 15]
-# Left/right leg index pairs (for bilateral symmetry penalty).
-_LEG_LEFT_INDICES  = [0, 1, 2, 3, 4]   # left:  hip_yaw, hip_roll, hip_pitch, knee, ankle
-_LEG_RIGHT_INDICES = [11, 12, 13, 14, 15]  # right: same five joints
 _NECK_JOINTS = [5, 6, 7, 8]
-# Joints with the largest deltas across the FOLD→SIT transition.
-# Knees + ankles change between FOLD and SIT (knee 1.57→1.05, ankle stays 0),
-# and CRITICALLY hip_pitch changes the most (1.57→0.52) — the policy must
-# rotate hips back out of the deep crouch to land butt-on-ground in the SIT
-# pose. Without strong gradient on hip_pitch, the policy gets stuck at FOLD.
-_SIT_CRITICAL_JOINTS = [2, 3, 4, 13, 14, 15]
 
 # Trunk height targets (m).
 STAND_Z = 0.12
 SIT_Z   = 0.07
+
+# Upright gating window for ``upright_while_tall``: full upright incentive
+# above STAND_UPRIGHT_Z (still tall, must stay vertical), fades to 0 at
+# SIT_UPRIGHT_Z (committed to sit, butt-down orientation is fine).
+STAND_UPRIGHT_Z = 0.10
+SIT_UPRIGHT_Z   = 0.085
 
 from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.envs.mdp.actions import JointPositionActionCfg
@@ -167,26 +127,6 @@ def make_microduck_sit_env_cfg(
         num_slots=1,
     )
 
-    # Trunk-ground contact: detects "butt on ground" as the robot settles.
-    trunk_ground_cfg = ContactSensorCfg(
-        name="trunk_ground_contact",
-        primary=ContactMatch(mode="body", pattern="trunk_base", entity="robot"),
-        secondary=ContactMatch(mode="body", pattern="terrain"),
-        fields=("found", "force"),
-        reduce="netforce",
-        num_slots=1,
-    )
-
-    # Head/neck subtree contact: penalize hard head impacts.
-    head_impact_cfg = ContactSensorCfg(
-        name="head_impact_contact",
-        primary=ContactMatch(mode="subtree", pattern="neck", entity="robot"),
-        secondary=ContactMatch(mode="body", pattern="terrain"),
-        fields=("force",),
-        reduce="netforce",
-        num_slots=1,
-    )
-
     foot_frictions_geom_names = ("left_foot_collision", "right_foot_collision")
 
     # ── Base config ───────────────────────────────────────────────────────────
@@ -195,7 +135,7 @@ def make_microduck_sit_env_cfg(
     # Standup robot variant: full collision meshes — needed so the body can
     # physically rest on the ground during the seated phase.
     cfg.scene.entities = {"robot": MICRODUCK_STANDUP_ROBOT_CFG}
-    cfg.scene.sensors  = (feet_ground_cfg, self_collision_cfg, trunk_ground_cfg, head_impact_cfg)
+    cfg.scene.sensors  = (feet_ground_cfg, self_collision_cfg)
     cfg.viewer.body_name = "trunk_base"
 
     cfg.episode_length_s = EPISODE_LENGTH_S
@@ -218,217 +158,117 @@ def make_microduck_sit_env_cfg(
         if name in cfg.rewards:
             del cfg.rewards[name]
 
-    # ── Rewards: track the multi-stage STAND → FOLD → SIT trajectory ─────────
-    # The target pose travels through a sequence of waypoints over the episode:
-    #   [0, FOLD_FRAC]: HOME → FOLD       (deep crouch through FOLD keyframe)
-    #   [FOLD_FRAC, SIT_FRAC]: FOLD → SIT  (rotate trunk back onto butt)
-    #   [SIT_FRAC, 1.0]: hold SIT          (rest)
-    # Going through FOLD as an intermediate cuts off the "fall backward" sit
-    # exploit — at the FOLD waypoint the trunk must be upright and crouched,
-    # not lying on its back. Tipping backward gives 0 reward at FOLD.
-    cfg.rewards["sit_pose_legs"] = RewardTermCfg(
-        func=microduck_mdp.multistage_pose_target_match,
-        weight=5.0,
+    # ── Rewards: minimum-viable set for an organic sit policy ────────────────
+    # Single fixed target (SIT keyframe) active from t=0. No trajectory, no
+    # waypoints, no episode-progress gating. The policy is free to discover
+    # any descent path that satisfies:
+    #   (1) end-state matches the SIT pose + trunk height
+    #   (2) descent is gentle (low |a_z| throughout)
+    #   (3) trunk stays upright until committed to the sit (low z)
+    #   (4) joint/action motion stays smooth (sim2real regularisers)
+    # Anything else (fall backward, snap to floor, face-plant) costs more
+    # than the rewarded path of "slow controlled crouch-and-sit".
+
+    # Pose target — legs+hips+knees+ankles. Generous std (0.5) gives a useful
+    # gradient even from HOME (the SIT pose is ~1 rad away on knees).
+    cfg.rewards["pose_sit_legs"] = RewardTermCfg(
+        func=microduck_mdp.pose_target_match,
+        weight=8.0,
         params={
-            "std": 0.4,
+            "std": 0.5,
             "joint_indices": _LEG_JOINTS,
-            "waypoints": TRAJECTORY_WAYPOINTS,
+            "target_overrides": SITTING_TARGET_OVERRIDES,
         },
     )
 
-    # Knees+ankles converge fully. Std widened so the gradient stays informative
-    # even when the policy is off-target by 0.5+ rad mid-trajectory.
-    cfg.rewards["sit_pose_critical"] = RewardTermCfg(
-        func=microduck_mdp.multistage_pose_target_match,
-        weight=10.0,
-        params={
-            "std": 0.3,
-            "joint_indices": _SIT_CRITICAL_JOINTS,
-            "waypoints": TRAJECTORY_WAYPOINTS,
-        },
-    )
-
-    # Neck/head — waypoints don't override these, so target stays at HOME
-    # throughout the trajectory (head always forward-facing). Bumped weight
-    # 2.0 → 4.0 and tightened std 0.3 → 0.2 because the previous run plateaued
-    # at ~75% match — head_pitch stuck ~0.35 rad off-target (likely sagging
-    # under gravity). Stronger pull required to get the head fully back up.
-    cfg.rewards["sit_pose_neck"] = RewardTermCfg(
-        func=microduck_mdp.multistage_pose_target_match,
+    # Pose target — neck/head fixed at HOME (forward-facing).
+    cfg.rewards["pose_sit_neck"] = RewardTermCfg(
+        func=microduck_mdp.pose_target_match,
         weight=4.0,
         params={
-            "std": 0.2,
+            "std": 0.3,
             "joint_indices": _NECK_JOINTS,
-            "waypoints": TRAJECTORY_WAYPOINTS,
+            "target_overrides": SITTING_TARGET_OVERRIDES,
         },
     )
 
-    # Trunk z trajectory: STAND_Z → FOLD_Z over [0, FOLD_FRAC], then holds at
-    # FOLD_Z/SIT_Z (both 0.07). Effectively a descent over the first 40%, hold.
-    cfg.rewards["height_target"] = RewardTermCfg(
-        func=microduck_mdp.multistage_height_target,
-        weight=5.0,
-        params={
-            "std":       0.03,
-            "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
-            "waypoints": [
-                {"frac": 0.0,       "height": STAND_Z},
-                {"frac": FOLD_FRAC, "height": SIT_Z},
-                {"frac": SIT_FRAC,  "height": SIT_Z},
-            ],
-        },
-    )
-
-    # Bilateral leg symmetry — direct penalty on |q_left + q_right|. All sit
-    # trajectory targets (HOME, FOLD, SIT) satisfy q_left = -q_right per joint
-    # (mirrored convention), so this reward is zero at every waypoint and
-    # purely penalizes the asymmetric local minimum where only one leg folds.
-    cfg.rewards["leg_symmetry"] = RewardTermCfg(
-        func=microduck_mdp.bilateral_symmetry_penalty,
-        weight=-2.0,
-        params={
-            "left_indices":  _LEG_LEFT_INDICES,
-            "right_indices": _LEG_RIGHT_INDICES,
-            "asset_cfg":     SceneEntityCfg("robot"),
-        },
-    )
-
-    # ── Bootstrap: L1 penalties for constant gradient toward the target ───────
-    # The Gaussian rewards above vanish far from target (exp(-large) ≈ 0),
-    # leaving the policy with no signal to move from HOME toward FOLD/SIT in
-    # the first place. L1 gives a constant gradient at every distance.
-    cfg.rewards["sit_pose_l1"] = RewardTermCfg(
-        func=microduck_mdp.multistage_pose_l1_penalty,
+    # L1 bootstrap — constant gradient toward SIT joints even when far from
+    # the Gaussian's effective basin.
+    cfg.rewards["pose_sit_l1"] = RewardTermCfg(
+        func=microduck_mdp.pose_l1_penalty,
         weight=2.0,
         params={
             "joint_indices": _LEG_JOINTS + _NECK_JOINTS,
-            "waypoints": TRAJECTORY_WAYPOINTS,
-        },
-    )
-    cfg.rewards["height_target_l1"] = RewardTermCfg(
-        func=microduck_mdp.multistage_height_l1_penalty,
-        weight=20.0,
-        params={
-            "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
-            "waypoints": [
-                {"frac": 0.0,       "height": STAND_Z},
-                {"frac": FOLD_FRAC, "height": SIT_Z},
-                {"frac": SIT_FRAC,  "height": SIT_Z},
-            ],
+            "target_overrides": SITTING_TARGET_OVERRIDES,
         },
     )
 
-    # Butt-on-ground bonus — gated to the late part of the episode so the
-    # policy can't farm it by collapsing to sit at t=0.
-    cfg.rewards["sit_grounded"] = RewardTermCfg(
-        func=microduck_mdp.sit_grounded,
+    # Trunk height target (Gaussian + L1) — pulls the body down to SIT_Z.
+    cfg.rewards["height_sit"] = RewardTermCfg(
+        func=microduck_mdp.height_target_gaussian,
         weight=4.0,
         params={
-            "sensor_name": trunk_ground_cfg.name,
-            "command_name": None,
-            "min_progress_frac": SIT_REWARD_MIN_PROGRESS,
+            "std":           0.02,
+            "target_height": SIT_Z,
+            "asset_cfg":     SceneEntityCfg("robot", body_names=("trunk_base",)),
         },
     )
-
-    # Stillness reward — late-gated. Previously weight=2, std=0.5 — the policy
-    # could wobble fairly visibly (ang_vel_norm ≈ 0.5 rad/s) and still get 0.37
-    # of the reward. Tightening std to 0.25 makes the policy actually settle:
-    # 0.25 rad/s wobble now gives 0.37; 0.5 rad/s gives only 0.02.
-    cfg.rewards["sit_stability"] = RewardTermCfg(
-        func=microduck_mdp.sit_stability,
-        weight=4.0,
+    cfg.rewards["height_sit_l1"] = RewardTermCfg(
+        func=microduck_mdp.height_l1_penalty,
+        weight=10.0,
         params={
-            "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
-            "ang_vel_std": 0.25,
-            "command_name": None,
-            "min_progress_frac": SIT_REWARD_MIN_PROGRESS,
+            "target_height": SIT_Z,
+            "asset_cfg":     SceneEntityCfg("robot", body_names=("trunk_base",)),
         },
     )
 
-    # ── Rewards: gentleness (STRONG from the start, no curriculum) ────────────
-    # Hard-impact penalties. Threshold must sit ABOVE the resting body weight
-    # (~5–7 N) — otherwise the penalty fires continuously while the robot is
-    # seated and teaches the policy to never touch the floor. With threshold
-    # 15 N only true impacts (sudden landings, contact spikes) pay a cost.
-    cfg.rewards["trunk_impact_penalty"] = RewardTermCfg(
-        func=microduck_mdp.body_impact_cost,
-        weight=-0.5,
-        params={"sensor_name": trunk_ground_cfg.name, "threshold": 15.0},
-    )
-    # Head impacts: the original (-2.0 weight, 4 N threshold) was set to
-    # stop the policy from face-planting into the sit pose. But with the
-    # SIT target's head_pitch = -1.22 rad the head is *commanded* to point
-    # down/forward, so any descent path that follows the interpolated head
-    # target will bring the head close to the ground. The penalty fires
-    # steadily at ~-0.25 per episode (with weight -2 → -0.5 raw reward
-    # cost) and acts as a permanent gradient pulling the policy back from
-    # descent. The "starts to sit then gives up" pattern is consistent
-    # with this.
-    #
-    # Loosen: weight -2 → -1, threshold 4 → 10 N. Hard face-planting
-    # (sudden impulsive forces ≫ 10 N) still pays cost, but the steady
-    # transitional brushes during descent are tolerated.
-    cfg.rewards["head_impact_penalty"] = RewardTermCfg(
-        func=microduck_mdp.body_impact_cost,
-        weight=-1.0,
-        params={"sensor_name": head_impact_cfg.name, "threshold": 10.0},
-    )
-
-    # Action smoothness — moderate weight. The interpolated pose target already
-    # enforces a slow trajectory; action_rate just suppresses high-frequency
-    # twitching on top of that. Earlier weight (-2.0) was strong enough to
-    # outweigh the pose-tracking gradient and the policy froze.
-    cfg.rewards["action_rate_l2"] = RewardTermCfg(
-        func=mdp.action_rate_l2, weight=-0.5
-    )
-    cfg.rewards["neck_action_rate_l2"] = RewardTermCfg(
-        func=microduck_mdp.neck_action_rate_l2, weight=-0.25
-    )
-
-    # Torque-rate penalty: proxy for jerk through the gearboxes.
-    cfg.rewards["joint_torque_rate_l2"] = RewardTermCfg(
-        func=microduck_mdp.joint_torque_rate_l2, weight=-5e-4,
-    )
-    cfg.rewards["joint_torques_l2"] = RewardTermCfg(
-        func=microduck_mdp.joint_torques_l2, weight=-5e-3,
-    )
-
-    # Soft landing: penalise high body vertical velocity (already in
-    # cfg.rewards from velocity env). Bumped well above the velstand level —
-    # the sit env is *all about* slow vertical motion.
-    if "soft_landing" in cfg.rewards:
-        cfg.rewards["soft_landing"].weight = -1e-3
-
-    # ── Rewards: stability (kept throughout) ──────────────────────────────────
-    cfg.rewards["upright"].params["asset_cfg"].body_names = ("trunk_base",)
-    # Robot stays upright during AND after the descent (SIT keyframe is upright).
-    cfg.rewards["upright"].weight = 2.0
-
-    # Linear upright gradient — fires at every tilt angle, not just near vertical.
-    # The Gaussian ``upright`` saturates at 0 once the trunk tilts past its std,
-    # giving the policy no incentive to *un-tilt*. The linear variant pulls
-    # toward vertical from any orientation, which discourages the face-plant
-    # strategy (tip forward, head-pivot down).
-    cfg.rewards["upright_linear"] = RewardTermCfg(
-        func=microduck_mdp.body_upright_linear,
-        weight=4.0,
+    # Gentle descent — penalty on |a_z| of the trunk. This is the only
+    # "no hard shocks" signal. Hard impacts and fall-onto-butt strategies
+    # produce large a_z spikes; controlled quasi-static descent gives a_z ≈ 0.
+    cfg.rewards["gentle_descent"] = RewardTermCfg(
+        func=microduck_mdp.trunk_vertical_accel_penalty,
+        weight=-0.02,
         params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))},
     )
 
+    # Upright while tall — full upright incentive above STAND_UPRIGHT_Z, fades
+    # to 0 by SIT_UPRIGHT_Z. Blocks the "tip backward to sit" exploit (which
+    # requires losing uprightness while still high) without fighting the
+    # natural butt-down orientation once the robot has committed.
+    cfg.rewards["upright_while_tall"] = RewardTermCfg(
+        func=microduck_mdp.upright_while_tall,
+        weight=4.0,
+        params={
+            "height_low":  SIT_UPRIGHT_Z,
+            "height_high": STAND_UPRIGHT_Z,
+            "asset_cfg":   SceneEntityCfg("robot", body_names=("trunk_base",)),
+        },
+    )
+
+    # ── Sim2real regularisers (smoothness) ────────────────────────────────────
+    cfg.rewards["action_rate_l2"]        = RewardTermCfg(func=mdp.action_rate_l2,           weight=-0.5)
+    cfg.rewards["joint_torque_rate_l2"]  = RewardTermCfg(func=microduck_mdp.joint_torque_rate_l2, weight=-5e-4)
+    cfg.rewards["joint_torques_l2"]      = RewardTermCfg(func=microduck_mdp.joint_torques_l2,     weight=-5e-3)
+
+    # ── Stability ─────────────────────────────────────────────────────────────
+    # Body angular velocity: keep wobble cheap to suppress at rest. Inherited
+    # from the velocity env, just retarget to trunk_base and bump.
     cfg.rewards["body_ang_vel"].params["asset_cfg"].body_names = ("trunk_base",)
-    # Bumped from -0.1 → -0.3: previous run's policy descended into sit but
-    # then kept wobbling/overshooting (curves: sit_stability stalled at ~0.5
-    # and upright dropped from 1.7 → 1.0 mid-training). Higher angular-vel
-    # penalty makes "settle and stop moving" cheaper than continued motion.
     cfg.rewards["body_ang_vel"].weight = -0.3
 
-    cfg.rewards["angular_momentum"].weight = -0.02
-
+    # Self collisions still penalised.
     cfg.rewards["self_collisions"] = RewardTermCfg(
         func=mdp.self_collision_cost,
         weight=-1.0,
         params={"sensor_name": self_collision_cfg.name},
     )
+
+    # Drop the velocity-env upright Gaussian and angular_momentum — replaced
+    # by upright_while_tall above. Drop soft_landing — its job is taken over
+    # by trunk_vertical_accel_penalty, which has a cleaner gradient.
+    for name in ("upright", "angular_momentum", "soft_landing"):
+        if name in cfg.rewards:
+            del cfg.rewards[name]
 
     # ── Observations (identical layout to walking / sitstand policies) ────────
     del cfg.observations["policy"].terms["base_lin_vel"]

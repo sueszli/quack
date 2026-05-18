@@ -1495,6 +1495,133 @@ def multistage_height_l1_penalty(
     return -torch.abs(z - target_z)
 
 
+def pose_target_match(
+    env: ManagerBasedRlEnv,
+    target_overrides: Optional[dict] = None,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    std: float = 0.3,
+    joint_indices: Optional[list] = None,
+) -> torch.Tensor:
+    """Gaussian pose-match against a single fixed target.
+
+    target = ``default_joint_pos`` with the per-index overrides applied. No
+    waypoints, no episode-progress interpolation — the same target is rewarded
+    from t=0 to the end of the episode.
+    """
+    asset = env.scene[asset_cfg.name]
+    target = asset.data.default_joint_pos.clone()
+    if target_overrides:
+        for idx, val in target_overrides.items():
+            target[:, idx] = val
+    joint_pos = asset.data.joint_pos
+    if joint_indices is not None:
+        joint_pos = joint_pos[:, joint_indices]
+        target = target[:, joint_indices]
+    return torch.exp(-((joint_pos - target) / std) ** 2).mean(dim=-1)
+
+
+def pose_l1_penalty(
+    env: ManagerBasedRlEnv,
+    target_overrides: Optional[dict] = None,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    joint_indices: Optional[list] = None,
+) -> torch.Tensor:
+    """L1 companion to ``pose_target_match`` (constant gradient toward target)."""
+    asset = env.scene[asset_cfg.name]
+    target = asset.data.default_joint_pos.clone()
+    if target_overrides:
+        for idx, val in target_overrides.items():
+            target[:, idx] = val
+    joint_pos = asset.data.joint_pos
+    if joint_indices is not None:
+        joint_pos = joint_pos[:, joint_indices]
+        target = target[:, joint_indices]
+    return -torch.abs(joint_pos - target).mean(dim=-1)
+
+
+def height_target_gaussian(
+    env: ManagerBasedRlEnv,
+    target_height: float,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    std: float = 0.02,
+) -> torch.Tensor:
+    """Gaussian on trunk z against a single fixed target."""
+    asset = env.scene[asset_cfg.name]
+    z = torch.nan_to_num(
+        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
+    )
+    return torch.exp(-((z - target_height) / std) ** 2)
+
+
+def height_l1_penalty(
+    env: ManagerBasedRlEnv,
+    target_height: float,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """L1 companion to ``height_target_gaussian``."""
+    asset = env.scene[asset_cfg.name]
+    z = torch.nan_to_num(
+        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
+    )
+    return -torch.abs(z - target_height)
+
+
+def trunk_vertical_accel_penalty(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """Penalty proportional to ``|a_z|`` of the trunk (finite-diff of v_z).
+
+    Captures hard impacts (large deceleration spike on landing) AND incentivises
+    a smooth quasi-static descent (constant velocity → a_z ≈ 0). At rest a_z is
+    zero so the seated robot pays no cost.
+
+    State is kept on the env in ``_prev_trunk_vz``; at episode reset the
+    accel is zeroed to avoid a transient from the previous episode's final
+    state leaking into the new one.
+    """
+    asset = env.scene[asset_cfg.name]
+    vz = torch.nan_to_num(asset.data.root_link_lin_vel_w[:, 2], nan=0.0)
+    prev = getattr(env, "_prev_trunk_vz", None)
+    if prev is None or prev.shape[0] != vz.shape[0]:
+        prev = vz.detach().clone()
+    a_z = (vz - prev) / env.step_dt
+    # Zero out a_z at reset steps to suppress the cross-episode transient.
+    if hasattr(env, "episode_length_buf"):
+        reset_mask = env.episode_length_buf <= 1
+        a_z = torch.where(reset_mask, torch.zeros_like(a_z), a_z)
+    env._prev_trunk_vz = vz.detach().clone()
+    return -torch.abs(a_z)
+
+
+def upright_while_tall(
+    env: ManagerBasedRlEnv,
+    height_low: float,
+    height_high: float,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """Linear upright reward weighted by a smoothstep on trunk z.
+
+    Returns ``body_upright_linear * smoothstep((z - low)/(high - low))`` so the
+    upright incentive is full while the robot is still standing tall, and
+    fades to zero once it has committed to the lower sit configuration (where
+    butt-on-ground orientation is fine). Prevents the policy from learning to
+    tip backward while still high (which would otherwise farm the descent
+    reward via a controlled fall).
+    """
+    asset = env.scene[asset_cfg.name]
+    quat = asset.data.root_link_quat_w
+    qx = quat[:, 1]
+    qy = quat[:, 2]
+    upright = 1.0 - 2.0 * (qx * qx + qy * qy)
+    z = torch.nan_to_num(
+        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
+    )
+    t = torch.clamp((z - height_low) / max(height_high - height_low, 1e-6), 0.0, 1.0)
+    smooth = t * t * (3.0 - 2.0 * t)
+    return upright * smooth
+
+
 def phase_pose_match(
     env: ManagerBasedRlEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
