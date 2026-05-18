@@ -1332,6 +1332,140 @@ def interpolated_height_target(
     return torch.exp(-((z - target_z) / std) ** 2)
 
 
+def _multistage_target_pose(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg,
+    waypoints,
+) -> torch.Tensor:
+    """Compute the time-interpolated joint target across N waypoints.
+
+    waypoints: ordered list of dicts {"frac": float in [0,1],
+                                       "overrides": dict[int,float] | None}.
+    First waypoint should have frac=0.0 (typically HOME, overrides=None).
+    Subsequent waypoints define milestones. Between two waypoints the target
+    linearly interpolates. Before the first / after the last it clamps.
+
+    Returns a (num_envs, num_joints) tensor of target joint angles.
+    """
+    asset = env.scene[asset_cfg.name]
+    default = asset.data.default_joint_pos
+
+    def build_pose(overrides):
+        pose = default.clone()
+        if overrides:
+            for idx, val in overrides.items():
+                pose[:, idx] = val
+        return pose
+
+    progress = env.episode_length_buf.float() / float(env.max_episode_length)
+    # Find which segment we're in (broadcast over envs).
+    out = build_pose(waypoints[0]["overrides"])
+    for i in range(1, len(waypoints)):
+        f0 = waypoints[i - 1]["frac"]
+        f1 = waypoints[i]["frac"]
+        span = max(f1 - f0, 1e-6)
+        tau = ((progress - f0) / span).clamp(0.0, 1.0).unsqueeze(-1)
+        prev_pose = build_pose(waypoints[i - 1]["overrides"])
+        next_pose = build_pose(waypoints[i]["overrides"])
+        seg = prev_pose * (1.0 - tau) + next_pose * tau
+        # Take this segment's value when progress is in [f0, f1] or past it.
+        mask = (progress >= f0).float().unsqueeze(-1)
+        out = torch.where(mask > 0, seg, out)
+    return out
+
+
+def _multistage_target_height(
+    env: ManagerBasedRlEnv,
+    waypoints,
+) -> torch.Tensor:
+    """Same logic as _multistage_target_pose but for trunk z height.
+
+    waypoints: [{"frac": float, "height": float}, ...].
+    """
+    progress = env.episode_length_buf.float() / float(env.max_episode_length)
+    out = torch.full_like(progress, waypoints[0]["height"])
+    for i in range(1, len(waypoints)):
+        f0 = waypoints[i - 1]["frac"]
+        f1 = waypoints[i]["frac"]
+        span = max(f1 - f0, 1e-6)
+        tau = ((progress - f0) / span).clamp(0.0, 1.0)
+        seg = waypoints[i - 1]["height"] * (1.0 - tau) + waypoints[i]["height"] * tau
+        mask = (progress >= f0).float()
+        out = torch.where(mask > 0, seg, out)
+    return out
+
+
+def multistage_pose_target_match(
+    env: ManagerBasedRlEnv,
+    waypoints: list,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    std: float = 0.3,
+    joint_indices: Optional[list] = None,
+) -> torch.Tensor:
+    """Multi-waypoint variant of interpolated_pose_target_match.
+
+    waypoints: [{"frac": 0.0, "overrides": None},
+                {"frac": 0.4, "overrides": FOLD_OVERRIDES},
+                {"frac": 0.7, "overrides": SIT_OVERRIDES}]
+
+    Use this to enforce a curriculum-style trajectory through one or more
+    intermediate poses (e.g. stand → fold → sit). Same per-joint Gaussian
+    semantics as the single-stage version.
+    """
+    asset = env.scene[asset_cfg.name]
+    target = _multistage_target_pose(env, asset_cfg, waypoints)
+    joint_pos = asset.data.joint_pos
+    if joint_indices is not None:
+        joint_pos = joint_pos[:, joint_indices]
+        target = target[:, joint_indices]
+    return torch.exp(-((joint_pos - target) / std) ** 2).mean(dim=-1)
+
+
+def multistage_pose_l1_penalty(
+    env: ManagerBasedRlEnv,
+    waypoints: list,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    joint_indices: Optional[list] = None,
+) -> torch.Tensor:
+    """L1 companion to multistage_pose_target_match."""
+    asset = env.scene[asset_cfg.name]
+    target = _multistage_target_pose(env, asset_cfg, waypoints)
+    joint_pos = asset.data.joint_pos
+    if joint_indices is not None:
+        joint_pos = joint_pos[:, joint_indices]
+        target = target[:, joint_indices]
+    return -torch.abs(joint_pos - target).mean(dim=-1)
+
+
+def multistage_height_target(
+    env: ManagerBasedRlEnv,
+    waypoints: list,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    std: float = 0.03,
+) -> torch.Tensor:
+    """Multi-waypoint Gaussian on trunk z."""
+    target_z = _multistage_target_height(env, waypoints)
+    asset = env.scene[asset_cfg.name]
+    z = torch.nan_to_num(
+        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
+    )
+    return torch.exp(-((z - target_z) / std) ** 2)
+
+
+def multistage_height_l1_penalty(
+    env: ManagerBasedRlEnv,
+    waypoints: list,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """L1 companion to multistage_height_target."""
+    target_z = _multistage_target_height(env, waypoints)
+    asset = env.scene[asset_cfg.name]
+    z = torch.nan_to_num(
+        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
+    )
+    return -torch.abs(z - target_z)
+
+
 def phase_pose_match(
     env: ManagerBasedRlEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,

@@ -40,29 +40,59 @@ VELOCITY_PUSH_INTERVAL_S            = (3.0, 6.0)
 VELOCITY_PUSH_RANGE                 = (-0.15, 0.15)
 IMU_ORIENTATION_RANDOMIZATION_ANGLE = 1.0
 
-# Episode length: long enough that "gentle 4s descent + 2s rest" is feasible.
+# Episode length: long enough for stand → fold → sit + rest.
 EPISODE_LENGTH_S = 6.0
 
-# Fraction of the episode over which the interpolated stand→sit target travels.
-# 0.0 → start at standing pose. RAMP_END_FRAC → reach the full sitting target.
-# The remaining tail (1.0 − RAMP_END_FRAC) is the "rest while seated" window.
-RAMP_END_FRAC = 0.7
+# Episode-progress milestones for the multi-stage trajectory:
+#   [0, FOLD_FRAC]:        STAND → FOLD (deep crouch through the FOLD keyframe)
+#   [FOLD_FRAC, SIT_FRAC]: FOLD → SIT (rotate out of the crouch onto the butt)
+#   [SIT_FRAC, 1.0]:       hold SIT (rest)
+# Going through FOLD as an intermediate stops the policy from finding the
+# "fall backward to sit" exploit — to satisfy the FOLD waypoint mid-episode
+# the robot must crouch with the trunk still vertical, then transition to
+# SIT from there. Reaching SIT by tipping over backward gives 0 reward at
+# the FOLD waypoint.
+FOLD_FRAC = 0.4
+SIT_FRAC  = 0.7
 # sit_grounded / sit_stability only activate after this fraction so the policy
 # doesn't get paid for snapping to the floor at t=0.
 SIT_REWARD_MIN_PROGRESS = 0.65
 
-# ── Sitting target pose (asset.data.joint_pos index → angle in rad) ───────────
-# Matches the SIT keyframe in scene.xml.
+# ── FOLD intermediate keyframe (matches FOLD in scene.xml) ───────────────────
+# Deep crouch with trunk vertical: hips and knees both flexed ~90°, ankles at 0.
+# joint_pos indices (passive_1/2 occupy 9-10): left leg = 0..4, neck/head = 5..8,
+# right leg = 11..15.
+FOLD_TARGET_OVERRIDES = {
+    1:   0.0,      # left  hip_roll  (HOME -0.0873)
+    2:   1.5708,   # left  hip_pitch (HOME -0.5236)  ← hip forward 90°+
+    3:   1.5708,   # left  knee      (HOME 0)        ← knee bend 90°
+    4:   0.0,      # left  ankle     (HOME +0.5236)
+    # neck/head: omitted → stay at HOME (head forward-facing).
+    12:  0.0,      # right hip_roll  (HOME +0.0873)
+    13: -1.5708,   # right hip_pitch (HOME +0.5236)
+    14: -1.5708,   # right knee      (HOME 0)
+    15:  0.0,      # right ankle     (HOME -0.5236)
+}
+
+# ── SIT final keyframe (joint_pos index → angle in rad) ──────────────────────
 SITTING_TARGET_OVERRIDES = {
     1:   0.0,      # left  hip_roll  (HOME -0.0873)
     3:   1.0472,   # left  knee      (HOME 0)
     4:   0.0,      # left  ankle     (HOME +0.5236)
-    5:   1.2217,   # neck_pitch      (HOME +0.3491)
-    6:  -1.2217,   # head_pitch      (HOME -0.3491)
+    # neck_pitch / head_pitch INTENTIONALLY omitted — the SIT keyframe in
+    # scene.xml has these at ±1.22 rad which produces a "head-between-knees"
+    # tucked sit, not the upright "looking-forward sit" we actually want.
     12:  0.0,      # right hip_roll  (HOME +0.0873)
     14: -1.0472,   # right knee      (HOME 0)
     15:  0.0,      # right ankle     (HOME -0.5236)
 }
+
+# Multi-stage waypoint list passed to the multistage_pose_* rewards below.
+TRAJECTORY_WAYPOINTS = [
+    {"frac": 0.0,       "overrides": None},                       # HOME (standing)
+    {"frac": FOLD_FRAC, "overrides": FOLD_TARGET_OVERRIDES},      # crouch
+    {"frac": SIT_FRAC,  "overrides": SITTING_TARGET_OVERRIDES},   # sitting
+]
 
 # Articulation indices (account for passive_1, passive_2 at 9, 10).
 _LEG_JOINTS  = [0, 1, 2, 3, 4, 11, 12, 13, 14, 15]
@@ -181,95 +211,86 @@ def make_microduck_sit_env_cfg(
         if name in cfg.rewards:
             del cfg.rewards[name]
 
-    # ── Rewards: track an interpolated stand→sit pose target over time ───────
-    # The target pose linearly travels from HOME (standing) to SITTING over
-    # [0, RAMP_END_FRAC] of the episode. Snapping to the final sit pose at t=0
-    # leaves the robot off-target for the entire ramp window and forfeits most
-    # of the pose reward. This is what enforces the gentle descent.
+    # ── Rewards: track the multi-stage STAND → FOLD → SIT trajectory ─────────
+    # The target pose travels through a sequence of waypoints over the episode:
+    #   [0, FOLD_FRAC]: HOME → FOLD       (deep crouch through FOLD keyframe)
+    #   [FOLD_FRAC, SIT_FRAC]: FOLD → SIT  (rotate trunk back onto butt)
+    #   [SIT_FRAC, 1.0]: hold SIT          (rest)
+    # Going through FOLD as an intermediate cuts off the "fall backward" sit
+    # exploit — at the FOLD waypoint the trunk must be upright and crouched,
+    # not lying on its back. Tipping backward gives 0 reward at FOLD.
     cfg.rewards["sit_pose_legs"] = RewardTermCfg(
-        func=microduck_mdp.interpolated_pose_target_match,
+        func=microduck_mdp.multistage_pose_target_match,
         weight=5.0,
         params={
             "std": 0.4,
             "joint_indices": _LEG_JOINTS,
-            "source_overrides": None,                       # HOME = standing
-            "target_overrides": SITTING_TARGET_OVERRIDES,
-            "ramp_start_frac": 0.0,
-            "ramp_end_frac": RAMP_END_FRAC,
+            "waypoints": TRAJECTORY_WAYPOINTS,
         },
     )
 
-    # Knees+ankles converge fully. Std widened from 0.15 → 0.3 so the gradient
-    # stays informative even when the policy is off-target by 0.5+ rad
-    # mid-descent — exp(-(0.5/0.15)^2) ≈ 0 gives no signal.
+    # Knees+ankles converge fully. Std widened so the gradient stays informative
+    # even when the policy is off-target by 0.5+ rad mid-trajectory.
     cfg.rewards["sit_pose_critical"] = RewardTermCfg(
-        func=microduck_mdp.interpolated_pose_target_match,
+        func=microduck_mdp.multistage_pose_target_match,
         weight=10.0,
         params={
             "std": 0.3,
             "joint_indices": _SIT_CRITICAL_JOINTS,
-            "source_overrides": None,
-            "target_overrides": SITTING_TARGET_OVERRIDES,
-            "ramp_start_frac": 0.0,
-            "ramp_end_frac": RAMP_END_FRAC,
+            "waypoints": TRAJECTORY_WAYPOINTS,
         },
     )
 
-    # Neck/head.
+    # Neck/head — waypoints don't override these, so target stays at HOME
+    # throughout the trajectory (head always forward-facing).
     cfg.rewards["sit_pose_neck"] = RewardTermCfg(
-        func=microduck_mdp.interpolated_pose_target_match,
+        func=microduck_mdp.multistage_pose_target_match,
         weight=2.0,
         params={
             "std": 0.3,
             "joint_indices": _NECK_JOINTS,
-            "source_overrides": None,
-            "target_overrides": SITTING_TARGET_OVERRIDES,
-            "ramp_start_frac": 0.0,
-            "ramp_end_frac": RAMP_END_FRAC,
+            "waypoints": TRAJECTORY_WAYPOINTS,
         },
     )
 
-    # Trunk z tracks the same interpolated ramp (stand_z → sit_z). Std widened
-    # 0.015 → 0.03 so an off-by-3cm robot still gets a usable gradient.
+    # Trunk z trajectory: STAND_Z → FOLD_Z over [0, FOLD_FRAC], then holds at
+    # FOLD_Z/SIT_Z (both 0.07). Effectively a descent over the first 40%, hold.
     cfg.rewards["height_target"] = RewardTermCfg(
-        func=microduck_mdp.interpolated_height_target,
+        func=microduck_mdp.multistage_height_target,
         weight=5.0,
         params={
-            "start_height": STAND_Z,
-            "end_height":   SIT_Z,
-            "std":          0.03,
-            "asset_cfg":    SceneEntityCfg("robot", body_names=("trunk_base",)),
-            "ramp_start_frac": 0.0,
-            "ramp_end_frac": RAMP_END_FRAC,
+            "std":       0.03,
+            "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
+            "waypoints": [
+                {"frac": 0.0,       "height": STAND_Z},
+                {"frac": FOLD_FRAC, "height": SIT_Z},
+                {"frac": SIT_FRAC,  "height": SIT_Z},
+            ],
         },
     )
 
     # ── Bootstrap: L1 penalties for constant gradient toward the target ───────
     # The Gaussian rewards above vanish far from target (exp(-large) ≈ 0),
-    # leaving the policy with no signal to move from HOME toward SITTING in
-    # the first place. L1 penalties give a constant gradient at every distance
-    # so the policy can discover "moving knees toward sit reduces cost"
-    # before the Gaussian reward becomes informative.
+    # leaving the policy with no signal to move from HOME toward FOLD/SIT in
+    # the first place. L1 gives a constant gradient at every distance.
     cfg.rewards["sit_pose_l1"] = RewardTermCfg(
-        func=microduck_mdp.interpolated_pose_l1_penalty,
+        func=microduck_mdp.multistage_pose_l1_penalty,
         weight=2.0,
         params={
             "joint_indices": _LEG_JOINTS + _NECK_JOINTS,
-            "source_overrides": None,
-            "target_overrides": SITTING_TARGET_OVERRIDES,
-            "ramp_start_frac": 0.0,
-            "ramp_end_frac": RAMP_END_FRAC,
+            "waypoints": TRAJECTORY_WAYPOINTS,
         },
     )
     cfg.rewards["height_target_l1"] = RewardTermCfg(
-        func=microduck_mdp.interpolated_height_l1_penalty,
+        func=microduck_mdp.multistage_height_l1_penalty,
         weight=20.0,
         params={
-            "start_height": STAND_Z,
-            "end_height":   SIT_Z,
-            "asset_cfg":    SceneEntityCfg("robot", body_names=("trunk_base",)),
-            "ramp_start_frac": 0.0,
-            "ramp_end_frac": RAMP_END_FRAC,
+            "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
+            "waypoints": [
+                {"frac": 0.0,       "height": STAND_Z},
+                {"frac": FOLD_FRAC, "height": SIT_Z},
+                {"frac": SIT_FRAC,  "height": SIT_Z},
+            ],
         },
     )
 
