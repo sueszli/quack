@@ -176,25 +176,41 @@ def make_microduck_standup_env_cfg(
     )
 
     # L1 bootstrap — constant gradient even when far from HOME.
+    # Bumped 2 → 5: at convergence the policy parks ~0.18 rad off-HOME (mostly
+    # bent knees) costing only -0.35/step at weight 2 — cheap enough to ignore.
+    # At weight 5 that error costs -0.9/step, forcing the policy to actually
+    # close the gap on the remaining joints.
     cfg.rewards["pose_stand_l1"] = RewardTermCfg(
         func=microduck_mdp.pose_l1_penalty,
-        weight=2.0,
+        weight=5.0,
         params={
             "joint_indices": _LEG_JOINTS + _NECK_JOINTS,
             "target_overrides": None,
         },
     )
 
-    # Trunk height target — Gaussian + L1 toward STAND_Z.
-    # Std widened from 0.02 → 0.04: at the initial sit (5 cm below STAND_Z),
-    # std=0.02 gives reward ≈ 0.002 — saturated, no gradient. std=0.04 gives
-    # 0.21 — a meaningful pull. Once close to STAND_Z the policy still gets
-    # the sharp peak (reward ≈ 1 at exact height).
+    # Trunk height target — two-layer Gaussian to get both bootstrap reach
+    # AND a sharp peak at STAND_Z.
+    #  - ``height_stand``: wide std (0.04), for the bootstrap pull from sit.
+    #  - ``height_stand_sharp``: narrow std (0.015), creates a strong gradient
+    #    in the final cm. Earlier runs converged at z ≈ 0.109 because the
+    #    wide-std Gaussian was already saturated (0.93/1.0) — no gradient to
+    #    pull the last cm. The sharp layer adds 0.36→1.0 reward jump in that
+    #    same range, ~3× the marginal pull.
     cfg.rewards["height_stand"] = RewardTermCfg(
         func=microduck_mdp.height_target_gaussian,
         weight=4.0,
         params={
             "std":           0.04,
+            "target_height": STAND_Z,
+            "asset_cfg":     SceneEntityCfg("robot", body_names=("trunk_base",)),
+        },
+    )
+    cfg.rewards["height_stand_sharp"] = RewardTermCfg(
+        func=microduck_mdp.height_target_gaussian,
+        weight=4.0,
+        params={
+            "std":           0.015,
             "target_height": STAND_Z,
             "asset_cfg":     SceneEntityCfg("robot", body_names=("trunk_base",)),
         },
