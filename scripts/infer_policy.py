@@ -840,9 +840,11 @@ def main():
                     avg_y = sum(v[1] for v in vel_history) / len(vel_history)
                     speed = (avg_x ** 2 + avg_y ** 2) ** 0.5
                     cmd_x, cmd_y = policy.vel_cmd[0], policy.vel_cmd[1]
+                    trunk_z = float(data.qpos[qpos_adr + 2])
                     print(
                         f"[vel 1s avg] world: x={avg_x:+.2f} y={avg_y:+.2f}  "
-                        f"|v|={speed:.2f} m/s   cmd: x={cmd_x:+.2f} y={cmd_y:+.2f}"
+                        f"|v|={speed:.2f} m/s   cmd: x={cmd_x:+.2f} y={cmd_y:+.2f}   "
+                        f"trunk_z={trunk_z*1000:.1f} mm"
                     )
 
                 if csv_data is not None:

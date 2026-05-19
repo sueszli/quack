@@ -55,8 +55,13 @@ _LEG_JOINTS  = [0, 1, 2, 3, 4, 11, 12, 13, 14, 15]
 _NECK_JOINTS = [5, 6, 7, 8]
 
 # Trunk height targets (m).
-SIT_Z   = 0.07
-STAND_Z = 0.12
+SIT_Z = 0.07
+# STAND_Z = empirically-measured trunk z at the natural standing equilibrium
+# (HOME joint pose, vertical trunk). Previously was 0.120 — 5 mm above
+# what's mechanically reachable at HOME — which forced the policy into a
+# back-lean compromise to satisfy the impossible height target. Measured
+# via the velocity policy holding the robot still at zero command: 115 mm.
+STAND_Z = 0.115
 
 from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.envs.mdp.actions import JointPositionActionCfg
