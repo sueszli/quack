@@ -2758,6 +2758,8 @@ def set_random_ground_state(
     sitting_z_min: float = 0.07,
     sitting_z_max: float = 0.09,
     sitting_joint_overrides: Optional[dict] = None,
+    sitting_joint_noise_std: float = 0.0,
+    sitting_tilt_max: float = 0.0,
 ):
     """Reset to a random ground state: face-down, face-up, or sitting keyframe.
 
@@ -2792,8 +2794,21 @@ def set_random_ground_state(
 
     face_down = torch.stack([ s * cy, -s * sy,  s * cy,  s * sy], dim=1)
     face_up   = torch.stack([ s * cy,  s * sy, -s * cy,  s * sy], dim=1)
-    # Upright sitting: identity pitch/roll, only yaw.
-    sitting   = torch.stack([cy, torch.zeros_like(cy), torch.zeros_like(cy), sy], dim=1)
+    # Upright sitting: yaw-only by default, with optional ±sitting_tilt_max
+    # pitch/roll noise so the policy doesn't overfit to perfectly-upright starts.
+    if sitting_tilt_max > 0.0:
+        pitch = (torch.rand(num, device=env.device) * 2 - 1) * sitting_tilt_max
+        roll  = (torch.rand(num, device=env.device) * 2 - 1) * sitting_tilt_max
+        cp = torch.cos(pitch * 0.5); sp = torch.sin(pitch * 0.5)
+        cr = torch.cos(roll  * 0.5); sr = torch.sin(roll  * 0.5)
+        # ZYX intrinsic Euler → quaternion (yaw * pitch * roll).
+        sit_w = cr * cp * cy + sr * sp * sy
+        sit_x = sr * cp * cy - cr * sp * sy
+        sit_y = cr * sp * cy + sr * cp * sy
+        sit_z = cr * cp * sy - sr * sp * cy
+        sitting = torch.stack([sit_w, sit_x, sit_y, sit_z], dim=1)
+    else:
+        sitting = torch.stack([cy, torch.zeros_like(cy), torch.zeros_like(cy), sy], dim=1)
 
     u = torch.rand(num, device=env.device)
     is_fd  = u < p_fd
@@ -2820,6 +2835,19 @@ def set_random_ground_state(
             for jnt_idx, angle in sitting_joint_overrides.items():
                 # qpos layout: [x, y, z, qw, qx, qy, qz, joint_0, joint_1, ...]
                 env.sim.data.qpos[sit_env_ids, 7 + jnt_idx] = angle
+
+    # Joint noise for sitting envs: Gaussian noise on every actuated joint
+    # so the policy sees a distribution of plausible "sit" starts rather than
+    # a single canonical pose. Captures real-world transfer where the robot's
+    # joint angles won't match the SIT keyframe exactly when the standup
+    # policy takes over from the sit policy.
+    if sitting_joint_noise_std > 0.0:
+        sit_env_ids = env_ids[is_sit]
+        if len(sit_env_ids) > 0:
+            n_sit = len(sit_env_ids)
+            n_joints = env.sim.data.qpos.shape[1] - 7
+            noise = torch.randn(n_sit, n_joints, device=env.device) * sitting_joint_noise_std
+            env.sim.data.qpos[sit_env_ids, 7:] += noise
 
 
 def maybe_set_random_prone_orientation(

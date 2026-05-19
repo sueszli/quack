@@ -12,6 +12,7 @@ enforced by the usual sim2real regularisers. No trajectory waypoints, no
 episode-progress gating — the policy is free to discover its own rise path.
 """
 
+import math
 from copy import deepcopy
 
 # Symmetry
@@ -316,18 +317,21 @@ def make_microduck_standup_env_cfg(
     )
 
     # ── Sim2real regularisers (smoothness) ────────────────────────────────────
-    # action_rate dropped -0.5 → -0.2: active balance at the standing target
-    # requires small constant joint corrections (to counter head-forward CoM).
-    # -0.5 over-penalised that ongoing motion and selected for "passive lean"
-    # over "vertical with micro-corrections". -0.2 still suppresses high-freq
-    # twitching but allows the active stabilisation the goal pose needs.
+    # action_rate -0.2: dropped from -0.5 to allow the micro-corrections that
+    # active balance needs. The shaking we saw at iter 1000+ (action_rate
+    # climbing back from -1 to -4) is the policy over-correcting; the
+    # body_ang_vel bump below adds damping pressure that should settle it.
     cfg.rewards["action_rate_l2"]        = RewardTermCfg(func=mdp.action_rate_l2,                 weight=-0.2)
     cfg.rewards["joint_torque_rate_l2"]  = RewardTermCfg(func=microduck_mdp.joint_torque_rate_l2, weight=-5e-4)
     cfg.rewards["joint_torques_l2"]      = RewardTermCfg(func=microduck_mdp.joint_torques_l2,     weight=-5e-3)
 
     # ── Stability ─────────────────────────────────────────────────────────────
     cfg.rewards["body_ang_vel"].params["asset_cfg"].body_names = ("trunk_base",)
-    cfg.rewards["body_ang_vel"].weight = -0.3
+    # Bumped -0.3 → -0.6: at convergence the policy was shaking visibly
+    # while holding the standing pose (body_ang_vel reward ≈ -0.6 means
+    # |ω|² ≈ 1 → ω ≈ 1 rad/s constant wobble). Heavier damping makes
+    # "settle and stop moving" cheaper than continuous oscillation.
+    cfg.rewards["body_ang_vel"].weight = -0.6
 
     cfg.rewards["self_collisions"] = RewardTermCfg(
         func=mdp.self_collision_cost,
@@ -435,18 +439,23 @@ def make_microduck_standup_env_cfg(
     )
     cfg.events["foot_friction"].params["asset_cfg"].geom_names = foot_frictions_geom_names
 
-    # Always start in the sitting keyframe. ``set_random_ground_state`` writes
-    # the upright orientation, the sitting trunk z, and the sit joint angles
-    # for every env (sitting_prob = 1.0). It runs after ``reset_base`` and
-    # ``reset_robot_joints`` so it cleanly overrides whatever they set.
+    # Start in the sitting keyframe with noise on joints + trunk tilt. Real
+    # deployment hand-off from the sit policy won't reproduce the SIT
+    # keyframe exactly — the standup policy must be robust to a band of
+    # plausible "sit-ish" starts. Without noise the policy was overfitting
+    # to the exact canonical SIT pose.
     cfg.events["set_ground_state"] = EventTermCfg(
         func=microduck_mdp.set_random_ground_state,
         mode="reset",
         params={
-            "face_down_prob": 0.0,
-            "face_up_prob":   0.0,
-            "sitting_prob":   1.0,
-            "sitting_joint_overrides": SITTING_JOINT_OVERRIDES,
+            "face_down_prob":            0.0,
+            "face_up_prob":              0.0,
+            "sitting_prob":              1.0,
+            "sitting_joint_overrides":   SITTING_JOINT_OVERRIDES,
+            "sitting_joint_noise_std":   0.12,           # ≈ 7° per joint
+            "sitting_tilt_max":          math.radians(10),  # ±10° pitch/roll
+            "sitting_z_min":             0.06,           # widen z range too
+            "sitting_z_max":             0.10,
         },
     )
 
