@@ -553,6 +553,26 @@ def make_microduck_standup_env_cfg(
             },
         )
 
+    # action_rate curriculum: -0.6 (matching walking) for the first 1000 iters
+    # while the policy is still discovering the rise, then ramps to -1.0 by
+    # iter 2000 to crank up the damping pressure on the standing equilibrium.
+    # mdp.reward_weight is a step function (picks the last passed stage), so
+    # we discretise the ramp into 10 steps of -0.04 every 100 iters to get a
+    # smooth-ish climb instead of a single jump at iter 2000.
+    _action_rate_stages = [{"step": 0, "weight": -0.6}]
+    for k in range(1, 11):
+        _action_rate_stages.append({
+            "step":   (1000 + k * 100) * 24,
+            "weight": -0.6 - k * 0.04,
+        })
+    cfg.curriculum["action_rate_weight"] = CurriculumTermCfg(
+        func=mdp.reward_weight,
+        params={
+            "reward_name":   "action_rate_l2",
+            "weight_stages": _action_rate_stages,
+        },
+    )
+
     return cfg
 
 
