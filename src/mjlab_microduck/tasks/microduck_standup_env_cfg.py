@@ -317,11 +317,13 @@ def make_microduck_standup_env_cfg(
     )
 
     # ── Sim2real regularisers (smoothness) ────────────────────────────────────
-    # action_rate -0.2: dropped from -0.5 to allow the micro-corrections that
-    # active balance needs. The shaking we saw at iter 1000+ (action_rate
-    # climbing back from -1 to -4) is the policy over-correcting; the
-    # body_ang_vel bump below adds damping pressure that should settle it.
-    cfg.rewards["action_rate_l2"]        = RewardTermCfg(func=mdp.action_rate_l2,                 weight=-0.2)
+    # action_rate -0.6 to match the velocity/velstand env (their final value).
+    # Earlier we dropped to -0.2 hoping to allow active balance corrections,
+    # but the result was visible shaking at the standing pose. The walking
+    # policies hold zero command stably at this same -0.6 weight, so it's
+    # demonstrably compatible with active balance — the previous bumps to
+    # action_rate were the wrong knob.
+    cfg.rewards["action_rate_l2"]        = RewardTermCfg(func=mdp.action_rate_l2,                 weight=-0.6)
     cfg.rewards["joint_torque_rate_l2"]  = RewardTermCfg(func=microduck_mdp.joint_torque_rate_l2, weight=-5e-4)
     cfg.rewards["joint_torques_l2"]      = RewardTermCfg(func=microduck_mdp.joint_torques_l2,     weight=-5e-3)
 
