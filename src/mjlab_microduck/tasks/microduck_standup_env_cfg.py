@@ -281,33 +281,34 @@ def make_microduck_standup_env_cfg(
     )
     # Sharp Gaussian upright, gated by trunk z. Pays only when the robot is
     # actually at the standing height — prevents the "crouch low and vertical"
-    # exploit that the un-gated sharp Gaussian created (policy collapsed to
-    # z ≈ 0.065 m while staying perfectly upright, collecting easy
-    # upright_sharp without ever rising).
+    # exploit. Broadened std 0.1 → 0.3 (≈17°): too sharp before, scored
+    # near-zero at the lean basin (no gradient). With 0.3, the lean basin
+    # at z=0.111 (smoothstep ~0.91) and tilt 37° (gaussian ~0.11) scores
+    # ~0.1 = visible gradient that pulls toward vertical.
     cfg.rewards["upright_sharp"] = RewardTermCfg(
         func=microduck_mdp.upright_gaussian_at_height,
         weight=6.0,
         params={
-            "std":         0.1,           # ≈ 5.7°
-            "height_low":  SIT_Z,         # 0 reward at sit height
-            "height_high": STAND_Z,       # full reward at standing height
+            "std":         0.3,
+            "height_low":  SIT_Z,
+            "height_high": STAND_Z,
             "asset_cfg":   SceneEntityCfg("robot", body_names=("trunk_base",)),
         },
     )
 
-    # Smooth multiplicative goal-state score. Replaces the binary bonus
-    # (which never fired — tolerances too tight to reach without already
-    # being there). Product of Gaussians ⇒ a deficiency in ANY factor
-    # collapses the whole reward, breaking the additive-sum compromise
-    # basin where the policy gets credit for being "close on 2-of-3".
+    # Smooth multiplicative goal-state score (broad stds).
+    # The previous tight stds (height=0.015, upright=0.15, pose=0.20) had
+    # the composite at ~5e-5 at the lean basin — invisible to the policy,
+    # zero gradient. Broadening so the lean basin scores ~0.2 (visible
+    # gradient) while the goal still scores ~1.0 (clear attractor).
     cfg.rewards["standing_composite"] = RewardTermCfg(
         func=microduck_mdp.standing_composite_score,
         weight=15.0,
         params={
             "target_height":    STAND_Z,
-            "height_std":       0.015,   # tight ⇒ z really must reach STAND_Z
-            "upright_std":      0.15,    # ≈ 8.6° — vertical or near it
-            "pose_std":         0.20,    # joint-RMS, generous for transient drift
+            "height_std":       0.04,    # 4cm — broad, covers the climb
+            "upright_std":      0.40,    # ≈ 23° — lean basin scores ~0.3
+            "pose_std":         0.40,    # joint-RMS, broad enough for partial pose
             "joint_indices":    _LEG_JOINTS + _NECK_JOINTS,
             "target_overrides": None,
             "asset_cfg":        SceneEntityCfg("robot", body_names=("trunk_base",)),
