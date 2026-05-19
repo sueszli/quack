@@ -218,7 +218,23 @@ def main() -> int:
 
         print(f"[ckpt] checkpoints -> https://huggingface.co/{ckpt_repo}")
         print(f"[job] submitting (flavor={args.flavor}, timeout={args.timeout})")
-        _run(cmd)
+        try:
+            _run(cmd, capture_output=True, text=True)
+        except subprocess.CalledProcessError as e:
+            stderr = (e.stderr or "") + (e.stdout or "")
+            if "402" in stderr or "Payment Required" in stderr or "credit" in stderr.lower():
+                print(
+                    "\n[job] ✗ Hugging Face Jobs billing error.\n"
+                    "    Your HF account has insufficient Jobs credits.\n"
+                    "    → Add credits:   https://huggingface.co/settings/billing\n"
+                    "    → Or get HF Pro: https://huggingface.co/settings/billing/subscription\n"
+                    f"    (flavor={args.flavor} ~ check pricing with `hf jobs hardware`)",
+                    file=sys.stderr,
+                )
+                return 2
+            # unknown error: pass through stderr so the user sees it
+            print(stderr, file=sys.stderr)
+            return e.returncode
     return 0
 
 
