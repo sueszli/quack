@@ -23,9 +23,27 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+from netrc import netrc
 from pathlib import Path
 
 from huggingface_hub import HfApi
+
+
+def _wandb_api_key() -> str | None:
+    """Best-effort lookup of the user's wandb API key.
+
+    Order: WANDB_API_KEY env -> ~/.netrc (machine api.wandb.ai).
+    """
+    if k := os.environ.get("WANDB_API_KEY"):
+        return k
+    try:
+        n = netrc(str(Path.home() / ".netrc"))
+        auth = n.authenticators("api.wandb.ai")
+        if auth and auth[2]:
+            return auth[2]
+    except (FileNotFoundError, OSError):
+        pass
+    return None
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -138,6 +156,20 @@ def main() -> int:
         default=None,
         help="HF model repo for checkpoints. Defaults to <user>/<run-name>",
     )
+    ap.add_argument(
+        "--uv-cache-bucket",
+        default=None,
+        help="HF bucket used as UV_CACHE_DIR to persist wheels across runs. "
+             "Defaults to <user>/mjlab-uv-cache. Use --no-uv-cache to disable.",
+    )
+    ap.add_argument(
+        "--no-uv-cache", action="store_true",
+        help="Disable the persistent uv cache bucket.",
+    )
+    ap.add_argument(
+        "--no-wandb", action="store_true",
+        help="Do not forward a wandb API key (training will fail if wandb is enabled).",
+    )
     args, train_args = ap.parse_known_args()
 
     # check `hf` CLI is available
@@ -200,20 +232,61 @@ def main() -> int:
             "-e", f"TRAIN_ARGS={train_args_str}",
             "-e", f"GIT_SHA={sha}",
         ]
-        # Forward WANDB_API_KEY if set locally
-        if os.environ.get("WANDB_API_KEY"):
-            cmd += ["--secrets", f"WANDB_API_KEY={os.environ['WANDB_API_KEY']}"]
-            # also forward project/entity if user has them set
-            for k in ("WANDB_PROJECT", "WANDB_ENTITY"):
-                if os.environ.get(k):
-                    cmd += ["-e", f"{k}={os.environ[k]}"]
+        # Forward wandb credentials (env var, then ~/.netrc)
+        if not args.no_wandb:
+            wb_key = _wandb_api_key()
+            if wb_key:
+                cmd += ["--secrets", f"WANDB_API_KEY={wb_key}"]
+                src = "env" if os.environ.get("WANDB_API_KEY") else "~/.netrc"
+                print(f"[wandb] forwarding API key from {src}")
+                for k in ("WANDB_PROJECT", "WANDB_ENTITY"):
+                    if os.environ.get(k):
+                        cmd += ["-e", f"{k}={os.environ[k]}"]
+            else:
+                print(
+                    "[wandb] ✗ no API key found (checked $WANDB_API_KEY and ~/.netrc).\n"
+                    "        Run `wandb login` locally, or pass --no-wandb to skip.",
+                    file=sys.stderr,
+                )
+                return 1
+
+        # Persistent uv cache (skips multi-minute `uv sync` on every job)
+        if not args.no_uv_cache:
+            cache_bucket = args.uv_cache_bucket or f"{user}/mjlab-uv-cache"
+            if not args.dry_run:
+                try:
+                    subprocess.run(
+                        ["hf", "buckets", "create", cache_bucket,
+                         "--private", "--exist-ok"],
+                        check=True, capture_output=True, text=True,
+                    )
+                except subprocess.CalledProcessError as e:
+                    print(
+                        f"[uv-cache] bucket create failed: "
+                        f"{(e.stderr or '').strip() or e}",
+                        file=sys.stderr,
+                    )
+                    return 1
+            cmd += [
+                "-v", f"hf://buckets/{cache_bucket}:/uv-cache",
+                "-e", "UV_CACHE_DIR=/uv-cache",
+            ]
+            print(f"[uv-cache] using bucket {cache_bucket}")
+
         if args.detach:
             cmd.append("--detach")
         cmd += [args.image, "bash", "-c", BOOTSTRAP]
 
         if args.dry_run:
             print("[dry-run] would run:")
-            print("  " + " ".join(shlex.quote(c) for c in cmd))
+            redacted = []
+            for c in cmd:
+                if "=" in c and any(c.startswith(p + "=") for p in ("WANDB_API_KEY", "HF_TOKEN")):
+                    k = c.split("=", 1)[0]
+                    redacted.append(f"{k}=***")
+                else:
+                    redacted.append(c)
+            print("  " + " ".join(shlex.quote(c) for c in redacted))
             return 0
 
         print(f"[ckpt] checkpoints -> https://huggingface.co/{ckpt_repo}")

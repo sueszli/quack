@@ -8,8 +8,7 @@ token from `hf auth login` — no GitHub PAT, no Docker registry to manage.
 ```fish
 uv tool install huggingface_hub   # installs the `hf` CLI globally
 hf auth login                     # cached token used by everything below
-# optional: forward your wandb key into jobs
-set -x WANDB_API_KEY <your-key>
+wandb login                       # auto-detected from ~/.netrc and forwarded
 ```
 
 ## Submit a run
@@ -27,14 +26,17 @@ Useful flags:
 - `--detach` — submit and return immediately (default streams logs)
 - `--dry-run` — build tarball, print the `hf jobs run` command, do not submit
 - `--run-name <tag>` — overrides the auto-generated `<task>-<timestamp>` name
+- `--no-uv-cache` — disable the persistent `uv` cache bucket (first-run cost on every run)
+- `--no-wandb` — don't forward a wandb key
 
 ## What happens under the hood
 
 1. `git ls-files` snapshots tracked + uncommitted files → `src-<stamp>.tar.gz`.
 2. Tarball is uploaded to private dataset `<user>/mjlab-microduck-src`.
 3. Private model repo `<user>/<run-name>` is created for checkpoints.
-4. `hf jobs run` launches a container that:
-   - installs `uv`, extracts the tarball, runs `uv sync`,
+4. A private HF bucket `<user>/mjlab-uv-cache` is mounted at `/uv-cache` and used as `UV_CACHE_DIR` so wheel downloads persist across runs (first run cold, subsequent runs fast).
+5. `hf jobs run` launches a container that:
+   - installs `uv`, extracts the tarball, runs `uv sync` (warm-cached),
    - starts `scripts/hf/uploader.py` in background (watches `logs/rsl_rl/**/model_*.pt`, pushes every 60s),
    - runs `uv run train <task> <args>`,
    - does a final one-shot upload on exit.
