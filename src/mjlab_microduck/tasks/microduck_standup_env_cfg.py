@@ -317,13 +317,11 @@ def make_microduck_standup_env_cfg(
     )
 
     # ── Sim2real regularisers (smoothness) ────────────────────────────────────
-    # action_rate -0.6 to match the velocity/velstand env (their final value).
-    # Earlier we dropped to -0.2 hoping to allow active balance corrections,
-    # but the result was visible shaking at the standing pose. The walking
-    # policies hold zero command stably at this same -0.6 weight, so it's
-    # demonstrably compatible with active balance — the previous bumps to
-    # action_rate were the wrong knob.
-    cfg.rewards["action_rate_l2"]        = RewardTermCfg(func=mdp.action_rate_l2,                 weight=-0.6)
+    # action_rate -0.7 base, curriculum below ramps to -1.2 between iter 1000
+    # and 2000. Heavier damping than the walking policies because standing
+    # at HOME with head-forward CoM requires steady micro-corrections that
+    # were visibly oscillating at -0.6.
+    cfg.rewards["action_rate_l2"]        = RewardTermCfg(func=mdp.action_rate_l2,                 weight=-0.7)
     cfg.rewards["joint_torque_rate_l2"]  = RewardTermCfg(func=microduck_mdp.joint_torque_rate_l2, weight=-5e-4)
     cfg.rewards["joint_torques_l2"]      = RewardTermCfg(func=microduck_mdp.joint_torques_l2,     weight=-5e-3)
 
@@ -553,17 +551,16 @@ def make_microduck_standup_env_cfg(
             },
         )
 
-    # action_rate curriculum: -0.6 (matching walking) for the first 1000 iters
-    # while the policy is still discovering the rise, then ramps to -1.0 by
-    # iter 2000 to crank up the damping pressure on the standing equilibrium.
-    # mdp.reward_weight is a step function (picks the last passed stage), so
-    # we discretise the ramp into 10 steps of -0.04 every 100 iters to get a
-    # smooth-ish climb instead of a single jump at iter 2000.
-    _action_rate_stages = [{"step": 0, "weight": -0.6}]
+    # action_rate curriculum: -0.7 for the first 1000 iters while the policy
+    # is still discovering the rise, then ramps to -1.2 by iter 2000 to crank
+    # up the damping pressure on the standing equilibrium. mdp.reward_weight
+    # is a step function (picks the last passed stage), so we discretise the
+    # ramp into 10 steps of -0.05 every 100 iters.
+    _action_rate_stages = [{"step": 0, "weight": -0.7}]
     for k in range(1, 11):
         _action_rate_stages.append({
             "step":   (1000 + k * 100) * 24,
-            "weight": -0.6 - k * 0.04,
+            "weight": -0.7 - k * 0.05,
         })
     cfg.curriculum["action_rate_weight"] = CurriculumTermCfg(
         func=mdp.reward_weight,
