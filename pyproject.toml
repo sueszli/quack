@@ -14,7 +14,7 @@ dependencies = [
     "rustypot>=1.4.2",
     "huggingface_hub>=0.27.0",
     "matplotlib>=3.10.9",
-    "better-actuator-model",
+    # "better-actuator-model",
 ]
 
 [project.entry-points."mjlab.tasks"]
