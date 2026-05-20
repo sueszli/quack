@@ -29,10 +29,10 @@
     </default>
     <default class="chosen_actuator">
       <geom contype="0" conaffinity="0"/>
-      <!-- <joint damping="0.041" frictionloss="0.032" armature="0.002"/> -->
-      <!-- <position kp="0.386" kv="0.0" forcerange="-0.67 0.67" ctrlrange="-10.0 10.0"/> -->
-      <joint damping="0.0" frictionloss="0.0" armature="0.00"/>
-      <position kp="0" kv="0.0" forcerange="-0.0 0.0" ctrlrange="-10.0 10.0"/>
+      <joint damping="0.041" frictionloss="0.032" armature="0.002"/> 
+      <position kp="0.386" kv="0.0" forcerange="-0.67 0.67" ctrlrange="-10.0 10.0"/> 
+      <!-- <joint damping="0.0" frictionloss="0.0" armature="0.00"/> -->
+      <!-- <position kp="0" kv="0.0" forcerange="-0.0 0.0" ctrlrange="-10.0 10.0"/> -->
     </default>
     <default class="passive_wheel">
       <geom contype="0" conaffinity="0"/>
