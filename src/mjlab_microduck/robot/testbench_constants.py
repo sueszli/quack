@@ -18,8 +18,8 @@ TESTBENCH_XML: Path = _TESTBENCH_DIR / "xl330_test_bench.xml"
 assert TESTBENCH_XML.exists(), f"XML not found: {TESTBENCH_XML}"
 
 
-# Real-device payload mass (100 g)
-TESTBENCH_ARM_MASS: float = 0.1
+# Real-device payload mass (120 g)
+TESTBENCH_ARM_MASS: float = 0.12
 
 
 def _set_arm_mass(spec: mujoco.MjSpec, mass: float) -> None:

@@ -33,3 +33,5 @@ data/
 claude_experiments/
 
 backup_onnx/
+
+logdir/

@@ -28,6 +28,11 @@ from pathlib import Path
 
 import numpy as np
 import onnxruntime as ort
+from mjlab_microduck.robot.testbench_constants import (
+    TESTBENCH_ARM_MASS,
+    TESTBENCH_XML,
+    _set_arm_mass,
+)
 
 
 # --- Match training env ---
@@ -99,36 +104,45 @@ class PolicyRunner:
 def rollout_sim(onnx_path: str, total_time: float, seed: int, action_scale: float) -> dict:
     import mujoco  # local import so --mode real works without mujoco
 
-    from mjlab_microduck.robot.testbench_constants import (
-        TESTBENCH_ARM_MASS,
-        TESTBENCH_XML,
-        _set_arm_mass,
-    )
+    from bam.actuators import actuators as bam_actuators
+    from bam.model import models as bam_models
+    from bam.mujoco import MujocoController
+
+    from mjlab_microduck.actuator.bam_params import DEFAULT_XL330_M6
+
+    VIN = 7.4
+    KP_FW = 200.0
+    ACTUATOR_NAME = "1"
+
+    # Build BAM's M6 model + XL330 voltage-controlled actuator.  The
+    # MujocoController below drives the joint via this model on every step,
+    # writing torque to data.ctrl and updating dof_frictionloss/dof_damping
+    # so MuJoCo's solver applies BAM's Stribeck+load+quadratic friction.
+    bam_model = bam_models["m6"]()
+    bam_model.set_actuator(bam_actuators["xl330"]())
+    bam_model.actuator.kp = KP_FW
+    bam_model.actuator.vin = VIN
+    bam_model.load_parameters_from_dict(DEFAULT_XL330_M6)
+
+    kt = bam_model.kt.value
+    R = bam_model.R.value
 
     spec = mujoco.MjSpec.from_file(str(TESTBENCH_XML))
     _set_arm_mass(spec, TESTBENCH_ARM_MASS)
 
-    # Apply the BAM M6 edits the real training actuator performs (same logic as
-    # the mjlab BAM kernel): convert the XL330 to a motor and let us drive it
-    # directly via ctrl = motor_torque + friction.  For parity with the RL env
-    # we could alternatively use XmlPositionActuatorCfg, but the BAM kernel is
-    # what the policy was trained against.
-    from mjlab_microduck.actuator.bam_params import DEFAULT_XL330_M6 as M6
-    ERROR_GAIN = (4096 / (2 * np.pi)) / (256 * 885)
-    VIN = 7.4
-    KP_FW = 200.0
-
+    # MujocoController needs a torque-controlled motor; the XL330 entry in the
+    # XML is a position actuator, so convert it and set the voltage-bounded
+    # force range.  Armature is set on the dof by MujocoController.__init__.
     for act in spec.actuators:
         act.set_to_motor()
-        act.forcelimited = True
-        fl = VIN * M6["kt"] / M6["R"]
+        act.forcelimited = False
+        fl = VIN * kt / R
         act.forcerange = (-fl, fl)
         act.gear = [1.0, 0, 0, 0, 0, 0]
     for joint in spec.joints:
         if joint.type == mujoco.mjtJoint.mjJNT_HINGE:
             joint.damping = 0.0
             joint.frictionloss = 0.0
-            joint.armature = M6["armature"]
 
     model = spec.compile()
     data = mujoco.MjData(model)
@@ -141,6 +155,9 @@ def rollout_sim(onnx_path: str, total_time: float, seed: int, action_scale: floa
     data.qpos[qpos_id] = 0.0
     data.qvel[dof_id] = 0.0
     mujoco.mj_forward(model, data)
+
+    bam_ctrl = MujocoController(bam_model, ACTUATOR_NAME, model, data)
+    bam_ctrl.reset(data.qpos)
 
     runner = PolicyRunner(onnx_path, action_scale=action_scale)
     policy_targets = make_target_schedule(total_time, seed=seed)
@@ -172,33 +189,11 @@ def rollout_sim(onnx_path: str, total_time: float, seed: int, action_scale: floa
             rec["ctrl"][log_i] = goal
             log_i += 1
 
-            # ---- BAM M6 torque model ----
-            duty = np.clip((goal - q) * KP_FW * ERROR_GAIN, -1.0, 1.0)
-            voltage = VIN * duty
-            motor_torque = M6["kt"] * voltage / M6["R"] - (M6["kt"] ** 2) * dq / M6["R"]
-            ext_torque = -float(data.qfrc_bias[dof_id])
-
-            stribeck = np.exp(-(np.abs(dq / M6["dtheta_stribeck"]) ** M6["alpha"]))
-            gearbox = np.abs(ext_torque * M6["load_friction_external"] - motor_torque * M6["load_friction_motor"])
-            gearbox_s = np.abs(
-                ext_torque * M6["load_friction_external_stribeck"]
-                - motor_torque * M6["load_friction_motor_stribeck"]
-            )
-            frictionloss = (
-                M6["friction_base"]
-                + gearbox
-                + stribeck * M6["friction_stribeck"]
-                + gearbox_s * stribeck
-            )
-            friction_budget = frictionloss + M6["friction_viscous"] * np.abs(dq)
-
-            eff_inertia = 1.0 / model.dof_invweight0[dof_id] if model.dof_invweight0[dof_id] > 0 else 1e6
-            net = motor_torque + ext_torque
-            tau_stop = (eff_inertia / SIM_DT) * dq + net
-            fmag = min(abs(tau_stop), friction_budget)
-            friction_torque = -np.sign(tau_stop) * fmag
-
-            data.ctrl[0] = motor_torque + friction_torque
+            # BAM owns control/torque/friction: set the target, then update()
+            # writes torque to data.ctrl and pushes friction/damping onto the
+            # dof so MuJoCo's solver applies them on the next step.
+            bam_ctrl.set_q_target(ACTUATOR_NAME, goal)
+            bam_ctrl.update()
             mujoco.mj_step(model, data)
             t += SIM_DT
 
@@ -272,9 +267,9 @@ def rollout_real(
             qd = (q - prev_q) / CONTROL_DT
 
         goal = runner.step(q, qd, target_f)
-        goal = float(np.clip(goal, -MAX_ANGLE, MAX_ANGLE))
         action_raw = float(runner.last_action[0])
-        ctrl.write_goal_position(motor_id, goal)
+        # ctrl.write_goal_position(motor_id, float(np.clip(goal, -MAX_ANGLE, MAX_ANGLE)))
+        ctrl.write_goal_position(motor_id, float(goal))
 
         # First 200 Hz sample uses the values we just read (no extra USB round-trip).
         rec["t"][log_i] = time.perf_counter() - t_start
@@ -475,7 +470,7 @@ def main():
     ap.add_argument("--to-bam", nargs=2, metavar=("NPZ", "JSON"),
                     help="Convert a rollout NPZ to BAM log format "
                          "(run with: python -m bam.plot --logdir <dir> --actuator xl330)")
-    ap.add_argument("--bam-mass", type=float, default=0.1, help="Payload mass [kg]")
+    ap.add_argument("--bam-mass", type=float, default=TESTBENCH_ARM_MASS, help="Payload mass [kg]")
     ap.add_argument("--bam-length", type=float, default=0.1, help="Arm length [m]")
     ap.add_argument("--bam-vin", type=float, default=7.4, help="Supply voltage [V]")
 
