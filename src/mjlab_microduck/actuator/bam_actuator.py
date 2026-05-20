@@ -326,13 +326,22 @@ class BamM6Actuator(_BamActuatorBase):
             - motor_torque * cfg.load_friction_motor_stribeck
         )
 
+        # Quadratic load friction.  bam (model.py: M6 branch) only enables it
+        # when external and motor torques have opposite signs (i.e. one is
+        # opposing the other); within that regime, the term proportional to
+        # whichever load is dominant is used:
+        #   - motor dominant (|mot| > |ext|): use load_friction_external_quad * ext^2
+        #   - external dominant (|ext| > |mot|): use load_friction_motor_quad * mot^2
         abs_ext = torch.abs(external_torque)
         abs_mot = torch.abs(motor_torque)
-        drive_mask = (abs_mot > abs_ext).float()
-        backdrive_mask = 1.0 - drive_mask
-        quad_term = (
-            drive_mask * cfg.load_friction_external_quad * abs_ext ** 2
-            + backdrive_mask * cfg.load_friction_motor_quad * abs_mot ** 2
+        enable_quadratic = (
+            torch.sign(external_torque) != torch.sign(motor_torque)
+        ).float()
+        direction_motor = (abs_ext < abs_mot).float()
+        direction_external = (abs_ext > abs_mot).float()
+        quad_term = enable_quadratic * (
+            direction_motor * cfg.load_friction_external_quad * abs_ext ** 2
+            + direction_external * cfg.load_friction_motor_quad * abs_mot ** 2
         )
 
         frictionloss = (

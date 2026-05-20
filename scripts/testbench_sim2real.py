@@ -101,7 +101,12 @@ class PolicyRunner:
 # ---------------------------------------------------------------------------
 
 
-def rollout_sim(onnx_path: str, total_time: float, seed: int, action_scale: float) -> dict:
+def rollout_sim_bam(onnx_path: str, total_time: float, seed: int, action_scale: float) -> dict:
+    """Sim rollout using bam's MujocoController on a vanilla MuJoCo step loop.
+
+    Pros: 200 Hz inner-step logging, no torch/mjwarp.  Cons: not the exact
+    actuator that was trained against (uses bam upstream, not mjlab's M6).
+    """
     import mujoco  # local import so --mode real works without mujoco
 
     from bam.actuators import actuators as bam_actuators
@@ -197,6 +202,87 @@ def rollout_sim(onnx_path: str, total_time: float, seed: int, action_scale: floa
             mujoco.mj_step(model, data)
             t += SIM_DT
 
+    return rec
+
+
+def rollout_sim_mjlab(onnx_path: str, total_time: float, seed: int, action_scale: float) -> dict:
+    """Sim rollout via the actual mjlab testbench env (same BAM M6 the policy was trained against).
+
+    Boots make_testbench_env_cfg() with num_envs=1, overrides the target_angle
+    command with our deterministic schedule each policy tick, and steps the env
+    with the policy action.  We replicate ManagerBasedRlEnv.step's inner
+    decimation loop manually so we can log q/qd at SIM_DT (200 Hz) between
+    sub-steps, matching the bam backend's logging rate.
+    """
+    import torch
+
+    from mjlab.envs import ManagerBasedRlEnv
+
+    from mjlab_microduck.tasks.testbench_env_cfg import make_testbench_env_cfg
+
+    env_cfg = make_testbench_env_cfg(play=True)
+    env_cfg.scene.num_envs = 1
+    # Disable auto-resampling and auto-reset so our deterministic schedule and
+    # initial pose hold for the entire rollout.
+    env_cfg.commands["target_angle"].resampling_time_range = (1e6, 1e6)
+    env_cfg.episode_length_s = max(total_time + 10.0, env_cfg.episode_length_s)
+    # Drop observation noise so the mjlab path is a fair sim2real reference
+    # (matches the bam path which doesn't inject noise either).
+    env_cfg.observations["policy"].enable_corruption = False
+
+    device = "cuda:0" if torch.cuda.is_available() else "cpu"
+    env = ManagerBasedRlEnv(cfg=env_cfg, device=device)
+    env.reset(seed=seed)
+
+    cmd_term = env.command_manager.get_term("target_angle")
+    robot = env.scene["robot"]
+
+    runner = PolicyRunner(onnx_path, action_scale=action_scale)
+    policy_targets = make_target_schedule(total_time, seed=seed)
+    decim = env.cfg.decimation
+    physics_dt = env.physics_dt
+    N_log = len(policy_targets) * decim
+    rec = {k: np.zeros(N_log, dtype=np.float32)
+           for k in ("t", "target", "q", "qd", "action", "ctrl")}
+
+    t = 0.0
+    log_i = 0
+    for target in policy_targets:
+        # Inject deterministic target and recompute obs so the policy sees it
+        # this tick (the env's TargetAngleCommand otherwise samples randomly).
+        cmd_term._target[0, 0] = float(target)
+        # update_history=True is critical: the testbench env's joint_vel obs
+        # has a 1-tick delay, so the history buffer must advance each policy
+        # tick or the policy sees stale velocity.
+        obs_buf = env.observation_manager.compute(update_history=True)
+        policy_obs = obs_buf["policy"][0].detach().cpu().numpy().astype(np.float32)
+        ort_out = runner.session.run(None, {runner.in_name: policy_obs[None, :]})[0].reshape(-1)
+        runner.last_action = ort_out.astype(np.float32)
+        action_raw = float(ort_out[0])
+        goal = DEFAULT_POS + action_raw * action_scale
+
+        # Manually run the decimation loop ManagerBasedRlEnv.step uses, so we
+        # can sample joint state at the physics rate (200 Hz).
+        action = torch.as_tensor(ort_out, device=device).reshape(1, -1)
+        env.action_manager.process_action(action)
+        for _ in range(decim):
+            # Log the pre-step state to mirror the bam backend (which records
+            # q/qd right before each mj_step).
+            rec["t"][log_i] = t
+            rec["target"][log_i] = float(target)
+            rec["q"][log_i] = float(robot.data.joint_pos[0, 0].item())
+            rec["qd"][log_i] = float(robot.data.joint_vel[0, 0].item())
+            rec["action"][log_i] = action_raw
+            rec["ctrl"][log_i] = goal
+            log_i += 1
+
+            env.action_manager.apply_action()
+            env.scene.write_data_to_sim()
+            env.sim.step()
+            env.scene.update(dt=physics_dt)
+            t += physics_dt
+
+    env.close()
     return rec
 
 
@@ -450,6 +536,10 @@ def compare_and_plot(sim_file: str, real_file: str, out_path: str) -> None:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--mode", choices=["sim", "real"], help="Rollout mode")
+    ap.add_argument("--sim-backend", choices=["bam", "mjlab"], default="bam",
+                    help="Sim backend: 'bam' uses bam.MujocoController on a vanilla "
+                         "mujoco loop (200 Hz log, lightweight); 'mjlab' boots the actual "
+                         "make_testbench_env_cfg() mjlab env with its BamM6Actuator (50 Hz log).")
     ap.add_argument("--onnx", type=str, help="Path to trained ONNX policy")
     ap.add_argument("--out", type=str, help="Output .npz log file")
     ap.add_argument("--duration", type=float, default=30.0, help="Total time [s]")
@@ -495,7 +585,8 @@ def main():
         ap.error("--mode, --onnx and --out are required for a rollout")
 
     if args.mode == "sim":
-        rec = rollout_sim(args.onnx, args.duration, args.seed, args.action_scale)
+        sim_fn = rollout_sim_mjlab if args.sim_backend == "mjlab" else rollout_sim_bam
+        rec = sim_fn(args.onnx, args.duration, args.seed, args.action_scale)
     else:
         rec = rollout_real(
             args.onnx, args.duration, args.seed,
