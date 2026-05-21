@@ -12,27 +12,26 @@ from mjlab_microduck.actuator.bam_actuator import (
 
 
 # M6 params from clean data identification (m6_new.json)
-# DEFAULT_XL330_M6 = {
-    # "kt": 0.24702827088535634,
-    # "R": 2.436537942885361,
-    # "armature": 0.002231042413951293,
-    # "friction_base": 0.007805203011273793,
-    # "friction_stribeck": 0.01299013941785831,
-    # "load_friction_motor": 0.17679071496643342,
-    # "load_friction_external": 0.33284617369197755,
-    # "load_friction_motor_stribeck": 0.04834054555210131,
-    # "load_friction_external_stribeck": 0.03230746746292114,
-    # "load_friction_motor_quad": 0.004778286363709164,
-    # "load_friction_external_quad": 0.004335373885291851,
-    # "dtheta_stribeck": 0.10838180452009236,
-    # "alpha": 2.1089115156897034,
-    # "friction_viscous": 0.01674718702359746,
-# }
-
-# DEFAULT_XL330_M6 = {"kt": 0.35779164271150476, "R": 2.374988979696358, "armature": 0.0020257825918762167, "q_offset": -0.06546129209754742, "friction_base": 0.001754607184547046, "friction_stribeck": 0.0010538474216419162, "load_friction_motor": 0.3192184816286803, "load_friction_external": 0.12809368871589483, "load_friction_motor_stribeck": 0.18955233643383987, "load_friction_external_stribeck": 0.10892769962721865, "load_friction_motor_quad": 0.0010502076729414875, "load_friction_external_quad": 0.006317081973583958, "dtheta_stribeck": 1.7221467024134323, "alpha": 1.9509891711049203, "friction_viscous": 0.009619244577789402, "model": "m6", "actuator": "xl330"}
+DEFAULT_XL330_M6 = {
+    "kt": 0.24702827088535634,
+    "R": 2.436537942885361,
+    "armature": 0.002231042413951293,
+    "friction_base": 0.007805203011273793,
+    "friction_stribeck": 0.01299013941785831,
+    "load_friction_motor": 0.17679071496643342,
+    "load_friction_external": 0.33284617369197755,
+    "load_friction_motor_stribeck": 0.04834054555210131,
+    "load_friction_external_stribeck": 0.03230746746292114,
+    "load_friction_motor_quad": 0.004778286363709164,
+    "load_friction_external_quad": 0.004335373885291851,
+    "dtheta_stribeck": 0.10838180452009236,
+    "alpha": 2.1089115156897034,
+    "friction_viscous": 0.01674718702359746,
+}
+## DEFAULT_XL330_M6 = {"kt": 0.35779164271150476, "R": 2.374988979696358, "armature": 0.0020257825918762167, "q_offset": -0.06546129209754742, "friction_base": 0.001754607184547046, "friction_stribeck": 0.0010538474216419162, "load_friction_motor": 0.3192184816286803, "load_friction_external": 0.12809368871589483, "load_friction_motor_stribeck": 0.18955233643383987, "load_friction_external_stribeck": 0.10892769962721865, "load_friction_motor_quad": 0.0010502076729414875, "load_friction_external_quad": 0.006317081973583958, "dtheta_stribeck": 1.7221467024134323, "alpha": 1.9509891711049203, "friction_viscous": 0.009619244577789402, "model": "m6", "actuator": "xl330"}
 
 # Latest
-DEFAULT_XL330_M6 = {"kt": 0.2999893711793659, "R": 2.4946724246383676, "armature": 0.0012521751045975285, "q_offset": -0.045793372624719664, "friction_base": 0.0068847698693566915, "friction_stribeck": 0.010523970516311758, "load_friction_motor": 0.10460330746803911, "load_friction_external": 0.17414228563481096, "load_friction_motor_stribeck": 0.41215286582521976, "load_friction_external_stribeck": 0.07183770537505915, "load_friction_motor_quad": 0.005245771568736729, "load_friction_external_quad": 0.0054119388177369275, "dtheta_stribeck": 0.3239525849552899, "alpha": 0.6770590655566154, "friction_viscous": 0.0030865558209412234, "model": "m6", "actuator": "xl330"}
+# DEFAULT_XL330_M6 = {"kt": 0.2999893711793659, "R": 2.4946724246383676, "armature": 0.0012521751045975285, "q_offset": -0.045793372624719664, "friction_base": 0.0068847698693566915, "friction_stribeck": 0.010523970516311758, "load_friction_motor": 0.10460330746803911, "load_friction_external": 0.17414228563481096, "load_friction_motor_stribeck": 0.41215286582521976, "load_friction_external_stribeck": 0.07183770537505915, "load_friction_motor_quad": 0.005245771568736729, "load_friction_external_quad": 0.0054119388177369275, "dtheta_stribeck": 0.3239525849552899, "alpha": 0.6770590655566154, "friction_viscous": 0.0030865558209412234, "model": "m6", "actuator": "xl330"}
 
 
 
