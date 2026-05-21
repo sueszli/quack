@@ -16,8 +16,11 @@ avoid synchronised oscillations.  PERIOD = 4 s (2 s down + 2 s up).
 
 from copy import deepcopy
 
-# Symmetry
-ENABLE_SYMMETRY = True
+# Symmetry — disabled for v1.5: SYMMETRY_CFG's _OBS_PERM is hardcoded for the
+# old 51D obs layout and breaks on the new 61D obs (which includes the
+# head_command/body_command padding). All v1.5 envs run with symmetry off
+# until SYMMETRY_CFG gets rewritten for the new obs structure.
+ENABLE_SYMMETRY = False
 
 # ── Domain randomisation (same as velocity env, neck offset disabled) ─────────
 ENABLE_COM_RANDOMIZATION          = True
@@ -147,8 +150,11 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
         },
     )
 
-    # Return phase — legs (joints 0-4 left, 9-13 right): relaxed std, robust to pushes.
-    _LEG_JOINTS = [0, 1, 2, 3, 4, 9, 10, 11, 12, 13]
+    # Return phase — legs. Index layout matches the current robot_standup.xml's
+    # qpos block (passive_1, passive_2 jaw-linkage joints sit at indices 9, 10;
+    # right leg starts at 11). Old layout was [0-4, 9-13] before the jaw
+    # linkage was added — keep this in sync with the standup/sit envs.
+    _LEG_JOINTS = [0, 1, 2, 3, 4, 11, 12, 13, 14, 15]
     cfg.rewards["ground_pick_return_pose_legs"] = RewardTermCfg(
         func=microduck_mdp.ground_pick_return_pose,
         weight=4.0,
@@ -251,6 +257,16 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     cfg.observations["policy"].terms["joint_vel"].delay_min_lag = 1
     cfg.observations["policy"].terms["joint_vel"].delay_max_lag = 1
     cfg.observations["policy"].terms["joint_vel"].delay_update_period = 0
+
+    # Exclude passive_* joints from joint_pos/vel obs — robot_standup.xml's
+    # qpos block now contains passive_1, passive_2 (jaw linkage) at indices
+    # 9, 10. Without this filter the obs would be 63D vs everyone else's 61D
+    # and the runtime can't share a single buffer across policies.
+    passive_excluded = SceneEntityCfg("robot", joint_names=(r"^(?!passive_).*",))
+    cfg.observations["policy"].terms["joint_pos"].params["asset_cfg"] = passive_excluded
+    cfg.observations["policy"].terms["joint_vel"].params["asset_cfg"] = deepcopy(passive_excluded)
+    cfg.observations["critic"].terms["joint_pos"].params["asset_cfg"] = deepcopy(passive_excluded)
+    cfg.observations["critic"].terms["joint_vel"].params["asset_cfg"] = deepcopy(passive_excluded)
 
     # ── Pad command vector to the unified 13D layout ──────────────────────────
     # Ground-pick doesn't actively use head/body pose commands, but all
