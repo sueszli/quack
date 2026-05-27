@@ -94,13 +94,25 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
         num_slots=1,
     )
 
+    # Head-on-ground impact sensor — covers the neck subtree (head_plate,
+    # head_shell, etc). Used by the head_impact_penalty reward to discourage
+    # the policy from slamming the head into the ground during the approach.
+    head_impact_cfg = ContactSensorCfg(
+        name="head_impact_contact",
+        primary=ContactMatch(mode="subtree", pattern="neck", entity="robot"),
+        secondary=ContactMatch(mode="body", pattern="terrain"),
+        fields=("force",),
+        reduce="netforce",
+        num_slots=1,
+    )
+
     foot_frictions_geom_names = ("left_foot_collision", "right_foot_collision")
 
     # ── Base config ───────────────────────────────────────────────────────────
     cfg = make_velocity_env_cfg()
 
     cfg.scene.entities = {"robot": MICRODUCK_GROUND_PICK_ROBOT_CFG}
-    cfg.scene.sensors  = (feet_ground_cfg, self_collision_cfg)
+    cfg.scene.sensors  = (feet_ground_cfg, self_collision_cfg, head_impact_cfg)
     cfg.viewer.body_name = "trunk_base"
 
     # ── Actions ───────────────────────────────────────────────────────────────
@@ -214,6 +226,15 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
         func=mdp.self_collision_cost,
         weight=-1.0,
         params={"sensor_name": self_collision_cfg.name},
+    )
+
+    # Head-on-ground impact penalty: forces > threshold (N) cost weight × (force-threshold)
+    # per step. Discourages slamming the head into the ground when reaching for it
+    # without preventing gentle contact (the mouth_tip site can still kiss the ground).
+    cfg.rewards["head_impact_penalty"] = RewardTermCfg(
+        func=microduck_mdp.body_impact_cost,
+        weight=-0.5,
+        params={"sensor_name": head_impact_cfg.name, "threshold": 2.0},
     )
 
     # ── Observations (identical layout to walking policy — 51 D) ─────────────

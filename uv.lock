@@ -116,30 +116,6 @@ wheels = [
 ]
 
 [[package]]
-name = "better-actuator-model"
-version = "0.0.1"
-source = { editable = "../../Rhoban/bam" }
-dependencies = [
-    { name = "colorama" },
-    { name = "numpy" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "colorama" },
-    { name = "dynamixel-sdk", marker = "extra == 'dev'" },
-    { name = "numpy" },
-    { name = "optuna", marker = "extra == 'dev'" },
-    { name = "protobuf", marker = "extra == 'dev'", specifier = "==3.20" },
-    { name = "pygame", marker = "extra == 'dev'" },
-    { name = "pyserial", marker = "extra == 'dev'" },
-    { name = "rustypot", marker = "extra == 'xl330'" },
-    { name = "wandb", marker = "extra == 'dev'" },
-    { name = "zmq", marker = "extra == 'dev'" },
-]
-provides-extras = ["dev", "xl330"]
-
-[[package]]
 name = "certifi"
 version = "2026.1.4"
 source = { registry = "https://pypi.org/simple" }
@@ -1053,7 +1029,6 @@ name = "mjlab-microduck"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "better-actuator-model" },
     { name = "huggingface-hub" },
     { name = "matplotlib" },
     { name = "mjlab" },
@@ -1063,7 +1038,6 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "better-actuator-model", editable = "../../Rhoban/bam" },
     { name = "huggingface-hub", specifier = ">=0.27.0" },
     { name = "matplotlib", specifier = ">=3.10.9" },
     { name = "mjlab", git = "https://github.com/mujocolab/mjlab.git?rev=d1d32d8b86e68fe317356de2561f4efc63ffcc29" },
