@@ -40,6 +40,10 @@ from .microduck_velstand_env_cfg import (
     make_microduck_velstand_env_cfg,
     MicroduckVelStandRlCfg,
 )
+from .microduck_velstand_tiptoe_env_cfg import (
+    make_microduck_velstand_tiptoe_env_cfg,
+    MicroduckVelStandTipToeRlCfg,
+)
 from .microduck_pose_env_cfg import (
     make_microduck_pose_env_cfg,
     MicroduckPoseRlCfg,
@@ -155,6 +159,25 @@ register_mjlab_task(
     runner_cls=MicroduckOnPolicyRunner,
 )
 print("✓ VelStand task registered: Mjlab-VelStand-Rough-MicroDuck")
+
+# VelStand-TipToe — same as VelStand but with a feet_tiptoe_alignment reward.
+register_mjlab_task(
+    task_id="Mjlab-VelStandTipToe-Flat-MicroDuck",
+    env_cfg=make_microduck_velstand_tiptoe_env_cfg(),
+    play_env_cfg=make_microduck_velstand_tiptoe_env_cfg(play=True),
+    rl_cfg=MicroduckVelStandTipToeRlCfg,
+    runner_cls=MicroduckOnPolicyRunner,
+)
+print("✓ VelStand-TipToe task registered: Mjlab-VelStandTipToe-Flat-MicroDuck")
+
+register_mjlab_task(
+    task_id="Mjlab-VelStandTipToe-Rough-MicroDuck",
+    env_cfg=make_microduck_velstand_tiptoe_env_cfg(rough=True),
+    play_env_cfg=make_microduck_velstand_tiptoe_env_cfg(play=True, rough=True),
+    rl_cfg=MicroduckVelStandTipToeRlCfg,
+    runner_cls=MicroduckOnPolicyRunner,
+)
+print("✓ VelStand-TipToe task registered: Mjlab-VelStandTipToe-Rough-MicroDuck")
 
 # Pose task — stand still + follow head + body pose commands. Animation playback policy.
 register_mjlab_task(

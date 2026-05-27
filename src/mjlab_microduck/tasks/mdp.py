@@ -840,6 +840,36 @@ def feet_flat_penalty(
     return total
 
 
+def feet_tiptoe_alignment(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg = _ROLLER_FEET_SITE_CFG,
+    command_name: str = "twist",
+    command_threshold: float = 0.01,
+) -> torch.Tensor:
+    """Reward each foot site's local x-axis pointing downward — tiptoe stance.
+
+    When flat, foot site x points roughly forward (horizontal). Pitching the
+    foot forward (heel up, toe down) rotates x toward world -Z. We reward the
+    z-component of the foot x-axis being -1 (perfectly downward).
+
+    Per foot: alignment ∈ [-1, 1], summed over both feet ∈ [-2, 2].
+
+    Gated on |vel_cmd_xy| > command_threshold so the policy isn't required to
+    stand on tiptoes at rest — only while walking. The companion
+    feet_flat_penalty is NOT used in this task; the two would fight.
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    quats = asset.data.site_quat_w[:, asset_cfg.site_ids, :]  # (B, N, 4) [w, x, y, z]
+    w, qx, qy, qz = quats[:, :, 0], quats[:, :, 1], quats[:, :, 2], quats[:, :, 3]
+    x_axis_z = 2.0 * (qx * qz - w * qy)  # (B, N) — z-component of local x-axis in world
+    alignment = (-x_axis_z).sum(dim=-1)  # +1 per foot when pointing straight down
+
+    cmd = env.command_manager.get_command(command_name)
+    cmd_mag = torch.linalg.norm(cmd[:, :2], dim=1)
+    active = (cmd_mag > command_threshold).float()
+    return alignment * active
+
+
 def hip_pitch_knee_vel_l2(
     env: ManagerBasedRlEnv,
     asset_cfg: SceneEntityCfg = _HIP_PITCH_KNEE_CFG,
