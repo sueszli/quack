@@ -14,7 +14,7 @@ dependencies = [
     "rustypot>=1.4.2",
     "huggingface_hub>=0.27.0",
     "matplotlib>=3.10.9",
-    "better-actuator-model",
+    # "better-actuator-model",
 ]
 
 [project.entry-points."mjlab.tasks"]
@@ -35,5 +35,5 @@ override-dependencies = [
 
 [tool.uv.sources]
 mjlab = { git = "https://github.com/mujocolab/mjlab.git", rev = "d1d32d8b86e68fe317356de2561f4efc63ffcc29" }
-better-actuator-model = { path = "/home/antoine/Rhoban/bam", editable = true }
+# better-actuator-model = { path = "/home/antoine/Rhoban/bam", editable = true }
 # mjlab = { git = "https://github.com/mujocolab/mjlab.git", rev = "5af32e378dcb93c9e881ace83cc5a3f5d373fe60" }
