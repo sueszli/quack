@@ -158,7 +158,7 @@ def make_microduck_velstand_tiptoe_env_cfg(play: bool = False, rough: bool = Fal
     # converged to ~3% alignment because flat-walk is locally much easier).
     cfg.rewards["feet_tiptoe"] = RewardTermCfg(
         func=microduck_mdp.feet_tiptoe_alignment,
-        weight=5.0,
+        weight=2.0,
         params={
             "asset_cfg": SceneEntityCfg("robot", site_names=("left_foot", "right_foot")),
             "command_name": "twist",
