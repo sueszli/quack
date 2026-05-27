@@ -153,10 +153,12 @@ def make_microduck_velstand_tiptoe_env_cfg(play: bool = False, rough: bool = Fal
 
     # Tiptoe alignment — reward each foot's local x-axis pointing downward
     # while the robot is commanded to move. Sum over both feet ∈ [-2, 2];
-    # weight 1.0 makes max contribution ≈ 2/step, comparable to upright_linear.
+    # weight 5.0 makes max contribution ≈ 10/step — dominant signal needed to
+    # pull the policy out of the flat-foot walking basin (1.0 was tried first,
+    # converged to ~3% alignment because flat-walk is locally much easier).
     cfg.rewards["feet_tiptoe"] = RewardTermCfg(
         func=microduck_mdp.feet_tiptoe_alignment,
-        weight=1.0,
+        weight=5.0,
         params={
             "asset_cfg": SceneEntityCfg("robot", site_names=("left_foot", "right_foot")),
             "command_name": "twist",
