@@ -11,14 +11,11 @@ from mjlab.utils.spec_config import CollisionCfg
 _ROBOT_DIR: Path = Path(os.path.dirname(__file__)) / "microduck"
 
 MICRODUCK_WALK_XML: Path = _ROBOT_DIR / "robot_walk.xml"
-MICRODUCK_STANDUP_XML: Path = _ROBOT_DIR / "robot_standup.xml"
-MICRODUCK_GROUND_PICK_XML: Path = _ROBOT_DIR / "robot_standup.xml"
-MICRODUCK_WALK_ROLLERS_XML: Path = _ROBOT_DIR / "robot_standup.xml"
+# Full-collision model, shared by standup / ground-pick / walk-rollers tasks.
+MICRODUCK_ALLCOLLISIONS_XML: Path = _ROBOT_DIR / "robot_allcollisions.xml"
 
 assert MICRODUCK_WALK_XML.exists(), f"XML not found: {MICRODUCK_WALK_XML}"
-assert MICRODUCK_STANDUP_XML.exists(), f"XML not found: {MICRODUCK_STANDUP_XML}"
-assert MICRODUCK_GROUND_PICK_XML.exists(), f"XML not found: {MICRODUCK_GROUND_PICK_XML}"
-assert MICRODUCK_WALK_ROLLERS_XML.exists(), f"XML not found: {MICRODUCK_WALK_ROLLERS_XML}"
+assert MICRODUCK_ALLCOLLISIONS_XML.exists(), f"XML not found: {MICRODUCK_ALLCOLLISIONS_XML}"
 
 
 def get_walk_spec() -> mujoco.MjSpec:
@@ -26,15 +23,15 @@ def get_walk_spec() -> mujoco.MjSpec:
 
 
 def get_standup_spec() -> mujoco.MjSpec:
-    return mujoco.MjSpec.from_file(str(MICRODUCK_STANDUP_XML))
+    return mujoco.MjSpec.from_file(str(MICRODUCK_ALLCOLLISIONS_XML))
 
 
 def get_ground_pick_spec() -> mujoco.MjSpec:
-    return mujoco.MjSpec.from_file(str(MICRODUCK_GROUND_PICK_XML))
+    return mujoco.MjSpec.from_file(str(MICRODUCK_ALLCOLLISIONS_XML))
 
 
 def get_walk_rollers_spec() -> mujoco.MjSpec:
-    return mujoco.MjSpec.from_file(str(MICRODUCK_WALK_ROLLERS_XML))
+    return mujoco.MjSpec.from_file(str(MICRODUCK_ALLCOLLISIONS_XML))
 
 
 HOME_FRAME = EntityCfg.InitialStateCfg(

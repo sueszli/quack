@@ -162,7 +162,7 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
         },
     )
 
-    # Return phase — legs. Index layout matches the current robot_standup.xml's
+    # Return phase — legs. Index layout matches the current robot_allcollisions.xml's
     # qpos block (passive_1, passive_2 jaw-linkage joints sit at indices 9, 10;
     # right leg starts at 11). Old layout was [0-4, 9-13] before the jaw
     # linkage was added — keep this in sync with the standup/sit envs.
@@ -279,7 +279,7 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     cfg.observations["policy"].terms["joint_vel"].delay_max_lag = 1
     cfg.observations["policy"].terms["joint_vel"].delay_update_period = 0
 
-    # Exclude passive_* joints from joint_pos/vel obs — robot_standup.xml's
+    # Exclude passive_* joints from joint_pos/vel obs — robot_allcollisions.xml's
     # qpos block now contains passive_1, passive_2 (jaw linkage) at indices
     # 9, 10. Without this filter the obs would be 63D vs everyone else's 61D
     # and the runtime can't share a single buffer across policies.
