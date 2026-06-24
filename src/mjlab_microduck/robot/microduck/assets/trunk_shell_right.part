@@ -2,12 +2,12 @@
     "configuration": "default",
     "documentId": "804927696f06d877f3f1803e",
     "documentMicroversion": "92bc93fa7dd86b01ca71e919",
-    "elementId": "e34e27a4a091c95d26a71da8",
+    "elementId": "d6fcdccc8b25aaa256e7e213",
     "fullConfiguration": "default",
-    "id": "MNMyVEwhc7HfSm3EX",
+    "id": "M7Gm6FOo6Hf6qW5Fn",
     "isStandardContent": false,
-    "name": "xl330 <11>",
-    "partId": "JND",
+    "name": "trunk_shell_right <1>",
+    "partId": "R+LD",
     "suppressed": false,
     "type": "Part"
 }

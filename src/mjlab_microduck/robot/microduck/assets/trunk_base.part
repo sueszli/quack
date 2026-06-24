@@ -1,13 +1,13 @@
 {
     "configuration": "default",
     "documentId": "804927696f06d877f3f1803e",
-    "documentMicroversion": "38a10dea82083b06cbf000fa",
-    "elementId": "451317b8e3aacc7f88e8f8ed",
+    "documentMicroversion": "92bc93fa7dd86b01ca71e919",
+    "elementId": "d6fcdccc8b25aaa256e7e213",
     "fullConfiguration": "default",
-    "id": "MRdDjZpY3djLxNN+F",
+    "id": "MJcJLYFe5PHdcbIOw",
     "isStandardContent": false,
     "name": "trunk_base <1>",
-    "partId": "JsD",
+    "partId": "RHHD",
     "suppressed": false,
     "type": "Part"
 }

@@ -1,13 +1,13 @@
 {
     "configuration": "default",
     "documentId": "804927696f06d877f3f1803e",
-    "documentMicroversion": "38a10dea82083b06cbf000fa",
-    "elementId": "451317b8e3aacc7f88e8f8ed",
+    "documentMicroversion": "92bc93fa7dd86b01ca71e919",
+    "elementId": "d6fcdccc8b25aaa256e7e213",
     "fullConfiguration": "default",
-    "id": "MQ6ExVWTurZx9xUu5",
+    "id": "MO3UG60E/crGUBuqS",
     "isStandardContent": false,
-    "name": "yaw2roll <2>",
-    "partId": "RpCD",
+    "name": "yaw2roll <1>",
+    "partId": "RlBD",
     "suppressed": false,
     "type": "Part"
 }

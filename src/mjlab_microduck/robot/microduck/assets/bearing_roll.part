@@ -1,13 +1,13 @@
 {
     "configuration": "default",
     "documentId": "804927696f06d877f3f1803e",
-    "documentMicroversion": "38a10dea82083b06cbf000fa",
-    "elementId": "451317b8e3aacc7f88e8f8ed",
+    "documentMicroversion": "92bc93fa7dd86b01ca71e919",
+    "elementId": "d6fcdccc8b25aaa256e7e213",
     "fullConfiguration": "default",
-    "id": "MzGOYmdaXv65QLgr1",
+    "id": "MnzpqZwaCaK4P1f41",
     "isStandardContent": false,
-    "name": "bearing_roll <2>",
-    "partId": "RTDD",
+    "name": "bearing_roll <1>",
+    "partId": "RPCD",
     "suppressed": false,
     "type": "Part"
 }

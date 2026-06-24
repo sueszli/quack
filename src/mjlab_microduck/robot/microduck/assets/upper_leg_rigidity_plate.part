@@ -1,13 +1,13 @@
 {
     "configuration": "default",
     "documentId": "804927696f06d877f3f1803e",
-    "documentMicroversion": "38a10dea82083b06cbf000fa",
-    "elementId": "451317b8e3aacc7f88e8f8ed",
+    "documentMicroversion": "92bc93fa7dd86b01ca71e919",
+    "elementId": "d6fcdccc8b25aaa256e7e213",
     "fullConfiguration": "default",
-    "id": "MfNgOMURDbU4EtOh5",
+    "id": "MpYBlDWICMN4d9B39",
     "isStandardContent": false,
-    "name": "upper_leg_rigidity_plate <2>",
-    "partId": "RZED",
+    "name": "upper_leg_rigidity_plate <1>",
+    "partId": "RaDD",
     "suppressed": false,
     "type": "Part"
 }

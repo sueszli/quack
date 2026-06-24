@@ -1,14 +1,14 @@
 {
     "configuration": "default",
     "documentId": "804927696f06d877f3f1803e",
-    "documentMicroversion": "9306fb07735e782de209a230",
-    "documentVersion": "f0b9dc2ed2b65290c37daecc",
+    "documentMicroversion": "8ecc7eae881f17530e7d80f0",
+    "documentVersion": "011c23c46c3f4780789bc002",
     "elementId": "cceb83ef371fcd79b077022f",
     "fullConfiguration": "default",
-    "id": "MzW0rNa4mZjNjsxTo",
+    "id": "M/rAeuKSeRbB6zGHy",
     "isStandardContent": false,
-    "name": "jaw <1>",
-    "partId": "J6D",
+    "name": "face_part <1>",
+    "partId": "RUBD",
     "suppressed": false,
     "type": "Part"
 }

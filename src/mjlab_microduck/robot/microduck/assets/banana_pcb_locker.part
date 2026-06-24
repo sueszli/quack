@@ -2,12 +2,12 @@
     "configuration": "default",
     "documentId": "804927696f06d877f3f1803e",
     "documentMicroversion": "92bc93fa7dd86b01ca71e919",
-    "elementId": "e34e27a4a091c95d26a71da8",
+    "elementId": "d6fcdccc8b25aaa256e7e213",
     "fullConfiguration": "default",
-    "id": "MNMyVEwhc7HfSm3EX",
+    "id": "MBeyWD9BcBiAC88kr",
     "isStandardContent": false,
-    "name": "xl330 <11>",
-    "partId": "JND",
+    "name": "Banana_PCB_locker <1>",
+    "partId": "RtJD",
     "suppressed": false,
     "type": "Part"
 }

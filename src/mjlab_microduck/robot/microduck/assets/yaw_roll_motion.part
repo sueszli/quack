@@ -5,10 +5,10 @@
     "documentVersion": "f0b9dc2ed2b65290c37daecc",
     "elementId": "cceb83ef371fcd79b077022f",
     "fullConfiguration": "default",
-    "id": "MzW0rNa4mZjNjsxTo",
+    "id": "M8nmO8TdXJ1yzOlXl",
     "isStandardContent": false,
-    "name": "jaw <1>",
-    "partId": "J6D",
+    "name": "yaw_roll_motion <1>",
+    "partId": "RcBD",
     "suppressed": false,
     "type": "Part"
 }
