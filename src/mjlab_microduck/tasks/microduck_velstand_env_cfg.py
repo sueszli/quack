@@ -136,16 +136,24 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
             params={"prone_prob": 0.0, "face_down_prob": 0.5},
         )
 
-    # ── Tighten the inherited hip_yaw pose penalty ───────────────────────────
-    # The vel env's `pose` reward is the only thing reining in hip_yaw. At the
-    # walking std of 0.3 the Gaussian is nearly flat out at the +0.524 rad
-    # outward limit (exp(-(0.524/0.3)^2) ≈ 0.05, weak gradient), so the policy
-    # parks hip_yaw on its limit and slides/pivots there cheaply. Tighten the
-    # walking std so yaw drift toward the limit costs more. Scoped to velstand
-    # (override here, not in the shared base) so the plain velocity policy is
-    # untouched. std_walking and std_running share the same dict, so this also
-    # covers running.
-    cfg.rewards["pose"].params["std_walking"][r".*hip_yaw.*"] = 0.2  # was 0.3
+    # ── Penalize parking hip_yaw on its hard limits ──────────────────────────
+    # The policy commands very large yaw targets (intended — low kp means it
+    # overshoots to reach a setpoint) and the joint ends up pinned on its MJCF
+    # hard stop, where the foot slides/pivots. The base `dof_pos_limits` term is
+    # toothless here (soft limit at 0.9 factor → only the last ~7.5% of range,
+    # tiny magnitude) and we explicitly do NOT want to regularize the command
+    # side. So add a qpos-side limit-proximity penalty that bites within a wide
+    # `margin` of the hard limits, scoped to the yaws. Scoped to velstand so the
+    # plain velocity policy is untouched. margin=0.15 rad → for hip_yaw's
+    # [−0.262, +0.524] range the penalty starts at +0.374 / −0.112 rad.
+    cfg.rewards["hip_yaw_limit_proximity"] = RewardTermCfg(
+        func=microduck_mdp.joint_pos_limit_proximity,
+        weight=-3.0,
+        params={
+            "asset_cfg": SceneEntityCfg("robot", joint_names=(r".*hip_yaw.*",)),
+            "margin": 0.15,
+        },
+    )
 
     # ── REWARDS: fall recovery layer ─────────────────────────────────────────
     # These all sit at high reward when standing normally (free reward while

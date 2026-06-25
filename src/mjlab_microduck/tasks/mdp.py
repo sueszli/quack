@@ -1301,6 +1301,46 @@ def joint_deviation_l1(
     return torch.sum(torch.abs(err), dim=-1)
 
 
+def joint_pos_limit_proximity(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    margin: float = 0.15,
+) -> torch.Tensor:
+    """L1 penalty for joint positions entering a ``margin`` (rad) band next to
+    their *hard* range limits.
+
+    The base ``joint_pos_limits`` reward only fires past the *soft* limit
+    (global ``soft_joint_pos_limit_factor`` = 0.9 → roughly the last 7.5% of
+    range) and only by the radians-overshoot magnitude, so it's near-useless
+    against a joint parked on its stop. This term instead reads the *hard*
+    limits directly and lets each reward set its own wide margin, scoped to
+    specific joints.
+
+    Motivating case: with a low-kp position servo and wide ctrlrange the policy
+    can command far past a joint's limit "for free" (no command-side cost) and
+    park the joint on its hard stop — e.g. hip_yaw slammed to ±limit so the foot
+    slides/pivots. The overshoot is *intended* (it's how a low-kp servo reaches
+    its target), so the deterrent must live on the qpos side and bite well
+    before the stop.
+
+    For each selected joint with hard limits ``[lo, hi]``::
+
+        soft_lo = lo + margin,  soft_hi = hi - margin
+        penalty = relu(soft_lo - q) + relu(q - soft_hi)
+
+    summed over joints: zero in the interior, ramping linearly toward each stop.
+    """
+    asset = env.scene[asset_cfg.name]
+    jnt_ids = asset_cfg.joint_ids
+    q = asset.data.joint_pos[:, jnt_ids]
+    hard = asset.data.joint_pos_limits[:, jnt_ids]  # (num_envs, num_sel_joints, 2)
+    soft_lo = hard[..., 0] + margin
+    soft_hi = hard[..., 1] - margin
+    below = (soft_lo - q).clip(min=0.0)
+    above = (q - soft_hi).clip(min=0.0)
+    return torch.sum(below + above, dim=-1)
+
+
 def phase_height_track(
     env: ManagerBasedRlEnv,
     command_name: str,
