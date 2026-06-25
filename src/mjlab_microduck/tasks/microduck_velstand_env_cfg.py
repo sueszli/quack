@@ -136,6 +136,17 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
             params={"prone_prob": 0.0, "face_down_prob": 0.5},
         )
 
+    # ── Tighten the inherited hip_yaw pose penalty ───────────────────────────
+    # The vel env's `pose` reward is the only thing reining in hip_yaw. At the
+    # walking std of 0.3 the Gaussian is nearly flat out at the +0.524 rad
+    # outward limit (exp(-(0.524/0.3)^2) ≈ 0.05, weak gradient), so the policy
+    # parks hip_yaw on its limit and slides/pivots there cheaply. Tighten the
+    # walking std so yaw drift toward the limit costs more. Scoped to velstand
+    # (override here, not in the shared base) so the plain velocity policy is
+    # untouched. std_walking and std_running share the same dict, so this also
+    # covers running.
+    cfg.rewards["pose"].params["std_walking"][r".*hip_yaw.*"] = 0.2  # was 0.3
+
     # ── REWARDS: fall recovery layer ─────────────────────────────────────────
     # These all sit at high reward when standing normally (free reward while
     # walking) and only meaningfully push the policy when it's fallen.
