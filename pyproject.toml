@@ -10,11 +10,11 @@ readme = "README.md"
 requires-python = ">=3.12, <3.14"
 dependencies = [
     "mjlab",
+    "bam",
     "onnxruntime>=1.24.4",
     "rustypot>=1.4.2",
     "huggingface_hub>=0.27.0",
     "matplotlib>=3.10.9",
-    # "better-actuator-model",
 ]
 
 [project.entry-points."mjlab.tasks"]
@@ -31,9 +31,21 @@ exclude = [
 [tool.uv]
 override-dependencies = [
     "mujoco>=3.4.0",
+    # bam pins protobuf<4.0 (for its zmq/dynamixel messaging, which we don't
+    # use — we only import bam.model/bam.actuator). Without this override the
+    # downgrade cascades onnx down to 1.17.0, which has no wheel and fails to
+    # build from source.
+    "protobuf>=4.0,<7.0",
+    # Keep onnx on a version with prebuilt wheels (1.17.0 has no py3.13 wheel and
+    # fails to build from source). Pulling in bam otherwise nudges it downward.
+    "onnx>=1.20.1",
 ]
 
 [tool.uv.sources]
 mjlab = { git = "https://github.com/mujocolab/mjlab.git", rev = "d1d32d8b86e68fe317356de2561f4efc63ffcc29" }
-# better-actuator-model = { path = "/home/antoine/Rhoban/bam", editable = true }
+# Official BAM actuator model. Currently on the `doc` branch; switch to `main`
+# (or a tag) once the mjlab-facing API lands there.
+bam = { git = "https://github.com/Rhoban/bam.git", branch = "doc" }
+# For local BAM development, comment the line above and use:
+# bam = { path = "/home/antoine/Rhoban/bam", editable = true }
 # mjlab = { git = "https://github.com/mujocolab/mjlab.git", rev = "5af32e378dcb93c9e881ace83cc5a3f5d373fe60" }

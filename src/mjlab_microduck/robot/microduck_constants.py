@@ -71,10 +71,22 @@ FULL_COLLISION = CollisionCfg(
 
 # -- BAM M6 actuator (full voltage control + load-dependent friction) --
 # Exclude passive_* joints (jaw linkage in the new model has no XML actuator).
+# Voltage domain randomization (mirrors mjlab_microban):
+#   - vin_range: per-env battery voltage sampled at startup (replaces fixed vin)
+#   - vin_drop_gain_range: load-dependent voltage sag V_drop = gain * sum(|tau|)
+#   - vin_min: hard floor on the effective voltage after sag
+# kp_fw kept at 200 (microduck's preserved firmware stiffness; microban uses 125).
 actuators = DelayedActuatorCfg(
     delay_min_lag=3,
     delay_max_lag=6,
-    base_cfg=make_bam_m6_actuator_cfg(joint_names_expr=(r"^(?!passive_).*",)),
+    base_cfg=make_bam_m6_actuator_cfg(
+        joint_names_expr=(r"^(?!passive_).*",),
+        kp_fw=200.0,
+        vin_range=(6.9, 7.9),
+        vin_drop_gain_range=(0.0, 0.2),
+        vin_min=6.0,
+        max_current=1.75,
+    ),
 )
 
 # -- BAM M4 actuator

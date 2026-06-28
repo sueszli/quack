@@ -1,4 +1,6 @@
 from mjlab_microduck.actuator.bam_actuator import (
+    BamActuator,
+    BamActuatorCfg,
     BamM4Actuator,
     BamM4ActuatorCfg,
     BamM6Actuator,
@@ -6,6 +8,8 @@ from mjlab_microduck.actuator.bam_actuator import (
 )
 
 __all__ = [
+    "BamActuator",
+    "BamActuatorCfg",
     "BamM4Actuator",
     "BamM4ActuatorCfg",
     "BamM6Actuator",

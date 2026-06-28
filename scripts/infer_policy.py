@@ -481,6 +481,10 @@ def main():
                         help="Use the unified 13D command obs layout (twist+head_pose+body_pose). "
                              "Required for policies trained with the new pose-command-tracking setup. "
                              "Old policies (51D obs, head_offset added to ctrl) need this flag OFF.")
+    parser.add_argument("--current-limit", type=float, default=1.75,
+                        help="XL330 firmware current limit [A]. Actuator torque is clipped to "
+                             "+/- current_limit * kt (kt from the bam package), matching the "
+                             "current saturation modeled in training. <=0 disables.")
     args = parser.parse_args()
 
     if not args.walking and not args.standing:
@@ -509,6 +513,21 @@ def main():
     model = mujoco.MjModel.from_xml_path(xml_path)
     model.opt.timestep = 0.005
     data = mujoco.MjData(model)
+
+    # XL330 firmware current limit. The motors saturate current at ~1.75 A; since
+    # torque = kt * current, this caps the actuator force at +/- kt * I_max. The
+    # MuJoCo position actuators here are not the BAM voltage model, but clipping
+    # their output force reproduces the same current saturation the policy was
+    # trained against (see BamActuator.max_current). kt comes from the bam package.
+    if args.current_limit and args.current_limit > 0:
+        from bam.model import load_model
+        kt = load_model(motor_name="xl330", model="m6").kt.value
+        torque_limit = kt * args.current_limit
+        model.actuator_forcerange[:, 0] = -torque_limit
+        model.actuator_forcerange[:, 1] = torque_limit
+        model.actuator_forcelimited[:] = 1
+        print(f"Current limit: {args.current_limit:.2f} A -> torque limit "
+              f"+/-{torque_limit:.4f} Nm (kt={kt:.4f})")
 
     # Initialize policy
     policy = PolicyInference(

@@ -1,19 +1,24 @@
-"""BAM actuator models for MuJoCo Warp.
+"""BAM actuator for mjlab, backed by the official ``bam`` package.
 
-Implements BAM (Better Actuator Model) friction models inside mjlab's actuator
-framework. This replaces MuJoCo's built-in kp+damping+frictionloss with:
+This adapts the official BAM torque pipeline (:class:`bam.model.Model`) to the
+*pinned* mjlab actuator API. The official ``bam.mjlab`` module targets a newer
+mjlab (``cmd.pos`` / ``cmd.vel``, ``Actuator.__init__(cfg, ...)``,
+``CommandField``); the mjlab version pinned by this project uses
+``cmd.joint_pos`` / ``cmd.joint_vel``, ``Actuator.__init__(entity, ...)`` and
+``joint_names_expr``. To avoid bumping mjlab we keep the thin mjlab glue here and
+delegate *all* physics (friction model, parameters, current limit) to the ``bam``
+dependency so the science stays in sync with upstream.
 
-  - XL330 firmware voltage control law (position error → duty cycle → voltage)
-  - DC motor torque equation (voltage → torque, with back-EMF)
-  - BAM load-dependent friction (M4 or M6)
+The friction budget and ``compute`` pipeline mirror ``bam/mjlab.py`` (doc branch
+of https://github.com/Rhoban/bam) line-for-line apart from the mjlab API
+adaptation.
 
-Reference: Duclusaud et al., "Extended Friction Models for the Physics Simulation
-of Servo Actuators", 2024. https://arxiv.org/abs/2410.08650
+Reference: Duclusaud et al., "Extended Friction Models for the Physics
+Simulation of Servo Actuators", 2024. https://arxiv.org/abs/2410.08650
 """
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -24,143 +29,175 @@ import torch
 from mjlab.actuator.actuator import Actuator, ActuatorCfg, ActuatorCmd
 from mjlab.utils.spec import create_motor_actuator
 
+from bam.actuator import VoltageControlledActuator
+from bam.model import Model, load_model
+
 if TYPE_CHECKING:
     from mjlab.entity import Entity
 
 
 @dataclass(kw_only=True)
-class _BamActuatorCfgBase(ActuatorCfg):
-    """Shared electrical + firmware config for BAM actuators."""
+class BamActuatorCfg(ActuatorCfg):
+    """Configuration for a BAM actuator backed by the ``bam`` package.
 
-    # --- Electrical parameters ---
-    kt: float
-    """Motor torque constant [Nm/A]."""
-    R: float
-    """Motor winding resistance [Ohm]."""
+    Specify the model with **one** of two mutually exclusive approaches:
 
-    # --- Firmware control law ---
-    vin: float = 7.4
-    """Supply voltage [V]."""
-    kp_fw: float = 200.0
-    """Firmware position P gain (register value)."""
-    error_gain: float = (4096 / (2 * math.pi)) / (256 * 885)
-    """XL330 firmware scaling: (encoder_counts/2pi) / (KP_divisor * PWM_limit)."""
-    max_pwm: float = 1.0
-    """Maximum duty cycle (clipped)."""
-
-    # --- Shared friction parameters ---
-    friction_base: float = 0.0
-    """Coulomb friction [Nm]."""
-    friction_stribeck: float = 0.0
-    """Stribeck friction component [Nm]."""
-    dtheta_stribeck: float = 0.1
-    """Stribeck velocity threshold [rad/s]."""
-    alpha: float = 2.0
-    """Stribeck curvature exponent."""
-    friction_viscous: float = 0.0
-    """Viscous friction coefficient [Nm·s/rad]."""
-
-
-@dataclass(kw_only=True)
-class BamM4ActuatorCfg(_BamActuatorCfgBase):
-    """Configuration for a BAM M4 actuator (non-directional, stribeck, load-dependent)."""
-
-    load_friction_base: float = 0.0
-    """Non-directional load-friction coefficient (applied on |external - motor|)."""
-    load_friction_stribeck: float = 0.0
-    """Stribeck component of load-friction."""
-
-    def build(
-        self, entity: Entity, target_ids: list[int], target_names: list[str]
-    ) -> BamM4Actuator:
-        return BamM4Actuator(self, entity, target_ids, target_names)
-
-
-@dataclass(kw_only=True)
-class BamM6ActuatorCfg(_BamActuatorCfgBase):
-    """Configuration for a BAM M6 actuator (XL330)."""
-
-    load_friction_motor: float = 0.0
-    """Friction proportional to motor torque."""
-    load_friction_external: float = 0.0
-    """Friction proportional to external (gravity) torque."""
-    load_friction_motor_stribeck: float = 0.0
-    """Stribeck component of motor-load friction."""
-    load_friction_external_stribeck: float = 0.0
-    """Stribeck component of external-load friction."""
-    load_friction_motor_quad: float = 0.0
-    """Quadratic motor-load friction."""
-    load_friction_external_quad: float = 0.0
-    """Quadratic external-load friction."""
-
-    def build(
-        self, entity: Entity, target_ids: list[int], target_names: list[str]
-    ) -> BamM6Actuator:
-        return BamM6Actuator(self, entity, target_ids, target_names)
-
-
-class _BamActuatorBase(Actuator):
-    """Shared BAM actuator: voltage control + static-friction clipping.
-
-    Subclasses implement `_compute_friction_budget` with the model-specific
-    (M4/M6) friction formula.
+    * **Bundled motor**: set ``motor_name`` (e.g. ``"xl330"``) and ``model``
+      (e.g. ``"m6"``). Params are read from the JSON bundled with the ``bam``
+      package (``bam/params/<motor>/<model>.json``).
+    * **Custom JSON**: set ``json_path`` to a BAM params JSON produced by
+      ``bam.fit``. Takes precedence over ``motor_name`` / ``model``.
     """
 
-    cfg: _BamActuatorCfgBase
+    motor_name: str | None = "xl330"
+    """Bundled motor name. Ignored if ``json_path`` is set."""
+    model: str | None = "m6"
+    """Bundled model variant ``"m1"``–``"m6"``. Ignored if ``json_path`` is set."""
+    json_path: str | None = None
+    """Custom BAM params JSON path. Takes precedence over ``motor_name``/``model``."""
+
+    vin: float | None = None
+    """Supply voltage override [V]. ``None`` → use the value from the bam actuator."""
+    kp_fw: float | None = None
+    """Firmware P-gain override. ``None`` → use the value from the bam actuator."""
+    max_current: float | None = None
+    """Firmware current limit [A]. The motor current ``I = motor_torque / kt`` is
+    clipped to ``±max_current`` (equivalently torque to ``±max_current·kt``),
+    reproducing the XL330 firmware current saturation. ``None`` → no clipping."""
+
+    vin_range: tuple[float, float] | None = None
+    """If set, a per-env battery voltage is sampled uniformly from this range at
+    startup and held constant across resets. Takes precedence over ``vin``."""
+    vin_drop_gain_range: tuple[float, float] | None = None
+    """If set, a per-env internal-resistance gain [V/Nm] is sampled at startup,
+    modelling the voltage drop ``V_drop = gain · Σ|τ|`` from battery + cable
+    resistance (gain ≈ resistance / kt). Held constant across resets."""
+    vin_min: float | None = None
+    """Hard lower bound on the effective supply voltage [V] after the drop."""
+
+    def __post_init__(self) -> None:
+        # json_path wins over the bundled selectors (which carry defaults).
+        if self.json_path is not None:
+            object.__setattr__(self, "motor_name", None)
+            object.__setattr__(self, "model", None)
+
+    def build(
+        self, entity: "Entity", joint_ids: list[int], joint_names: list[str]
+    ) -> "BamActuator":
+        return BamActuator(self, entity, joint_ids, joint_names)
+
+
+class BamActuator(Actuator):
+    """BAM actuator (m1–m6) — fully vectorized over all parallel environments.
+
+    Implements the BAM torque pipeline using parameters/flags read from the
+    ``bam`` package's :class:`~bam.model.Model`:
+
+    1. **Voltage control law** — firmware P-controller (position error → duty
+       cycle → voltage).
+    2. **DC motor torque** — back-EMF equation (voltage → torque), with optional
+       firmware current clipping.
+    3. **Friction budget** — BAM m1–m6 friction model (Coulomb, Stribeck,
+       load-dependent, directional, quadratic).
+    4. **Static friction clipping** — BAM Algorithm 1.
+
+    Per-environment gain scaling is supported via :meth:`set_gains` (used by the
+    domain-randomization events).
+    """
+
+    cfg: BamActuatorCfg
 
     def __init__(
         self,
-        cfg: _BamActuatorCfgBase,
-        entity: Entity,
-        target_ids: list[int],
-        target_names: list[str],
+        cfg: BamActuatorCfg,
+        entity: "Entity",
+        joint_ids: list[int],
+        joint_names: list[str],
     ) -> None:
-        super().__init__(entity, target_ids, target_names)
+        super().__init__(entity, joint_ids, joint_names)
         self.cfg = cfg
+
+        # Load the BAM model from the bundled params (or a custom JSON).
+        self._bam_model: Model = load_model(
+            cfg.json_path, motor_name=cfg.motor_name, model=cfg.model
+        )
+        if cfg.vin is not None:
+            self._bam_model.actuator.vin = cfg.vin
+        if cfg.kp_fw is not None:
+            self._bam_model.actuator.kp = cfg.kp_fw
+
+        if not isinstance(self._bam_model.actuator, VoltageControlledActuator):
+            raise NotImplementedError(
+                f"BamActuator only supports VoltageControlledActuator, "
+                f"got {type(self._bam_model.actuator).__name__}"
+            )
+
         self._model: mjwarp.Model | None = None
         self._data: mjwarp.Data | None = None
         self._dt: float = 0.0
+        self._device: str = "cpu"
         self._dof_ids: torch.Tensor | None = None
+
+        self.vin_tensor: torch.Tensor | None = None
+        self.vin_drop_gain: torch.Tensor | None = None
+        self._prev_motor_torque: torch.Tensor | None = None
+
         # Per-env gain tensors (initialized in initialize(), randomized by DR)
         self.kp_scale: torch.Tensor | None = None
         self.kd_scale: torch.Tensor | None = None
         self.default_kp_scale: torch.Tensor | None = None
         self.default_kd_scale: torch.Tensor | None = None
 
-    def edit_spec(self, spec: mujoco.MjSpec, target_names: list[str]) -> None:
-        """Convert existing XML position actuators to motor (torque) mode and
-        zero out joint friction. We handle all friction ourselves.
-        """
-        target_set = set(target_names)
-        force_limit = self.cfg.vin * self.cfg.kt / self.cfg.R
+    # ─────────────────────────────────────────────────────────────────────────
+    # mjlab interface
+    # ─────────────────────────────────────────────────────────────────────────
 
-        converted = set()
-        for act in spec.actuators:
-            tgt = act.target
-            tgt_name = tgt.name if hasattr(tgt, "name") else str(tgt) if tgt else None
+    def edit_spec(self, spec: mujoco.MjSpec, joint_names: list[str]) -> None:
+        """Convert existing XML position actuators to motor (torque) mode and
+        zero out MuJoCo's built-in damping/friction. We handle all friction
+        ourselves in :meth:`compute`.
+        """
+        bam = self._bam_model
+        act = bam.actuator
+        kt = bam.kt.value
+        R = bam.R.value
+        armature = float(act.get_extra_inertia())
+        # Upper bound of vin_range so MuJoCo's forcerange is always a safe ceiling.
+        vin_for_limit = (
+            max(self.cfg.vin_range) if self.cfg.vin_range is not None else act.vin
+        )
+        force_limit = vin_for_limit * kt / R
+
+        target_set = set(joint_names)
+        converted: set[str] = set()
+
+        for mjact in spec.actuators:
+            tgt = mjact.target
+            tgt_name = (
+                tgt.name if hasattr(tgt, "name") else (str(tgt) if tgt else None)
+            )
             if tgt_name in target_set:
-                act.set_to_motor()
-                act.forcelimited = True
-                act.forcerange = (-force_limit, force_limit)
-                act.gear = [1.0, 0, 0, 0, 0, 0]
+                mjact.set_to_motor()
+                mjact.forcelimited = True
+                mjact.forcerange = (-force_limit, force_limit)
+                mjact.gear = [1.0, 0, 0, 0, 0, 0]
                 for joint in spec.joints:
                     if joint.name == tgt_name:
-                        joint.armature = self.cfg.armature
+                        joint.armature = armature
                         joint.damping = 0.0
                         joint.frictionloss = 0.0
                         break
-                self._mjs_actuators.append(act)
+                self._mjs_actuators.append(mjact)
                 converted.add(tgt_name)
 
-        for target_name in target_names:
+        for target_name in joint_names:
             if target_name not in converted:
                 actuator = create_motor_actuator(
                     spec,
                     target_name,
                     effort_limit=force_limit,
-                    armature=self.cfg.armature,
+                    armature=armature,
                     frictionloss=0.0,
-                    transmission_type=self.cfg.transmission_type,
                 )
                 self._mjs_actuators.append(actuator)
                 for joint in spec.joints:
@@ -184,17 +221,56 @@ class _BamActuatorBase(Actuator):
 
         jnt_dofadr = mj_model.jnt_dofadr
         entity_joint_ids = self.entity.indexing.joint_ids
-        dof_ids = []
-        for tid in self._joint_ids_list:
-            global_joint_id = entity_joint_ids[tid].item()
-            dof_ids.append(jnt_dofadr[global_joint_id])
+        dof_ids = [
+            jnt_dofadr[entity_joint_ids[tid].item()] for tid in self._joint_ids_list
+        ]
         self._dof_ids = torch.tensor(dof_ids, dtype=torch.long, device=device)
 
         num_envs = data.nworld
-        self.kp_scale = torch.ones(num_envs, 1, dtype=torch.float, device=device)
-        self.kd_scale = torch.ones(num_envs, 1, dtype=torch.float, device=device)
+        num_joints = len(self._dof_ids)
+        self.kp_scale = torch.ones(num_envs, 1, dtype=torch.float32, device=device)
+        self.kd_scale = torch.ones(num_envs, 1, dtype=torch.float32, device=device)
         self.default_kp_scale = self.kp_scale.clone()
         self.default_kd_scale = self.kd_scale.clone()
+
+        act = self._bam_model.actuator
+
+        # vin_tensor: (N, 1) — per-env battery voltage, constant across resets.
+        if self.cfg.vin_range is not None:
+            self.vin_tensor = torch.empty(
+                num_envs, 1, dtype=torch.float32, device=device
+            ).uniform_(*self.cfg.vin_range)
+        else:
+            self.vin_tensor = torch.full(
+                (num_envs, 1), act.vin, dtype=torch.float32, device=device
+            )
+
+        # vin_drop_gain: (N, 1) — per-env resistance gain [V/Nm], constant across resets.
+        if self.cfg.vin_drop_gain_range is not None:
+            self.vin_drop_gain = torch.empty(
+                num_envs, 1, dtype=torch.float32, device=device
+            ).uniform_(*self.cfg.vin_drop_gain_range)
+        else:
+            self.vin_drop_gain = None
+
+        # Previous motor torques for the voltage-drop computation (lagged 1 step).
+        self._prev_motor_torque = torch.zeros(
+            num_envs, num_joints, dtype=torch.float32, device=device
+        )
+
+    def reset(self, env_ids: torch.Tensor | slice | None = None) -> None:
+        super().reset(env_ids)
+        # vin_tensor and vin_drop_gain are startup-randomized: do NOT re-sample.
+        # Reset previous motor torques so the voltage-drop model starts clean.
+        if self._prev_motor_torque is not None:
+            if env_ids is None:
+                self._prev_motor_torque.zero_()
+            else:
+                self._prev_motor_torque[env_ids] = 0.0
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Gain scaling (for domain randomization)
+    # ─────────────────────────────────────────────────────────────────────────
 
     def set_gains(
         self,
@@ -215,139 +291,181 @@ class _BamActuatorBase(Actuator):
         self.kp_scale[env_ids] = self.default_kp_scale[env_ids]
         self.kd_scale[env_ids] = self.default_kd_scale[env_ids]
 
+    # ─────────────────────────────────────────────────────────────────────────
+    # BAM friction budget (m1–m6 unified, vectorized) — mirrors bam/mjlab.py
+    # ─────────────────────────────────────────────────────────────────────────
+
     def _compute_friction_budget(
         self,
         motor_torque: torch.Tensor,
         external_torque: torch.Tensor,
-        vel: torch.Tensor,
         stribeck_coeff: torch.Tensor,
     ) -> torch.Tensor:
-        """Subclasses: return Coulomb-like (velocity-independent) friction budget."""
-        raise NotImplementedError
+        """Velocity-independent friction budget — shape ``(N, J)``.
+
+        Covers BAM models m1–m6 by reading flags from the stored Model:
+
+        * **m1**: Coulomb only (``friction_base``)
+        * **m2**: + Stribeck (``stribeck``)
+        * **m3**: + non-directional load friction (``load_dependent``)
+        * **m4**: m3 + Stribeck load friction
+        * **m5**: directional load friction (``directional``)
+        * **m6**: m5 + quadratic Stribeck load term (``quadratic``)
+        """
+        bam = self._bam_model
+        frictionloss = torch.full_like(motor_torque, bam.friction_base.value)
+
+        if bam.stribeck:
+            frictionloss = frictionloss + stribeck_coeff * bam.friction_stribeck.value
+
+        if bam.load_dependent:
+            if bam.directional:
+                # m5/m6 — directional gearbox torque
+                gearbox_torque = torch.abs(
+                    external_torque * bam.load_friction_external.value
+                    - motor_torque * bam.load_friction_motor.value
+                )
+                frictionloss = frictionloss + gearbox_torque
+
+                if bam.stribeck:
+                    gearbox_torque_stribeck = torch.abs(
+                        external_torque * bam.load_friction_external_stribeck.value
+                        - motor_torque * bam.load_friction_motor_stribeck.value
+                    )
+                    frictionloss = (
+                        frictionloss + stribeck_coeff * gearbox_torque_stribeck
+                    )
+
+                    if bam.quadratic:
+                        # m6 — quadratic term; directional: motor-side vs external-side
+                        abs_ext = torch.abs(external_torque)
+                        abs_mot = torch.abs(motor_torque)
+                        drive_mask = (abs_mot > abs_ext).to(motor_torque.dtype)
+                        backdrive_mask = 1.0 - drive_mask
+                        quad_term = (
+                            drive_mask
+                            * bam.load_friction_external_quad.value
+                            * abs_ext**2
+                            + backdrive_mask
+                            * bam.load_friction_motor_quad.value
+                            * abs_mot**2
+                        )
+                        frictionloss = frictionloss + stribeck_coeff * quad_term
+            else:
+                # m3/m4 — non-directional gearbox torque
+                gearbox_torque = torch.abs(external_torque - motor_torque)
+                frictionloss = (
+                    frictionloss + bam.load_friction_base.value * gearbox_torque
+                )
+
+                if bam.stribeck:
+                    frictionloss = (
+                        frictionloss
+                        + stribeck_coeff
+                        * bam.load_friction_stribeck.value
+                        * gearbox_torque
+                    )
+
+        return frictionloss
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Main compute — shape (num_envs, num_joints) throughout
+    # ─────────────────────────────────────────────────────────────────────────
 
     def compute(self, cmd: ActuatorCmd) -> torch.Tensor:
-        cfg = self.cfg
+        bam = self._bam_model
+        act = bam.actuator
+
+        assert self.vin_tensor is not None
+        assert self.kp_scale is not None and self.kd_scale is not None
+        assert self._data is not None and self._dof_ids is not None
+        assert self._model is not None
+
+        # Effective supply voltage, optionally with load-dependent droop.
+        vin = self.vin_tensor  # (N, 1)
+        if self.vin_drop_gain is not None and self._prev_motor_torque is not None:
+            load = self._prev_motor_torque.abs().sum(dim=-1, keepdim=True)  # (N, 1)
+            vin = vin - self.vin_drop_gain * load
+            if self.cfg.vin_min is not None:
+                vin = torch.clamp(vin, min=self.cfg.vin_min)
+
+        kp_fw = act.kp
+        kt = bam.kt.value
+        R = bam.R.value
+        error_gain = act.error_gain
+        max_pwm = act.max_pwm
+        friction_viscous = bam.friction_viscous.value
+
+        # ── 1. Firmware voltage control law ──
         pos_error = cmd.position_target - cmd.joint_pos
         vel = cmd.joint_vel
+        duty_cycle = pos_error * kp_fw * self.kp_scale * error_gain
+        duty_cycle = torch.clamp(duty_cycle, -max_pwm, max_pwm)
+        voltage = vin * duty_cycle
 
-        # ── 1. XL330 firmware voltage control law ──
-        assert self.kp_scale is not None and self.kd_scale is not None
-        duty_cycle = pos_error * cfg.kp_fw * self.kp_scale * cfg.error_gain
-        duty_cycle = torch.clamp(duty_cycle, -cfg.max_pwm, cfg.max_pwm)
-        voltage = cfg.vin * duty_cycle
+        # ── 2. DC motor torque with back-EMF ──
+        motor_torque = kt * voltage / R - (kt**2) * vel * self.kd_scale / R
 
-        # ── 2. DC motor torque ──
-        motor_torque = cfg.kt * voltage / cfg.R - (cfg.kt ** 2) * vel * self.kd_scale / cfg.R
+        # Firmware current clipping: I = motor_torque / kt capped at ±max_current,
+        # i.e. motor torque clipped to ±max_current·kt.
+        if self.cfg.max_current is not None:
+            torque_limit = self.cfg.max_current * kt
+            motor_torque = torch.clamp(motor_torque, -torque_limit, torque_limit)
 
-        # ── 3. External (bias) torque on each joint ──
-        assert self._data is not None and self._dof_ids is not None
-        qfrc_bias_all = self._data.qfrc_bias
-        if isinstance(qfrc_bias_all, torch.Tensor):
-            external_torque = -qfrc_bias_all[:, self._dof_ids]
-        else:
-            external_torque = -torch.as_tensor(
-                qfrc_bias_all, device=self._device
-            )[:, self._dof_ids]
+        # ── 3. External (gravity + Coriolis) torque ──
+        qfrc_bias_raw = self._data.qfrc_bias
+        if not isinstance(qfrc_bias_raw, torch.Tensor):
+            qfrc_bias_raw = torch.as_tensor(qfrc_bias_raw, device=self._device)
+        external_torque = -qfrc_bias_raw[:, self._dof_ids]  # (N, J)
 
-        # ── 4. Friction budget (model-specific, + viscous) ──
+        # ── 4. Stribeck coefficient ──
         abs_vel = torch.abs(vel)
-        stribeck_coeff = torch.exp(
-            -torch.pow(abs_vel / cfg.dtheta_stribeck, cfg.alpha)
-        )
+        if bam.stribeck:
+            stribeck_coeff = torch.exp(
+                -torch.pow(abs_vel / bam.dtheta_stribeck.value, bam.alpha.value)
+            )
+        else:
+            stribeck_coeff = torch.zeros_like(vel)
+
+        # ── 5. Friction budget ──
         frictionloss = self._compute_friction_budget(
-            motor_torque, external_torque, vel, stribeck_coeff
+            motor_torque, external_torque, stribeck_coeff
         )
-        friction_budget = frictionloss + cfg.friction_viscous * abs_vel
+        friction_budget = frictionloss + friction_viscous * abs_vel
 
-        # ── 5. Static friction clipping (BAM's Algorithm 1) ──
-        assert self._model is not None
+        # ── 6. Static friction clipping — BAM Algorithm 1 ──
         dof_invweight = self._model.dof_invweight0
-        if isinstance(dof_invweight, torch.Tensor):
-            invweight = dof_invweight
+        if not isinstance(dof_invweight, torch.Tensor):
+            dof_invweight = torch.as_tensor(dof_invweight, device=self._device)
+        if dof_invweight.ndim == 1:
+            eff_inertia = 1.0 / dof_invweight[self._dof_ids].unsqueeze(0)  # (1, J)
         else:
-            invweight = torch.as_tensor(dof_invweight, device=self._device)
-        if invweight.ndim == 1:
-            eff_inertia = 1.0 / invweight[self._dof_ids].unsqueeze(0)
-        else:
-            eff_inertia = 1.0 / invweight[:, self._dof_ids]
+            eff_inertia = 1.0 / dof_invweight[:, self._dof_ids]  # (N, J)
 
-        qfrc_bias_mujoco = -external_torque
-        net_no_friction = motor_torque + qfrc_bias_mujoco
+        # tau_stop = (I/dt)·vel + motor_torque + qfrc_bias
+        #          = (I/dt)·vel + motor_torque - external_torque
+        net_no_friction = motor_torque - external_torque
         tau_stop = (eff_inertia / self._dt) * vel + net_no_friction
 
-        abs_tau_stop = torch.abs(tau_stop)
-        friction_magnitude = torch.minimum(abs_tau_stop, friction_budget)
+        friction_magnitude = torch.minimum(torch.abs(tau_stop), friction_budget)
         friction_torque = -torch.sign(tau_stop) * friction_magnitude
 
-        return motor_torque + friction_torque
+        output = motor_torque + friction_torque
+
+        # Store motor torque for next step's voltage-drop computation.
+        if self._prev_motor_torque is not None:
+            self._prev_motor_torque = motor_torque.detach()
+
+        return output
 
 
-class BamM4Actuator(_BamActuatorBase):
-    """BAM M4 actuator: non-directional load-dependent Stribeck friction."""
-
-    def _compute_friction_budget(
-        self,
-        motor_torque: torch.Tensor,
-        external_torque: torch.Tensor,
-        vel: torch.Tensor,
-        stribeck_coeff: torch.Tensor,
-    ) -> torch.Tensor:
-        cfg = self.cfg
-        # Non-directional gearbox torque
-        gearbox_torque = torch.abs(external_torque - motor_torque)
-
-        frictionloss = (
-            cfg.friction_base
-            + cfg.load_friction_base * gearbox_torque
-            + stribeck_coeff * cfg.friction_stribeck
-            + stribeck_coeff * cfg.load_friction_stribeck * gearbox_torque
-        )
-        return frictionloss
-
-
-class BamM6Actuator(_BamActuatorBase):
-    """BAM M6 actuator: directional load-dependent Stribeck + quadratic friction."""
-
-    def _compute_friction_budget(
-        self,
-        motor_torque: torch.Tensor,
-        external_torque: torch.Tensor,
-        vel: torch.Tensor,
-        stribeck_coeff: torch.Tensor,
-    ) -> torch.Tensor:
-        cfg = self.cfg
-
-        gearbox_torque = torch.abs(
-            external_torque * cfg.load_friction_external
-            - motor_torque * cfg.load_friction_motor
-        )
-        gearbox_torque_stribeck = torch.abs(
-            external_torque * cfg.load_friction_external_stribeck
-            - motor_torque * cfg.load_friction_motor_stribeck
-        )
-
-        # Quadratic load friction.  bam (model.py: M6 branch) only enables it
-        # when external and motor torques have opposite signs (i.e. one is
-        # opposing the other); within that regime, the term proportional to
-        # whichever load is dominant is used:
-        #   - motor dominant (|mot| > |ext|): use load_friction_external_quad * ext^2
-        #   - external dominant (|ext| > |mot|): use load_friction_motor_quad * mot^2
-        abs_ext = torch.abs(external_torque)
-        abs_mot = torch.abs(motor_torque)
-        enable_quadratic = (
-            torch.sign(external_torque) != torch.sign(motor_torque)
-        ).float()
-        direction_motor = (abs_ext < abs_mot).float()
-        direction_external = (abs_ext > abs_mot).float()
-        quad_term = enable_quadratic * (
-            direction_motor * cfg.load_friction_external_quad * abs_ext ** 2
-            + direction_external * cfg.load_friction_motor_quad * abs_mot ** 2
-        )
-
-        frictionloss = (
-            cfg.friction_base
-            + gearbox_torque
-            + stribeck_coeff * (cfg.friction_stribeck + gearbox_torque_stribeck)
-            + stribeck_coeff * quad_term
-        )
-        return frictionloss
+# ─────────────────────────────────────────────────────────────────────────────
+# Backwards-compatible aliases. The BAM model variant (m4/m6) is now selected via
+# BamActuatorCfg.model, and a single class handles all variants by reading flags
+# from bam.model.Model. These aliases keep existing imports / isinstance checks
+# (e.g. in tasks/mdp.py and the actuator __init__) working unchanged.
+# ─────────────────────────────────────────────────────────────────────────────
+BamM6Actuator = BamActuator
+BamM6ActuatorCfg = BamActuatorCfg
+BamM4Actuator = BamActuator
+BamM4ActuatorCfg = BamActuatorCfg
