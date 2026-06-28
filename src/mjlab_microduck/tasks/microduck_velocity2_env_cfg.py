@@ -51,7 +51,7 @@ def make_microduck_velocity2_env_cfg(
     # ── Tracking + posture/orientation: match microban exactly ───────────────
     r["track_linear_velocity"].weight = 2.0
     r["track_linear_velocity"].params["std"] = math.sqrt(0.1)
-    r["track_angular_velocity"].weight = 2.0
+    r["track_angular_velocity"].weight = 3.0
     r["track_angular_velocity"].params["std"] = math.sqrt(0.5)
     r["pose"].weight = 1.0
     r["upright"].weight = 1.0
@@ -106,7 +106,7 @@ def make_microduck_velocity2_env_cfg(
     # the neck-only neck_action_rate_l2 term was removed. body_pose tracking
     # stays disabled for now.
     if "head_pose_tracking" in r:
-        r["head_pose_tracking"].weight = 1.0
+        r["head_pose_tracking"].weight = 2.0
     if "body_pose_tracking" in r:
         r["body_pose_tracking"].weight = 0.0
 

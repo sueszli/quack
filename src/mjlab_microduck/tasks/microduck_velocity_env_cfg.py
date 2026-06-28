@@ -37,7 +37,7 @@ KD_RANDOMIZATION_RANGE = (0.9, 1.1)  # ±10% (can increase to 0.8-1.2)
 JOINT_FRICTION_RANDOMIZATION_RANGE = (0.98, 1.02)  # ±2% VERY conservative - affects walking
 JOINT_DAMPING_RANDOMIZATION_RANGE = (0.98, 1.02)  # ±2% VERY conservative - affects dynamics
 VELOCITY_PUSH_INTERVAL_S = (3.0, 6.0)  # Apply pushes every 3-6 seconds
-VELOCITY_PUSH_RANGE = (-0.3, 0.3)  # Velocity change range in m/s
+VELOCITY_PUSH_RANGE = (-0.5, 0.5)  # Velocity change range in m/s
 IMU_ORIENTATION_RANDOMIZATION_ANGLE = 1.0  # ±2° IMU mounting error
 BASE_ORIENTATION_MAX_PITCH_DEG = 10.0  # ±10° forward/backward tilt at episode start
 BASE_ORIENTATION_MAX_ROLL_DEG = 5.0  # ±5° side-to-side tilt at episode start
@@ -739,11 +739,11 @@ def make_microduck_velocity_env_cfg(
         params={
             "command_name": "twist",
             "velocity_stages": [
-                {"step": 0,          "lin_vel_range": 0.2,  "ang_vel_range": 1.5},
-                {"step": 500 * 24,   "lin_vel_range": 0.25, "ang_vel_range": 1.6},
-                {"step": 1000 * 24,  "lin_vel_range": 0.3,  "ang_vel_range": 1.7},
-                {"step": 1500 * 24,  "lin_vel_range": 0.35,  "ang_vel_range": 2.0},
-                {"step": 1750 * 24,  "lin_vel_range": 0.4,  "ang_vel_range": 2.0},
+                {"step": 0,          "lin_vel_range": 0.5,  "ang_vel_range": 0.75},
+                # {"step": 500 * 24,   "lin_vel_range": 0.25, "ang_vel_range": 1.6},
+                # {"step": 1000 * 24,  "lin_vel_range": 0.3,  "ang_vel_range": 1.7},
+                # {"step": 1500 * 24,  "lin_vel_range": 0.35,  "ang_vel_range": 2.0},
+                # {"step": 1750 * 24,  "lin_vel_range": 0.4,  "ang_vel_range": 2.0},
                 # {"step": 2000 * 24,  "lin_vel_range": 0.7,  "ang_vel_range": 2.0},
             ],
         },
