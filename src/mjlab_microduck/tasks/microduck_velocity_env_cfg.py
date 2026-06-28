@@ -518,10 +518,10 @@ def make_microduck_velocity_env_cfg(
     cfg.observations["policy"].terms[gravity_term_name].delay_update_period = 64
 
     # Observation noise configuration (edit these values as needed)
-    cfg.observations["policy"].terms["base_ang_vel"].noise = Unoise(n_min=-0.024, n_max=0.024) # was 0.2
-    cfg.observations["policy"].terms[gravity_term_name].noise = Unoise(n_min=-0.007, n_max=0.007)  # was 0.15
-    cfg.observations["policy"].terms["joint_pos"].noise = Unoise(n_min=-0.0006, n_max=0.0006)  # was 0.05
-    cfg.observations["policy"].terms["joint_vel"].noise = Unoise(n_min=-0.24, n_max=0.24)  # was 2.0
+    cfg.observations["policy"].terms["base_ang_vel"].noise = Unoise(n_min=-0.03, n_max=0.03) # was 0.2
+    cfg.observations["policy"].terms[gravity_term_name].noise = Unoise(n_min=-0.01, n_max=0.01)  # was 0.15
+    cfg.observations["policy"].terms["joint_pos"].noise = Unoise(n_min=-0.001, n_max=0.001)  # was 0.05
+    cfg.observations["policy"].terms["joint_vel"].noise = Unoise(n_min=-0.25, n_max=0.25)  # was 2.0
 
     # 1-ctrl-step lag on joint_vel: the Dynamixel firmware computes
     # present_velocity via a moving-average over the previous position-sample
@@ -812,8 +812,8 @@ def make_microduck_velocity_env_cfg(
 MicroduckRlCfg = RslRlOnPolicyRunnerCfg(
     policy=RslRlPpoActorCriticCfg(
         init_noise_std=1.0,
-        actor_obs_normalization=False,
-        critic_obs_normalization=False,
+        actor_obs_normalization=True,
+        critic_obs_normalization=True,
         actor_hidden_dims=(512, 256, 128),
         critic_hidden_dims=(512, 256, 128),
         activation="elu",

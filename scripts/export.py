@@ -231,8 +231,15 @@ def run_export(task_id: str, cfg: ExportConfig):
     onnx_path = os.path.abspath(cfg.onnx_file)
     path = os.path.dirname(onnx_path)
 
+    # Bake the empirical obs normalizer into the ONNX graph so the exported
+    # policy normalizes raw observations internally (actor(normalizer(obs))).
+    # The normalizer lives in the policy as a separate submodule; if it's not
+    # present (normalization off), this is nn.Identity and the export is a no-op.
+    obs_normalizer = getattr(runner.alg.policy, "actor_obs_normalizer", None)
+
     export_velocity_policy_as_onnx(
         runner.alg.policy,
+        normalizer=obs_normalizer,
         path=path,
         filename=onnx_path,
     )

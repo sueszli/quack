@@ -289,8 +289,8 @@ def make_microduck_velstand_tiptoe_env_cfg(play: bool = False, rough: bool = Fal
 MicroduckVelStandTipToeRlCfg = RslRlOnPolicyRunnerCfg(
     policy=RslRlPpoActorCriticCfg(
         init_noise_std=1.0,
-        actor_obs_normalization=False,
-        critic_obs_normalization=False,
+        actor_obs_normalization=True,
+        critic_obs_normalization=True,
         actor_hidden_dims=(512, 256, 128),
         critic_hidden_dims=(512, 256, 128),
         activation="elu",
