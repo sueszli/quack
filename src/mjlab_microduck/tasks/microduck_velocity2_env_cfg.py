@@ -38,7 +38,7 @@ NUM_STEPS_PER_ENV = 24
 # Iteration at which the no_stepping penalty ramps to its final weight. microban
 # defers this to ~iter 3000; microduck runs converge earlier (~2250) so we turn
 # it on after basic walking is established. Tunable.
-NO_STEPPING_KICKIN_ITER = 3000
+NO_STEPPING_KICKIN_ITER = 1000
 
 
 def make_microduck_velocity2_env_cfg(
@@ -51,7 +51,7 @@ def make_microduck_velocity2_env_cfg(
     # ── Tracking + posture/orientation: match microban exactly ───────────────
     r["track_linear_velocity"].weight = 2.0
     r["track_linear_velocity"].params["std"] = math.sqrt(0.1)
-    r["track_angular_velocity"].weight = 3.0
+    r["track_angular_velocity"].weight = 2.0
     r["track_angular_velocity"].params["std"] = math.sqrt(0.5)
     r["pose"].weight = 1.0
     r["upright"].weight = 1.0
@@ -118,8 +118,8 @@ def make_microduck_velocity2_env_cfg(
     # ranges here and drop the widening curriculum below. ang ±0.75 is the big
     # change — it makes turning learnable.
     twist = cfg.commands["twist"]
-    twist.ranges.lin_vel_x = (-0.5, 0.5)    # microban
-    twist.ranges.lin_vel_y = (-0.3, 0.3)    # microban
+    twist.ranges.lin_vel_x = (-0.3, 0.3)    # microban
+    twist.ranges.lin_vel_y = (-0.2, 0.2)    # microban
     twist.ranges.ang_vel_z = (-0.75, 0.75)  # microban (vs microduck ±1.5–2.0)
 
     # ── Curricula ────────────────────────────────────────────────────────────
