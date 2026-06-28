@@ -3612,3 +3612,103 @@ def feet_distance_penalty(
     foot_pos_xy = asset.data.site_pos_w[:, asset_cfg.site_ids, :2]  # (N, 2, 2)
     dist = torch.norm(foot_pos_xy[:, 0] - foot_pos_xy[:, 1], dim=-1)  # (N,)
     return torch.clamp(min_dist - dist, min=0.0)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Non-accumulating domain randomization (restore-nominal-then-apply).
+#
+# The stock mdp.randomize_field with operation="add"/"scale" + mode="reset"
+# reads the CURRENT model value and applies the op to it, with no restore to
+# nominal — so on every episode reset the perturbation STACKS on the previous
+# one and the parameter random-walks away from nominal over training. For
+# body_ipos (CoM) this was the long-standing microduck instability: the CoM
+# drifted centimeters off-center over hundreds of resets → progressively
+# unbalanced robot → falls more → reward/episode-length collapse after the early
+# peak. These functions mirror randomize_mass_and_inertia: cache the nominal
+# once, restore it before each draw, then apply a freshly-sampled perturbation —
+# so it is re-sampled per episode but never accumulates.
+# ─────────────────────────────────────────────────────────────────────────────
+def randomize_com(
+    env: ManagerBasedRlEnv,
+    env_ids: torch.Tensor,
+    ranges: tuple[float, float],
+    field: str = "body_ipos",
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """Randomize body CoM (body_ipos) per episode WITHOUT accumulating.
+
+    Drop-in replacement for the buggy mdp.randomize_field(add, body_ipos, reset).
+    ``ranges`` is (lo, hi) applied to all 3 CoM axes; the com_range curriculum
+    updates this same ``ranges`` param. ``field`` is declared so the event can run
+    with ``domain_randomization=True`` (mjlab reads params["field"] to expand that
+    model field per-env).
+    """
+    if env_ids is None:
+        env_ids = torch.arange(env.num_envs, device=env.device, dtype=torch.int)
+    else:
+        env_ids = env_ids.to(env.device, dtype=torch.int)
+
+    asset: Entity = env.scene[asset_cfg.name]
+    body_ids = asset_cfg.body_ids
+    if isinstance(body_ids, slice):
+        body_ids = list(range(asset.num_bodies))[body_ids]
+    body_indices = asset.indexing.body_ids[body_ids]
+
+    mf = getattr(env.sim.model, field)
+    cache_attr = f"_original_{field}"
+    # Cache nominal on first call (model[0] is still nominal at that point).
+    if not hasattr(env, cache_attr):
+        setattr(env, cache_attr, mf[0, body_indices].clone())
+    nominal = getattr(env, cache_attr)
+
+    num_envs = len(env_ids)
+    num_bodies = len(body_indices)
+
+    # Restore nominal first (prevents accumulation), then add a fresh offset.
+    mf[env_ids[:, None], body_indices] = nominal.unsqueeze(0).expand(num_envs, -1, -1)
+    lo, hi = ranges
+    offsets = torch.rand(num_envs, num_bodies, 3, device=env.device) * (hi - lo) + lo
+    mf[env_ids[:, None], body_indices] += offsets
+    return torch.tensor(float(hi))
+
+
+def randomize_dof_field_scaled(
+    env: ManagerBasedRlEnv,
+    env_ids: torch.Tensor,
+    field: str,
+    scale_range: tuple[float, float],
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """Scale a per-dof model field (e.g. dof_frictionloss/dof_damping) per episode
+    WITHOUT accumulating: restore nominal, then apply a fresh scale.
+
+    ``field`` doubles as the domain_randomization field name. NOTE: under the BAM
+    actuator, dof_frictionloss and dof_damping are zeroed in edit_spec (BAM models
+    friction itself), so scaling them is a no-op — these only matter with the XML
+    position actuator. Kept correct to avoid the accumulation footgun if re-enabled.
+    """
+    if env_ids is None:
+        env_ids = torch.arange(env.num_envs, device=env.device, dtype=torch.int)
+    else:
+        env_ids = env_ids.to(env.device, dtype=torch.int)
+
+    asset: Entity = env.scene[asset_cfg.name]
+    joint_ids = asset_cfg.joint_ids
+    if isinstance(joint_ids, slice):
+        joint_ids = list(range(len(asset.indexing.joint_ids)))[joint_ids]
+    dof_indices = asset.indexing.joint_v_adr[joint_ids]
+
+    mf = getattr(env.sim.model, field)
+    cache_attr = f"_original_{field}"
+    if not hasattr(env, cache_attr):
+        setattr(env, cache_attr, mf[0, dof_indices].clone())
+    nominal = getattr(env, cache_attr)
+
+    num_envs = len(env_ids)
+    num_dofs = len(dof_indices)
+
+    mf[env_ids[:, None], dof_indices] = nominal.unsqueeze(0).expand(num_envs, -1)
+    lo, hi = scale_range
+    scales = torch.rand(num_envs, num_dofs, device=env.device) * (hi - lo) + lo
+    mf[env_ids[:, None], dof_indices] *= scales
+    return torch.tensor(float(hi))

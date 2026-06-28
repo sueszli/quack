@@ -387,17 +387,20 @@ def make_microduck_velocity_env_cfg(
             },
         )
 
-    # Domain randomization - sampled once per episode at reset
+    # Domain randomization - re-sampled per episode at reset (NON-accumulating).
     if ENABLE_COM_RANDOMIZATION:
-        # Randomize CoM position
+        # Randomize CoM position. Uses a custom function that restores the nominal
+        # body_ipos before adding a fresh offset — the stock mdp.randomize_field
+        # with operation="add"/mode="reset" accumulates the offset across resets
+        # (CoM random-walks off-center → progressive imbalance → the long-standing
+        # microduck "peaks then degrades / falls more" collapse).
         cfg.events["randomize_com"] = EventTermCfg(
-            func=mdp.randomize_field,
+            func=microduck_mdp.randomize_com,
             mode="reset",
             domain_randomization=True,
             params={
                 "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
-                "operation": "add",
-                "field": "body_ipos",
+                "field": "body_ipos",  # required by domain_randomization=True
                 "ranges": (-COM_RANDOMIZATION_RANGE, COM_RANDOMIZATION_RANGE),
             },
         )
@@ -431,30 +434,33 @@ def make_microduck_velocity_env_cfg(
         )
 
     if ENABLE_JOINT_FRICTION_RANDOMIZATION:
-        # Randomize joint friction losses (wear, temperature effects)
+        # Randomize joint friction losses (wear, temperature effects).
+        # Custom non-accumulating scaler (stock randomize_field scale+reset drifts).
+        # NOTE: no-op under the BAM actuator (dof_frictionloss is zeroed in
+        # edit_spec); only affects the XML position actuator.
         cfg.events["randomize_joint_friction"] = EventTermCfg(
-            func=mdp.randomize_field,
+            func=microduck_mdp.randomize_dof_field_scaled,
             mode="reset",
             domain_randomization=True,
             params={
                 "asset_cfg": SceneEntityCfg("robot", joint_names=(r".*",)),
-                "operation": "scale",
-                "field": "dof_frictionloss",
-                "ranges": JOINT_FRICTION_RANDOMIZATION_RANGE,
+                "field": "dof_frictionloss",  # required by domain_randomization=True
+                "scale_range": JOINT_FRICTION_RANDOMIZATION_RANGE,
             },
         )
 
     if ENABLE_JOINT_DAMPING_RANDOMIZATION:
-        # Randomize joint damping (lubrication, temperature effects)
+        # Randomize joint damping (lubrication, temperature effects).
+        # Custom non-accumulating scaler. NOTE: no-op under BAM (dof_damping
+        # zeroed in edit_spec); only affects the XML position actuator.
         cfg.events["randomize_joint_damping"] = EventTermCfg(
-            func=mdp.randomize_field,
+            func=microduck_mdp.randomize_dof_field_scaled,
             mode="reset",
             domain_randomization=True,
             params={
                 "asset_cfg": SceneEntityCfg("robot", joint_names=(r".*",)),
-                "operation": "scale",
-                "field": "dof_damping",
-                "ranges": JOINT_DAMPING_RANDOMIZATION_RANGE,
+                "field": "dof_damping",  # required by domain_randomization=True
+                "scale_range": JOINT_DAMPING_RANDOMIZATION_RANGE,
             },
         )
 
