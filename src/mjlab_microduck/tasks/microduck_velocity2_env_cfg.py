@@ -38,7 +38,7 @@ NUM_STEPS_PER_ENV = 24
 # Iteration at which the no_stepping penalty ramps to its final weight. microban
 # defers this to ~iter 3000; microduck runs converge earlier (~2250) so we turn
 # it on after basic walking is established. Tunable.
-NO_STEPPING_KICKIN_ITER = 1000
+NO_STEPPING_KICKIN_ITER = 3000
 
 
 def make_microduck_velocity2_env_cfg(
