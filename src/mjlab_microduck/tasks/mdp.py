@@ -3567,3 +3567,48 @@ def pose_command_range_curriculum(
     # Return the max abs range as a scalar for wandb visibility.
     max_abs = max((max(abs(lo), abs(hi)) for lo, hi in current), default=0.0)
     return torch.tensor(max_abs)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Gait-shaping penalties ported from mjlab_microban (microban velocity recipe).
+# ─────────────────────────────────────────────────────────────────────────────
+def no_stepping_penalty(
+    env: ManagerBasedRlEnv,
+    sensor_name: str,
+    command_name: str = "twist",
+    command_threshold: float = 0.01,
+) -> torch.Tensor:
+    """Penalize feet in the air when the commanded speed is below threshold.
+
+    Discourages marching in place when the robot should stand still. Returns the
+    count of airborne feet per environment (use with a negative weight).
+    Ported from mjlab_microban.
+    """
+    command = env.command_manager.get_command(command_name)  # (N, 3)
+    cmd_speed = torch.norm(command[:, :2], dim=-1) + torch.abs(command[:, 2])
+    below_threshold = cmd_speed < command_threshold
+
+    sensor = env.scene.sensors[sensor_name]
+    found = sensor.data.found  # (N, num_feet) or (N, num_feet, num_slots)
+    if found.dim() == 3:
+        found = found.any(dim=-1)  # (N, num_feet)
+    in_air = ~found.bool()
+
+    return in_air.float().sum(dim=-1) * below_threshold.float()
+
+
+def feet_distance_penalty(
+    env: ManagerBasedRlEnv,
+    min_dist: float,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """Penalize the feet getting too close to each other in the horizontal plane.
+
+    Returns ``clamp(min_dist - d, min=0)`` per env (use with a negative weight),
+    where ``d`` is the horizontal (xy) distance between the two foot sites.
+    Ported from mjlab_microban. Not wired into velocity2 yet — pinned for later.
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    foot_pos_xy = asset.data.site_pos_w[:, asset_cfg.site_ids, :2]  # (N, 2, 2)
+    dist = torch.norm(foot_pos_xy[:, 0] - foot_pos_xy[:, 1], dim=-1)  # (N,)
+    return torch.clamp(min_dist - dist, min=0.0)

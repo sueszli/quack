@@ -20,6 +20,10 @@ from .microduck_velocity_env_cfg import (
     make_microduck_velocity_env_cfg,
     MicroduckRlCfg,
 )
+from .microduck_velocity2_env_cfg import (
+    make_microduck_velocity2_env_cfg,
+    MicroduckVelocity2RlCfg,
+)
 from .microduck_ground_pick_env_cfg import (
     make_microduck_ground_pick_env_cfg,
     MicroduckGroundPickRlCfg,
@@ -138,6 +142,23 @@ register_mjlab_task(
     env_cfg=make_microduck_velocity_env_cfg(rough=True),
     play_env_cfg=make_microduck_velocity_env_cfg(play=True, rough=True),
     rl_cfg=MicroduckRlCfg,
+    runner_cls=MicroduckOnPolicyRunner,
+)
+
+# Velocity2 — microban reward/regularization recipe on the velocity task.
+register_mjlab_task(
+    task_id="Mjlab-Velocity2-Flat-MicroDuck",
+    env_cfg=make_microduck_velocity2_env_cfg(),
+    play_env_cfg=make_microduck_velocity2_env_cfg(play=True),
+    rl_cfg=MicroduckVelocity2RlCfg,
+    runner_cls=MicroduckOnPolicyRunner,
+)
+
+register_mjlab_task(
+    task_id="Mjlab-Velocity2-Rough-MicroDuck",
+    env_cfg=make_microduck_velocity2_env_cfg(rough=True),
+    play_env_cfg=make_microduck_velocity2_env_cfg(play=True, rough=True),
+    rl_cfg=MicroduckVelocity2RlCfg,
     runner_cls=MicroduckOnPolicyRunner,
 )
 
