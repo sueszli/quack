@@ -72,8 +72,8 @@ FULL_COLLISION = CollisionCfg(
 # -- BAM M6 actuator (full voltage control + load-dependent friction) --
 # Exclude passive_* joints (jaw linkage in the new model has no XML actuator).
 actuators = DelayedActuatorCfg(
-    delay_min_lag=0,
-    delay_max_lag=3,
+    delay_min_lag=3,
+    delay_max_lag=6,
     base_cfg=make_bam_m6_actuator_cfg(joint_names_expr=(r"^(?!passive_).*",)),
 )
 
