@@ -848,21 +848,31 @@ def main():
 
                 control_step_count += 1
 
-                # Track trunk world-frame xy velocity (qvel[0..2]) and print
-                # the 1-second moving average once per second.
-                vel_history.append((
-                    float(data.qvel[_trunk_qvel_adr + 0]),
-                    float(data.qvel[_trunk_qvel_adr + 1]),
-                ))
+                # Track BODY-frame forward/lateral velocity + yaw rate, print the
+                # 1-second moving average once per second vs the commanded values.
+                # Body frame so "forward" / "turn" are directly comparable to the
+                # command (which is in the robot frame): lets us see if the policy
+                # actually achieves commanded forward speed and turn rate.
+                quat = data.qpos[qpos_adr + 3:qpos_adr + 7].astype(np.float32)
+                v_world = np.array([
+                    data.qvel[_trunk_qvel_adr + 0],
+                    data.qvel[_trunk_qvel_adr + 1],
+                    data.qvel[_trunk_qvel_adr + 2],
+                ], dtype=np.float32)
+                v_body = policy.quat_rotate_inverse(quat, v_world)
+                yaw_rate = float(data.qvel[_trunk_qvel_adr + 5])  # body-frame wz
+                vel_history.append((float(v_body[0]), float(v_body[1]), yaw_rate))
                 if control_step_count % _vel_window_steps == 0 and len(vel_history) > 0:
-                    avg_x = sum(v[0] for v in vel_history) / len(vel_history)
-                    avg_y = sum(v[1] for v in vel_history) / len(vel_history)
-                    speed = (avg_x ** 2 + avg_y ** 2) ** 0.5
-                    cmd_x, cmd_y = policy.vel_cmd[0], policy.vel_cmd[1]
+                    n = len(vel_history)
+                    avg_fwd = sum(v[0] for v in vel_history) / n
+                    avg_lat = sum(v[1] for v in vel_history) / n
+                    avg_yaw = sum(v[2] for v in vel_history) / n
+                    cmd_x, cmd_y, cmd_yaw = policy.vel_cmd[0], policy.vel_cmd[1], policy.vel_cmd[2]
                     trunk_z = float(data.qpos[qpos_adr + 2])
                     print(
-                        f"[vel 1s avg] world: x={avg_x:+.2f} y={avg_y:+.2f}  "
-                        f"|v|={speed:.2f} m/s   cmd: x={cmd_x:+.2f} y={cmd_y:+.2f}   "
+                        f"[vel 1s avg] achieved/cmd  fwd={avg_fwd:+.2f}/{cmd_x:+.2f}  "
+                        f"lat={avg_lat:+.2f}/{cmd_y:+.2f} m/s  "
+                        f"yaw={avg_yaw:+.2f}/{cmd_yaw:+.2f} rad/s   "
                         f"trunk_z={trunk_z*1000:.1f} mm"
                     )
 

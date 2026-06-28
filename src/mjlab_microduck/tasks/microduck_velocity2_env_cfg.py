@@ -110,9 +110,25 @@ def make_microduck_velocity2_env_cfg(
     if "body_pose_tracking" in r:
         r["body_pose_tracking"].weight = 0.0
 
+    # ── Command ranges: match microban (the part of the recipe we hadn't ported) ─
+    # microduck demanded ang ±1.5→2.0 (well beyond what the robot can turn) plus
+    # symmetric lin ±0.2→0.4 widening that outpaced capability and tracked the
+    # post-iter-1000 reward/episode-length decline. microban keeps modest, FIXED
+    # ranges (it only widens at iter ~3000, beyond a typical run), so set fixed
+    # ranges here and drop the widening curriculum below. ang ±0.75 is the big
+    # change — it makes turning learnable.
+    twist = cfg.commands["twist"]
+    twist.ranges.lin_vel_x = (-0.5, 0.5)    # microban
+    twist.ranges.lin_vel_y = (-0.3, 0.3)    # microban
+    twist.ranges.ang_vel_z = (-0.75, 0.75)  # microban (vs microduck ±1.5–2.0)
+
     # ── Curricula ────────────────────────────────────────────────────────────
     # Remove the action_rate weight ramp (we use a fixed -0.1 like microban).
     cfg.curriculum.pop("action_rate_weight", None)
+    # Remove the velocity-command widening curriculum — it overrode the fixed
+    # ranges above and ramped angular/linear demand past the robot's capability.
+    # (Re-add a gentle ramp toward these same caps if early learning is unstable.)
+    cfg.curriculum.pop("velocity_command_ranges", None)
     # Ramp no_stepping 0 → -1.0 once basic walking is established.
     cfg.curriculum["no_stepping_weight"] = CurriculumTermCfg(
         func=mdp.reward_weight,
