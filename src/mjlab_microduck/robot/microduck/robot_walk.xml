@@ -111,7 +111,7 @@
       <!-- Link yaw2roll -->
       <body name="yaw2roll" pos="0.006 0.0175 -0.005" quat="0 0.707107 0.707107 -0">
         <!-- Joint from trunk_base to yaw2roll -->
-        <joint axis="0 0 1" name="left_hip_yaw" type="hinge" range="-0.2617993877991494 0.5235987755982988" class="chosen_actuator"/>
+        <joint axis="0 0 1" name="left_hip_yaw" type="hinge" range="-0.4363323129985824 0.5235987755982988" class="chosen_actuator"/>
         <inertial pos="-8.6e-11 0.00121491 0.0169312" mass="0.0235131" fullinertia="4.332e-06 3.52213e-06 2.40737e-06 -0 -0 -6.1011e-08"/>
         <!-- Part yaw2roll -->
         <geom type="mesh" class="visual" pos="-0.0175 -0.002 0.0125" quat="0 1 0 0" mesh="yaw2roll" material="yaw2roll_material"/>
@@ -252,7 +252,7 @@
       <!-- Link bearing_roll -->
       <body name="bearing_roll" pos="0.006 -0.0175 -0.005" quat="0 0.707107 0.707107 -0">
         <!-- Joint from trunk_base to bearing_roll -->
-        <joint axis="0 0 1" name="right_hip_yaw" type="hinge" range="-0.5235987755982988 0.2617993877991494" class="chosen_actuator"/>
+        <joint axis="0 0 1" name="right_hip_yaw" type="hinge" range="-0.5235987755982988 0.4363323129985824" class="chosen_actuator"/>
         <inertial pos="-8.6e-11 0.00121491 0.0169312" mass="0.0235131" fullinertia="4.332e-06 3.52213e-06 2.40737e-06 -0 -0 -6.1011e-08"/>
         <!-- Part yaw2roll_2 -->
         <geom type="mesh" class="visual" pos="-0.0175 -0.002 0.0125" quat="0 1 0 0" mesh="yaw2roll" material="yaw2roll_material"/>

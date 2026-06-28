@@ -148,7 +148,7 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
     # [−0.262, +0.524] range the penalty starts at +0.374 / −0.112 rad.
     cfg.rewards["hip_yaw_limit_proximity"] = RewardTermCfg(
         func=microduck_mdp.joint_pos_limit_proximity,
-        weight=-3.0,
+        weight=-0.0, # WAS -3.0
         params={
             "asset_cfg": SceneEntityCfg("robot", joint_names=(r".*hip_yaw.*",)),
             "margin": 0.15,
