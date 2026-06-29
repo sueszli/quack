@@ -45,7 +45,7 @@
       <!-- 200 kp -->
       <position kp="0.55" kv="0.0" forcerange="-0.96 0.96" ctrlrange="-10.0 10.0"/>
       <!-- 125 kp -->
-      <position kp="0.35" kv="0.0" forcerange="-0.96 0.96" ctrlrange="-10.0 10.0"/>
+      <!-- <position kp="0.35" kv="0.0" forcerange="-0.96 0.96" ctrlrange="-10.0 10.0"/> -->
     </default>
     <default class="passive_wheel">
       <geom contype="0" conaffinity="0"/>
