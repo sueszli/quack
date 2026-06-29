@@ -94,7 +94,7 @@ def make_microduck_velocity2_env_cfg(
     # )
 
     # ── action_rate: microban value, NO curriculum ───────────────────────────
-    r["action_rate_l2"].weight = -0.1
+    r["action_rate_l2"].weight = -0.4 # Was -0.1
     # Drop microduck-only effort terms.
     r.pop("neck_action_rate_l2", None)
     r.pop("joint_torques_l2", None)
