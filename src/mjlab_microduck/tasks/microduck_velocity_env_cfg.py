@@ -820,8 +820,9 @@ def make_microduck_velocity_env_cfg(
                 "range_stages": [
                     {"step": 0,          "range": 0.003},
                     {"step": 500 * 24,  "range": 0.005},
-                    {"step": 1000 * 24,  "range": 0.008},
-                    {"step": 1500 * 24,  "range": 0.01},
+                    {"step": 1000 * 24,  "range": 0.01},
+                    {"step": 1500 * 24,  "range": 0.015},
+                    {"step": 2000 * 24,  "range": 0.02},
                 ],
             },
         )
