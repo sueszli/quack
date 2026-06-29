@@ -40,9 +40,11 @@
     </default>
     <default class="chosen_actuator">
       <!-- marc -->
-      <!-- 125 kp -->
       <geom contype="0" conaffinity="0"/>
       <joint damping="0.053" frictionloss="0.0048" armature="0.0018"/>
+      <!-- 200 kp -->
+      <position kp="0.55" kv="0.0" forcerange="-0.96 0.96" ctrlrange="-10.0 10.0"/>
+      <!-- 125 kp -->
       <position kp="0.35" kv="0.0" forcerange="-0.96 0.96" ctrlrange="-10.0 10.0"/>
     </default>
     <default class="passive_wheel">
