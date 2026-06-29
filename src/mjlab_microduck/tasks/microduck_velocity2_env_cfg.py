@@ -93,8 +93,8 @@ def make_microduck_velocity2_env_cfg(
     #     },
     # )
 
-    # ── action_rate: microban value, NO curriculum ───────────────────────────
-    r["action_rate_l2"].weight = -0.1
+    # ── action_rate: ramped via curriculum (-0.1 → -0.2 → -0.3, see below) ────
+    r["action_rate_l2"].weight = -0.1  # stage-0 value; curriculum ramps it
     # Drop microduck-only effort terms.
     r.pop("neck_action_rate_l2", None)
     r.pop("joint_torques_l2", None)
@@ -123,8 +123,19 @@ def make_microduck_velocity2_env_cfg(
     twist.ranges.ang_vel_z = (-0.75, 0.75)  # microban (vs microduck ±1.5–2.0)
 
     # ── Curricula ────────────────────────────────────────────────────────────
-    # Remove the action_rate weight ramp (we use a fixed -0.1 like microban).
-    cfg.curriculum.pop("action_rate_weight", None)
+    # action_rate weight ramp: -0.1 (iter 0-500) → -0.2 (500-1000) → -0.3 (1000+).
+    # Overwrites the inherited ramp (which went to -1.0).
+    cfg.curriculum["action_rate_weight"] = CurriculumTermCfg(
+        func=mdp.reward_weight,
+        params={
+            "reward_name": "action_rate_l2",
+            "weight_stages": [
+                {"step": 0, "weight": -0.1},
+                {"step": 500 * NUM_STEPS_PER_ENV, "weight": -0.2},
+                {"step": 1000 * NUM_STEPS_PER_ENV, "weight": -0.3},
+            ],
+        },
+    )
     # Remove the velocity-command widening curriculum — it overrode the fixed
     # ranges above and ramped angular/linear demand past the robot's capability.
     # (Re-add a gentle ramp toward these same caps if early learning is unstable.)
