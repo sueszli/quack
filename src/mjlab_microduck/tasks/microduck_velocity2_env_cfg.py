@@ -70,7 +70,7 @@ def make_microduck_velocity2_env_cfg(
     r.pop("soft_landing", None)  # microban deletes it
 
     # ── foot_slip: match microban ────────────────────────────────────────────
-    r["foot_slip"].weight = -1.0
+    r["foot_slip"].weight = -0.1 # Was 1.0
 
     # ── no_stepping (microban): penalize airborne feet at ~zero command ──────
     r["no_stepping"] = RewardTermCfg(

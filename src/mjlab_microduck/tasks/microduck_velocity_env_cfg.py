@@ -8,11 +8,12 @@ ENABLE_SYMMETRY = False
 
 # Domain randomization toggles
 ENABLE_COM_RANDOMIZATION = True
-ENABLE_KP_RANDOMIZATION = True
-ENABLE_KD_RANDOMIZATION = True
+ENABLE_KP_RANDOMIZATION = False # Was True
+ENABLE_KD_RANDOMIZATION = False # Was True
 ENABLE_MASS_INERTIA_RANDOMIZATION = True  # Can enable once walking is stable
-ENABLE_JOINT_FRICTION_RANDOMIZATION = False  # Too disruptive - affects joint movement
-ENABLE_JOINT_DAMPING_RANDOMIZATION = False  # Too disruptive - affects joint dynamics
+ENABLE_JOINT_FRICTION_RANDOMIZATION = True  # Was False (NOTE: no-op under BAM — frictionloss is zeroed in edit_spec)
+ENABLE_JOINT_DAMPING_RANDOMIZATION = False
+ENABLE_ARMATURE_RANDOMIZATION = True  # Reflected rotor inertia (microban-style). DOES affect BAM (armature is set, not zeroed).
 ENABLE_VELOCITY_PUSHES = True  # Velocity-based pushes for robustness training
 ENABLE_IMU_ORIENTATION_RANDOMIZATION = True  # Simulates mounting errors
 ENABLE_BASE_ORIENTATION_RANDOMIZATION = False  # Randomize initial tilt to force reactive behavior
@@ -34,8 +35,9 @@ COM_RANDOMIZATION_RANGE = 0.003  # ±3mm initial, ramped to ±8mm via curriculum
 MASS_INERTIA_RANDOMIZATION_RANGE = (0.95, 1.05)  # ±5% applied to BOTH mass and inertia together.
 KP_RANDOMIZATION_RANGE = (0.85, 1.15)  # ±15%
 KD_RANDOMIZATION_RANGE = (0.9, 1.1)  # ±10% (can increase to 0.8-1.2)
-JOINT_FRICTION_RANDOMIZATION_RANGE = (0.98, 1.02)  # ±2% VERY conservative - affects walking
-JOINT_DAMPING_RANDOMIZATION_RANGE = (0.98, 1.02)  # ±2% VERY conservative - affects dynamics
+JOINT_FRICTION_RANDOMIZATION_RANGE = (0.9, 1.1)
+JOINT_DAMPING_RANDOMIZATION_RANGE = (0.9, 1.1)
+ARMATURE_RANDOMIZATION_RANGE = (0.9, 1.1)  # ±10% reflected rotor inertia (microban: dr.joint_armature, same range)
 VELOCITY_PUSH_INTERVAL_S = (3.0, 6.0)  # Apply pushes every 3-6 seconds
 VELOCITY_PUSH_RANGE = (-0.5, 0.5)  # Velocity change range in m/s
 IMU_ORIENTATION_RANDOMIZATION_ANGLE = 1.0  # ±2° IMU mounting error
@@ -461,6 +463,22 @@ def make_microduck_velocity_env_cfg(
                 "asset_cfg": SceneEntityCfg("robot", joint_names=(r".*",)),
                 "field": "dof_damping",  # required by domain_randomization=True
                 "scale_range": JOINT_DAMPING_RANDOMIZATION_RANGE,
+            },
+        )
+
+    if ENABLE_ARMATURE_RANDOMIZATION:
+        # Randomize reflected rotor inertia (armature), microban-style (dr.joint_armature,
+        # ±10%). Reuses the non-accumulating restore-then-scale paradigm (per episode,
+        # applied on top of the nominal). Unlike friction/damping this DOES affect the
+        # BAM actuator — BAM sets dof_armature (~0.0018), it isn't zeroed.
+        cfg.events["randomize_armature"] = EventTermCfg(
+            func=microduck_mdp.randomize_dof_field_scaled,
+            mode="reset",
+            domain_randomization=True,
+            params={
+                "asset_cfg": SceneEntityCfg("robot", joint_names=(r".*",)),
+                "field": "dof_armature",  # required by domain_randomization=True
+                "scale_range": ARMATURE_RANDOMIZATION_RANGE,
             },
         )
 
