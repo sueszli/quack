@@ -132,7 +132,12 @@ def make_microduck_velocity2_env_cfg(
             "weight_stages": [
                 {"step": 0, "weight": -0.1},
                 {"step": 500 * NUM_STEPS_PER_ENV, "weight": -0.2},
-                {"step": 1000 * NUM_STEPS_PER_ENV, "weight": -0.3},
+                {"step": 750 * NUM_STEPS_PER_ENV, "weight": -0.3},
+                {"step": 1000 * NUM_STEPS_PER_ENV, "weight": -0.4},
+                {"step": 1250 * NUM_STEPS_PER_ENV, "weight": -0.5},
+                {"step": 1500 * NUM_STEPS_PER_ENV, "weight": -0.6},
+                {"step": 1750 * NUM_STEPS_PER_ENV, "weight": -0.7},
+                {"step": 2000 * NUM_STEPS_PER_ENV, "weight": -0.8},
             ],
         },
     )
