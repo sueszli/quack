@@ -8,6 +8,7 @@ ENABLE_SYMMETRY = False
 
 # Domain randomization toggles
 ENABLE_COM_RANDOMIZATION = True
+ENABLE_HEAD_COM_RANDOMIZATION = True  # Randomize CoM of the head assembly bodies
 ENABLE_KP_RANDOMIZATION = False # Was True
 ENABLE_KD_RANDOMIZATION = False # Was True
 ENABLE_MASS_INERTIA_RANDOMIZATION = True  # Can enable once walking is stable
@@ -32,6 +33,17 @@ USE_PROJECTED_GRAVITY = True  # If True, use projected gravity instead of raw ac
 # Domain randomization ranges (adjust as needed)
 # Conservative ranges proven to be stable - can increase gradually if needed
 COM_RANDOMIZATION_RANGE = 0.003  # ±3mm initial, ramped to ±8mm via curriculum
+# Head CoM randomization: applied per-episode to every body of the head assembly
+# (neck → bottom_head_shell → bearing_roll). Same non-accumulating mechanism as
+# the trunk CoM randomization above.
+HEAD_COM_RANDOMIZATION_RANGE = 0.003  # ±3mm initial, ramped via curriculum
+HEAD_BODY_NAMES = (
+    "neck",
+    "neck_pitch",
+    "yaw_roll_motion",
+    "bottom_head_shell",
+    "bearing_roll",
+)
 MASS_INERTIA_RANDOMIZATION_RANGE = (0.95, 1.05)  # ±5% applied to BOTH mass and inertia together.
 KP_RANDOMIZATION_RANGE = (0.85, 1.15)  # ±15%
 KD_RANDOMIZATION_RANGE = (0.9, 1.1)  # ±10% (can increase to 0.8-1.2)
@@ -404,6 +416,20 @@ def make_microduck_velocity_env_cfg(
                 "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
                 "field": "body_ipos",  # required by domain_randomization=True
                 "ranges": (-COM_RANDOMIZATION_RANGE, COM_RANDOMIZATION_RANGE),
+            },
+        )
+
+    if ENABLE_HEAD_COM_RANDOMIZATION:
+        # Randomize the CoM of the head assembly bodies, same non-accumulating
+        # mechanism as randomize_com above (per-body fresh offset each reset).
+        cfg.events["randomize_head_com"] = EventTermCfg(
+            func=microduck_mdp.randomize_com,
+            mode="reset",
+            domain_randomization=True,
+            params={
+                "asset_cfg": SceneEntityCfg("robot", body_names=HEAD_BODY_NAMES),
+                "field": "body_ipos",  # required by domain_randomization=True
+                "ranges": (-HEAD_COM_RANDOMIZATION_RANGE, HEAD_COM_RANDOMIZATION_RANGE),
             },
         )
 
@@ -823,6 +849,22 @@ def make_microduck_velocity_env_cfg(
                     {"step": 1000 * 24,  "range": 0.01},
                     {"step": 1500 * 24,  "range": 0.015},
                     {"step": 2000 * 24,  "range": 0.02},
+                ],
+            },
+        )
+
+    # Head CoM randomization range curriculum - start small, ramp up
+    if ENABLE_HEAD_COM_RANDOMIZATION:
+        cfg.curriculum["head_com_range"] = CurriculumTermCfg(
+            func=microduck_mdp.com_range_curriculum,
+            params={
+                "event_name": "randomize_head_com",
+                "range_stages": [
+                    {"step": 0,          "range": 0.003},
+                    {"step": 500 * 24,  "range": 0.005},
+                    {"step": 1000 * 24,  "range": 0.01},
+                    # {"step": 1500 * 24,  "range": 0.015},
+                    # {"step": 2000 * 24,  "range": 0.02},
                 ],
             },
         )

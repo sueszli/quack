@@ -3655,7 +3655,11 @@ def randomize_com(
     body_indices = asset.indexing.body_ids[body_ids]
 
     mf = getattr(env.sim.model, field)
-    cache_attr = f"_original_{field}"
+    # Key the cache by (field, body set): multiple randomize_com events can share
+    # the same field (e.g. trunk + head both randomize body_ipos) and must NOT
+    # collide on a single _original_body_ipos attr — their body counts differ.
+    _bidx = body_indices.tolist() if hasattr(body_indices, "tolist") else list(body_indices)
+    cache_attr = f"_original_{field}_" + "_".join(str(int(i)) for i in _bidx)
     # Cache nominal on first call (model[0] is still nominal at that point).
     if not hasattr(env, cache_attr):
         setattr(env, cache_attr, mf[0, body_indices].clone())
