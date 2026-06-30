@@ -37,7 +37,7 @@ KP_RANDOMIZATION_RANGE              = (0.85, 1.15)    # unused (kp DR off)
 KD_RANDOMIZATION_RANGE              = (0.9, 1.1)      # unused (kd DR off)
 VELOCITY_PUSH_INTERVAL_S            = (3.0, 6.0)
 VELOCITY_PUSH_RANGE                 = (-0.5, 0.5)     # match velocity (curriculum ramps up to this)
-IMU_ORIENTATION_RANDOMIZATION_ANGLE = 1.0
+IMU_ORIENTATION_RANDOMIZATION_ANGLE = 2.0
 
 # Episode length: long enough for a gentle rise + brief stabilisation.
 EPISODE_LENGTH_S = 6.0
@@ -325,11 +325,10 @@ def make_microduck_standup_env_cfg(
     )
 
     # ── Sim2real regularisers (smoothness) ────────────────────────────────────
-    # action_rate -0.7 base, curriculum below ramps to -1.2 between iter 1000
-    # and 2000. Heavier damping than the walking policies because standing
-    # at HOME with head-forward CoM requires steady micro-corrections that
-    # were visibly oscillating at -0.6.
-    cfg.rewards["action_rate_l2"]        = RewardTermCfg(func=mdp.action_rate_l2,                 weight=-0.7)
+    # action_rate base weight + curriculum matched to the velocity env (see below)
+    # Base weight matches velocity (-0.6); the action_rate_weight curriculum
+    # below ramps it -0.4 → -0.8 → -1.0 (same stages as velocity).
+    cfg.rewards["action_rate_l2"]        = RewardTermCfg(func=mdp.action_rate_l2,                 weight=-0.6)
     cfg.rewards["joint_torque_rate_l2"]  = RewardTermCfg(func=microduck_mdp.joint_torque_rate_l2, weight=-5e-4)
     cfg.rewards["joint_torques_l2"]      = RewardTermCfg(func=microduck_mdp.joint_torques_l2,     weight=-5e-3)
 
@@ -620,6 +619,23 @@ def make_microduck_standup_env_cfg(
         },
     )
 
+    # Head pose tracking std curriculum — once the policy can reliably rise
+    # (~1500 iters) tighten the neck/head tolerance so it holds the head at the
+    # commanded pose instead of drooping it forward as a balance crutch. Loose
+    # early (0.5) keeps the gradient alive while the command range is still
+    # widening; tightening later sharpens the upright standing posture.
+    cfg.curriculum["head_pose_std"] = CurriculumTermCfg(
+        func=microduck_mdp.velocity_tracking_std_curriculum,
+        params={
+            "reward_name": "head_pose_tracking",
+            "std_stages": [
+                {"step": 0,         "std": 0.5},
+                {"step": 1500 * 24, "std": 0.35},
+                {"step": 2500 * 24, "std": 0.25},
+            ],
+        },
+    )
+
     # CoM-randomization range curricula — match velocity (ramp 0.003 → 0.02 trunk,
     # 0.003 → 0.01 head over the first ~2000 / ~1000 iters).
     if ENABLE_COM_RANDOMIZATION:
@@ -663,22 +679,17 @@ def make_microduck_standup_env_cfg(
             },
         )
 
-    # action_rate curriculum: -0.7 for the first 1000 iters while the policy
-    # is still discovering the rise, then ramps to -1.2 by iter 2000 to crank
-    # up the damping pressure on the standing equilibrium. mdp.reward_weight
-    # is a step function (picks the last passed stage), so we discretise the
-    # ramp into 10 steps of -0.05 every 100 iters.
-    _action_rate_stages = [{"step": 0, "weight": -0.7}]
-    for k in range(1, 11):
-        _action_rate_stages.append({
-            "step":   (1000 + k * 100) * 24,
-            "weight": -0.7 - k * 0.05,
-        })
+    # action_rate curriculum — same stages as the velocity env: ramp the
+    # action_rate_l2 penalty -0.4 → -0.8 → -1.0 over the first 500 iters.
     cfg.curriculum["action_rate_weight"] = CurriculumTermCfg(
         func=microduck_mdp.reward_weight,
         params={
             "reward_name":   "action_rate_l2",
-            "weight_stages": _action_rate_stages,
+            "weight_stages": [
+                {"step": 0,         "weight": -0.4},
+                {"step": 250 * 24,  "weight": -0.8},
+                {"step": 500 * 24,  "weight": -1.0},
+            ],
         },
     )
 
