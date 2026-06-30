@@ -456,9 +456,16 @@ def make_microduck_standup_env_cfg(
         func=microduck_mdp.set_random_ground_state,
         mode="reset",
         params={
-            "face_down_prob":            0.0,
-            "face_up_prob":              0.0,
-            "sitting_prob":              1.0,
+            # Initialize lying on back (face-up) and front (face-down) as well as
+            # the sitting keyframe, so the policy recovers from any ground pose.
+            "face_down_prob":            0.4,   # belly to floor (+90° pitch)
+            "face_up_prob":              0.4,   # back to floor (-90° pitch)
+            "sitting_prob":              0.2,   # sit keyframe (deployment hand-off)
+            # Prone reset height: trunk rests at ~0.044 m face-down (measured), so
+            # spawn just above the ground rather than the 0.20–0.25 default (which
+            # would free-fall ~15 cm before landing).
+            "prone_z_min":               0.05,
+            "prone_z_max":               0.09,
             "sitting_joint_overrides":   SITTING_JOINT_OVERRIDES,
             "sitting_joint_noise_std":   0.12,           # ≈ 7° per joint
             "sitting_tilt_max":          math.radians(10),  # ±10° pitch/roll
