@@ -2791,25 +2791,32 @@ def set_random_ground_state(
     face_down_prob: float = 0.4,
     face_up_prob: float = 0.4,
     sitting_prob: float = 0.2,
+    standing_prob: float = 0.0,
     prone_z_min: float = 0.20,
     prone_z_max: float = 0.25,
     sitting_z_min: float = 0.07,
     sitting_z_max: float = 0.09,
+    standing_z_min: float = 0.11,
+    standing_z_max: float = 0.12,
     sitting_joint_overrides: Optional[dict] = None,
     sitting_joint_noise_std: float = 0.0,
     sitting_tilt_max: float = 0.0,
 ):
-    """Reset to a random ground state: face-down, face-up, or sitting keyframe.
+    """Reset to a random ground state: face-down, face-up, sitting, or standing.
 
     Broader than ``set_random_prone_orientation`` — used by the stand-up env so
-    the policy learns to recover from any plausible "on the ground" pose,
-    including the sitting keyframe (the resting state of the sit policy).
+    the policy learns to recover from any plausible pose, including the sitting
+    keyframe (rest state of the sit policy) and an already-standing pose (so it
+    also learns to *hold* a stand, not only to rise).
 
-    Modes (probabilities should sum to 1.0):
+    Modes (probabilities are normalized; they need not sum to 1.0):
       - face-down (belly to floor): +90° pitch, random yaw, z in [prone_z_min, prone_z_max].
       - face-up   (back to floor):  -90° pitch, random yaw, z in [prone_z_min, prone_z_max].
-      - sitting:                    upright (identity orientation), random yaw, z low,
+      - sitting:                    upright (±sitting_tilt_max), random yaw, z low,
                                     joints set to ``sitting_joint_overrides``.
+      - standing:                   upright (±sitting_tilt_max), random yaw, z in
+                                    [standing_z_min, standing_z_max], joints left at
+                                    HOME (whatever ``reset_robot_joints`` set).
 
     Args:
         sitting_joint_overrides: ``{qpos_joint_index: angle_rad}`` to write into
@@ -2821,9 +2828,10 @@ def set_random_ground_state(
     env_ids = env_ids.to(env.device, dtype=torch.int)
     num = len(env_ids)
 
-    total = face_down_prob + face_up_prob + sitting_prob
-    p_fd = face_down_prob / total
-    p_fu = (face_down_prob + face_up_prob) / total
+    total = face_down_prob + face_up_prob + sitting_prob + standing_prob
+    p_fd  = face_down_prob / total
+    p_fu  = (face_down_prob + face_up_prob) / total
+    p_sit = (face_down_prob + face_up_prob + sitting_prob) / total
 
     yaw = torch.rand(num, device=env.device) * 2 * np.pi - np.pi
     cy = torch.cos(yaw * 0.5)
@@ -2849,18 +2857,25 @@ def set_random_ground_state(
         sitting = torch.stack([cy, torch.zeros_like(cy), torch.zeros_like(cy), sy], dim=1)
 
     u = torch.rand(num, device=env.device)
-    is_fd  = u < p_fd
-    is_fu  = (u >= p_fd) & (u < p_fu)
-    is_sit = u >= p_fu
+    is_fd    = u < p_fd
+    is_fu    = (u >= p_fd) & (u < p_fu)
+    is_sit   = (u >= p_fu) & (u < p_sit)
+    is_stand = u >= p_sit
 
+    # Sitting and standing share the same upright orientation (identity + optional
+    # ±sitting_tilt_max); they differ only in trunk height and joint pose.
     new_quat = face_down.clone()
-    new_quat[is_fu]  = face_up[is_fu]
-    new_quat[is_sit] = sitting[is_sit]
+    new_quat[is_fu]    = face_up[is_fu]
+    new_quat[is_sit]   = sitting[is_sit]
+    new_quat[is_stand] = sitting[is_stand]
 
-    # Random z per env: prone heights for face-down/up, sitting height for sit.
+    # Random z per env: prone heights for face-down/up, low for sit, ~standing for stand.
     z_prone = torch.rand(num, device=env.device) * (prone_z_max - prone_z_min) + prone_z_min
     z_sit   = torch.rand(num, device=env.device) * (sitting_z_max - sitting_z_min) + sitting_z_min
-    new_z = torch.where(is_sit, z_sit, z_prone)
+    z_stand = torch.rand(num, device=env.device) * (standing_z_max - standing_z_min) + standing_z_min
+    new_z = z_prone.clone()
+    new_z = torch.where(is_sit, z_sit, new_z)
+    new_z = torch.where(is_stand, z_stand, new_z)
 
     env.sim.data.qpos[env_ids, 2]   = new_z
     env.sim.data.qpos[env_ids, 3:7] = new_quat
