@@ -26,21 +26,24 @@ BODY_CMD_MAX_ANGLE = math.radians(30)  # ±30°
 # This is the reference pose that:
 # - Actions are offsets from (motor_target = DEFAULT_POSE + action * scale)
 # - Joint observations are relative to (obs_joint_pos = current_pos - DEFAULT_POSE)
+# STAND2 pose (matches HOME_FRAME in microduck_constants.py): trunk shifted
+# ~5mm forward so the CoM sits over the ankle axis. Leg pitch chain leaned
+# forward vs the old pose: hip_pitch 30°→26.24°, ankle 30°→25.95°, knee 0°→0.28°.
 DEFAULT_POSE = np.array([
     0.0,      # left_hip_yaw
     -0.0873,  # left_hip_roll
-    -0.5236,  # left_hip_pitch
-    0.0,      # left_knee
-    0.5236,   # left_ankle
+    -0.4579,  # left_hip_pitch
+    -0.0049,  # left_knee
+    0.4530,   # left_ankle
     0.3491,   # neck_pitch
     -0.3491,  # head_pitch
     0.0,      # head_yaw
     0.0,      # head_roll
     0.0,      # right_hip_yaw
     0.0873,   # right_hip_roll
-    0.5236,   # right_hip_pitch
-    0.0,      # right_knee
-    -0.5236,  # right_ankle
+    0.4579,   # right_hip_pitch
+    0.0049,   # right_knee
+    -0.4530,  # right_ankle
 ], dtype=np.float32)
 
 
