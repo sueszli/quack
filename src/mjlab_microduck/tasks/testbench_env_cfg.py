@@ -21,7 +21,7 @@ from mjlab.envs.manager_based_rl_env import ManagerBasedRlEnv
 from mjlab.envs.mdp.actions import JointPositionActionCfg
 from mjlab.envs import mdp as base_mdp
 from mjlab.managers.command_manager import CommandTerm
-from mjlab.managers.manager_term_config import (
+from mjlab.managers import (
     CommandTermCfg,
     EventTermCfg,
     ObservationGroupCfg,

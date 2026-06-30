@@ -13,11 +13,9 @@ from mjlab.managers.reward_manager import RewardManager as _RewardManager
 from mjlab.entity import Entity
 from mjlab.tasks.velocity.mdp.velocity_command import UniformVelocityCommand, UniformVelocityCommandCfg
 from mjlab.managers.command_manager import CommandTerm
-from mjlab.managers.manager_term_config import CommandTermCfg
+from mjlab.managers import CommandTermCfg
 from mjlab.utils.lab_api.math import matrix_from_quat, wrap_to_pi
-from mjlab.envs.mdp.actions import JointPositionActionCfg as _JointPositionActionCfg
 from rsl_rl.algorithms.ppo import PPO as _PPO
-from rsl_rl.modules.actor_critic import ActorCritic as _ActorCritic
 
 # ---------------------------------------------------------------------------
 # Patch 1: RewardManager.compute — sanitize NaN rewards before they enter the
@@ -56,27 +54,13 @@ def _safe_compute_returns(self, obs) -> None:
 
 _PPO.compute_returns = _safe_compute_returns
 
-# ---------------------------------------------------------------------------
-# Patch 3: ActorCritic._update_distribution — clamp std before creating the
-# Normal distribution.  If a NaN/negative gradient slipped through and updated
-# the scalar std parameter below zero (noise_std_type="scalar"), or NaN'd the
-# log_std parameter (noise_std_type="log"), torch.normal crashes at sample().
-# Clamping/restoring here prevents the crash and keeps training alive.
-# ---------------------------------------------------------------------------
-_orig_update_dist = _ActorCritic._update_distribution
+# Patch 3 (ActorCritic._update_distribution std-clamp) was REMOVED in the mjlab
+# 1.3.0 migration: rsl_rl 5.0.1 refactored the policy (no ActorCritic class; the
+# distribution now lives in rsl_rl.modules.distribution). It was a defensive
+# band-aid against std going negative/NaN (microban runs fine without it). If
+# std-blowup recurs under 1.3.0, reinstate it against the new GaussianDistribution.
 
-def _safe_update_distribution(self, obs: torch.Tensor) -> None:
-    if not self.state_dependent_std:
-        with torch.no_grad():
-            if self.noise_std_type == "scalar" and hasattr(self, "std"):
-                self.std.data.clamp_(min=1e-3).nan_to_num_(nan=1e-3)
-            elif self.noise_std_type == "log" and hasattr(self, "log_std"):
-                self.log_std.data.nan_to_num_(nan=math.log(1e-3))
-    _orig_update_dist(self, obs)
-
-_ActorCritic._update_distribution = _safe_update_distribution
-
-print("[mdp] Patches 1-3 active: NaN-safe reward/advantage/std")
+print("[mdp] Patches 1-2 active: NaN-safe reward/advantage")
 
 # ---------------------------------------------------------------------------
 # Patch 4: exporter_utils.get_base_metadata — the new microduck model has
@@ -87,7 +71,7 @@ print("[mdp] Patches 1-3 active: NaN-safe reward/advantage/std")
 # exported metadata so policies stay consistent with the 14-dim action space.
 # ---------------------------------------------------------------------------
 from mjlab.rl import exporter_utils as _exporter_utils  # noqa: E402
-from mjlab.envs.mdp.actions.joint_actions import JointAction as _JointAction  # noqa: E402
+from mjlab.envs.mdp.actions import JointPositionAction as _JointAction  # noqa: E402
 
 def _get_base_metadata_no_passive(env, run_path):
     robot = env.scene["robot"]
@@ -108,7 +92,7 @@ def _get_base_metadata_no_passive(env, run_path):
         "joint_damping": damping.tolist(),
         "default_joint_pos": [default_jp[i] for i in keep_idx],
         "command_names": list(env.command_manager.active_terms),
-        "observation_names": env.observation_manager.active_terms["policy"],
+        "observation_names": env.observation_manager.active_terms["actor"],
         "action_scale": joint_action._scale[0].cpu().tolist()
         if isinstance(joint_action._scale, torch.Tensor)
         else joint_action._scale,
@@ -1924,7 +1908,15 @@ def randomize_delayed_actuator_gains(
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     operation: str = "scale",
 ):
-    """Randomize PD gains for DelayedActuator (which wraps XmlPositionActuator).
+    """Randomize firmware PD gains per episode (NON-accumulating).
+
+    Under the canonical BAM actuator (``bam.mjlab.BamActuator``) gains are scaled
+    per-env via ``set_gains``/``reset_gains`` (the actuator owns ``kp_scale``/
+    ``kd_scale``), so we never touch the MuJoCo model — no accumulation risk. The
+    sampled per-joint factors are averaged into a single scalar per env (the
+    actuator applies one scale across its joints), matching the previous behavior.
+    Non-BAM actuators are skipped (e.g. the roller XmlActuator, which doesn't
+    expose set_gains).
 
     Args:
         env: The environment
@@ -1932,10 +1924,10 @@ def randomize_delayed_actuator_gains(
         kp_range: (min, max) for kp randomization
         kd_range: (min, max) for kd randomization
         asset_cfg: Asset configuration
-        operation: "scale" or "abs"
+        operation: unused (kept for cfg compatibility; scaling is always applied)
     """
-    from mjlab.actuator.delayed_actuator import DelayedActuator
-    from mjlab.actuator import XmlPositionActuator
+    del operation
+    from bam.mjlab import BamActuator
 
     if env_ids is None:
         env_ids = torch.arange(env.num_envs, device=env.device, dtype=torch.int)
@@ -1944,114 +1936,19 @@ def randomize_delayed_actuator_gains(
 
     asset: Entity = env.scene[asset_cfg.name]
 
-    # Store original gains on first call
-    if not hasattr(env, '_original_actuator_gains'):
-        env._original_actuator_gains = {}
-
-    # Apply to actuators
     for actuator in asset.actuators:
-        # Handle DelayedActuator wrapping XmlPositionActuator
-        if isinstance(actuator, DelayedActuator):
-            base_actuator = actuator._base_actuator
-        else:
-            base_actuator = actuator
-
-        # Get control IDs
-        ctrl_ids = base_actuator.ctrl_ids
-
-        # Store original values on first call (use tuple of ctrl_ids as key)
-        from mjlab_microduck.actuator.bam_actuator import BamM6Actuator
-        ctrl_key = tuple(ctrl_ids.tolist())
-        if not isinstance(base_actuator, BamM6Actuator):
-            if ctrl_key not in env._original_actuator_gains:
-                env._original_actuator_gains[ctrl_key] = {
-                    'gainprm': env.sim.model.actuator_gainprm[0, ctrl_ids, 0].clone(),
-                    'biasprm1': env.sim.model.actuator_biasprm[0, ctrl_ids, 1].clone(),
-                    'biasprm2': env.sim.model.actuator_biasprm[0, ctrl_ids, 2].clone(),
-                }
-
-        # Reset to original values first (to prevent accumulation)
-        if isinstance(base_actuator, BamM6Actuator):
-            base_actuator.reset_gains(env_ids)
-        else:
-            original = env._original_actuator_gains[ctrl_key]
-            env.sim.model.actuator_gainprm[env_ids[:, None], ctrl_ids, 0] = original['gainprm'].unsqueeze(0).expand(len(env_ids), -1)
-            env.sim.model.actuator_biasprm[env_ids[:, None], ctrl_ids, 1] = original['biasprm1'].unsqueeze(0).expand(len(env_ids), -1)
-            env.sim.model.actuator_biasprm[env_ids[:, None], ctrl_ids, 2] = original['biasprm2'].unsqueeze(0).expand(len(env_ids), -1)
-
-        # Sample random gains for each env and each control
-        kp_samples = torch.rand(len(env_ids), len(ctrl_ids), device=env.device) * (kp_range[1] - kp_range[0]) + kp_range[0]
-        kd_samples = torch.rand(len(env_ids), len(ctrl_ids), device=env.device) * (kd_range[1] - kd_range[0]) + kd_range[0]
-
-        # For XmlPositionActuator, modify MuJoCo model parameters directly
-        if isinstance(base_actuator, XmlPositionActuator):
-            if operation == "scale":
-                # Scale the ORIGINAL (now-reset) values
-                env.sim.model.actuator_gainprm[env_ids[:, None], ctrl_ids, 0] *= kp_samples
-                env.sim.model.actuator_biasprm[env_ids[:, None], ctrl_ids, 1] *= kp_samples
-                env.sim.model.actuator_biasprm[env_ids[:, None], ctrl_ids, 2] *= kd_samples
-            elif operation == "abs":
-                env.sim.model.actuator_gainprm[env_ids[:, None], ctrl_ids, 0] = kp_samples
-                env.sim.model.actuator_biasprm[env_ids[:, None], ctrl_ids, 1] = -kp_samples
-                env.sim.model.actuator_biasprm[env_ids[:, None], ctrl_ids, 2] = -kd_samples
-        else:
-            # For BamM6Actuator (or other custom actuators with set_gains):
-            # Use per-env gain scaling instead of modifying MuJoCo model params.
-            from mjlab_microduck.actuator.bam_actuator import BamM6Actuator
-            if isinstance(base_actuator, BamM6Actuator):
-                # kp_samples shape: (num_envs, num_joints) — average across joints for a scalar scale
-                kp_mean = kp_samples.mean(dim=1, keepdim=True)
-                kd_mean = kd_samples.mean(dim=1, keepdim=True)
-                base_actuator.set_gains(env_ids, kp_scale=kp_mean, kd_scale=kd_mean)
-
-
-def randomize_actuator_friction(
-    env: ManagerBasedRlEnv,
-    env_ids: torch.Tensor,
-    scale_range: tuple[float, float],
-    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
-):
-    """Randomize the BAM actuator friction budget per episode (NON-accumulating).
-
-    Under the BAM actuator, MuJoCo's dof_frictionloss is zeroed in edit_spec (BAM
-    computes friction itself in compute()), so scaling model.dof_frictionloss is a
-    no-op. Instead this samples a per-env scalar in ``scale_range`` and applies it
-    to the actuator's friction_scale, which multiplies the whole friction budget
-    (Coulomb + Stribeck + load + viscous) inside compute(). Mirrors the BAM branch
-    of ``randomize_delayed_actuator_gains``. Has no effect on non-BAM actuators.
-
-    Args:
-        env: The environment
-        env_ids: Environment IDs to randomize (None = all envs)
-        scale_range: (min, max) multiplier applied to the friction budget
-        asset_cfg: Asset configuration
-    """
-    from mjlab.actuator.delayed_actuator import DelayedActuator
-    from mjlab_microduck.actuator.bam_actuator import BamM6Actuator
-
-    if env_ids is None:
-        env_ids = torch.arange(env.num_envs, device=env.device, dtype=torch.int)
-    else:
-        env_ids = env_ids.to(env.device, dtype=torch.int)
-
-    asset: Entity = env.scene[asset_cfg.name]
-
-    lo, hi = scale_range
-    for actuator in asset.actuators:
-        base_actuator = (
-            actuator._base_actuator
-            if isinstance(actuator, DelayedActuator)
-            else actuator
+        if not isinstance(actuator, BamActuator):
+            continue
+        n_joints = len(actuator.ctrl_ids)
+        kp_samples = torch.rand(len(env_ids), n_joints, device=env.device) * (kp_range[1] - kp_range[0]) + kp_range[0]
+        kd_samples = torch.rand(len(env_ids), n_joints, device=env.device) * (kd_range[1] - kd_range[0]) + kd_range[0]
+        # Restore nominal first (prevents accumulation), then apply fresh scale.
+        actuator.reset_gains(env_ids)
+        actuator.set_gains(
+            env_ids,
+            kp_scale=kp_samples.mean(dim=1, keepdim=True),
+            kd_scale=kd_samples.mean(dim=1, keepdim=True),
         )
-        if isinstance(base_actuator, BamM6Actuator):
-            # Restore nominal first (prevents accumulation), then apply fresh scale.
-            base_actuator.reset_friction_scale(env_ids)
-            samples = (
-                torch.rand(len(env_ids), 1, device=env.device) * (hi - lo) + lo
-            )
-            base_actuator.set_friction_scale(env_ids, samples)
-
-    return torch.tensor(float(hi))
 
 
 def randomize_mass_and_inertia(

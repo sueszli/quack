@@ -23,7 +23,7 @@ from dataclasses import replace
 import math
 
 from mjlab.envs import ManagerBasedRlEnvCfg
-from mjlab.managers.manager_term_config import CurriculumTermCfg, RewardTermCfg
+from mjlab.managers import CurriculumTermCfg, RewardTermCfg
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.tasks.velocity import mdp
 

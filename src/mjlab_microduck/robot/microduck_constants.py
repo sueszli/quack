@@ -2,8 +2,8 @@ import os
 from pathlib import Path
 
 import mujoco
-from mjlab.actuator import DelayedActuatorCfg, XmlPositionActuatorCfg
-from mjlab_microduck.actuator.bam_params import make_bam_m6_actuator_cfg, make_bam_m4_actuator_cfg
+from mjlab.actuator import XmlActuatorCfg
+from bam.mjlab import BamActuatorCfg
 from mjlab.entity import EntityArticulationInfoCfg, EntityCfg
 from mjlab.utils.spec_config import CollisionCfg
 
@@ -76,18 +76,18 @@ FULL_COLLISION = CollisionCfg(
 #   - vin_drop_gain_range: load-dependent voltage sag V_drop = gain * sum(|tau|)
 #   - vin_min: hard floor on the effective voltage after sag
 # kp_fw kept at 200 (microduck's preserved firmware stiffness; microban uses 125).
-actuators = DelayedActuatorCfg(
+actuators = BamActuatorCfg(
+    motor_name="xl330",
+    model="m6",
+    target_names_expr=(r"^(?!passive_).*",),
+    kp_fw=200.0,  # microduck's preserved firmware stiffness (microban uses 125)
+    # vin_range=(6.9, 7.9),
+    vin_range=(6.5, 8.2),
+    vin_drop_gain_range=(0.0, 0.2),
+    vin_min=6.0,
+    max_current=1.75,
     delay_min_lag=3,
     delay_max_lag=6,
-    base_cfg=make_bam_m6_actuator_cfg(
-        joint_names_expr=(r"^(?!passive_).*",),
-        kp_fw=200.0,
-        # vin_range=(6.9, 7.9),
-        vin_range=(6.5, 8.2),
-        vin_drop_gain_range=(0.0, 0.2),
-        vin_min=6.0,
-        max_current=1.75,
-    ),
 )
 
 # -- BAM M4 actuator
@@ -130,10 +130,10 @@ MICRODUCK_GROUND_PICK_ROBOT_CFG = EntityCfg(
 # Roller skate robot: passive wheel joints have no actuators in the XML.
 # Use a separate actuator config that explicitly excludes passive joints so
 # the action space stays 14-dimensional (same as the walk robot).
-roller_actuators = DelayedActuatorCfg(
+roller_actuators = XmlActuatorCfg(
+    target_names_expr=(r"^(?!passive_).*",),
     delay_min_lag=0,
     delay_max_lag=3,
-    base_cfg=XmlPositionActuatorCfg(joint_names_expr=(r"^(?!passive_).*",)),
 )
 
 MICRODUCK_WALK_ROLLERS_ROBOT_CFG = EntityCfg(

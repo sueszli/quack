@@ -113,7 +113,12 @@ def rollout_sim_bam(onnx_path: str, total_time: float, seed: int, action_scale: 
     from bam.model import models as bam_models
     from bam.mujoco import MujocoController
 
-    from mjlab_microduck.actuator.bam_params import DEFAULT_XL330_M6
+    # Load the fitted XL330 m6 params from the canonical bam bundle (identical to
+    # the values that used to live in mjlab_microduck.actuator.bam_params).
+    import json as _json
+    from bam.model import _resolve_json_path
+    with open(_resolve_json_path(None, "xl330", "m6")) as _f:
+        DEFAULT_XL330_M6 = _json.load(_f)
 
     VIN = 7.4
     KP_FW = 200.0

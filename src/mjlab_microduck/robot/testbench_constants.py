@@ -4,10 +4,9 @@ import os
 from pathlib import Path
 
 import mujoco
-from mjlab.actuator import DelayedActuatorCfg
 from mjlab.entity import EntityArticulationInfoCfg, EntityCfg
 
-from mjlab_microduck.actuator.bam_params import make_bam_m6_actuator_cfg
+from bam.mjlab import BamActuatorCfg
 
 
 _TESTBENCH_DIR: Path = Path(os.path.dirname(__file__)) / "xl330_test_bench"
@@ -46,10 +45,14 @@ HOME_FRAME = EntityCfg.InitialStateCfg(
 
 
 # Use the BAM M6 actuator model (matches the real XL330 on the test bench).
-testbench_actuators = DelayedActuatorCfg(
+testbench_actuators = BamActuatorCfg(
+    motor_name="xl330",
+    model="m6",
+    target_names_expr=(r"1",),
+    kp_fw=200.0,
+    max_current=1.75,
     delay_min_lag=0,
     delay_max_lag=3,
-    base_cfg=make_bam_m6_actuator_cfg(joint_names_expr=(r"1",)),
 )
 
 

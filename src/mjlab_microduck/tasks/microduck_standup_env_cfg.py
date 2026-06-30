@@ -66,7 +66,7 @@ STAND_Z = 0.115
 
 from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.envs.mdp.actions import JointPositionActionCfg
-from mjlab.managers.manager_term_config import (
+from mjlab.managers import (
     CurriculumTermCfg,
     EventTermCfg,
     ObservationTermCfg,
@@ -76,7 +76,7 @@ from mjlab.managers.manager_term_config import (
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.rl import (
     RslRlOnPolicyRunnerCfg,
-    RslRlPpoActorCriticCfg,
+    RslRlModelCfg,
 )
 from mjlab.sensor import ContactMatch, ContactSensorCfg
 from mjlab.tasks.velocity import mdp
@@ -359,7 +359,7 @@ def make_microduck_standup_env_cfg(
             del cfg.rewards[name]
 
     # ── Observations (identical layout to walking / sit policies) ─────────────
-    del cfg.observations["policy"].terms["base_lin_vel"]
+    del cfg.observations["actor"].terms["base_lin_vel"]
 
     cfg.observations["critic"].terms["base_lin_vel"] = ObservationTermCfg(
         func=mdp.base_lin_vel, scale=1.0,
@@ -369,35 +369,35 @@ def make_microduck_standup_env_cfg(
     ].site_names = site_names
 
     gravity_term_name = "projected_gravity"
-    cfg.observations["policy"].terms[gravity_term_name] = deepcopy(
-        cfg.observations["policy"].terms[gravity_term_name]
+    cfg.observations["actor"].terms[gravity_term_name] = deepcopy(
+        cfg.observations["actor"].terms[gravity_term_name]
     )
-    cfg.observations["policy"].terms["base_ang_vel"] = deepcopy(
-        cfg.observations["policy"].terms["base_ang_vel"]
+    cfg.observations["actor"].terms["base_ang_vel"] = deepcopy(
+        cfg.observations["actor"].terms["base_ang_vel"]
     )
 
-    cfg.observations["policy"].terms["base_ang_vel"].delay_min_lag = 0
-    cfg.observations["policy"].terms["base_ang_vel"].delay_max_lag = 3
-    cfg.observations["policy"].terms["base_ang_vel"].delay_update_period = 64
-    cfg.observations["policy"].terms[gravity_term_name].delay_min_lag = 0
-    cfg.observations["policy"].terms[gravity_term_name].delay_max_lag = 3
-    cfg.observations["policy"].terms[gravity_term_name].delay_update_period = 64
+    cfg.observations["actor"].terms["base_ang_vel"].delay_min_lag = 0
+    cfg.observations["actor"].terms["base_ang_vel"].delay_max_lag = 3
+    cfg.observations["actor"].terms["base_ang_vel"].delay_update_period = 64
+    cfg.observations["actor"].terms[gravity_term_name].delay_min_lag = 0
+    cfg.observations["actor"].terms[gravity_term_name].delay_max_lag = 3
+    cfg.observations["actor"].terms[gravity_term_name].delay_update_period = 64
 
-    cfg.observations["policy"].terms["base_ang_vel"].noise    = Unoise(n_min=-0.024, n_max=0.024)
-    cfg.observations["policy"].terms[gravity_term_name].noise = Unoise(n_min=-0.007, n_max=0.007)
-    cfg.observations["policy"].terms["joint_pos"].noise       = Unoise(n_min=-0.0006, n_max=0.0006)
-    cfg.observations["policy"].terms["joint_vel"].noise       = Unoise(n_min=-0.24, n_max=0.24)
+    cfg.observations["actor"].terms["base_ang_vel"].noise    = Unoise(n_min=-0.024, n_max=0.024)
+    cfg.observations["actor"].terms[gravity_term_name].noise = Unoise(n_min=-0.007, n_max=0.007)
+    cfg.observations["actor"].terms["joint_pos"].noise       = Unoise(n_min=-0.0006, n_max=0.0006)
+    cfg.observations["actor"].terms["joint_vel"].noise       = Unoise(n_min=-0.24, n_max=0.24)
 
-    cfg.observations["policy"].terms["joint_vel"] = deepcopy(
-        cfg.observations["policy"].terms["joint_vel"]
+    cfg.observations["actor"].terms["joint_vel"] = deepcopy(
+        cfg.observations["actor"].terms["joint_vel"]
     )
-    cfg.observations["policy"].terms["joint_vel"].delay_min_lag = 1
-    cfg.observations["policy"].terms["joint_vel"].delay_max_lag = 1
-    cfg.observations["policy"].terms["joint_vel"].delay_update_period = 0
+    cfg.observations["actor"].terms["joint_vel"].delay_min_lag = 1
+    cfg.observations["actor"].terms["joint_vel"].delay_max_lag = 1
+    cfg.observations["actor"].terms["joint_vel"].delay_update_period = 0
 
     passive_excluded = SceneEntityCfg("robot", joint_names=(r"^(?!passive_).*",))
-    cfg.observations["policy"].terms["joint_pos"].params["asset_cfg"] = passive_excluded
-    cfg.observations["policy"].terms["joint_vel"].params["asset_cfg"] = deepcopy(passive_excluded)
+    cfg.observations["actor"].terms["joint_pos"].params["asset_cfg"] = passive_excluded
+    cfg.observations["actor"].terms["joint_vel"].params["asset_cfg"] = deepcopy(passive_excluded)
     cfg.observations["critic"].terms["joint_pos"].params["asset_cfg"] = deepcopy(passive_excluded)
     cfg.observations["critic"].terms["joint_vel"].params["asset_cfg"] = deepcopy(passive_excluded)
 
@@ -576,13 +576,20 @@ def make_microduck_standup_env_cfg(
 # ── RL runner config ──────────────────────────────────────────────────────────
 
 MicroduckStandUpRlCfg = RslRlOnPolicyRunnerCfg(
-    policy=RslRlPpoActorCriticCfg(
-        init_noise_std=1.0,
-        actor_obs_normalization=False,
-        critic_obs_normalization=False,
-        actor_hidden_dims=(512, 256, 128),
-        critic_hidden_dims=(512, 256, 128),
+    actor=RslRlModelCfg(
+        hidden_dims=(512, 256, 128),
         activation="elu",
+        obs_normalization=False,
+        distribution_cfg={
+            "class_name": "GaussianDistribution",
+            "init_std": 1.0,
+            "std_type": "scalar",
+        },
+    ),
+    critic=RslRlModelCfg(
+        hidden_dims=(512, 256, 128),
+        activation="elu",
+        obs_normalization=False,
     ),
     algorithm=PpoWithSymmetryCfg(
         value_loss_coef=1.0,
