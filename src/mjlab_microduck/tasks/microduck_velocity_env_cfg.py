@@ -650,7 +650,7 @@ def make_microduck_velocity_env_cfg(
 
     # Append head + body command obs terms to both policy and critic groups.
     # Order matters for the runtime obs layout: [twist(3), head_pose(4), body_pose(6)].
-    for group in ("policy", "critic"):
+    for group in ("actor", "critic"):
         cfg.observations[group].terms["head_command"] = ObservationTermCfg(
             func=mdp.generated_commands,
             params={"command_name": "head_pose"},
@@ -717,7 +717,7 @@ def make_microduck_velocity_env_cfg(
 
     # Add action rate curriculum
     cfg.curriculum["action_rate_weight"] = CurriculumTermCfg(
-        func=mdp.reward_weight,
+        func=microduck_mdp.reward_weight,
         params={
             "reward_name": "action_rate_l2",
             "weight_stages": [
@@ -736,7 +736,7 @@ def make_microduck_velocity_env_cfg(
 
     # Add linear velocity tracking curriculum
     # cfg.curriculum["linear_velocity_weight"] = CurriculumTermCfg(
-        # func=mdp.reward_weight,
+        # func=microduck_mdp.reward_weight,
         # params={
             # "reward_name": "track_linear_velocity",
             # "weight_stages": [
@@ -749,7 +749,7 @@ def make_microduck_velocity_env_cfg(
 
     # Add angular velocity tracking curriculum
     # cfg.curriculum["angular_velocity_weight"] = CurriculumTermCfg(
-        # func=mdp.reward_weight,
+        # func=microduck_mdp.reward_weight,
         # params={
             # "reward_name": "track_angular_velocity",
             # "weight_stages": [

@@ -2150,6 +2150,28 @@ def wheel_friction_curriculum(
     return torch.tensor([current_ranges[0]])
 
 
+def reward_weight(
+    env: ManagerBasedRlEnv,
+    env_ids: torch.Tensor,
+    reward_name: str,
+    weight_stages: list[dict],
+) -> torch.Tensor:
+    """Step-staged reward weight curriculum.
+
+    mjlab 1.3.0 dropped the built-in ``mdp.reward_weight`` helper, so microduck
+    provides its own. ``weight_stages`` is a list of ``{"step": int, "weight":
+    float}`` dicts; the weight of the latest stage whose step has elapsed is
+    applied. Mutates the live RewardManager term cfg (not env.cfg, which is a
+    deepcopy at manager init).
+    """
+    del env_ids
+    term_cfg = env.reward_manager.get_term_cfg(reward_name)
+    for stage in weight_stages:
+        if env.common_step_counter > stage["step"]:
+            term_cfg.weight = stage["weight"]
+    return torch.tensor([term_cfg.weight])
+
+
 def com_range_curriculum(
     env: ManagerBasedRlEnv,
     env_ids: torch.Tensor,
@@ -3240,10 +3262,12 @@ class UniformPoseCommand(CommandTerm):
 
 @dataclass(kw_only=True)
 class UniformPoseCommandCfg(CommandTermCfg):
-    """Per-dim uniform ranges; class_type is fixed."""
-    class_type: type = field(default=UniformPoseCommand)
+    """Per-dim uniform ranges; builds a UniformPoseCommand."""
     # Tuple of (lo, hi) per dim. Length defines the command dim.
     ranges: tuple[tuple[float, float], ...] = ()
+
+    def build(self, env: ManagerBasedRlEnv) -> "UniformPoseCommand":
+        return UniformPoseCommand(self, env)
 
 
 def zero_command_padding(

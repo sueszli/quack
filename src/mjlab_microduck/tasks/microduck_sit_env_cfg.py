@@ -327,7 +327,7 @@ def make_microduck_sit_env_cfg(
     # The sit env doesn't track head or body pose commands — the target is
     # baked into the joint-target reward. The slots are zero-padded so the
     # runtime can feed a single 13D command buffer across all microduck policies.
-    for group in ("policy", "critic"):
+    for group in ("actor", "critic"):
         cfg.observations[group].terms["head_command"] = ObservationTermCfg(
             func=microduck_mdp.zero_command_padding, params={"dim": 4},
         )

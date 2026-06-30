@@ -126,7 +126,7 @@ def make_microduck_velocity2_env_cfg(
     # action_rate weight ramp: -0.1 (iter 0-500) → -0.2 (500-1000) → -0.3 (1000+).
     # Overwrites the inherited ramp (which went to -1.0).
     cfg.curriculum["action_rate_weight"] = CurriculumTermCfg(
-        func=mdp.reward_weight,
+        func=microduck_mdp.reward_weight,
         params={
             "reward_name": "action_rate_l2",
             "weight_stages": [
@@ -147,7 +147,7 @@ def make_microduck_velocity2_env_cfg(
     cfg.curriculum.pop("velocity_command_ranges", None)
     # Ramp no_stepping 0 → -1.0 once basic walking is established.
     cfg.curriculum["no_stepping_weight"] = CurriculumTermCfg(
-        func=mdp.reward_weight,
+        func=microduck_mdp.reward_weight,
         params={
             "reward_name": "no_stepping",
             "weight_stages": [

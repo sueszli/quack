@@ -248,7 +248,7 @@ def make_microduck_velstand_tiptoe_env_cfg(play: bool = False, rough: bool = Fal
         # NB: do NOT bump standing_envs ratio to compensate — prior runs showed
         # that >25% standing envs make the policy forget how to walk.
         cfg.curriculum["body_pose_tracking_weight"] = CurriculumTermCfg(
-            func=velocity_mdp.reward_weight,
+            func=microduck_mdp.reward_weight,
             params={
                 "reward_name": "body_pose_tracking",
                 "weight_stages": [

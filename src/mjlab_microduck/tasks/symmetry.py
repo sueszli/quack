@@ -127,7 +127,7 @@ def microduck_vel_symmetry(
     aug_actions: torch.Tensor | None = None
 
     if obs is not None:
-        actor_orig: torch.Tensor = obs["policy"]  # [B, 51]
+        actor_orig: torch.Tensor = obs["actor"]  # [B, 51]
         obs_perm, obs_sign, _, _ = _get_tensors(actor_orig.device)
         actor_sym = actor_orig[:, obs_perm] * obs_sign
 

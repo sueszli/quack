@@ -223,33 +223,22 @@ def run_export(task_id: str, cfg: ExportConfig):
         runner.load(str(resume_path), map_location=device)
         policy = runner.get_inference_policy(device=device)
 
-    from mjlab.tasks.velocity.rl.exporter import (
-        export_velocity_policy_as_onnx,
-        attach_onnx_metadata,
-    )
+    # mjlab 1.3.0: ONNX export + metadata moved to mjlab.rl.exporter_utils and
+    # the runner's built-in export_policy_to_onnx. Observation normalization is
+    # baked into the exported graph automatically — EmpiricalNormalization is a
+    # submodule of the policy's MLPModel (obs_normalization=True in RslRlModelCfg),
+    # so export_policy_to_onnx emits actor(normalizer(obs)). No manual normalizer
+    # handling needed (the old export_velocity_policy_as_onnx path is gone).
+    from mjlab.rl.exporter_utils import get_base_metadata, attach_metadata_to_onnx
 
     onnx_path = os.path.abspath(cfg.onnx_file)
     path = os.path.dirname(onnx_path)
+    filename = os.path.basename(onnx_path)
 
-    # Bake the empirical obs normalizer into the ONNX graph so the exported
-    # policy normalizes raw observations internally (actor(normalizer(obs))).
-    # The normalizer lives in the policy as a separate submodule; if it's not
-    # present (normalization off), this is nn.Identity and the export is a no-op.
-    obs_normalizer = getattr(runner.alg.policy, "actor_obs_normalizer", None)
+    runner.export_policy_to_onnx(path, filename)
 
-    export_velocity_policy_as_onnx(
-        runner.alg.policy,
-        normalizer=obs_normalizer,
-        path=path,
-        filename=onnx_path,
-    )
-
-    attach_onnx_metadata(
-        runner.env.unwrapped,
-        cfg.checkpoint_file,
-        path=path,
-        filename=onnx_path,
-    )
+    metadata = get_base_metadata(runner.env.unwrapped, run_path=cfg.checkpoint_file)
+    attach_metadata_to_onnx(onnx_path, metadata)
 
     print(f"Written {onnx_path}")
 

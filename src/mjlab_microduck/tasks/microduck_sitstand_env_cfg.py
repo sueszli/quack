@@ -363,7 +363,7 @@ def make_microduck_sitstand_env_cfg(
     # Sitstand doesn't actively use head/body pose commands, but every microduck
     # policy carries the same 61D obs shape so the runtime can feed a single
     # command buffer. The 10 trailing slots (4 head + 6 body) are constant zero.
-    for group in ("policy", "critic"):
+    for group in ("actor", "critic"):
         cfg.observations[group].terms["head_command"] = ObservationTermCfg(
             func=microduck_mdp.zero_command_padding, params={"dim": 4},
         )
@@ -493,7 +493,7 @@ def make_microduck_sitstand_env_cfg(
         )
 
     cfg.curriculum["action_rate_weight"] = CurriculumTermCfg(
-        func=mdp.reward_weight,
+        func=microduck_mdp.reward_weight,
         params={
             "reward_name": "action_rate_l2",
             "weight_stages": [

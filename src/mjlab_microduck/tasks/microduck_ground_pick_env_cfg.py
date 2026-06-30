@@ -293,7 +293,7 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     # Ground-pick doesn't actively use head/body pose commands, but all
     # microduck policies share the same 61D obs shape so the runtime can feed
     # a single command buffer. The 10 trailing slots are constant zero.
-    for group in ("policy", "critic"):
+    for group in ("actor", "critic"):
         cfg.observations[group].terms["head_command"] = ObservationTermCfg(
             func=microduck_mdp.zero_command_padding, params={"dim": 4},
         )
@@ -399,7 +399,7 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
 
     # Gradually increase action rate penalty (same schedule as velocity env)
     cfg.curriculum["action_rate_weight"] = CurriculumTermCfg(
-        func=mdp.reward_weight,
+        func=microduck_mdp.reward_weight,
         params={
             "reward_name": "action_rate_l2",
             "weight_stages": [

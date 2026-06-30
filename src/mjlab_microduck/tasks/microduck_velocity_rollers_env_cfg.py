@@ -337,7 +337,7 @@ def make_microduck_velocity_rollers_env_cfg(
 
     # === CURRICULUM ===
     cfg.curriculum["action_rate_weight"] = CurriculumTermCfg(
-        func=mdp.reward_weight,
+        func=microduck_mdp.reward_weight,
         params={
             "reward_name": "action_rate_l2",
             "weight_stages": [
@@ -349,7 +349,7 @@ def make_microduck_velocity_rollers_env_cfg(
     )
 
     # cfg.curriculum["neck_joint_pos_l2_weight"] = CurriculumTermCfg(
-        # func=mdp.reward_weight,
+        # func=microduck_mdp.reward_weight,
         # params={
             # "reward_name": "neck_joint_pos_l2",
             # "weight_stages": [
@@ -379,7 +379,7 @@ def make_microduck_velocity_rollers_env_cfg(
     )
 
     cfg.curriculum["heading_tracking_weight"] = CurriculumTermCfg(
-        func=mdp.reward_weight,
+        func=microduck_mdp.reward_weight,
         params={
             "reward_name": "heading_tracking",
             "weight_stages": [

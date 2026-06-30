@@ -42,17 +42,20 @@ EPISODE_LENGTH_S = 6.0
 # Must match the *actual end-state* of the sit policy (head at HOME, knees bent
 # ~60°, ankles 0). Neck/head intentionally omitted → reset stays at HOME so the
 # standup policy starts from exactly where the sit policy converges.
+# Articulation joint indices under mjlab 1.3.0 + canonical BAM. The passive jaw
+# joints are NO LONGER part of the articulation (excluded from qpos), so the
+# layout is the clean 14-joint order: 0-4 left leg, 5-8 neck/head, 9-13 right leg.
+# (Previously passive_1/passive_2 sat at 9,10 and shifted the right leg to 11-15.)
 SITTING_JOINT_OVERRIDES = {
     1:   0.0,      # left  hip_roll
     3:   1.0472,   # left  knee
     4:   0.0,      # left  ankle
-    12:  0.0,      # right hip_roll
-    14: -1.0472,   # right knee
-    15:  0.0,      # right ankle
+    10:  0.0,      # right hip_roll
+    12: -1.0472,   # right knee
+    13:  0.0,      # right ankle
 }
 
-# Articulation indices (account for passive_1, passive_2 at 9, 10).
-_LEG_JOINTS  = [0, 1, 2, 3, 4, 11, 12, 13, 14, 15]
+_LEG_JOINTS  = [0, 1, 2, 3, 4, 9, 10, 11, 12, 13]
 _NECK_JOINTS = [5, 6, 7, 8]
 
 # Trunk height targets (m).
@@ -65,6 +68,7 @@ SIT_Z = 0.07
 STAND_Z = 0.115
 
 from mjlab.envs import ManagerBasedRlEnvCfg
+from mjlab.envs.mdp import dr
 from mjlab.envs.mdp.actions import JointPositionActionCfg
 from mjlab.managers import (
     CurriculumTermCfg,
@@ -364,9 +368,13 @@ def make_microduck_standup_env_cfg(
     cfg.observations["critic"].terms["base_lin_vel"] = ObservationTermCfg(
         func=mdp.base_lin_vel, scale=1.0,
     )
-    cfg.observations["critic"].terms["foot_height"].params[
-        "asset_cfg"
-    ].site_names = site_names
+    # mjlab 1.3.0 base template adds sensor-based foot_height + height_scan obs.
+    # Standup has no terrain-height sensor (and drops the walking foot rewards),
+    # so remove these terms. foot_air_time/foot_contact(_forces) use the
+    # feet_ground_contact sensor, which standup does define, so they stay.
+    del cfg.observations["critic"].terms["foot_height"]
+    del cfg.observations["actor"].terms["height_scan"]
+    del cfg.observations["critic"].terms["height_scan"]
 
     gravity_term_name = "projected_gravity"
     cfg.observations["actor"].terms[gravity_term_name] = deepcopy(
@@ -402,7 +410,7 @@ def make_microduck_standup_env_cfg(
     cfg.observations["critic"].terms["joint_vel"].params["asset_cfg"] = deepcopy(passive_excluded)
 
     # ── Command padding: zero head/body slots for 13D unified obs ─────────────
-    for group in ("policy", "critic"):
+    for group in ("actor", "critic"):
         cfg.observations[group].terms["head_command"] = ObservationTermCfg(
             func=microduck_mdp.zero_command_padding, params={"dim": 4},
         )
@@ -475,14 +483,14 @@ def make_microduck_standup_env_cfg(
         )
 
     if ENABLE_COM_RANDOMIZATION:
+        # mjlab 1.3.0: stock dr.body_ipos (operation="add") reads the compile-time
+        # default each reset → non-accumulating natively.
         cfg.events["randomize_com"] = EventTermCfg(
-            func=mdp.randomize_field,
+            func=dr.body_ipos,
             mode="reset",
-            domain_randomization=True,
             params={
                 "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
                 "operation": "add",
-                "field": "body_ipos",
                 "ranges": (-COM_RANDOMIZATION_RANGE, COM_RANDOMIZATION_RANGE),
             },
         )
@@ -563,7 +571,7 @@ def make_microduck_standup_env_cfg(
             "weight": -0.7 - k * 0.05,
         })
     cfg.curriculum["action_rate_weight"] = CurriculumTermCfg(
-        func=mdp.reward_weight,
+        func=microduck_mdp.reward_weight,
         params={
             "reward_name":   "action_rate_l2",
             "weight_stages": _action_rate_stages,
