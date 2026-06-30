@@ -619,22 +619,10 @@ def make_microduck_standup_env_cfg(
         },
     )
 
-    # Head pose tracking std curriculum — once the policy can reliably rise
-    # (~1500 iters) tighten the neck/head tolerance so it holds the head at the
-    # commanded pose instead of drooping it forward as a balance crutch. Loose
-    # early (0.5) keeps the gradient alive while the command range is still
-    # widening; tightening later sharpens the upright standing posture.
-    cfg.curriculum["head_pose_std"] = CurriculumTermCfg(
-        func=microduck_mdp.velocity_tracking_std_curriculum,
-        params={
-            "reward_name": "head_pose_tracking",
-            "std_stages": [
-                {"step": 0,         "std": 0.5},
-                {"step": 1500 * 24, "std": 0.35},
-                {"step": 2500 * 24, "std": 0.25},
-            ],
-        },
-    )
+    # NOTE: the earlier head_pose_std / head_pose_weight curricula (band-aids for
+    # the head-droop) were removed — the droop was a backward-CoM balance crutch,
+    # fixed at the source by the STAND2 forward-shifted standing pose. head_pose
+    # tracking stays at its baseline (weight 3.0, std 0.5) + head_pose_range.
 
     # CoM-randomization range curricula — match velocity (ramp 0.003 → 0.02 trunk,
     # 0.003 → 0.01 head over the first ~2000 / ~1000 iters).

@@ -36,16 +36,21 @@ def get_walk_rollers_spec() -> mujoco.MjSpec:
 
 HOME_FRAME = EntityCfg.InitialStateCfg(
     joint_pos={
-        # Lower body (matches STAND keyframe in scene.xml)
+        # Lower body — STAND2 pose: trunk shifted ~5mm forward over the feet so
+        # the CoM sits over the ankle axis (was ~5mm behind it at the old HOME,
+        # which biased the robot backward and made the standup policy droop its
+        # head forward as a counterweight). Leg pitch chain leaned forward:
+        # hip_pitch 30°→26.24°, ankle 30°→25.95°, knee 0°→0.28°. Matches the
+        # STAND keyframe in scene.xml / scene_walk.xml.
         r".*hip_yaw.*": 0.0,
         r".*left_hip_roll.*": -0.0873,
         r".*right_hip_roll.*": 0.0873,
-        r".*left_hip_pitch.*": -0.5236,
-        r".*right_hip_pitch.*": 0.5236,
-        r".*left_knee.*": 0.0,
-        r".*right_knee.*": 0.0,
-        r".*left_ankle.*": 0.5236,
-        r".*right_ankle.*": -0.5236,
+        r".*left_hip_pitch.*": -0.4579,
+        r".*right_hip_pitch.*": 0.4579,
+        r".*left_knee.*": -0.0049,
+        r".*right_knee.*": 0.0049,
+        r".*left_ankle.*": 0.4530,
+        r".*right_ankle.*": -0.4530,
         # Head
         r".*neck_pitch.*": 0.3491,
         r".*head_pitch.*": -0.3491,
