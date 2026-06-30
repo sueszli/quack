@@ -12,7 +12,7 @@ ENABLE_HEAD_COM_RANDOMIZATION = True  # Randomize CoM of the head assembly bodie
 ENABLE_KP_RANDOMIZATION = False # Was True
 ENABLE_KD_RANDOMIZATION = False # Was True
 ENABLE_MASS_INERTIA_RANDOMIZATION = True  # Can enable once walking is stable
-ENABLE_JOINT_FRICTION_RANDOMIZATION = True  # Was False (NOTE: no-op under BAM — frictionloss is zeroed in edit_spec)
+ENABLE_JOINT_FRICTION_RANDOMIZATION = True  # Scales the BAM friction budget per-env (NOT the zeroed dof_frictionloss)
 ENABLE_JOINT_DAMPING_RANDOMIZATION = False
 ENABLE_ARMATURE_RANDOMIZATION = True  # Reflected rotor inertia (microban-style). DOES affect BAM (armature is set, not zeroed).
 ENABLE_VELOCITY_PUSHES = True  # Velocity-based pushes for robustness training
@@ -463,16 +463,15 @@ def make_microduck_velocity_env_cfg(
 
     if ENABLE_JOINT_FRICTION_RANDOMIZATION:
         # Randomize joint friction losses (wear, temperature effects).
-        # Custom non-accumulating scaler (stock randomize_field scale+reset drifts).
-        # NOTE: no-op under the BAM actuator (dof_frictionloss is zeroed in
-        # edit_spec); only affects the XML position actuator.
+        # Scales the BAM friction budget per-env via the actuator's friction_scale
+        # (Coulomb + Stribeck + load + viscous). This is the BAM-aware path: the old
+        # approach scaled model.dof_frictionloss, which is zeroed in edit_spec under
+        # BAM (BAM computes friction itself in compute()) and was therefore a no-op.
         cfg.events["randomize_joint_friction"] = EventTermCfg(
-            func=microduck_mdp.randomize_dof_field_scaled,
+            func=microduck_mdp.randomize_actuator_friction,
             mode="reset",
-            domain_randomization=True,
             params={
-                "asset_cfg": SceneEntityCfg("robot", joint_names=(r".*",)),
-                "field": "dof_frictionloss",  # required by domain_randomization=True
+                "asset_cfg": SceneEntityCfg("robot"),
                 "scale_range": JOINT_FRICTION_RANDOMIZATION_RANGE,
             },
         )

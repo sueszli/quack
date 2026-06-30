@@ -147,6 +147,11 @@ class BamActuator(Actuator):
         self.kd_scale: torch.Tensor | None = None
         self.default_kp_scale: torch.Tensor | None = None
         self.default_kd_scale: torch.Tensor | None = None
+        # Per-env friction multiplier (initialized in initialize(), randomized by DR).
+        # MuJoCo's dof_frictionloss is zeroed in edit_spec because BAM models friction
+        # itself in compute(), so friction DR must scale the BAM budget, not the model.
+        self.friction_scale: torch.Tensor | None = None
+        self.default_friction_scale: torch.Tensor | None = None
 
     # ─────────────────────────────────────────────────────────────────────────
     # mjlab interface
@@ -232,6 +237,8 @@ class BamActuator(Actuator):
         self.kd_scale = torch.ones(num_envs, 1, dtype=torch.float32, device=device)
         self.default_kp_scale = self.kp_scale.clone()
         self.default_kd_scale = self.kd_scale.clone()
+        self.friction_scale = torch.ones(num_envs, 1, dtype=torch.float32, device=device)
+        self.default_friction_scale = self.friction_scale.clone()
 
         act = self._bam_model.actuator
 
@@ -290,6 +297,18 @@ class BamActuator(Actuator):
         assert self.kd_scale is not None and self.default_kd_scale is not None
         self.kp_scale[env_ids] = self.default_kp_scale[env_ids]
         self.kd_scale[env_ids] = self.default_kd_scale[env_ids]
+
+    def set_friction_scale(
+        self,
+        env_ids: torch.Tensor | slice,
+        friction_scale: torch.Tensor,
+    ) -> None:
+        assert self.friction_scale is not None
+        self.friction_scale[env_ids] = friction_scale
+
+    def reset_friction_scale(self, env_ids: torch.Tensor | slice) -> None:
+        assert self.friction_scale is not None and self.default_friction_scale is not None
+        self.friction_scale[env_ids] = self.default_friction_scale[env_ids]
 
     # ─────────────────────────────────────────────────────────────────────────
     # BAM friction budget (m1–m6 unified, vectorized) — mirrors bam/mjlab.py
@@ -432,6 +451,10 @@ class BamActuator(Actuator):
             motor_torque, external_torque, stribeck_coeff
         )
         friction_budget = frictionloss + friction_viscous * abs_vel
+        # Per-env friction domain randomization: scale the whole budget (Coulomb +
+        # Stribeck + load + viscous). Defaults to 1.0 when DR is disabled.
+        if self.friction_scale is not None:
+            friction_budget = friction_budget * self.friction_scale
 
         # ── 6. Static friction clipping — BAM Algorithm 1 ──
         dof_invweight = self._model.dof_invweight0

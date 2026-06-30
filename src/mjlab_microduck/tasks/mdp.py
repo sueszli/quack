@@ -2005,6 +2005,55 @@ def randomize_delayed_actuator_gains(
                 base_actuator.set_gains(env_ids, kp_scale=kp_mean, kd_scale=kd_mean)
 
 
+def randomize_actuator_friction(
+    env: ManagerBasedRlEnv,
+    env_ids: torch.Tensor,
+    scale_range: tuple[float, float],
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+):
+    """Randomize the BAM actuator friction budget per episode (NON-accumulating).
+
+    Under the BAM actuator, MuJoCo's dof_frictionloss is zeroed in edit_spec (BAM
+    computes friction itself in compute()), so scaling model.dof_frictionloss is a
+    no-op. Instead this samples a per-env scalar in ``scale_range`` and applies it
+    to the actuator's friction_scale, which multiplies the whole friction budget
+    (Coulomb + Stribeck + load + viscous) inside compute(). Mirrors the BAM branch
+    of ``randomize_delayed_actuator_gains``. Has no effect on non-BAM actuators.
+
+    Args:
+        env: The environment
+        env_ids: Environment IDs to randomize (None = all envs)
+        scale_range: (min, max) multiplier applied to the friction budget
+        asset_cfg: Asset configuration
+    """
+    from mjlab.actuator.delayed_actuator import DelayedActuator
+    from mjlab_microduck.actuator.bam_actuator import BamM6Actuator
+
+    if env_ids is None:
+        env_ids = torch.arange(env.num_envs, device=env.device, dtype=torch.int)
+    else:
+        env_ids = env_ids.to(env.device, dtype=torch.int)
+
+    asset: Entity = env.scene[asset_cfg.name]
+
+    lo, hi = scale_range
+    for actuator in asset.actuators:
+        base_actuator = (
+            actuator._base_actuator
+            if isinstance(actuator, DelayedActuator)
+            else actuator
+        )
+        if isinstance(base_actuator, BamM6Actuator):
+            # Restore nominal first (prevents accumulation), then apply fresh scale.
+            base_actuator.reset_friction_scale(env_ids)
+            samples = (
+                torch.rand(len(env_ids), 1, device=env.device) * (hi - lo) + lo
+            )
+            base_actuator.set_friction_scale(env_ids, samples)
+
+    return torch.tensor(float(hi))
+
+
 def randomize_mass_and_inertia(
     env: ManagerBasedRlEnv,
     env_ids: torch.Tensor,
