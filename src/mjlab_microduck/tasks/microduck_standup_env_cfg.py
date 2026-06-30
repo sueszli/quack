@@ -332,6 +332,37 @@ def make_microduck_standup_env_cfg(
     cfg.rewards["joint_torque_rate_l2"]  = RewardTermCfg(func=microduck_mdp.joint_torque_rate_l2, weight=-5e-4)
     cfg.rewards["joint_torques_l2"]      = RewardTermCfg(func=microduck_mdp.joint_torques_l2,     weight=-5e-3)
 
+    # ── Push-recovery gait shaping ────────────────────────────────────────────
+    # When pushed the policy stepped to recover, but with no stepping reward it
+    # degenerated into tiny rapid shuffles. The walking-env stepping terms gate
+    # on a non-zero twist command, which standup doesn't have — so use ungated
+    # variants (command_threshold=-1 → always active). Together these bias toward
+    # one deliberate long step instead of fast shuffling.
+    #
+    # (+) reward a proper-duration swing (0.15–0.35 s) when a foot does lift.
+    cfg.rewards["recovery_air_time"] = RewardTermCfg(
+        func=microduck_mdp.air_time_adaptive,
+        weight=1.0,
+        params={
+            "sensor_name":        "feet_ground_contact",
+            "command_name":       "twist",
+            "command_threshold":  -1.0,   # ungated: always active (standup cmd ~0)
+            "running_threshold":  1e9,    # never "running" → always use the walk window
+            "walk_threshold_min": 0.15,   # longer min than walking → no tiny steps
+            "walk_threshold_max": 0.35,
+        },
+    )
+    # (−) penalize rapid contact switching (the shuffle itself).
+    cfg.rewards["contact_frequency"] = RewardTermCfg(
+        func=microduck_mdp.contact_frequency_penalty,
+        weight=-0.5,
+        params={
+            "sensor_name":                 "feet_ground_contact",
+            "max_contact_changes_per_sec": 3.0,
+            "command_threshold":           -1.0,   # ungated
+        },
+    )
+
     # ── Stability ─────────────────────────────────────────────────────────────
     cfg.rewards["body_ang_vel"].params["asset_cfg"].body_names = ("trunk_base",)
     # Bumped -0.3 → -0.6: at convergence the policy was shaking visibly
