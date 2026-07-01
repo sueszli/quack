@@ -3,7 +3,7 @@ from pathlib import Path
 
 import mujoco
 from mjlab.actuator import XmlActuatorCfg
-from bam.mjlab import BamActuatorCfg
+from mjlab_microduck.actuator import FrictionDRBamActuatorCfg
 from mjlab.entity import EntityArticulationInfoCfg, EntityCfg
 from mjlab.utils.spec_config import CollisionCfg
 
@@ -81,7 +81,7 @@ FULL_COLLISION = CollisionCfg(
 #   - vin_drop_gain_range: load-dependent voltage sag V_drop = gain * sum(|tau|)
 #   - vin_min: hard floor on the effective voltage after sag
 # kp_fw kept at 200 (microduck's preserved firmware stiffness; microban uses 125).
-actuators = BamActuatorCfg(
+actuators = FrictionDRBamActuatorCfg(
     motor_name="xl330",
     model="m6",
     target_names_expr=(r"^(?!passive_).*",),

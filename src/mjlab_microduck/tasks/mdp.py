@@ -14,7 +14,7 @@ from mjlab.entity import Entity
 from mjlab.tasks.velocity.mdp.velocity_command import UniformVelocityCommand, UniformVelocityCommandCfg
 from mjlab.managers.command_manager import CommandTerm
 from mjlab.managers import CommandTermCfg
-from mjlab.utils.lab_api.math import matrix_from_quat, wrap_to_pi
+from mjlab.utils.lab_api.math import matrix_from_quat, wrap_to_pi, quat_apply, quat_from_angle_axis
 from rsl_rl.algorithms.ppo import PPO as _PPO
 
 # ---------------------------------------------------------------------------
@@ -1951,6 +1951,37 @@ def randomize_delayed_actuator_gains(
         )
 
 
+def randomize_bam_friction(
+    env: ManagerBasedRlEnv,
+    env_ids: torch.Tensor,
+    scale_range: tuple[float, float],
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+):
+    """Per-episode joint-friction randomization for the BAM actuator (NON-accumulating).
+
+    Under BAM, MuJoCo's dof_frictionloss is zeroed (BAM computes friction in
+    compute()), so stock dr.dof_frictionloss is a no-op. Instead this samples a
+    per-env scalar in ``scale_range`` and applies it to the FrictionDRBamActuator's
+    ``friction_scale``, which multiplies BAM's velocity-independent friction budget
+    (Coulomb + Stribeck + load). Restores nominal (1.0) first to avoid accumulation.
+    No-op on actuators without a friction_scale hook.
+    """
+    from mjlab_microduck.actuator.friction_dr_bam import FrictionDRBamActuator
+
+    if env_ids is None:
+        env_ids = torch.arange(env.num_envs, device=env.device, dtype=torch.int)
+    else:
+        env_ids = env_ids.to(env.device, dtype=torch.int)
+
+    asset: Entity = env.scene[asset_cfg.name]
+    lo, hi = scale_range
+    for actuator in asset.actuators:
+        if isinstance(actuator, FrictionDRBamActuator):
+            actuator.reset_friction_scale(env_ids)
+            samples = torch.rand(len(env_ids), 1, device=env.device) * (hi - lo) + lo
+            actuator.set_friction_scale(env_ids, samples)
+
+
 def randomize_mass_and_inertia(
     env: ManagerBasedRlEnv,
     env_ids: torch.Tensor,
@@ -2288,6 +2319,51 @@ def projected_gravity(
     """
     asset: Entity = env.scene[asset_cfg.name]
     return asset.data.projected_gravity_b
+
+
+def _imu_misalignment_quat(env: ManagerBasedRlEnv, max_angle_rad: float) -> torch.Tensor:
+    """Per-env constant IMU mounting-misalignment rotation (sampled once).
+
+    Models a fixed small mounting/calibration error of the IMU on each robot.
+    Sampled lazily on first use and cached — constant per env for the whole run
+    (like a startup randomization), so it's a *systematic per-robot bias*, not
+    per-step noise. Replaces the old randomize_imu_orientation event, which wrote
+    site_quat (not per-env expanded under mjlab 1.3.0, and not read by the
+    projected_gravity / base_ang_vel observations anyway).
+
+    Returns a (num_envs, 4) unit quaternion (w, x, y, z).
+    """
+    q = getattr(env, "_imu_misalign_quat", None)
+    if q is None:
+        n = env.num_envs
+        axis = torch.randn(n, 3, device=env.device)
+        axis = axis / (torch.norm(axis, dim=-1, keepdim=True) + 1e-8)
+        angle = torch.rand(n, device=env.device) * max_angle_rad  # [0, max]
+        q = quat_from_angle_axis(angle, axis)
+        env._imu_misalign_quat = q
+    return q
+
+
+def projected_gravity_imu_misaligned(
+    env: ManagerBasedRlEnv,
+    max_angle_deg: float = 1.0,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """projected_gravity with a per-env constant IMU mounting misalignment."""
+    asset: Entity = env.scene[asset_cfg.name]
+    q = _imu_misalignment_quat(env, math.radians(max_angle_deg))
+    return quat_apply(q, asset.data.projected_gravity_b)
+
+
+def base_ang_vel_imu_misaligned(
+    env: ManagerBasedRlEnv,
+    max_angle_deg: float = 1.0,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """base angular velocity with the SAME per-env IMU misalignment as gravity."""
+    asset: Entity = env.scene[asset_cfg.name]
+    q = _imu_misalignment_quat(env, math.radians(max_angle_deg))
+    return quat_apply(q, asset.data.root_link_ang_vel_b)
 
 
 def raw_accelerometer(

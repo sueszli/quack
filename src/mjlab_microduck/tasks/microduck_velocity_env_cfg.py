@@ -12,11 +12,12 @@ ENABLE_HEAD_COM_RANDOMIZATION = True  # Randomize CoM of the head assembly bodie
 ENABLE_KP_RANDOMIZATION = False # Was True
 ENABLE_KD_RANDOMIZATION = False # Was True
 ENABLE_MASS_INERTIA_RANDOMIZATION = True  # Can enable once walking is stable
-ENABLE_JOINT_FRICTION_RANDOMIZATION = False  # No canonical bam.mjlab.BamActuator hook for friction scaling (dropped in 1.3.0 migration)
+ENABLE_JOINT_FRICTION_RANDOMIZATION = True  # Scales BAM's friction budget per-env via FrictionDRBamActuator.friction_scale
 ENABLE_JOINT_DAMPING_RANDOMIZATION = False
 ENABLE_ARMATURE_RANDOMIZATION = True  # Reflected rotor inertia (microban-style). DOES affect BAM (armature is set, not zeroed).
 ENABLE_VELOCITY_PUSHES = True  # Velocity-based pushes for robustness training
 ENABLE_IMU_ORIENTATION_RANDOMIZATION = True  # Simulates mounting errors
+ENABLE_ENCODER_BIAS = True  # Per-env joint encoder calibration offset (actor obs sees joint_pos + bias)
 ENABLE_BASE_ORIENTATION_RANDOMIZATION = False  # Randomize initial tilt to force reactive behavior
 
 # Head/body pose command tracking (replaces the old neck-offset disturbance scheme).
@@ -53,6 +54,7 @@ ARMATURE_RANDOMIZATION_RANGE = (0.9, 1.1)  # ±10% reflected rotor inertia (micr
 VELOCITY_PUSH_INTERVAL_S = (3.0, 6.0)  # Apply pushes every 3-6 seconds
 VELOCITY_PUSH_RANGE = (-0.5, 0.5)  # Velocity change range in m/s
 IMU_ORIENTATION_RANDOMIZATION_ANGLE = 2.0  # ±2° IMU mounting error
+ENCODER_BIAS_RANGE = (-0.015, 0.015)  # ±0.86° per-joint encoder offset (constant per env)
 BASE_ORIENTATION_MAX_PITCH_DEG = 10.0  # ±10° forward/backward tilt at episode start
 BASE_ORIENTATION_MAX_ROLL_DEG = 5.0  # ±5° side-to-side tilt at episode start
 
@@ -465,22 +467,37 @@ def make_microduck_velocity_env_cfg(
         )
 
     if ENABLE_MASS_INERTIA_RANDOMIZATION:
-        # Randomize mass and inertia together (physically consistent)
-        # Using the same scale for both prevents invalid inertia tensors
+        # Physics-consistent mass + inertia randomization via mjlab's pseudo_inertia:
+        # alpha scales BOTH mass and inertia by e^(2*alpha) with the CoM unchanged
+        # (so it does NOT conflict with randomize_com). alpha_range is derived from
+        # the ±5% mass scale range: e^(2*alpha) ∈ [0.95, 1.05].
+        # Replaces the old custom randomize_mass_and_inertia, which was a silent
+        # no-op under mjlab 1.3.0 (direct per-env body_mass/body_inertia writes are
+        # not expanded and collapse to a single shared value). Startup mode = fixed
+        # per env for the whole run (standard for mass DR; no accumulation).
+        _mi_lo, _mi_hi = MASS_INERTIA_RANDOMIZATION_RANGE
         cfg.events["randomize_mass_inertia"] = EventTermCfg(
-            func=microduck_mdp.randomize_mass_and_inertia,
-            mode="reset",
+            func=dr.pseudo_inertia,
+            mode="startup",
             params={
                 "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
-                "scale_range": MASS_INERTIA_RANDOMIZATION_RANGE,
+                "alpha_range": (math.log(_mi_lo) / 2.0, math.log(_mi_hi) / 2.0),
             },
         )
 
-    # NOTE: joint-friction DR was dropped in the mjlab 1.3.0 / canonical-BAM
-    # migration. The canonical bam.mjlab.BamActuator exposes set_gains (kp/kd) but
-    # no friction_scale hook, and MuJoCo's dof_frictionloss is zeroed under BAM
-    # (BAM models friction internally). ENABLE_JOINT_FRICTION_RANDOMIZATION is kept
-    # as a (False) toggle for documentation; re-enabling needs an upstream bam hook.
+    if ENABLE_JOINT_FRICTION_RANDOMIZATION:
+        # Joint-friction DR under BAM: scales BAM's velocity-independent friction
+        # budget (Coulomb + Stribeck + load) per-env via the FrictionDRBamActuator
+        # friction_scale hook. MuJoCo's dof_frictionloss is zeroed under BAM, so the
+        # stock dr.dof_frictionloss is a no-op — this is the BAM-native path.
+        cfg.events["randomize_joint_friction"] = EventTermCfg(
+            func=microduck_mdp.randomize_bam_friction,
+            mode="reset",
+            params={
+                "asset_cfg": SceneEntityCfg("robot"),
+                "scale_range": JOINT_FRICTION_RANDOMIZATION_RANGE,
+            },
+        )
 
     if ENABLE_JOINT_DAMPING_RANDOMIZATION:
         # Randomize joint damping (lubrication, temperature effects).
@@ -511,16 +528,10 @@ def make_microduck_velocity_env_cfg(
             },
         )
 
-    # IMU orientation randomization (simulates mounting errors)
-    if ENABLE_IMU_ORIENTATION_RANDOMIZATION:
-        cfg.events["randomize_imu_orientation"] = EventTermCfg(
-            func=microduck_mdp.randomize_imu_orientation,
-            mode="reset",
-            params={
-                "asset_cfg": SceneEntityCfg("robot"),
-                "max_angle_deg": IMU_ORIENTATION_RANDOMIZATION_ANGLE,
-            },
-        )
+    # IMU orientation randomization (mounting error) is applied at the OBSERVATION
+    # level below (per-env constant rotation of projected_gravity + base_ang_vel).
+    # The old event-based randomize_imu_orientation wrote site_quat, which under
+    # mjlab 1.3.0 is neither per-env expanded nor read by these obs — a no-op.
 
     # Base orientation randomization (forces reactive behavior)
     if ENABLE_BASE_ORIENTATION_RANDOMIZATION:
@@ -581,6 +592,18 @@ def make_microduck_velocity_env_cfg(
     cfg.observations["actor"].terms["joint_pos"].noise = Unoise(n_min=-0.001, n_max=0.001)  # was 0.05
     cfg.observations["actor"].terms["joint_vel"].noise = Unoise(n_min=-0.25, n_max=0.25)  # was 2.0
 
+    # IMU mounting-misalignment DR (per-env constant rotation of the IMU-derived
+    # observations). Applied to the ACTOR only (the policy sees a slightly rotated
+    # IMU frame, like a real mounting error); the critic keeps the true values.
+    if ENABLE_IMU_ORIENTATION_RANDOMIZATION:
+        av = cfg.observations["actor"].terms["base_ang_vel"]
+        av.func = microduck_mdp.base_ang_vel_imu_misaligned
+        av.params = {"max_angle_deg": IMU_ORIENTATION_RANDOMIZATION_ANGLE}
+        if USE_PROJECTED_GRAVITY:
+            g = cfg.observations["actor"].terms[gravity_term_name]
+            g.func = microduck_mdp.projected_gravity_imu_misaligned
+            g.params = {"max_angle_deg": IMU_ORIENTATION_RANDOMIZATION_ANGLE}
+
     # 1-ctrl-step lag on joint_vel: the Dynamixel firmware computes
     # present_velocity via a moving-average over the previous position-sample
     # window, so the value the policy actually reads is ~1 control period old.
@@ -594,11 +617,25 @@ def make_microduck_velocity_env_cfg(
 
     # Exclude passive_* joints (jaw linkage) from joint_pos/vel obs so the
     # observation dim matches the action dim (14) instead of the raw articulation (16).
+    # Deepcopy each joint_pos/joint_vel term first — actor and critic share the
+    # same term objects/params dicts from the base template, so mutating one would
+    # leak into the other (e.g. the encoder-bias `biased` flag below).
     passive_excluded = SceneEntityCfg("robot", joint_names=(r"^(?!passive_).*",))
-    cfg.observations["actor"].terms["joint_pos"].params["asset_cfg"] = passive_excluded
-    cfg.observations["actor"].terms["joint_vel"].params["asset_cfg"] = deepcopy(passive_excluded)
-    cfg.observations["critic"].terms["joint_pos"].params["asset_cfg"] = deepcopy(passive_excluded)
-    cfg.observations["critic"].terms["joint_vel"].params["asset_cfg"] = deepcopy(passive_excluded)
+    for grp in ("actor", "critic"):
+        for term in ("joint_pos", "joint_vel"):
+            cfg.observations[grp].terms[term] = deepcopy(cfg.observations[grp].terms[term])
+            cfg.observations[grp].terms[term].params["asset_cfg"] = deepcopy(passive_excluded)
+
+    # Encoder-bias DR: the base template samples a per-env constant joint-encoder
+    # offset (startup event "encoder_bias"), but joint_pos_rel ignores it unless
+    # biased=True. Feed the biased joint pos to the ACTOR only (what the real
+    # encoders report); the critic keeps the true joint pos (privileged).
+    if ENABLE_ENCODER_BIAS:
+        cfg.events["encoder_bias"].params["bias_range"] = ENCODER_BIAS_RANGE
+        cfg.observations["actor"].terms["joint_pos"].params["biased"] = True
+        cfg.observations["critic"].terms["joint_pos"].params["biased"] = False
+    else:
+        cfg.events.pop("encoder_bias", None)
 
     # Commands — deepcopy to avoid shared-state corruption from other env cfgs
     # (make_velocity_env_cfg() returns objects with shared mutable references;
