@@ -53,7 +53,7 @@ JOINT_DAMPING_RANDOMIZATION_RANGE = (0.9, 1.1)
 ARMATURE_RANDOMIZATION_RANGE = (0.9, 1.1)  # ±10% reflected rotor inertia (microban: dr.joint_armature, same range)
 VELOCITY_PUSH_INTERVAL_S = (3.0, 6.0)  # Apply pushes every 3-6 seconds
 VELOCITY_PUSH_RANGE = (-0.5, 0.5)  # Velocity change range in m/s
-IMU_ORIENTATION_RANDOMIZATION_ANGLE = 4.0  # ±4° IMU mounting error (measured ~2.5° pitch offset on the real dxl LSM)
+IMU_ORIENTATION_RANDOMIZATION_ANGLE = 6.0  # up-to-6° random-axis IMU mounting error. NOTE: zero-centered (random axis) — trains tolerance to misalignment *magnitude*, NOT a pitch bias. The real board's systematic ~5° pitch offset is corrected at the source in the runtime (imu-pitch-offset), not here.
 ENCODER_BIAS_RANGE = (-0.015, 0.015)  # ±0.86° per-joint encoder offset (constant per env)
 BASE_ORIENTATION_MAX_PITCH_DEG = 10.0  # ±10° forward/backward tilt at episode start
 BASE_ORIENTATION_MAX_ROLL_DEG = 5.0  # ±5° side-to-side tilt at episode start
@@ -158,7 +158,7 @@ def make_microduck_velocity_env_cfg(
     std_standing = {
         # Lower body — tighter to keep the robot in home pose when standing
         r".*hip_yaw.*": 0.1,
-        r".*hip_roll.*": 0.1,
+        r".*hip_roll.*": 0.06,  # was 0.1 — hold the 5°-inward stance (sole sits flat), stop leg splay
         r".*hip_pitch.*": 0.15,
         r".*knee.*": 0.15,
         r".*ankle.*": 0.1,
@@ -167,7 +167,7 @@ def make_microduck_velocity_env_cfg(
     std_walking = {
         # Lower body
         r".*hip_yaw.*": 0.3,
-        r".*hip_roll.*": 0.1,  # tightened from 0.2 to penalize lateral lean during walking
+        r".*hip_roll.*": 0.06,  # was 0.1/0.2 — hold the 5°-inward stance, stop the leg splay to vertical
         r".*hip_pitch.*": 0.4,
         r".*knee.*": 0.4,
         r".*ankle.*": 0.25, # was 0.15
