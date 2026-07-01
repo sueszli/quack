@@ -67,7 +67,7 @@ ENABLE_BODY_TRACKING   = False
 # probability ramping from 0 at PRONE_RAMP_START → 2/3 at PRONE_RAMP_END,
 # giving a 33/33/33 split of upright/face-down/face-up resets). Useful for
 # bootstrapping fall recovery; disable to focus on walking first.
-ENABLE_PRONE_INIT      = False
+ENABLE_PRONE_INIT      = True
 PRONE_RAMP_START       = 1500
 PRONE_RAMP_END         = 3000
 
