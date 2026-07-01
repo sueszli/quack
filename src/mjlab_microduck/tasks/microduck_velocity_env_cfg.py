@@ -855,8 +855,8 @@ def make_microduck_velocity_env_cfg(
                     {"step": 0,          "range": 0.003},
                     {"step": 500 * 24,  "range": 0.005},
                     {"step": 1000 * 24,  "range": 0.01},
-                    {"step": 1500 * 24,  "range": 0.015},
-                    {"step": 2000 * 24,  "range": 0.02},
+                    {"step": 1500 * 24,  "range": 0.02}, # Was 0.015
+                    {"step": 2000 * 24,  "range": 0.03}, # Was 0.02
                 ],
             },
         )
@@ -868,11 +868,12 @@ def make_microduck_velocity_env_cfg(
             params={
                 "event_name": "randomize_head_com",
                 "range_stages": [
+                    # used to stop at 0.1 at 2000
                     {"step": 0,          "range": 0.003},
                     {"step": 500 * 24,  "range": 0.005},
                     {"step": 1000 * 24,  "range": 0.01},
-                    # {"step": 1500 * 24,  "range": 0.015},
-                    # {"step": 2000 * 24,  "range": 0.02},
+                    {"step": 1500 * 24,  "range": 0.015},
+                    {"step": 2000 * 24,  "range": 0.02},
                 ],
             },
         )
