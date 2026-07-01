@@ -488,6 +488,14 @@ def main():
                         help="XL330 firmware current limit [A]. Actuator torque is clipped to "
                              "+/- current_limit * kt (kt from the bam package), matching the "
                              "current saturation modeled in training. <=0 disables.")
+    parser.add_argument("--foot-friction", type=float, default=None,
+                        help="Override the foot sliding friction (mu) to emulate the real grippy "
+                             "PU sole. Training used mu~1.0 (range 0.7-1.3); real PU is likely "
+                             "~1.5-2.5. e.g. --foot-friction 2.0")
+    parser.add_argument("--foot-solref", type=float, default=None,
+                        help="Soften foot contact: solref time constant (s) for the foot geoms "
+                             "(default sim ~0.02 = stiff/rigid). Larger = softer, to emulate the "
+                             "compliant PU sole. e.g. --foot-solref 0.04")
     args = parser.parse_args()
 
     if not args.walking and not args.standing:
@@ -531,6 +539,26 @@ def main():
         model.actuator_forcelimited[:] = 1
         print(f"Current limit: {args.current_limit:.2f} A -> torque limit "
               f"+/-{torque_limit:.4f} Nm (kt={kt:.4f})")
+
+    # Foot contact override — emulate the real grippy + soft PU sole to check
+    # whether it reproduces the on-robot forward-fall-at-speed. Training used
+    # rigid feet at mu~1.0; the real sole is grippier (higher mu) and compliant
+    # (softer solref). Applied to the foot collision geoms only.
+    if args.foot_friction is not None or args.foot_solref is not None:
+        import re as _re
+        n_feet = 0
+        for g in range(model.ngeom):
+            gname = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, g)
+            if gname and _re.match(r"^(left|right)_foot_collision$", gname):
+                if args.foot_friction is not None:
+                    model.geom_friction[g, 0] = args.foot_friction  # tangential mu
+                if args.foot_solref is not None:
+                    model.geom_solref[g, 0] = args.foot_solref       # softer contact
+                    model.geom_solref[g, 1] = 1.0
+                n_feet += 1
+        print(f"Foot override on {n_feet} geoms: "
+              f"mu={args.foot_friction if args.foot_friction is not None else 'default'}, "
+              f"solref={args.foot_solref if args.foot_solref is not None else 'default'}")
 
     # Initialize policy
     policy = PolicyInference(
