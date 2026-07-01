@@ -53,7 +53,7 @@ HOME_FRAME = EntityCfg.InitialStateCfg(
         r".*right_ankle.*": -0.4530,
         # Head
         r".*neck_pitch.*": 0.3491,
-        r".*head_pitch.*": -0.3491,
+        r".*head_pitch.*": 0.3491,
         r".*head_yaw.*": 0.0,
         r".*head_roll.*": 0.0,
     },
