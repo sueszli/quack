@@ -349,22 +349,24 @@ def make_microduck_standup_env_cfg(
     # matching velocity's smoothness verbatim under-damps standup — walking's gait
     # keeps the policy busy/smooth; standup just corrects around equilibrium and
     # with almost no damping forms an oscillation limit-cycle. Restore DAMPING
-    # without restoring the MOTION-BLOCKERS (body_ang_vel/hip_yaw_roll high):
-    #   • re-add joint_torque_rate_l2 — pure anti-jitter, penalizes torque CHANGE,
-    #     never blocks a slow flip; now the primary damper so stronger than the old
-    #     -5e-4 → -2e-3.
-    #   • body_ang_vel -0.05 → -0.15 — damps violent trunk swings/overshoot; still
-    #     4× below the -0.6 that froze back-recovery.
-    #   • action_rate curriculum pushed -1.0 → -1.2 at the final stage (see below).
-    # If back-recovery regresses, tune DOWN in this order: body_ang_vel → action_rate;
-    # keep joint_torque_rate_l2 (it doesn't block the flip).
+    # without restoring the MOTION-BLOCKERS (body_ang_vel/hip_yaw_roll high).
+    #
+    # HISTORY: a first attempt also raised body_ang_vel -0.05→-0.15 and pushed the
+    # action_rate curriculum end -1.0→-1.2. That bundle KILLED back-recovery (both
+    # are motion-blockers: body_ang_vel penalizes the flip's trunk rotation directly;
+    # a strong action_rate slows the fast recovery action). Reverted BOTH to their
+    # "stood-from-everywhere" values. Kept only the pure anti-jitter term:
+    #   • joint_torque_rate_l2 -2e-3 — penalizes torque CHANGE (jitter), NOT torque
+    #     magnitude or trunk rotation, so it damps shake without blocking a flip.
+    # If recovery is STILL blocked, halve this to -1e-3 next; if it's smooth but
+    # still shaky, escalate to latency/obs-noise DR (dynamics-side), not more reward.
     cfg.rewards["action_rate_l2"]       = RewardTermCfg(func=mdp.action_rate_l2,                 weight=-0.6)
     cfg.rewards["neck_action_rate_l2"]  = RewardTermCfg(func=microduck_mdp.neck_action_rate_l2,  weight=-0.1)
     cfg.rewards["joint_torques_l2"]     = RewardTermCfg(func=microduck_mdp.joint_torques_l2,     weight=-1e-3)
     cfg.rewards["joint_torque_rate_l2"] = RewardTermCfg(func=microduck_mdp.joint_torque_rate_l2, weight=-2e-3)
 
     cfg.rewards["body_ang_vel"].params["asset_cfg"].body_names = ("trunk_base",)
-    cfg.rewards["body_ang_vel"].weight = -0.15     # damper (was -0.6 froze recovery, -0.05 too light)
+    cfg.rewards["body_ang_vel"].weight = -0.05     # motion-blocker: kept LIGHT (was -0.15, froze recovery)
     cfg.rewards["angular_momentum"].weight = -0.02  # velocity value (was deleted)
     cfg.rewards["soft_landing"].weight = -1e-05     # velocity value (was deleted)
 
@@ -738,10 +740,10 @@ def make_microduck_standup_env_cfg(
             },
         )
 
-    # action_rate curriculum — velocity's ramp (-0.4 → -0.8 → -1.0), pushed one
-    # notch harder at the end (-1.2) for standup: transfer needs more smoothness
-    # here than walking (see the sim2real note in the rewards block above). The
-    # early stages stay light so the recovery flip can still form.
+    # action_rate curriculum — velocity's ramp (-0.4 → -0.8 → -1.0). A first
+    # transfer attempt pushed the end to -1.2, but that (with body_ang_vel -0.15)
+    # blocked back-recovery — action_rate slows the fast recovery action. Reverted
+    # to -1.0; smoothness is instead carried by joint_torque_rate_l2 (rewards block).
     cfg.curriculum["action_rate_weight"] = CurriculumTermCfg(
         func=microduck_mdp.reward_weight,
         params={
@@ -749,7 +751,7 @@ def make_microduck_standup_env_cfg(
             "weight_stages": [
                 {"step": 0,         "weight": -0.4},
                 {"step": 250 * 24,  "weight": -0.8},
-                {"step": 500 * 24,  "weight": -1.2},
+                {"step": 500 * 24,  "weight": -1.0},
             ],
         },
     )
@@ -763,7 +765,7 @@ MicroduckStandUpRlCfg = RslRlOnPolicyRunnerCfg(
     actor=RslRlModelCfg(
         hidden_dims=(512, 256, 128),
         activation="elu",
-        obs_normalization=False,
+        obs_normalization=True,  # matches velocity; normalizer MUST be baked into ONNX by export.py
         distribution_cfg={
             "class_name": "GaussianDistribution",
             "init_std": 1.0,
@@ -773,7 +775,7 @@ MicroduckStandUpRlCfg = RslRlOnPolicyRunnerCfg(
     critic=RslRlModelCfg(
         hidden_dims=(512, 256, 128),
         activation="elu",
-        obs_normalization=False,
+        obs_normalization=True,
     ),
     algorithm=PpoWithSymmetryCfg(
         value_loss_coef=1.0,
