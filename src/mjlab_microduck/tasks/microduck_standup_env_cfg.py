@@ -23,16 +23,20 @@ ENABLE_COM_RANDOMIZATION             = True
 ENABLE_HEAD_COM_RANDOMIZATION        = True   # match velocity: randomize head-assembly CoM
 ENABLE_KP_RANDOMIZATION              = False  # match velocity (OFF)
 ENABLE_KD_RANDOMIZATION              = False  # match velocity (OFF)
-ENABLE_MASS_INERTIA_RANDOMIZATION    = True
+ENABLE_MASS_INERTIA_RANDOMIZATION    = True   # match velocity: dr.pseudo_inertia (mass+inertia)
+ENABLE_JOINT_FRICTION_RANDOMIZATION  = True   # match velocity: FrictionDRBamActuator.friction_scale
 ENABLE_ARMATURE_RANDOMIZATION        = True   # match velocity: reflected rotor inertia
 ENABLE_VELOCITY_PUSHES               = True
-ENABLE_IMU_ORIENTATION_RANDOMIZATION = True
+ENABLE_IMU_ORIENTATION_RANDOMIZATION = True   # match velocity: obs-level per-env misalignment
+ENABLE_ENCODER_BIAS                  = True   # match velocity: per-env joint encoder offset (actor obs)
 
 # ── Ranges (matched to the velocity env) ──────────────────────────────────────
 COM_RANDOMIZATION_RANGE             = 0.003           # ramped to 0.02 via com_range curriculum
 HEAD_COM_RANDOMIZATION_RANGE        = 0.003           # ramped to 0.01 via head_com_range curriculum
 MASS_INERTIA_RANDOMIZATION_RANGE    = (0.95, 1.05)
 ARMATURE_RANDOMIZATION_RANGE        = (0.9, 1.1)
+JOINT_FRICTION_RANDOMIZATION_RANGE  = (0.9, 1.1)
+ENCODER_BIAS_RANGE                  = (-0.015, 0.015)
 KP_RANDOMIZATION_RANGE              = (0.85, 1.15)    # unused (kp DR off)
 KD_RANDOMIZATION_RANGE              = (0.9, 1.1)      # unused (kd DR off)
 VELOCITY_PUSH_INTERVAL_S            = (3.0, 6.0)
@@ -332,17 +336,23 @@ def make_microduck_standup_env_cfg(
     # action_rate base weight + curriculum matched to the velocity env (see below)
     # Base weight matches velocity (-0.6); the action_rate_weight curriculum
     # below ramps it -0.4 → -0.8 → -1.0 (same stages as velocity).
-    cfg.rewards["action_rate_l2"]        = RewardTermCfg(func=mdp.action_rate_l2,                 weight=-0.6)
-    cfg.rewards["joint_torque_rate_l2"]  = RewardTermCfg(func=microduck_mdp.joint_torque_rate_l2, weight=-5e-4)
-    cfg.rewards["joint_torques_l2"]      = RewardTermCfg(func=microduck_mdp.joint_torques_l2,     weight=-5e-3)
+    # ── Sim2real regularisers — MATCHED to the velocity env ───────────────────
+    # Deliberately light, same as the (well-transferring) velocity policy. The
+    # previous heavy standup values suppressed the large rolling/angular motion a
+    # ground recovery needs → the policy froze when supine. Matching velocity:
+    #   • body_ang_vel  -0.6 → -0.05   (was penalizing the flip's rotation)
+    #   • REMOVE hip_yaw_roll_deviation (velocity has none; it blocked the roll)
+    #   • joint_torques_l2  -5e-3 → -1e-3
+    #   • REMOVE joint_torque_rate_l2 (velocity has none)
+    #   • ADD neck_action_rate_l2 (-0.1), keep angular_momentum (-0.02), soft_landing
+    cfg.rewards["action_rate_l2"]      = RewardTermCfg(func=mdp.action_rate_l2,                 weight=-0.6)
+    cfg.rewards["neck_action_rate_l2"] = RewardTermCfg(func=microduck_mdp.neck_action_rate_l2,  weight=-0.1)
+    cfg.rewards["joint_torques_l2"]    = RewardTermCfg(func=microduck_mdp.joint_torques_l2,     weight=-1e-3)
 
-    # ── Stability ─────────────────────────────────────────────────────────────
     cfg.rewards["body_ang_vel"].params["asset_cfg"].body_names = ("trunk_base",)
-    # Bumped -0.3 → -0.6: at convergence the policy was shaking visibly
-    # while holding the standing pose (body_ang_vel reward ≈ -0.6 means
-    # |ω|² ≈ 1 → ω ≈ 1 rad/s constant wobble). Heavier damping makes
-    # "settle and stop moving" cheaper than continuous oscillation.
-    cfg.rewards["body_ang_vel"].weight = -0.6
+    cfg.rewards["body_ang_vel"].weight = -0.05     # velocity value (was -0.6)
+    cfg.rewards["angular_momentum"].weight = -0.02  # velocity value (was deleted)
+    cfg.rewards["soft_landing"].weight = -1e-05     # velocity value (was deleted)
 
     cfg.rewards["self_collisions"] = RewardTermCfg(
         func=mdp.self_collision_cost,
@@ -350,24 +360,11 @@ def make_microduck_standup_env_cfg(
         params={"sensor_name": self_collision_cfg.name},
     )
 
-    # Hip yaw/roll drift penalty — keeps a narrow base while pushing up. Without
-    # it the policy can splay legs sideways while extending knees, which gives
-    # a low-cost "push trunk up via leg spread" exploit instead of a clean rise.
-    cfg.rewards["hip_yaw_roll_deviation"] = RewardTermCfg(
-        func=microduck_mdp.joint_deviation_l1,
-        weight=-1.0,
-        params={
-            "asset_cfg": SceneEntityCfg(
-                "robot", joint_names=(r".*hip_yaw.*", r".*hip_roll.*"),
-            ),
-        },
-    )
-
-    # Drop velocity-env terms that are either subsumed (upright Gaussian,
-    # angular_momentum, soft_landing) or irrelevant here.
-    for name in ("upright", "angular_momentum", "soft_landing"):
-        if name in cfg.rewards:
-            del cfg.rewards[name]
+    # Drop only the base "upright" Gaussian — standup uses its own
+    # upright_linear/upright_sharp instead. (angular_momentum/soft_landing kept
+    # above to match velocity; hip_yaw_roll_deviation dropped to match velocity.)
+    if "upright" in cfg.rewards:
+        del cfg.rewards["upright"]
 
     # ── Observations (identical layout to walking / sit policies) ─────────────
     del cfg.observations["actor"].terms["base_lin_vel"]
@@ -404,6 +401,16 @@ def make_microduck_standup_env_cfg(
     cfg.observations["actor"].terms["joint_pos"].noise       = Unoise(n_min=-0.001, n_max=0.001)
     cfg.observations["actor"].terms["joint_vel"].noise       = Unoise(n_min=-0.25, n_max=0.25)
 
+    # IMU mounting-misalignment DR (match velocity): per-env constant rotation of
+    # the IMU-derived actor obs; critic keeps the true values.
+    if ENABLE_IMU_ORIENTATION_RANDOMIZATION:
+        av = cfg.observations["actor"].terms["base_ang_vel"]
+        av.func = microduck_mdp.base_ang_vel_imu_misaligned
+        av.params = {"max_angle_deg": IMU_ORIENTATION_RANDOMIZATION_ANGLE}
+        g = cfg.observations["actor"].terms[gravity_term_name]
+        g.func = microduck_mdp.projected_gravity_imu_misaligned
+        g.params = {"max_angle_deg": IMU_ORIENTATION_RANDOMIZATION_ANGLE}
+
     cfg.observations["actor"].terms["joint_vel"] = deepcopy(
         cfg.observations["actor"].terms["joint_vel"]
     )
@@ -411,11 +418,22 @@ def make_microduck_standup_env_cfg(
     cfg.observations["actor"].terms["joint_vel"].delay_max_lag = 1
     cfg.observations["actor"].terms["joint_vel"].delay_update_period = 0
 
+    # Deepcopy joint_pos/joint_vel per group (they share base-template objects) so
+    # the encoder-bias `biased` flag below applies to the actor only.
     passive_excluded = SceneEntityCfg("robot", joint_names=(r"^(?!passive_).*",))
-    cfg.observations["actor"].terms["joint_pos"].params["asset_cfg"] = passive_excluded
-    cfg.observations["actor"].terms["joint_vel"].params["asset_cfg"] = deepcopy(passive_excluded)
-    cfg.observations["critic"].terms["joint_pos"].params["asset_cfg"] = deepcopy(passive_excluded)
-    cfg.observations["critic"].terms["joint_vel"].params["asset_cfg"] = deepcopy(passive_excluded)
+    for grp in ("actor", "critic"):
+        for term in ("joint_pos", "joint_vel"):
+            cfg.observations[grp].terms[term] = deepcopy(cfg.observations[grp].terms[term])
+            cfg.observations[grp].terms[term].params["asset_cfg"] = deepcopy(passive_excluded)
+
+    # Encoder-bias DR (match velocity): actor sees joint_pos + per-env bias; critic
+    # keeps the true joint pos. Requires the base-template encoder_bias event.
+    if ENABLE_ENCODER_BIAS:
+        cfg.events["encoder_bias"].params["bias_range"] = ENCODER_BIAS_RANGE
+        cfg.observations["actor"].terms["joint_pos"].params["biased"] = True
+        cfg.observations["critic"].terms["joint_pos"].params["biased"] = False
+    else:
+        cfg.events.pop("encoder_bias", None)
 
     # ── Head pose command (commandable head control, like the velocity env) ───
     # 4D deltas-from-HOME on neck/head joints: [neck_pitch, head_pitch, head_yaw,
@@ -574,24 +592,34 @@ def make_microduck_standup_env_cfg(
         )
 
     if ENABLE_MASS_INERTIA_RANDOMIZATION:
+        # match velocity: physics-consistent mass+inertia via pseudo_inertia
+        # (alpha scales both by e^(2α), CoM untouched). Startup mode. The old
+        # custom randomize_mass_and_inertia was a no-op under mjlab 1.3.0.
+        _mi_lo, _mi_hi = MASS_INERTIA_RANDOMIZATION_RANGE
         cfg.events["randomize_mass_inertia"] = EventTermCfg(
-            func=microduck_mdp.randomize_mass_and_inertia,
-            mode="reset",
+            func=dr.pseudo_inertia,
+            mode="startup",
             params={
                 "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
-                "scale_range": MASS_INERTIA_RANDOMIZATION_RANGE,
+                "alpha_range": (math.log(_mi_lo) / 2.0, math.log(_mi_hi) / 2.0),
             },
         )
 
-    if ENABLE_IMU_ORIENTATION_RANDOMIZATION:
-        cfg.events["randomize_imu_orientation"] = EventTermCfg(
-            func=microduck_mdp.randomize_imu_orientation,
+    if ENABLE_JOINT_FRICTION_RANDOMIZATION:
+        # match velocity: scale BAM's friction budget per-env via the
+        # FrictionDRBamActuator hook (dof_frictionloss is zeroed under BAM).
+        cfg.events["randomize_joint_friction"] = EventTermCfg(
+            func=microduck_mdp.randomize_bam_friction,
             mode="reset",
             params={
                 "asset_cfg": SceneEntityCfg("robot"),
-                "max_angle_deg": IMU_ORIENTATION_RANDOMIZATION_ANGLE,
+                "scale_range": JOINT_FRICTION_RANDOMIZATION_RANGE,
             },
         )
+
+    # NOTE: IMU mounting-misalignment is applied at the OBSERVATION level below
+    # (matching velocity) — the old event-based randomize_imu_orientation wrote
+    # site_quat, which under mjlab 1.3.0 is neither per-env nor read by the obs.
 
     # ── Terrain ───────────────────────────────────────────────────────────────
     if not rough:
