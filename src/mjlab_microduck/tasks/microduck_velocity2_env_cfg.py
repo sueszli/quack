@@ -118,9 +118,10 @@ def make_microduck_velocity2_env_cfg(
     # ranges here and drop the widening curriculum below. ang ±0.75 is the big
     # change — it makes turning learnable.
     twist = cfg.commands["twist"]
-    twist.ranges.lin_vel_x = (-0.3, 0.3)    # microban
-    twist.ranges.lin_vel_y = (-0.2, 0.2)    # microban
-    twist.ranges.ang_vel_z = (-0.75, 0.75)  # microban (vs microduck ±1.5–2.0)
+    twist.ranges.lin_vel_x = (-0.4, 0.4)
+    twist.ranges.lin_vel_y = (-0.3, 0.3)
+    twist.ranges.ang_vel_z = (-1.0, 1.0)
+    cfg.curriculum.pop("velocity_command_ranges", None)
 
     # ── Curricula ────────────────────────────────────────────────────────────
     # action_rate weight ramp: -0.1 (iter 0-500) → -0.2 (500-1000) → -0.3 (1000+).
@@ -132,27 +133,10 @@ def make_microduck_velocity2_env_cfg(
             "weight_stages": [
                 {"step": 0, "weight": -0.1},
                 {"step": 500 * NUM_STEPS_PER_ENV, "weight": -0.2},
-                {"step": 750 * NUM_STEPS_PER_ENV, "weight": -0.3},
-                {"step": 1000 * NUM_STEPS_PER_ENV, "weight": -0.4},
-                {"step": 1250 * NUM_STEPS_PER_ENV, "weight": -0.5},
-                {"step": 1500 * NUM_STEPS_PER_ENV, "weight": -0.6},
-                {"step": 1750 * NUM_STEPS_PER_ENV, "weight": -0.7},
-                {"step": 2000 * NUM_STEPS_PER_ENV, "weight": -0.8},
-            ],
-        },
-    )
-    # Remove the velocity-command widening curriculum — it overrode the fixed
-    # ranges above and ramped angular/linear demand past the robot's capability.
-    # (Re-add a gentle ramp toward these same caps if early learning is unstable.)
-    cfg.curriculum.pop("velocity_command_ranges", None)
-    # Ramp no_stepping 0 → -1.0 once basic walking is established.
-    cfg.curriculum["no_stepping_weight"] = CurriculumTermCfg(
-        func=microduck_mdp.reward_weight,
-        params={
-            "reward_name": "no_stepping",
-            "weight_stages": [
-                {"step": 0, "weight": 0.0},
-                {"step": NO_STEPPING_KICKIN_ITER * NUM_STEPS_PER_ENV, "weight": -1.0},
+                {"step": 750 * NUM_STEPS_PER_ENV, "weight": -0.4},
+                {"step": 1000 * NUM_STEPS_PER_ENV, "weight": -0.6},
+                {"step": 1250 * NUM_STEPS_PER_ENV, "weight": -0.8},
+                {"step": 1500 * NUM_STEPS_PER_ENV, "weight": -1.0},
             ],
         },
     )
