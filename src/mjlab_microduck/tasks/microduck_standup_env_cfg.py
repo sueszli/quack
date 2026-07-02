@@ -340,17 +340,31 @@ def make_microduck_standup_env_cfg(
     # Deliberately light, same as the (well-transferring) velocity policy. The
     # previous heavy standup values suppressed the large rolling/angular motion a
     # ground recovery needs → the policy froze when supine. Matching velocity:
-    #   • body_ang_vel  -0.6 → -0.05   (was penalizing the flip's rotation)
+    #   • body_ang_vel  -0.6 → -0.15   (freezing-recovery damper, kept LOW)
     #   • REMOVE hip_yaw_roll_deviation (velocity has none; it blocked the roll)
     #   • joint_torques_l2  -5e-3 → -1e-3
-    #   • REMOVE joint_torque_rate_l2 (velocity has none)
     #   • ADD neck_action_rate_l2 (-0.1), keep angular_momentum (-0.02), soft_landing
-    cfg.rewards["action_rate_l2"]      = RewardTermCfg(func=mdp.action_rate_l2,                 weight=-0.6)
-    cfg.rewards["neck_action_rate_l2"] = RewardTermCfg(func=microduck_mdp.neck_action_rate_l2,  weight=-0.1)
-    cfg.rewards["joint_torques_l2"]    = RewardTermCfg(func=microduck_mdp.joint_torques_l2,     weight=-1e-3)
+    #
+    # TRANSFER FIX (violent / shaky / overshoot-tip-repeat on the real robot):
+    # matching velocity's smoothness verbatim under-damps standup — walking's gait
+    # keeps the policy busy/smooth; standup just corrects around equilibrium and
+    # with almost no damping forms an oscillation limit-cycle. Restore DAMPING
+    # without restoring the MOTION-BLOCKERS (body_ang_vel/hip_yaw_roll high):
+    #   • re-add joint_torque_rate_l2 — pure anti-jitter, penalizes torque CHANGE,
+    #     never blocks a slow flip; now the primary damper so stronger than the old
+    #     -5e-4 → -2e-3.
+    #   • body_ang_vel -0.05 → -0.15 — damps violent trunk swings/overshoot; still
+    #     4× below the -0.6 that froze back-recovery.
+    #   • action_rate curriculum pushed -1.0 → -1.2 at the final stage (see below).
+    # If back-recovery regresses, tune DOWN in this order: body_ang_vel → action_rate;
+    # keep joint_torque_rate_l2 (it doesn't block the flip).
+    cfg.rewards["action_rate_l2"]       = RewardTermCfg(func=mdp.action_rate_l2,                 weight=-0.6)
+    cfg.rewards["neck_action_rate_l2"]  = RewardTermCfg(func=microduck_mdp.neck_action_rate_l2,  weight=-0.1)
+    cfg.rewards["joint_torques_l2"]     = RewardTermCfg(func=microduck_mdp.joint_torques_l2,     weight=-1e-3)
+    cfg.rewards["joint_torque_rate_l2"] = RewardTermCfg(func=microduck_mdp.joint_torque_rate_l2, weight=-2e-3)
 
     cfg.rewards["body_ang_vel"].params["asset_cfg"].body_names = ("trunk_base",)
-    cfg.rewards["body_ang_vel"].weight = -0.05     # velocity value (was -0.6)
+    cfg.rewards["body_ang_vel"].weight = -0.15     # damper (was -0.6 froze recovery, -0.05 too light)
     cfg.rewards["angular_momentum"].weight = -0.02  # velocity value (was deleted)
     cfg.rewards["soft_landing"].weight = -1e-05     # velocity value (was deleted)
 
@@ -724,8 +738,10 @@ def make_microduck_standup_env_cfg(
             },
         )
 
-    # action_rate curriculum — same stages as the velocity env: ramp the
-    # action_rate_l2 penalty -0.4 → -0.8 → -1.0 over the first 500 iters.
+    # action_rate curriculum — velocity's ramp (-0.4 → -0.8 → -1.0), pushed one
+    # notch harder at the end (-1.2) for standup: transfer needs more smoothness
+    # here than walking (see the sim2real note in the rewards block above). The
+    # early stages stay light so the recovery flip can still form.
     cfg.curriculum["action_rate_weight"] = CurriculumTermCfg(
         func=microduck_mdp.reward_weight,
         params={
@@ -733,7 +749,7 @@ def make_microduck_standup_env_cfg(
             "weight_stages": [
                 {"step": 0,         "weight": -0.4},
                 {"step": 250 * 24,  "weight": -0.8},
-                {"step": 500 * 24,  "weight": -1.0},
+                {"step": 500 * 24,  "weight": -1.2},
             ],
         },
     )
