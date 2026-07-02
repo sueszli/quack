@@ -484,10 +484,13 @@ def make_microduck_standup_env_cfg(
             # Initialize from any pose, 25% each: front (face-down), back
             # (face-up), sitting keyframe, and already-standing (so the policy
             # also learns to *hold* a stand, not only to rise).
-            "face_down_prob":            0.25,  # belly to floor (+90° pitch)
-            "face_up_prob":              0.25,  # back to floor (-90° pitch)
-            "sitting_prob":              0.25,  # sit keyframe (deployment hand-off)
-            "standing_prob":             0.25,  # already upright at standing height
+            # Initial mix = curriculum stage 0 (easy); the ground_state_mix
+            # curriculum ramps these easy→hard over training. Face-up (back) starts
+            # at 0 and is introduced late (hardest recovery).
+            "face_down_prob":            0.20,  # belly to floor (+90° pitch)
+            "face_up_prob":              0.00,  # back to floor (-90° pitch) — introduced late
+            "sitting_prob":              0.40,  # sit keyframe (deployment hand-off)
+            "standing_prob":             0.40,  # already upright at standing height
             # Prone reset height: trunk rests at ~0.044 m face-down (measured), so
             # spawn just above the ground rather than the 0.20–0.25 default (which
             # would free-fall ~15 cm before landing).
@@ -606,6 +609,28 @@ def make_microduck_standup_env_cfg(
     if not rough:
         del cfg.curriculum["terrain_levels"]
     del cfg.curriculum["command_vel"]
+
+    # Init-pose curriculum: ramp the set_ground_state mix from EASY → HARD instead
+    # of a flat 25/25/25/25 from step 0. With the flat split the policy optimized
+    # the easy majority (hold-stand + sit-rise) and left the hard poses under-
+    # trained — front only partially rose and face-up (back) froze into "do
+    # nothing". This introduces standing/sitting first, then face-down, then
+    # face-up last, and biases toward the hard poses late so they get the most
+    # practice. (event_param_curriculum shallow-merges these keys into the live
+    # set_ground_state event; the z-ranges / joint overrides are left untouched.)
+    cfg.curriculum["ground_state_mix"] = CurriculumTermCfg(
+        func=microduck_mdp.event_param_curriculum,
+        params={
+            "event_name": "set_ground_state",
+            "param_stages": [
+                # step,          standing, sitting, face_down(front), face_up(back)
+                {"step": 0,          "params": {"standing_prob": 0.40, "sitting_prob": 0.40, "face_down_prob": 0.20, "face_up_prob": 0.00}},
+                {"step": 600 * 24,   "params": {"standing_prob": 0.25, "sitting_prob": 0.30, "face_down_prob": 0.35, "face_up_prob": 0.10}},
+                {"step": 1500 * 24,  "params": {"standing_prob": 0.20, "sitting_prob": 0.25, "face_down_prob": 0.30, "face_up_prob": 0.25}},
+                {"step": 2500 * 24,  "params": {"standing_prob": 0.15, "sitting_prob": 0.20, "face_down_prob": 0.30, "face_up_prob": 0.35}},
+            ],
+        },
+    )
 
     # Head pose command range curriculum — same per-joint widening as the velocity
     # env (5% → 100% of each joint's reachable delta from HOME over ~2000 iters).
