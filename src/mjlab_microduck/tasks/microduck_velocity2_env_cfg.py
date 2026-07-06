@@ -92,10 +92,10 @@ def make_microduck_velocity2_env_cfg(
     # ── Gait / feet: match microban exactly ──────────────────────────────────
     r["air_time"].weight = 3.0
     r["air_time"].params["command_threshold"] = 0.01
-    # microban values (proven to bootstrap walking). The earlier floor raise
-    # (0.125→0.15, for longer/slower steps) was reverted: combined with the action
-    # filter it blocked bootstrapping (air_time reward never rose). Re-add the
-    # step-length tuning ONLY after confirming the filter + walking work.
+    # Start at microban's proven window (bootstraps walking); the air_time_window
+    # curriculum below raises the swing-time FLOOR after ~iter 800 to force longer,
+    # slower steps. Raising the floor from step 0 blocks bootstrapping (learned the
+    # hard way), so it's curriculum'd in like the filter alpha.
     r["air_time"].params["threshold_min"] = 0.125
     r["air_time"].params["threshold_max"] = 0.300
     r["foot_clearance"].params["target_height"] = 0.02
@@ -174,6 +174,22 @@ def make_microduck_velocity2_env_cfg(
                 {"step": 0, "weight": -0.1},
                 {"step": 500 * NUM_STEPS_PER_ENV, "weight": -0.2},
                 {"step": 1000 * NUM_STEPS_PER_ENV, "weight": -0.4},
+            ],
+        },
+    )
+
+    # air_time window curriculum: keep microban's proven [0.125, 0.300] through
+    # bootstrap, then raise the swing-time FLOOR to force longer, slower steps
+    # (current gait is too fast/short). Kicks in at iter 800 (walking is solid by
+    # ~iter 700). Conservative "slightly longer" target — bump the floor higher if
+    # steps are still too quick. Max nudged to 0.32 to allow the longer swings.
+    cfg.curriculum["air_time_window"] = CurriculumTermCfg(
+        func=microduck_mdp.reward_param_curriculum,
+        params={
+            "reward_name": "air_time",
+            "param_stages": [
+                {"step": 0,                        "params": {"threshold_min": 0.125, "threshold_max": 0.300}},
+                {"step": 800 * NUM_STEPS_PER_ENV,  "params": {"threshold_min": 0.15,  "threshold_max": 0.32}},
             ],
         },
     )

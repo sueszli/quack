@@ -2205,6 +2205,25 @@ def reward_weight(
     return torch.tensor([term_cfg.weight])
 
 
+def reward_param_curriculum(
+    env: ManagerBasedRlEnv,
+    env_ids: torch.Tensor,
+    reward_name: str,
+    param_stages: list[dict],
+) -> torch.Tensor:
+    """Step-staged reward-PARAM curriculum (sibling of reward_weight, which does
+    the weight). ``param_stages`` = list of ``{"step": int, "params": {...}}``;
+    the params of the latest elapsed stage are merged into the live reward term
+    cfg. Used e.g. to widen the air_time swing-time window after walking has
+    bootstrapped (raising it from step 0 can block bootstrapping)."""
+    del env_ids
+    term_cfg = env.reward_manager.get_term_cfg(reward_name)
+    for stage in param_stages:
+        if env.common_step_counter > stage["step"]:
+            term_cfg.params.update(stage["params"])
+    return torch.tensor([0.0])
+
+
 def action_lowpass_alpha_curriculum(
     env: ManagerBasedRlEnv,
     env_ids: torch.Tensor,
