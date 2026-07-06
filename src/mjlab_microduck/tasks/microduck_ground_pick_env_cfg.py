@@ -224,6 +224,18 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
 
     cfg.rewards["soft_landing"].weight = -1e-5
 
+    # Keep BOTH feet planted throughout the pick. Without this the cheapest way to
+    # get the mouth to the ground is to tip forward and faceplant (feet lift off) —
+    # exactly the failure seen in play. Rewarding ground contact forces a proper
+    # planted crouch instead. Weight is set above the mouth_ground_proximity gain
+    # (2.0) so lifting a foot to reach lower never pays off. Always-on: the feet
+    # should never leave the ground during either phase.
+    cfg.rewards["feet_grounded"] = RewardTermCfg(
+        func=microduck_mdp.feet_grounded_reward,
+        weight=3.0,
+        params={"sensor_name": feet_ground_cfg.name},
+    )
+
     # ── Rewards: regularisation (HEAVIER than velocity — slow careful reaching) ─
     # Deliberately kept heavier than the velocity env: the ground-pick motion is
     # slow and precise, so strong smoothness aids transfer (unlike the dynamic
