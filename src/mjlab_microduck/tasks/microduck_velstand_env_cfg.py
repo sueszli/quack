@@ -240,7 +240,7 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
     # body_pose_tracking weight curriculum REMOVED — body tracking disabled
     # for now. Keep the body_pose command term + obs slot for shape parity.
 
-    # Push velocity stays at the vel env's inherited ±0.3 m/s — no curriculum.
+    # Push velocity stays at the vel env's inherited ±0.5 m/s — no curriculum.
 
     # Random prone-init ramp: 0 until iter PRONE_RAMP_START, then climbs in
     # discrete stages of ~11% each up to 2/3 at iter PRONE_RAMP_END
