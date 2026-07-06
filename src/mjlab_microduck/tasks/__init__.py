@@ -44,6 +44,10 @@ from .microduck_velstand_tiptoe_env_cfg import (
     make_microduck_velstand_tiptoe_env_cfg,
     MicroduckVelStandTipToeRlCfg,
 )
+from .microduck_ground_pick_env_cfg import (
+    make_microduck_ground_pick_env_cfg,
+    MicroduckGroundPickRlCfg,
+)
 
 # Standard velocity task
 register_mjlab_task(
@@ -136,3 +140,22 @@ register_mjlab_task(
     runner_cls=MicroduckOnPolicyRunner,
 )
 print("✓ StandUp task registered: Mjlab-StandUp-Rough-MicroDuck")
+
+# Ground-pick task — crouch, touch the ground with the mouth tip, return to stand
+register_mjlab_task(
+    task_id="Mjlab-GroundPick-Flat-MicroDuck",
+    env_cfg=make_microduck_ground_pick_env_cfg(),
+    play_env_cfg=make_microduck_ground_pick_env_cfg(play=True),
+    rl_cfg=MicroduckGroundPickRlCfg,
+    runner_cls=MicroduckOnPolicyRunner,
+)
+print("✓ GroundPick task registered: Mjlab-GroundPick-Flat-MicroDuck")
+
+register_mjlab_task(
+    task_id="Mjlab-GroundPick-Rough-MicroDuck",
+    env_cfg=make_microduck_ground_pick_env_cfg(rough=True),
+    play_env_cfg=make_microduck_ground_pick_env_cfg(play=True, rough=True),
+    rl_cfg=MicroduckGroundPickRlCfg,
+    runner_cls=MicroduckOnPolicyRunner,
+)
+print("✓ GroundPick task registered: Mjlab-GroundPick-Rough-MicroDuck")
