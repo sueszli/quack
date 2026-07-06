@@ -58,19 +58,6 @@ ENCODER_BIAS_RANGE = (-0.015, 0.015)  # ±0.86° per-joint encoder offset (const
 BASE_ORIENTATION_MAX_PITCH_DEG = 10.0  # ±10° forward/backward tilt at episode start
 BASE_ORIENTATION_MAX_ROLL_DEG = 5.0  # ±5° side-to-side tilt at episode start
 
-# Action low-pass (EMA on joint targets) — matches microduck_runtime's
-# --legs-low-pass / --head-low-pass (filtered = alpha*target + (1-alpha)*prev).
-# Applied once per control step (50 Hz). alpha: higher = less filtering.
-# 0.6 ≈ 12 Hz cutoff at 50 Hz. CRITICAL: a policy trained with this MUST be
-# deployed with the runtime filter ON at the SAME alphas or transfer breaks.
-ENABLE_ACTION_LOW_PASS = True
-ACTION_LOW_PASS_LEG_ALPHA = 0.6
-ACTION_LOW_PASS_HEAD_ALPHA = 0.6
-
-# Fraction of envs commanded to spin on the spot (lin=0, |ang| forced away from
-# zero) — explicit turn-in-place practice (uniform sampling almost never yields it).
-TURN_IN_PLACE_FRACTION = 0.15
-
 import mujoco as _mujoco
 import mjlab.terrains as terrain_gen
 from mjlab.terrains.terrain_generator import TerrainGeneratorCfg
@@ -252,17 +239,6 @@ def make_microduck_velocity_env_cfg(
     assert isinstance(joint_pos_action, JointPositionActionCfg)
     joint_pos_action.scale = 1.0
 
-    # Low-pass the joint-position targets (EMA), matching microduck_runtime's
-    # --legs-low-pass / --head-low-pass. Swaps the plain JointPositionActionCfg for
-    # the filtered variant, preserving all its fields. MUST deploy with the runtime
-    # filter ON at the same alphas.
-    if ENABLE_ACTION_LOW_PASS:
-        cfg.actions["joint_pos"] = microduck_mdp.FilteredJointPositionActionCfg(
-            **vars(joint_pos_action),
-            leg_alpha=ACTION_LOW_PASS_LEG_ALPHA,
-            head_alpha=ACTION_LOW_PASS_HEAD_ALPHA,
-        )
-
     # === REWARDS ===
     # Pose reward configuration
     cfg.rewards["pose"].params["std_standing"] = std_standing  # tight when command=0
@@ -311,8 +287,8 @@ def make_microduck_velocity_env_cfg(
 
     cfg.rewards["air_time"].weight = 5.0
     cfg.rewards["air_time"].params["command_threshold"] = 0.01
-    cfg.rewards["air_time"].params["threshold_min"] = 0.14  # 0.10→0.14: raise swing-time floor → longer swings, lower cadence, longer strides
-    cfg.rewards["air_time"].params["threshold_max"] = 0.32  # 0.25→0.32: allow slower stepping (up to 320ms swing)
+    cfg.rewards["air_time"].params["threshold_min"] = 0.10  # Increased from 0.055 to slow down gait (100ms swing)
+    cfg.rewards["air_time"].params["threshold_max"] = 0.25  # Increased from 0.15 to allow slower stepping (250ms max swing)
 
     # Reward staying still at zero command. Uses a tight Gaussian on body velocity:
     # reward peaks at 0 m/s and decays quickly, so moving faster is always worse.
@@ -340,11 +316,11 @@ def make_microduck_velocity_env_cfg(
     # the gradient-cliff problem we hit when std was tightened too aggressively.
     cfg.rewards["track_linear_velocity"].weight = 4.5
     cfg.rewards["track_linear_velocity"].params["std"] = math.sqrt(0.15)
-    cfg.rewards["track_angular_velocity"].weight = 4.0  # 3.0→4.0: sharpen yaw tracking (weak turning)
+    cfg.rewards["track_angular_velocity"].weight = 3.0
     cfg.rewards["track_angular_velocity"].params["std"] = math.sqrt(0.40)
 
     # Action smoothness
-    cfg.rewards["action_rate_l2"].weight = -0.4  # reduced from -0.6: EMA low-pass now carries smoothing # was -0.4
+    cfg.rewards["action_rate_l2"].weight = -0.6
 
     cfg.rewards["foot_clearance"].params["command_threshold"] = 0.01
     cfg.rewards["foot_clearance"].params["target_height"] = 0.02  # Increased from 0.01 to penalize dragging
@@ -672,9 +648,7 @@ def make_microduck_velocity_env_cfg(
     command.ranges.lin_vel_y = (-0.3, 0.3)
     command.ranges.ang_vel_z = (-1.5, 1.5)
     command.viz.z_offset = 0.5
-    cfg.commands["twist"] = microduck_mdp.VelocityCommandCommandOnlyCfg(
-        **vars(command), rel_turn_in_place_envs=TURN_IN_PLACE_FRACTION
-    )
+    cfg.commands["twist"] = microduck_mdp.VelocityCommandCommandOnlyCfg(**vars(command))
 
     # Head pose command (4D deltas from HOME, in joint order:
     #   neck_pitch, head_pitch, head_yaw, head_roll). Tracked as a primary
@@ -784,13 +758,10 @@ def make_microduck_velocity_env_cfg(
         params={
             "reward_name": "action_rate_l2",
             "weight_stages": [
-                # 250 iterations × 24 steps/iter = 6000 steps.
-                # Lowered end-weight (-1.0 → -0.4): the EMA low-pass now handles
-                # high-frequency smoothing, so a heavy action_rate on top would
-                # over-damp and fight the policy.
-                {"step": 0, "weight": -0.2},
-                {"step": 250 * 24, "weight": -0.3},
-                {"step": 500 * 24, "weight": -0.4},
+                # 250 iterations × 24 steps/iter = 6000 steps
+                {"step": 0, "weight": -0.4},
+                {"step": 250 * 24, "weight": -0.8},
+                {"step": 500 * 24, "weight": -1.0},
                 # {"step": 750 * 24, "weight": -1.2},
                 # {"step": 1000 * 24, "weight": -1.4},
                 # {"step": 1250 * 24, "weight": -1.6},
@@ -863,7 +834,7 @@ def make_microduck_velocity_env_cfg(
         params={
             "command_name": "twist",
             "velocity_stages": [
-                {"step": 0,          "lin_vel_range": 0.5,  "ang_vel_range": 1.5},  # ang 1.0→1.5: was capping turn authority
+                {"step": 0,          "lin_vel_range": 0.5,  "ang_vel_range": 1.0},
                 # {"step": 500 * 24,   "lin_vel_range": 0.25, "ang_vel_range": 1.6},
                 # {"step": 1000 * 24,  "lin_vel_range": 0.3,  "ang_vel_range": 1.7},
                 # {"step": 1500 * 24,  "lin_vel_range": 0.35,  "ang_vel_range": 2.0},
