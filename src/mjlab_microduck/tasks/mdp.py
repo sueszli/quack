@@ -2205,6 +2205,33 @@ def reward_weight(
     return torch.tensor([term_cfg.weight])
 
 
+def action_lowpass_alpha_curriculum(
+    env: ManagerBasedRlEnv,
+    env_ids: torch.Tensor,
+    alpha_stages: list[dict],
+) -> torch.Tensor:
+    """Ramp the FilteredJointPositionAction EMA alpha over training.
+
+    A low-pass filter on the joint targets from step 0 damps the exploratory
+    action variation the policy needs to DISCOVER a stepping gait → walking never
+    bootstraps. So start at alpha=1.0 (no filtering, == the unfiltered baseline)
+    and ramp DOWN to the deployment alpha (0.6) only after walking is established.
+    ``alpha_stages`` = list of ``{"step", "leg_alpha", "head_alpha"}``. Final stage
+    must equal the runtime's --legs/head-low-pass-alpha (deploy match).
+    """
+    del env_ids
+    term = env.action_manager.get_term("joint_pos")
+    leg = alpha_stages[0]["leg_alpha"]
+    head = alpha_stages[0]["head_alpha"]
+    for stage in alpha_stages:
+        if env.common_step_counter > stage["step"]:
+            leg = stage["leg_alpha"]
+            head = stage["head_alpha"]
+    if hasattr(term, "set_alpha"):
+        term.set_alpha(leg, head)
+    return torch.tensor([float(leg)])
+
+
 def com_range_curriculum(
     env: ManagerBasedRlEnv,
     env_ids: torch.Tensor,
@@ -3098,12 +3125,20 @@ class FilteredJointPositionAction(_JointAction):
 
     def __init__(self, cfg: "FilteredJointPositionActionCfg", env: ManagerBasedRlEnv):
         super().__init__(cfg, env)
-        alpha = torch.full((1, self._num_targets), float(cfg.leg_alpha), device=self.device)
+        self._is_head = torch.zeros((1, self._num_targets), dtype=torch.bool, device=self.device)
         for i, name in enumerate(self._target_names):
             if ("neck" in name) or ("head" in name):
-                alpha[0, i] = float(cfg.head_alpha)
-        self._alpha = alpha
+                self._is_head[0, i] = True
+        self.set_alpha(float(cfg.leg_alpha), float(cfg.head_alpha))
         self._filtered = self._entity.data.default_joint_pos[:, self._target_ids].clone()
+
+    def set_alpha(self, leg_alpha: float, head_alpha: float) -> None:
+        """Update the EMA alpha (per group). alpha=1.0 → no filtering. Used by the
+        action_lowpass_alpha_curriculum to ramp the filter in AFTER walking is
+        learned (a filter from step 0 damps exploration and blocks bootstrapping)."""
+        head = torch.tensor(float(head_alpha), device=self.device)
+        leg = torch.tensor(float(leg_alpha), device=self.device)
+        self._alpha = torch.where(self._is_head, head, leg)  # (1, num_targets)
 
     def process_actions(self, actions: torch.Tensor) -> None:
         # Runs once per control step (50 Hz) — the correct rate for the EMA.

@@ -92,10 +92,12 @@ def make_microduck_velocity2_env_cfg(
     # ── Gait / feet: match microban exactly ──────────────────────────────────
     r["air_time"].weight = 3.0
     r["air_time"].params["command_threshold"] = 0.01
-    # microban uses 0.125–0.300; raise the swing-time FLOOR to slow cadence and
-    # lengthen strides (the current velocity2 gait steps too short/fast).
-    r["air_time"].params["threshold_min"] = 0.15   # 0.125 → 0.15
-    r["air_time"].params["threshold_max"] = 0.32   # 0.300 → 0.32
+    # microban values (proven to bootstrap walking). The earlier floor raise
+    # (0.125→0.15, for longer/slower steps) was reverted: combined with the action
+    # filter it blocked bootstrapping (air_time reward never rose). Re-add the
+    # step-length tuning ONLY after confirming the filter + walking work.
+    r["air_time"].params["threshold_min"] = 0.125
+    r["air_time"].params["threshold_max"] = 0.300
     r["foot_clearance"].params["target_height"] = 0.02
     r["foot_swing_height"].params["target_height"] = 0.02
     r.pop("soft_landing", None)  # microban deletes it
@@ -175,6 +177,25 @@ def make_microduck_velocity2_env_cfg(
             ],
         },
     )
+
+    # Action low-pass alpha curriculum: ramp the EMA IN over training. Start at
+    # alpha=1.0 (NO filtering == unfiltered baseline) so walking bootstraps, then
+    # ramp down to the deployment alpha (0.6) once the gait is established. A filter
+    # from step 0 damped exploration and walking never bootstrapped (air_time flat).
+    # Final stage MUST equal the runtime --legs/head-low-pass-alpha (0.6).
+    if ENABLE_ACTION_LOW_PASS:
+        cfg.curriculum["action_lowpass_alpha"] = CurriculumTermCfg(
+            func=microduck_mdp.action_lowpass_alpha_curriculum,
+            params={
+                "alpha_stages": [
+                    {"step": 0,                        "leg_alpha": 1.0,  "head_alpha": 1.0},
+                    {"step": 500 * NUM_STEPS_PER_ENV,  "leg_alpha": 0.85, "head_alpha": 0.85},
+                    {"step": 1000 * NUM_STEPS_PER_ENV, "leg_alpha": 0.7,  "head_alpha": 0.7},
+                    {"step": 1500 * NUM_STEPS_PER_ENV, "leg_alpha": ACTION_LOW_PASS_LEG_ALPHA,
+                                                       "head_alpha": ACTION_LOW_PASS_HEAD_ALPHA},
+                ],
+            },
+        )
 
     return cfg
 
