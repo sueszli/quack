@@ -1,6 +1,7 @@
 """MDP functions for microduck tasks"""
 
 import math
+from dataclasses import dataclass
 
 import numpy as np
 import torch
@@ -72,6 +73,7 @@ print("[mdp] Patches 1-2 active: NaN-safe reward/advantage")
 # ---------------------------------------------------------------------------
 from mjlab.rl import exporter_utils as _exporter_utils  # noqa: E402
 from mjlab.envs.mdp.actions import JointPositionAction as _JointAction  # noqa: E402
+from mjlab.envs.mdp.actions import JointPositionActionCfg as _JointActionCfg  # noqa: E402
 
 def _get_base_metadata_no_passive(env, run_path):
     robot = env.scene["robot"]
@@ -3068,8 +3070,100 @@ def face_down_prob_curriculum(
     return torch.tensor([current_prob])
 
 
+class FilteredJointPositionAction(_JointAction):
+    """JointPositionAction with an EMA low-pass on the joint-position TARGETS.
+
+    Mirrors microduck_runtime's --legs-low-pass / --head-low-pass EXACTLY:
+        filtered[t] = alpha * target[t] + (1 - alpha) * filtered[t-1]
+    applied ONCE per control step (in process_actions, which runs at the 50 Hz
+    control rate — NOT apply_actions, which runs per physics substep). The runtime
+    applies its filter once per control step too, so this matches.
+
+    - Filter operates on the processed target (default_pos + scale*action); the
+      per-env encoder-bias offset is subtracted AFTER (matching the runtime, whose
+      motor_targets carry no encoder-bias term).
+    - The obs `last_action` stays the RAW policy output (the runtime stores
+      self.last_action = action BEFORE filtering, main.rs:3490). Nothing to do here
+      since the `actions` obs term reads the raw action-manager input.
+    - Per-joint alpha: neck/head joints use `head_alpha`, legs use `leg_alpha`
+      (the runtime exposes separate --head/--legs alphas; both default 0.6 here).
+    - Filter state is seeded to the HOME pose on episode reset (the runtime seeds
+      its *_low_pass_prev with default_positions at startup).
+
+    IMPORTANT: a policy trained with this filter MUST be deployed with the runtime
+    filter ON at the same alphas, or transfer breaks.
+    """
+
+    cfg: "FilteredJointPositionActionCfg"
+
+    def __init__(self, cfg: "FilteredJointPositionActionCfg", env: ManagerBasedRlEnv):
+        super().__init__(cfg, env)
+        alpha = torch.full((1, self._num_targets), float(cfg.leg_alpha), device=self.device)
+        for i, name in enumerate(self._target_names):
+            if ("neck" in name) or ("head" in name):
+                alpha[0, i] = float(cfg.head_alpha)
+        self._alpha = alpha
+        self._filtered = self._entity.data.default_joint_pos[:, self._target_ids].clone()
+
+    def process_actions(self, actions: torch.Tensor) -> None:
+        # Runs once per control step (50 Hz) — the correct rate for the EMA.
+        super().process_actions(actions)  # sets self._processed_actions
+        self._filtered = self._alpha * self._processed_actions + (1.0 - self._alpha) * self._filtered
+
+    def apply_actions(self) -> None:
+        # Runs per physics substep; write the (constant, already-filtered) target —
+        # zero-order hold across the decimation window, like the runtime.
+        encoder_bias = self._entity.data.encoder_bias[:, self._target_ids]
+        self._entity.set_joint_position_target(self._filtered - encoder_bias, joint_ids=self._target_ids)
+
+    def reset(self, env_ids: torch.Tensor | slice | None = None) -> None:
+        super().reset(env_ids)
+        default = self._entity.data.default_joint_pos[:, self._target_ids]
+        if env_ids is None:
+            self._filtered[:] = default
+        else:
+            self._filtered[env_ids] = default[env_ids]
+
+
+@dataclass(kw_only=True)
+class FilteredJointPositionActionCfg(_JointActionCfg):
+    """JointPositionActionCfg + per-group EMA low-pass alphas (see the action class)."""
+
+    leg_alpha: float = 0.6
+    head_alpha: float = 0.6
+
+    def build(self, env: ManagerBasedRlEnv) -> "FilteredJointPositionAction":
+        return FilteredJointPositionAction(self, env)
+
+
 class VelocityCommandCommandOnly(UniformVelocityCommand):
     """Like UniformVelocityCommand but only draws the command arrows (no actual velocity arrows)."""
+
+    def _resample_command(self, env_ids: torch.Tensor) -> None:
+        super()._resample_command(env_ids)
+        # Turn-in-place practice: for a fraction of envs, zero the linear velocity
+        # and force a meaningful (away-from-zero) yaw command. Uniform sampling
+        # almost never produces "lin≈0, |ang| large", so spinning on the spot was
+        # never really trained. Mirrors the base rel_forward_envs mechanism.
+        p = getattr(self.cfg, "rel_turn_in_place_envs", 0.0)
+        if p <= 0.0:
+            return
+        r = torch.empty(len(env_ids), device=self.device)
+        turn_ids = env_ids[r.uniform_(0.0, 1.0) < p]
+        if len(turn_ids) == 0:
+            return
+        self.vel_command_b[turn_ids, 0] = 0.0
+        self.vel_command_b[turn_ids, 1] = 0.0
+        lo, hi = self.cfg.ranges.ang_vel_z
+        maxr = max(abs(lo), abs(hi))
+        rr = torch.empty(len(turn_ids), device=self.device)
+        sign = torch.where(rr.uniform_(0.0, 1.0) < 0.5, -1.0, 1.0)
+        mag = torch.empty(len(turn_ids), device=self.device).uniform_(0.4 * maxr, maxr)
+        self.vel_command_b[turn_ids, 2] = sign * mag
+        # These envs must actually turn — un-mark them as standing (which would
+        # zero the command) and refresh the world-frame reference copy.
+        self.is_standing_env[turn_ids] = False
+        self.vel_command_w[turn_ids] = self.vel_command_b[turn_ids]
 
     def _debug_vis_impl(self, visualizer: "DebugVisualizer") -> None:
         batch = visualizer.env_idx
@@ -3102,7 +3196,12 @@ class VelocityCommandCommandOnly(UniformVelocityCommand):
         visualizer.add_arrow(cmd_lin_from, cmd_lin_to, color=(0.2, 0.2, 0.6, 0.6), width=0.015)
 
 
+@dataclass(kw_only=True)
 class VelocityCommandCommandOnlyCfg(UniformVelocityCommandCfg):
+    # Fraction of envs commanded to turn in place (lin=0, |ang| forced away from
+    # zero) each resample. 0 = disabled (base uniform sampling only).
+    rel_turn_in_place_envs: float = 0.0
+
     def build(self, env: ManagerBasedRlEnv) -> "VelocityCommandCommandOnly":
         return VelocityCommandCommandOnly(self, env)
 
