@@ -2218,10 +2218,14 @@ def reward_param_curriculum(
     bootstrapped (raising it from step 0 can block bootstrapping)."""
     del env_ids
     term_cfg = env.reward_manager.get_term_cfg(reward_name)
-    for stage in param_stages:
+    active = 0
+    for i, stage in enumerate(param_stages):
         if env.common_step_counter > stage["step"]:
             term_cfg.params.update(stage["params"])
-    return torch.tensor([0.0])
+            active = i
+    # Log the active stage index so the curriculum shows a staircase in wandb
+    # (returning a constant would plot a flat line — cosmetic, not a real stall).
+    return torch.tensor([float(active)])
 
 
 def action_lowpass_alpha_curriculum(
