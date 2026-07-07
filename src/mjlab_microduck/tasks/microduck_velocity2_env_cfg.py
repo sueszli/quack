@@ -23,7 +23,6 @@ from dataclasses import replace
 import math
 
 from mjlab.envs import ManagerBasedRlEnvCfg
-from mjlab.envs.mdp.actions import JointPositionActionCfg
 from mjlab.managers import CurriculumTermCfg, RewardTermCfg
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.tasks.velocity import mdp
@@ -35,21 +34,6 @@ from mjlab_microduck.tasks.microduck_velocity_env_cfg import (
 )
 
 NUM_STEPS_PER_ENV = 24
-
-# ── Walk-improvement iteration (branch new_pre_alpha_improve_velocity) ─────────
-# Action low-pass (EMA on joint targets) — matches microduck_runtime's
-# --legs-low-pass / --head-low-pass (filtered = alpha*target + (1-alpha)*prev),
-# applied once per control step (50 Hz). alpha: higher = less filtering; 0.6 ≈
-# 12 Hz cutoff. CRITICAL: deploy with the runtime filter ON at the SAME alphas.
-ENABLE_ACTION_LOW_PASS = True
-ACTION_LOW_PASS_LEG_ALPHA = 0.6
-ACTION_LOW_PASS_HEAD_ALPHA = 0.6
-
-# Fraction of envs commanded to spin on the spot (lin=0, |ang| forced away from
-# zero) — explicit turn-in-place practice. Kept at velocity2's ang ±1.0 range
-# (the recipe deliberately caps turn range; the *missing practice* — not range —
-# is why turning-on-the-spot was weak).
-TURN_IN_PLACE_FRACTION = 0.15
 
 # Iteration at which the no_stepping penalty ramps to its final weight. microban
 # defers this to ~iter 3000; microduck runs converge earlier (~2250) so we turn
@@ -63,19 +47,6 @@ def make_microduck_velocity2_env_cfg(
 ) -> ManagerBasedRlEnvCfg:
     cfg = make_microduck_velocity_env_cfg(play=play, rough=rough)
     r = cfg.rewards
-
-    # ── Action low-pass filter (EMA on joint targets) ────────────────────────
-    # Swap the plain JointPositionActionCfg for the filtered variant (mirrors
-    # microduck_runtime --legs-low-pass / --head-low-pass). MUST deploy with the
-    # runtime filter ON at the same alphas.
-    if ENABLE_ACTION_LOW_PASS:
-        japa = cfg.actions["joint_pos"]
-        assert isinstance(japa, JointPositionActionCfg)
-        cfg.actions["joint_pos"] = microduck_mdp.FilteredJointPositionActionCfg(
-            **vars(japa),
-            leg_alpha=ACTION_LOW_PASS_LEG_ALPHA,
-            head_alpha=ACTION_LOW_PASS_HEAD_ALPHA,
-        )
 
     # ── Tracking + posture/orientation: match microban exactly ───────────────
     r["track_linear_velocity"].weight = 2.0
@@ -92,10 +63,6 @@ def make_microduck_velocity2_env_cfg(
     # ── Gait / feet: match microban exactly ──────────────────────────────────
     r["air_time"].weight = 3.0
     r["air_time"].params["command_threshold"] = 0.01
-    # Start at microban's proven window (bootstraps walking); the air_time_window
-    # curriculum below raises the swing-time FLOOR after ~iter 800 to force longer,
-    # slower steps. Raising the floor from step 0 blocks bootstrapping (learned the
-    # hard way), so it's curriculum'd in like the filter alpha.
     r["air_time"].params["threshold_min"] = 0.125
     r["air_time"].params["threshold_max"] = 0.300
     r["foot_clearance"].params["target_height"] = 0.02
@@ -154,18 +121,11 @@ def make_microduck_velocity2_env_cfg(
     twist.ranges.lin_vel_x = (-0.4, 0.4)
     twist.ranges.lin_vel_y = (-0.3, 0.3)
     twist.ranges.ang_vel_z = (-1.0, 1.0)
-    # Turn-in-place practice: force lin=0, |ang| away from zero for a fraction of
-    # envs. Keeps microban's ±1.0 turn range (deliberately capped — wider hurt);
-    # the fix for weak spin-on-the-spot is missing PRACTICE, not more range.
-    twist.rel_turn_in_place_envs = TURN_IN_PLACE_FRACTION
     cfg.curriculum.pop("velocity_command_ranges", None)
 
     # ── Curricula ────────────────────────────────────────────────────────────
     # action_rate weight ramp: -0.1 (iter 0-500) → -0.2 (500-1000) → -0.3 (1000+).
     # Overwrites the inherited ramp (which went to -1.0).
-    # End-weight capped at -0.4 (was -1.0): the EMA low-pass now carries the
-    # high-frequency smoothing (incl. the neck, via head_alpha), so a heavy
-    # action_rate on top would over-damp / fight the policy.
     cfg.curriculum["action_rate_weight"] = CurriculumTermCfg(
         func=microduck_mdp.reward_weight,
         params={
@@ -173,45 +133,13 @@ def make_microduck_velocity2_env_cfg(
             "weight_stages": [
                 {"step": 0, "weight": -0.1},
                 {"step": 500 * NUM_STEPS_PER_ENV, "weight": -0.2},
-                {"step": 1000 * NUM_STEPS_PER_ENV, "weight": -0.4},
+                {"step": 750 * NUM_STEPS_PER_ENV, "weight": -0.4},
+                {"step": 1000 * NUM_STEPS_PER_ENV, "weight": -0.6},
+                {"step": 1250 * NUM_STEPS_PER_ENV, "weight": -0.8},
+                {"step": 1500 * NUM_STEPS_PER_ENV, "weight": -1.0},
             ],
         },
     )
-
-    # air_time window curriculum: keep microban's proven [0.125, 0.300] through
-    # bootstrap, then raise the swing-time FLOOR to force longer, slower steps
-    # (current gait is too fast/short). Kicks in at iter 800 (walking is solid by
-    # ~iter 700). Conservative "slightly longer" target — bump the floor higher if
-    # steps are still too quick. Max nudged to 0.32 to allow the longer swings.
-    cfg.curriculum["air_time_window"] = CurriculumTermCfg(
-        func=microduck_mdp.reward_param_curriculum,
-        params={
-            "reward_name": "air_time",
-            "param_stages": [
-                {"step": 0,                        "params": {"threshold_min": 0.125, "threshold_max": 0.300}},
-                {"step": 800 * NUM_STEPS_PER_ENV,  "params": {"threshold_min": 0.15,  "threshold_max": 0.32}},
-            ],
-        },
-    )
-
-    # Action low-pass alpha curriculum: ramp the EMA IN over training. Start at
-    # alpha=1.0 (NO filtering == unfiltered baseline) so walking bootstraps, then
-    # ramp down to the deployment alpha (0.6) once the gait is established. A filter
-    # from step 0 damped exploration and walking never bootstrapped (air_time flat).
-    # Final stage MUST equal the runtime --legs/head-low-pass-alpha (0.6).
-    if ENABLE_ACTION_LOW_PASS:
-        cfg.curriculum["action_lowpass_alpha"] = CurriculumTermCfg(
-            func=microduck_mdp.action_lowpass_alpha_curriculum,
-            params={
-                "alpha_stages": [
-                    {"step": 0,                        "leg_alpha": 1.0,  "head_alpha": 1.0},
-                    {"step": 500 * NUM_STEPS_PER_ENV,  "leg_alpha": 0.85, "head_alpha": 0.85},
-                    {"step": 1000 * NUM_STEPS_PER_ENV, "leg_alpha": 0.7,  "head_alpha": 0.7},
-                    {"step": 1500 * NUM_STEPS_PER_ENV, "leg_alpha": ACTION_LOW_PASS_LEG_ALPHA,
-                                                       "head_alpha": ACTION_LOW_PASS_HEAD_ALPHA},
-                ],
-            },
-        )
 
     return cfg
 

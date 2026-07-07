@@ -52,17 +52,10 @@ class PolicyInference:
                  delay_min_lag=0, delay_max_lag=0,
                  standing_onnx_path=None, switch_threshold=0.05,
                  use_projected_gravity=False, ground_pick_onnx_path=None, ground_pick_period=4.0,
-                 new_cmd_obs=False,
-                 head_low_pass=False, head_low_pass_alpha=0.6,
-                 legs_low_pass=False, legs_low_pass_alpha=0.6):
+                 new_cmd_obs=False):
         self.model = model
         self.data = data
         self.action_scale = action_scale
-        # Action low-pass (EMA), matching microduck_runtime + training-time filter.
-        self.head_low_pass = head_low_pass
-        self.head_low_pass_alpha = head_low_pass_alpha
-        self.legs_low_pass = legs_low_pass
-        self.legs_low_pass_alpha = legs_low_pass_alpha
         self.use_projected_gravity = use_projected_gravity
         self.delay_min_lag = delay_min_lag
         self.delay_max_lag = delay_max_lag
@@ -161,18 +154,6 @@ class PolicyInference:
 
         # Last action (for observation history)
         self.last_action = np.zeros(self.n_joints, dtype=np.float32)
-
-        # Low-pass filter state (EMA on joint targets). Sim 14-joint layout:
-        # head = idx 5-8, legs = 0-4 and 9-13. Seeded to the home pose (matches
-        # the runtime seeding *_low_pass_prev to default_positions at startup).
-        self._leg_indices = [i for i in range(self.n_joints) if i < 5 or i >= 9]
-        self._head_indices = [i for i in range(self.n_joints) if 5 <= i < 9]
-        self.head_lp_prev = self.default_pose[self._head_indices].copy()
-        self.legs_lp_prev = self.default_pose[self._leg_indices].copy()
-        if self.head_low_pass:
-            print(f"Head low-pass ON (alpha={self.head_low_pass_alpha})")
-        if self.legs_low_pass:
-            print(f"Legs low-pass ON (alpha={self.legs_low_pass_alpha})")
 
         # Velocity command [lin_vel_x, lin_vel_y, ang_vel_z] — controls walking / policy switching
         self.vel_cmd = np.zeros(3, dtype=np.float32)
@@ -474,26 +455,12 @@ class PolicyInference:
         else:
             target_positions = self.default_pose + action * self.action_scale
 
+        self.data.ctrl[:] = target_positions
         # Legacy mode: head_offset is an external perturbation added on top of
         # the policy output. New mode: head_offset is a COMMAND fed into the
         # policy's obs, so the policy itself produces the offset head pose.
         if not self.new_cmd_obs:
-            target_positions[5:9] += self.head_offset
-
-        # Low-pass filter (EMA), applied LAST — matches microduck_runtime
-        # (filtered = alpha*target + (1-alpha)*prev, once per control step) and the
-        # training-time FilteredJointPositionAction. Enable when the loaded policy
-        # was trained with the filter, at the SAME alpha.
-        if self.head_low_pass:
-            a = self.head_low_pass_alpha
-            self.head_lp_prev = a * target_positions[self._head_indices] + (1.0 - a) * self.head_lp_prev
-            target_positions[self._head_indices] = self.head_lp_prev
-        if self.legs_low_pass:
-            a = self.legs_low_pass_alpha
-            self.legs_lp_prev = a * target_positions[self._leg_indices] + (1.0 - a) * self.legs_lp_prev
-            target_positions[self._leg_indices] = self.legs_lp_prev
-
-        self.data.ctrl[:] = target_positions
+            self.data.ctrl[5:9] += self.head_offset
 
 
 def main():
@@ -529,17 +496,6 @@ def main():
                         help="Soften foot contact: solref time constant (s) for the foot geoms "
                              "(default sim ~0.02 = stiff/rigid). Larger = softer, to emulate the "
                              "compliant PU sole. e.g. --foot-solref 0.04")
-    # Action low-pass (EMA on joint targets) — mirrors microduck_runtime's
-    # --legs-low-pass / --head-low-pass. For a policy trained WITH the filter,
-    # enable these here (and at deploy) with the SAME alpha it was trained at (0.6).
-    parser.add_argument("--head-low-pass", action="store_true",
-                        help="Low-pass (EMA) the head/neck joint targets (idx 5-8).")
-    parser.add_argument("--head-low-pass-alpha", type=float, default=0.6,
-                        help="Head low-pass alpha (higher=less filtering; default 0.6, matches training).")
-    parser.add_argument("--legs-low-pass", action="store_true",
-                        help="Low-pass (EMA) the leg joint targets.")
-    parser.add_argument("--legs-low-pass-alpha", type=float, default=0.6,
-                        help="Legs low-pass alpha (higher=less filtering; default 0.6, matches training).")
     args = parser.parse_args()
 
     if not args.walking and not args.standing:
@@ -617,10 +573,6 @@ def main():
         ground_pick_onnx_path=args.ground_pick,
         ground_pick_period=args.ground_pick_period,
         new_cmd_obs=args.new_cmd_obs,
-        head_low_pass=args.head_low_pass,
-        head_low_pass_alpha=args.head_low_pass_alpha,
-        legs_low_pass=args.legs_low_pass,
-        legs_low_pass_alpha=args.legs_low_pass_alpha,
     )
     policy.set_vel_cmd(args.lin_vel_x, args.lin_vel_y, args.ang_vel_z)
 
@@ -645,7 +597,7 @@ def main():
         policy.vel_min_y = 0.0
         policy.vel_max_ang = 1.0      # ±1.0 rad heading error
     else:
-        policy.vel_max_x = 0.4
+        policy.vel_max_x = 0.3
         policy.vel_min_x = -0.3
         policy.vel_max_y = 0.2
         policy.vel_min_y = -0.2

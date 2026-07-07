@@ -320,7 +320,7 @@ def make_microduck_velocity_env_cfg(
     cfg.rewards["track_angular_velocity"].params["std"] = math.sqrt(0.40)
 
     # Action smoothness
-    cfg.rewards["action_rate_l2"].weight = -0.6
+    cfg.rewards["action_rate_l2"].weight = -0.6 # was -0.4
 
     cfg.rewards["foot_clearance"].params["command_threshold"] = 0.01
     cfg.rewards["foot_clearance"].params["target_height"] = 0.02  # Increased from 0.01 to penalize dragging
