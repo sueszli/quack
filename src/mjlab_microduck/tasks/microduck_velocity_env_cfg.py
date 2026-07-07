@@ -52,7 +52,10 @@ JOINT_FRICTION_RANDOMIZATION_RANGE = (0.9, 1.1)
 JOINT_DAMPING_RANDOMIZATION_RANGE = (0.9, 1.1)
 ARMATURE_RANDOMIZATION_RANGE = (0.9, 1.1)  # ±10% reflected rotor inertia (microban: dr.joint_armature, same range)
 VELOCITY_PUSH_INTERVAL_S = (3.0, 6.0)  # Apply pushes every 3-6 seconds
-VELOCITY_PUSH_RANGE = (-0.5, 0.5)  # Velocity change range in m/s
+VELOCITY_PUSH_RANGE = (-0.3, 0.3)  # Velocity change range in m/s. Was ±0.5 — an
+# ADDITIVE kick larger than max walk speed (0.4) every 3-6 s trains a permanently
+# nervous fall-recovery gait (2026-07 audit). ±0.3 keeps push robustness while
+# letting a calmer gait be optimal.
 IMU_ORIENTATION_RANDOMIZATION_ANGLE = 6.0  # up-to-6° random-axis IMU mounting error. NOTE: zero-centered (random axis) — trains tolerance to misalignment *magnitude*, NOT a pitch bias. The real board's systematic ~5° pitch offset is corrected at the source in the runtime (imu-pitch-offset), not here.
 ENCODER_BIAS_RANGE = (-0.015, 0.015)  # ±0.86° per-joint encoder offset (constant per env)
 BASE_ORIENTATION_MAX_PITCH_DEG = 10.0  # ±10° forward/backward tilt at episode start
@@ -579,11 +582,11 @@ def make_microduck_velocity_env_cfg(
     )
 
     cfg.observations["actor"].terms["base_ang_vel"].delay_min_lag = 0
-    cfg.observations["actor"].terms["base_ang_vel"].delay_max_lag = 3
+    cfg.observations["actor"].terms["base_ang_vel"].delay_max_lag = 1  # was 3 (=60 ms worst case); real dxl IMU path is fast — ±20 ms envelope (2026-07 audit)
     cfg.observations["actor"].terms["base_ang_vel"].delay_update_period = 64
 
     cfg.observations["actor"].terms[gravity_term_name].delay_min_lag = 0
-    cfg.observations["actor"].terms[gravity_term_name].delay_max_lag = 3
+    cfg.observations["actor"].terms[gravity_term_name].delay_max_lag = 1  # was 3 (=60 ms worst case); real dxl IMU path is fast — ±20 ms envelope (2026-07 audit)
     cfg.observations["actor"].terms[gravity_term_name].delay_update_period = 64
 
     # Observation noise configuration (edit these values as needed)
@@ -889,11 +892,16 @@ def make_microduck_velocity_env_cfg(
             params={
                 "event_name": "randomize_com",
                 "range_stages": [
+                    # Capped at ±15 mm (2026-07 audit): the previous ramp to ±30 mm
+                    # exceeded the foot support polygon (heel is only 20 mm behind
+                    # the ankle) — the randomized CoM could sit entirely outside
+                    # support, forcing a wide/fast hyper-reactive gait and making
+                    # BACKWARD balance untrainable. Regression timeline matched the
+                    # ramp increases: 0.015 → 0.02 → 0.03 as policies got worse.
                     {"step": 0,          "range": 0.003},
                     {"step": 500 * 24,  "range": 0.005},
                     {"step": 1000 * 24,  "range": 0.01},
-                    {"step": 1500 * 24,  "range": 0.02}, # Was 0.015
-                    {"step": 2000 * 24,  "range": 0.03}, # Was 0.02
+                    {"step": 1500 * 24,  "range": 0.015},
                 ],
             },
         )
@@ -905,12 +913,11 @@ def make_microduck_velocity_env_cfg(
             params={
                 "event_name": "randomize_head_com",
                 "range_stages": [
-                    # used to stop at 0.1 at 2000
+                    # Capped at ±10 mm (2026-07 audit — same over-conservatism
+                    # concern as trunk CoM; head is a large lever arm).
                     {"step": 0,          "range": 0.003},
                     {"step": 500 * 24,  "range": 0.005},
                     {"step": 1000 * 24,  "range": 0.01},
-                    {"step": 1500 * 24,  "range": 0.015},
-                    {"step": 2000 * 24,  "range": 0.02},
                 ],
             },
         )
