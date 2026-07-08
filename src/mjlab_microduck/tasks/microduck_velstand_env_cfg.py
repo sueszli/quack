@@ -1,31 +1,38 @@
-"""Microduck VelStand environment: walking + fall recovery + body pose control.
+"""Microduck VelStand environment: walking + fall recovery, one policy.
 
-A copy of the vel env that uses the full-collision standup XML so the robot
-can physically lie down (legs, trunk, head can touch the ground). Trained in
-three phases:
+REBASED (2026-07, audit follow-up) on the **velocity2** recipe — the proven
+walker — instead of the abandoned base-velocity recipe the old velstand used.
+The 2026-07 audit found the old design starved the walk: only ~25% of
+experience was clean commanded walking (2/3 prone resets + fallen envs farming
+recovery reward for full 20 s episodes), the recovery rewards taxed the gait
+(always-on posture double-counting, a bounce incentive from com_upward_velocity
+below walk height), and the prone init dropped the robot from 0.20–0.25 m
+(function defaults — a violent uncontrolled impact opening most episodes).
 
-  Phase 1 (0 → 500 iters)
-    `fell_over` termination active (limit_angle = 70°).
-    Same walking objectives as the vel env. Termination prevents the policy
-    from exploiting body contacts as "free balance" — it has to learn clean
+Design now:
+  - Walk layer  = make_microduck_velocity2_env_cfg, verbatim. Everything the
+    good walker has (tracking weights, air_time, turn-in-place bucket, fixed
+    command ranges, DR/noise/obs) flows in by construction.
+  - Robot       = all-collision standup XML (body can physically lie down).
+  - Recovery    = a small reward layer GATED on actually-being-fallen
+    (trunk z < 0.10 m OR tilt > 40°): contributes exactly zero during clean
+    walking, steers only when down. upright_linear gives an orientation
+    gradient everywhere; com_upward_velocity pays for rising. (The old
+    com_height_recovery was dropped: flat/no-gradient inside its band and
+    redundant with the two above — audit finding 3.)
+  - Impact penalties (trunk/head) discourage hard landings, ungated.
+  - joint_torque_rate_l2 (standup's proven anti-jitter) for transfer
+    smoothness — penalizes torque CHANGE, never blocks the recovery flip.
+
+Phases (as before, but with a recovery backstop):
+  Phase 1 (0 → 500 iters): `fell_over` termination active (70°) → clean
     walking first.
-
-  Phase 2 (500 → 1500 iters)
-    `fell_over` disabled (limit_angle ramped to π).
-    Walking rewards still active. Recovery rewards (upright, com_upward_vel,
-    com_height_target, impact penalties) provide gradient when fallen, so the
-    policy learns to stand back up rather than ending the episode.
-
-  Phase 3 (1500+ iters)
-    Body-pose tracking weight + range curriculum kicks in. Same 6D command
-    as standup env (x, y, z, roll, pitch, yaw).
-    
-    
-  Best checkpoint seems to be around 2250 (without body cmd) 
-      - we have nice stand still with no command
-      - nice walk (sometimes hard to get started)
-      - nice standup
-      - nice head control
+  Phase 2 (500+): fell_over disabled (limit → π) so falls become recovery
+    opportunities — but `fallen_too_long` (5 s continuously down) recycles
+    failed recoveries instead of letting them farm the full 20 s episode.
+  Phase 3 (1500+): prone-init ramp: face-down first (easier), face-up mixed
+    in later, capped at 45% prone so the walking data share stays ≥ ~55%
+    (was 2/3 prone → ~25% walking share).
 """
 
 import math
@@ -35,6 +42,7 @@ from mjlab.managers import (
     CurriculumTermCfg,
     EventTermCfg,
     RewardTermCfg,
+    TerminationTermCfg,
 )
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.rl import (
@@ -42,70 +50,51 @@ from mjlab.rl import (
     RslRlModelCfg,
 )
 from mjlab.sensor import ContactMatch, ContactSensorCfg
-from mjlab.tasks.velocity import mdp as velocity_mdp
 
 from mjlab_microduck.robot.microduck_constants import MICRODUCK_STANDUP_ROBOT_CFG
 from mjlab_microduck.tasks import mdp as microduck_mdp
-from mjlab_microduck.tasks.microduck_velocity_env_cfg import (
-    make_microduck_velocity_env_cfg,
+from mjlab_microduck.tasks.microduck_velocity2_env_cfg import (
+    make_microduck_velocity2_env_cfg,
 )
-from mjlab_microduck.tasks.symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
+from mjlab_microduck.tasks.symmetry import PpoWithSymmetryCfg
 
-
-# Phase boundaries (in PPO iterations; env step counter scales by num_steps_per_env=24)
+# Phase boundaries (PPO iterations; env step counter scales by num_steps_per_env=24)
 FELL_OVER_DISABLE_ITER = 500
-BODY_POSE_KICKIN_ITER  = 1500
-NUM_STEPS_PER_ENV      = 24
+NUM_STEPS_PER_ENV = 24
 
-# Toggle body-pose tracking. When enabled, the reward is gated on linear
-# velocity command magnitude (only active when the robot is supposed to be
-# standing still), and curriculum ramps the weight up after the policy has
-# learned the walking + recovery basics.
-ENABLE_BODY_TRACKING   = False
+# Fallen gate shared by the recovery rewards and the fallen_too_long backstop:
+# fallen = trunk z below GATE_Z OR tilt beyond GATE_TILT. Walking sits at
+# z ≈ 0.115–0.13 with tilt < 25°, so the gate is firmly closed during gait.
+GATE_Z = 0.10
+GATE_TILT_DEG = 40.0
 
-# Toggle for random prone initialization (episodes start face-down/up with
-# probability ramping from 0 at PRONE_RAMP_START → 2/3 at PRONE_RAMP_END,
-# giving a 33/33/33 split of upright/face-down/face-up resets). Useful for
-# bootstrapping fall recovery; disable to focus on walking first.
-ENABLE_PRONE_INIT      = True
-PRONE_RAMP_START       = 1500
-PRONE_RAMP_END         = 3000
+# Failed-recovery backstop: continuously fallen this long → terminate/reset.
+FALLEN_TIMEOUT_S = 5.0
 
-# Body pose final ranges (reached at end of curriculum)
-BODY_CMD_MAX_XY        = 0.01                # ±10 mm lateral/forward (was 20 mm —
-                                              # 20 mm body lean while walking is
-                                              # mechanically too disruptive; the
-                                              # policy converged to "ignore xy"
-                                              # because the walking cost outweighed
-                                              # the tracking gain)
-BODY_CMD_MAX_Z         = 0.03                # ±30 mm height
-BODY_CMD_MAX_ANGLE     = math.radians(30)    # ±30° per Euler axis
-
-# Body pose tracking nominal height — matches the lower bound of the vel-env
-# reset_base z range (0.12–0.13), which is where the trunk sits during steady
-# upright walking. At cmd_z=0 this gives z_err≈0 → reward saturates at 1, so
-# the curriculum only kicks in when a non-zero z command is issued.
-BODY_CMD_NOMINAL_HEIGHT = 0.12
+# Prone-init ramp (phase 3): capped at 45% prone (was 2/3 — starved the walk).
+# Face-down introduced first (easier recovery), face-up mixed in later.
+PRONE_RAMP_STAGES = [
+    {"step": 0,                        "params": {"prone_prob": 0.00, "face_down_prob": 1.0}},
+    {"step": 1500 * NUM_STEPS_PER_ENV, "params": {"prone_prob": 0.15, "face_down_prob": 0.80}},
+    {"step": 2000 * NUM_STEPS_PER_ENV, "params": {"prone_prob": 0.30, "face_down_prob": 0.65}},
+    {"step": 2500 * NUM_STEPS_PER_ENV, "params": {"prone_prob": 0.45, "face_down_prob": 0.50}},
+]
 
 
 def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> ManagerBasedRlEnvCfg:
-    # Build on top of the vel env so walk rewards / curricula stay in sync
-    # automatically — we only add recovery + body-pose extensions here.
-    cfg = make_microduck_velocity_env_cfg(play=play, rough=rough)
+    # Walk layer: the PROVEN velocity2 recipe, verbatim.
+    cfg = make_microduck_velocity2_env_cfg(play=play, rough=rough)
 
-    # In play mode the curriculum doesn't run (env starts at step 0), so the
-    # fall-termination disable wouldn't take effect via the curriculum below.
-    # Just delete the termination entirely — setting limit_angle=π would still
-    # let bad_orientation fire if any cached-params path bypasses the update.
+    # In play mode the curriculum doesn't run, so the fall-termination disable
+    # below never fires — just delete the termination outright.
     if play:
         cfg.terminations.pop("fell_over", None)
 
-    # Switch to the full-collision standup XML. The walk XML has stripped
-    # contacts on the trunk/head shells to make falling cheap; the standup XML
-    # keeps them, which is what we need for physical body-on-ground recovery.
+    # Full-collision standup XML: trunk/head shells keep their contacts so the
+    # robot can physically lie on the ground and push off it.
     cfg.scene.entities = {"robot": MICRODUCK_STANDUP_ROBOT_CFG}
 
-    # Extra contact sensors for impact penalties during the recovery phase.
+    # Impact sensors for the recovery penalties.
     trunk_impact_cfg = ContactSensorCfg(
         name="trunk_impact_contact",
         primary=ContactMatch(mode="body", pattern="trunk_base", entity="robot"),
@@ -124,63 +113,33 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
     )
     cfg.scene.sensors = (*cfg.scene.sensors, trunk_impact_cfg, head_impact_cfg)
 
-    # ── EVENTS: random prone init (ramped in by curriculum) ─────────────────
-    # On reset, with probability `prone_prob`, override the upright orientation
-    # set by reset_base with face-down or face-up (50/50). prone_prob starts at
-    # 0 and the curriculum ramps it up over iters PRONE_RAMP_START → PRONE_RAMP_END,
-    # ending at 2/3 → balanced 33/33/33 mixture of upright/face-down/face-up.
-    if ENABLE_PRONE_INIT:
-        cfg.events["random_prone_init"] = EventTermCfg(
-            func=microduck_mdp.maybe_set_random_prone_orientation,
-            mode="reset",
-            params={"prone_prob": 0.0, "face_down_prob": 0.5},
-        )
-
-    # ── Penalize parking hip_yaw on its hard limits ──────────────────────────
-    # The policy commands very large yaw targets (intended — low kp means it
-    # overshoots to reach a setpoint) and the joint ends up pinned on its MJCF
-    # hard stop, where the foot slides/pivots. The base `dof_pos_limits` term is
-    # toothless here (soft limit at 0.9 factor → only the last ~7.5% of range,
-    # tiny magnitude) and we explicitly do NOT want to regularize the command
-    # side. So add a qpos-side limit-proximity penalty that bites within a wide
-    # `margin` of the hard limits, scoped to the yaws. Scoped to velstand so the
-    # plain velocity policy is untouched. margin=0.15 rad → for hip_yaw's
-    # [−0.262, +0.524] range the penalty starts at +0.374 / −0.112 rad.
-    cfg.rewards["hip_yaw_limit_proximity"] = RewardTermCfg(
-        func=microduck_mdp.joint_pos_limit_proximity,
-        weight=-0.0, # WAS -3.0
-        params={
-            "asset_cfg": SceneEntityCfg("robot", joint_names=(r".*hip_yaw.*",)),
-            "margin": 0.15,
-        },
-    )
-
-    # ── REWARDS: fall recovery layer ─────────────────────────────────────────
-    # These all sit at high reward when standing normally (free reward while
-    # walking) and only meaningfully push the policy when it's fallen.
+    # ── Recovery reward layer — GATED on actually-being-fallen ────────────────
+    # Exactly zero while walking upright (gate closed) → no dilution of the
+    # velocity2 tracking rewards, no bounce farming. See _fallen_mask in mdp.py.
     cfg.rewards["upright_linear"] = RewardTermCfg(
         func=microduck_mdp.body_upright_linear,
         weight=2.0,
-        params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))},
+        params={
+            "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
+            "gate_z_below": GATE_Z,
+            "gate_tilt_above_deg": GATE_TILT_DEG,
+        },
     )
     cfg.rewards["com_upward_velocity"] = RewardTermCfg(
         func=microduck_mdp.com_upward_velocity,
         weight=2.0,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
-            "max_height": 0.115,
+            # Height gate slightly above standing (standup uses 0.125) so the
+            # rising reward keeps paying until fully up; the fallen gate is
+            # what prevents gait-bounce farming, not this ceiling.
+            "max_height": 0.125,
+            "gate_z_below": GATE_Z,
+            "gate_tilt_above_deg": GATE_TILT_DEG,
         },
     )
-    # Recovery-only height reward: rewards being "near standing height" regardless
-    # of body_pose z command. Range covers the full body_pose z command sweep
-    # (nominal_height ± BODY_CMD_MAX_Z ≈ 0.09–0.15) plus margin, so commanding
-    # the body up or down doesn't fight this reward. Below ~0.08 means
-    # genuinely fallen → 0 reward, which is what bootstraps fall recovery.
-    cfg.rewards["com_height_recovery"] = RewardTermCfg(
-        func=microduck_mdp.com_height_target,
-        weight=3.0,
-        params={"target_height_min": 0.08, "target_height_max": 0.16},
-    )
+    # Impact penalties: discourage slamming the trunk shell / head into the
+    # ground during falls and recovery pushes. Ungated (always relevant).
     cfg.rewards["trunk_impact_penalty"] = RewardTermCfg(
         func=microduck_mdp.body_impact_cost,
         weight=-0.1,
@@ -191,123 +150,65 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
         weight=-1.0,
         params={"sensor_name": head_impact_cfg.name, "threshold": 2.0},
     )
+    # Standup's proven anti-jitter term: penalizes torque CHANGE (not magnitude
+    # or rotation) → smooths transfer without blocking the recovery flip.
+    cfg.rewards["joint_torque_rate_l2"] = RewardTermCfg(
+        func=microduck_mdp.joint_torque_rate_l2,
+        weight=-2e-3,
+    )
 
-    # Body pose tracking, GATED on linear velocity command magnitude.
-    # When the robot is commanded to stand still (|vel_cmd_xy| ≈ 0) the gate
-    # opens and the policy is rewarded for matching the body_pose command.
-    # When commanded to walk the gate closes (≈0) and tracking has no effect.
-    # This sidesteps the body-vs-walking gradient conflict that prevented
-    # earlier runs from learning either well.
-    #
-    # xy tracking is masked out because trunk x/y lean is mechanically coupled
-    # to pitch/roll on this robot (leaning forward shifts trunk AND pitches
-    # it), so independent xy commands produce noise rather than useful gradient.
-    if ENABLE_BODY_TRACKING:
-        cfg.rewards["body_pose_tracking"] = RewardTermCfg(
-            func=microduck_mdp.body_pose_tracking_locomotion,
-            weight=0.0,  # curriculum ramps this up; tracking only active when standing
-            params={
-                "command_name": "body_pose",
-                "nominal_height": BODY_CMD_NOMINAL_HEIGHT,
-                "xy_std":    BODY_CMD_MAX_XY    / 2.0,
-                "z_std":     BODY_CMD_MAX_Z     / 2.0,
-                "angle_std": BODY_CMD_MAX_ANGLE / 2.0,
-                "axis_weights": (0.0, 0.0, 1.0, 1.0, 1.0, 1.0),  # z, roll, pitch, yaw only
-                "vel_gate_command_name": "twist",
-                "vel_gate_std": 0.05,   # gate≈1 at |vel_cmd_xy|=0; ≈0 by |vel_cmd_xy|≥0.15 m/s
-                "feet_cfg":  SceneEntityCfg("robot", site_names=("left_foot", "right_foot")),
-            },
-        )
-    else:
-        cfg.rewards["body_pose_tracking"].weight = 0.0
-
-    # ── CURRICULUM ───────────────────────────────────────────────────────────
-    # Phase 1 → 2: disable fell_over termination at iter 500 by ramping its
-    # limit_angle from 70° to 180° (so it never fires).
-    cfg.curriculum["fell_over_disable"] = CurriculumTermCfg(
-        func=microduck_mdp.termination_param_curriculum,
+    # ── Events: prone init ────────────────────────────────────────────────────
+    # z fix (audit BUG): the function defaults were 0.20–0.25 m — a 15–20 cm
+    # free-fall opening every prone episode. Face-down trunk rests at ~0.044 m;
+    # spawn just above the ground instead.
+    cfg.events["random_prone_init"] = EventTermCfg(
+        func=microduck_mdp.maybe_set_random_prone_orientation,
+        mode="reset",
         params={
-            "term_name": "fell_over",
-            "param_stages": [
-                {"step": 0,
-                 "params": {"limit_angle": math.radians(70.0)}},
-                {"step": FELL_OVER_DISABLE_ITER * NUM_STEPS_PER_ENV,
-                 "params": {"limit_angle": math.pi}},
-            ],
+            "prone_prob": 0.0,        # ramped by the prone_init_prob curriculum
+            "face_down_prob": 1.0,
+            "prone_z_min": 0.05,
+            "prone_z_max": 0.09,
         },
     )
 
-    # body_pose_tracking weight curriculum REMOVED — body tracking disabled
-    # for now. Keep the body_pose command term + obs slot for shape parity.
+    # ── Terminations ──────────────────────────────────────────────────────────
+    # Failed-recovery backstop (see module docstring, Phase 2).
+    cfg.terminations["fallen_too_long"] = TerminationTermCfg(
+        func=microduck_mdp.fallen_too_long,
+        time_out=False,
+        params={
+            "gate_z_below": GATE_Z,
+            "gate_tilt_above_deg": GATE_TILT_DEG,
+            "max_duration_s": FALLEN_TIMEOUT_S,
+        },
+    )
 
-    # Push velocity stays at the vel env's inherited ±0.5 m/s — no curriculum.
-
-    # Random prone-init ramp: 0 until iter PRONE_RAMP_START, then climbs in
-    # discrete stages of ~11% each up to 2/3 at iter PRONE_RAMP_END
-    # (= 33% upright / 33% face-down / 33% face-up).
-    if ENABLE_PRONE_INIT:
-        _prone_target = 2.0 / 3.0
-        _prone_stages_n = 6
-        _prone_ramp_iters = PRONE_RAMP_END - PRONE_RAMP_START
-        cfg.curriculum["prone_init_prob"] = CurriculumTermCfg(
-            func=microduck_mdp.event_param_curriculum,
+    # ── Curricula ─────────────────────────────────────────────────────────────
+    # Phase 1 → 2: disable fell_over at iter 500 (limit 70° → 180°) so falls
+    # become recovery training instead of episode ends.
+    if not play:
+        cfg.curriculum["fell_over_disable"] = CurriculumTermCfg(
+            func=microduck_mdp.termination_param_curriculum,
             params={
-                "event_name": "random_prone_init",
+                "term_name": "fell_over",
                 "param_stages": [
-                    {"step": 0, "params": {"prone_prob": 0.0, "face_down_prob": 0.5}},
-                    *(
-                        {
-                            "step": (PRONE_RAMP_START + (k * _prone_ramp_iters) // _prone_stages_n) * NUM_STEPS_PER_ENV,
-                            "params": {"prone_prob": k * _prone_target / _prone_stages_n, "face_down_prob": 0.5},
-                        }
-                        for k in range(1, _prone_stages_n + 1)
-                    ),
+                    {"step": 0,
+                     "params": {"limit_angle": math.radians(70.0)}},
+                    {"step": FELL_OVER_DISABLE_ITER * NUM_STEPS_PER_ENV,
+                     "params": {"limit_angle": math.pi}},
                 ],
             },
         )
 
-    if ENABLE_BODY_TRACKING:
-        # Weight ramp: 0 until BODY_POSE_KICKIN_ITER, then climbs hard. With
-        # the gate, only ~25% of training samples (the standing envs) actually
-        # contribute body-tracking gradient — to compensate, the weight is set
-        # high enough that the gradient on those samples is strong.
-        # NB: do NOT bump standing_envs ratio to compensate — prior runs showed
-        # that >25% standing envs make the policy forget how to walk.
-        cfg.curriculum["body_pose_tracking_weight"] = CurriculumTermCfg(
-            func=microduck_mdp.reward_weight,
-            params={
-                "reward_name": "body_pose_tracking",
-                "weight_stages": [
-                    {"step": 0,                                                  "weight": 0.0},
-                    {"step": BODY_POSE_KICKIN_ITER         * NUM_STEPS_PER_ENV,  "weight": 4.0},
-                    {"step": (BODY_POSE_KICKIN_ITER +  500) * NUM_STEPS_PER_ENV, "weight": 6.0},
-                    {"step": (BODY_POSE_KICKIN_ITER + 1000) * NUM_STEPS_PER_ENV, "weight": 8.0},
-                ],
-            },
-        )
-
-        # body_pose range widens at phase 3 (overrides vel env's kept-alive range).
-        # xy ranges stay tiny since axis_weights mask them out anyway.
-        cfg.curriculum["body_pose_range"].params["range_stages"] = [
-            {"step": 0, "ranges": (
-                (-0.005, 0.005), (-0.005, 0.005), (-0.005, 0.005),
-                (-0.05, 0.05), (-0.05, 0.05), (-0.05, 0.05),
-            )},
-            {"step": BODY_POSE_KICKIN_ITER * NUM_STEPS_PER_ENV, "ranges": (
-                (-0.005, 0.005), (-0.005, 0.005), (-0.015, 0.015),
-                (-math.radians(15), math.radians(15)),
-                (-math.radians(15), math.radians(15)),
-                (-math.radians(15), math.radians(15)),
-            )},
-            {"step": (BODY_POSE_KICKIN_ITER + 1000) * NUM_STEPS_PER_ENV, "ranges": (
-                (-BODY_CMD_MAX_XY, BODY_CMD_MAX_XY),
-                (-BODY_CMD_MAX_XY, BODY_CMD_MAX_XY),
-                (-BODY_CMD_MAX_Z,  BODY_CMD_MAX_Z),
-                (-BODY_CMD_MAX_ANGLE, BODY_CMD_MAX_ANGLE),
-                (-BODY_CMD_MAX_ANGLE, BODY_CMD_MAX_ANGLE),
-                (-BODY_CMD_MAX_ANGLE, BODY_CMD_MAX_ANGLE),
-            )},
-        ]
+    # Phase 3: prone-init ramp (face-down first, face-up later, capped 45%).
+    cfg.curriculum["prone_init_prob"] = CurriculumTermCfg(
+        func=microduck_mdp.event_param_curriculum,
+        params={
+            "event_name": "random_prone_init",
+            "param_stages": PRONE_RAMP_STAGES,
+        },
+    )
 
     return cfg
 
@@ -347,6 +248,6 @@ MicroduckVelStandRlCfg = RslRlOnPolicyRunnerCfg(
     experiment_name="velstand",
     run_name="velstand",
     save_interval=250,
-    num_steps_per_env=NUM_STEPS_PER_ENV,
+    num_steps_per_env=24,
     max_iterations=20_000,
 )
