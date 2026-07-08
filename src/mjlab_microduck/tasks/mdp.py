@@ -509,6 +509,35 @@ def feet_air_time_upright(
     return reward * upright
 
 
+def upright_progress(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """Potential-based upright shaping: Δcos(tilt) per step.
+
+    Pays for PROGRESS toward upright, charges for progress toward fallen, and
+    pays exactly ZERO for holding any pose — so no state can farm it (the gated
+    state-reward it replaces was farmed from sitting, lying flat, and a
+    head-tripod lean across three velstand runs). Potential-based shaping is
+    policy-invariant (Ng et al.): it accelerates learning of recovery without
+    creating new optima. A full prone→stand recovery collects Δ≈+1 total
+    (× weight); a fall costs the same on the way down.
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    quat = asset.data.root_link_quat_w
+    cos_tilt = torch.nan_to_num(
+        1.0 - 2.0 * (quat[:, 1] ** 2 + quat[:, 2] ** 2), nan=1.0
+    )
+    if not hasattr(env, "_upright_potential_prev"):
+        env._upright_potential_prev = cos_tilt.clone()
+    # Freshly reset envs: no spurious delta from the previous episode's pose.
+    fresh = env.episode_length_buf <= 1
+    env._upright_potential_prev[fresh] = cos_tilt[fresh]
+    delta = cos_tilt - env._upright_potential_prev
+    env._upright_potential_prev = cos_tilt.clone()
+    return delta
+
+
 def fallen_state_penalty(
     env: ManagerBasedRlEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,

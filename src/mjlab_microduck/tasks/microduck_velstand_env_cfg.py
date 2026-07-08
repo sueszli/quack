@@ -110,22 +110,24 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
     # robot can physically lie on the ground and push off it.
     cfg.scene.entities = {"robot": MICRODUCK_STANDUP_ROBOT_CFG}
 
-    # ── Recovery reward layer — GATED on actually-being-fallen ────────────────
-    # Exactly zero while walking upright (gate closed) → no dilution of the
-    # velocity2 tracking rewards, no bounce farming. See _fallen_mask in mdp.py.
-    cfg.rewards["upright_linear"] = RewardTermCfg(
-        func=microduck_mdp.body_upright_linear,
-        weight=2.0,
+    # ── Recovery reward layer ─────────────────────────────────────────────────
+    # LESSON (runs 1/2/4 — sitting, lying, head-tripod): ANY positive reward for
+    # BEING in a fallen-ish state gets farmed from some comfortable pose. The
+    # orientation reward is therefore POTENTIAL-BASED (Δcos tilt): rising pays,
+    # falling costs, holding anything pays zero. Unfarmable, ungated, and also
+    # rewards catching a stumble while walking. (Run 4 specifically: removing
+    # the head-impact penalty unlocked a head-tripod at ~55° farming the gated
+    # +2·cos(tilt) — run 2 had only been protected from it by that penalty.)
+    cfg.rewards["upright_progress"] = RewardTermCfg(
+        func=microduck_mdp.upright_progress,
+        weight=5.0,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
-            # tilt-only gate: z=0.0 never triggers (see LESSON above)
-            "gate_z_below": 0.0,
-            "gate_tilt_above_deg": REWARD_GATE_TILT_DEG,
         },
     )
     cfg.rewards["com_upward_velocity"] = RewardTermCfg(
         func=microduck_mdp.com_upward_velocity,
-        weight=2.0,
+        weight=0.0,  # recovery term — ramped in at RECOVERY_ECON_KICKIN_ITER
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
             # Height gate slightly above standing (standup uses 0.125) so the
@@ -256,6 +258,16 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
             "weight_stages": [
                 {"step": 0, "weight": 0.0},
                 {"step": RECOVERY_ECON_KICKIN_ITER * NUM_STEPS_PER_ENV, "weight": 10.0},
+            ],
+        },
+    )
+    cfg.curriculum["com_upward_weight"] = CurriculumTermCfg(
+        func=microduck_mdp.reward_weight,
+        params={
+            "reward_name": "com_upward_velocity",
+            "weight_stages": [
+                {"step": 0, "weight": 0.0},
+                {"step": RECOVERY_ECON_KICKIN_ITER * NUM_STEPS_PER_ENV, "weight": 2.0},
             ],
         },
     )
