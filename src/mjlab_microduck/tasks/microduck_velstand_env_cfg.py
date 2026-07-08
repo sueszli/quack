@@ -62,11 +62,17 @@ from mjlab_microduck.tasks.symmetry import PpoWithSymmetryCfg
 FELL_OVER_DISABLE_ITER = 500
 NUM_STEPS_PER_ENV = 24
 
-# Fallen gate shared by the recovery rewards and the fallen_too_long backstop:
-# fallen = trunk z below GATE_Z OR tilt beyond GATE_TILT. Walking sits at
-# z ≈ 0.115–0.13 with tilt < 25°, so the gate is firmly closed during gait.
-GATE_Z = 0.10
-GATE_TILT_DEG = 40.0
+# Fallen gates. LESSON (first rebase training run): the recovery REWARDS must
+# gate on TILT ONLY. Gating them on low height too made SITTING (z≈0.07, trunk
+# upright) open the gate → the policy learned to sit and farm upright_linear
+# while bobbing for com_upward_velocity and shaking its legs through the
+# air_time window. Gating a positive reward on a bad state rewards entering
+# the state. Tilt>40° can't be farmed from a comfortable pose — you're
+# genuinely toppled. The TERMINATION keeps the z-condition so sitters and
+# stuck-low envs get recycled (terminated) rather than paid.
+REWARD_GATE_TILT_DEG = 40.0   # recovery rewards: fallen = tilt > 40° ONLY
+TERM_GATE_Z = 0.10            # fallen_too_long: z < 0.10 OR tilt > 40°
+TERM_GATE_TILT_DEG = 40.0
 
 # Failed-recovery backstop: continuously fallen this long → terminate/reset.
 FALLEN_TIMEOUT_S = 5.0
@@ -121,8 +127,9 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
         weight=2.0,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
-            "gate_z_below": GATE_Z,
-            "gate_tilt_above_deg": GATE_TILT_DEG,
+            # tilt-only gate: z=0.0 never triggers (see LESSON above)
+            "gate_z_below": 0.0,
+            "gate_tilt_above_deg": REWARD_GATE_TILT_DEG,
         },
     )
     cfg.rewards["com_upward_velocity"] = RewardTermCfg(
@@ -134,8 +141,9 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
             # rising reward keeps paying until fully up; the fallen gate is
             # what prevents gait-bounce farming, not this ceiling.
             "max_height": 0.125,
-            "gate_z_below": GATE_Z,
-            "gate_tilt_above_deg": GATE_TILT_DEG,
+            # tilt-only gate: z=0.0 never triggers (see LESSON above)
+            "gate_z_below": 0.0,
+            "gate_tilt_above_deg": REWARD_GATE_TILT_DEG,
         },
     )
     # Impact penalties: discourage slamming the trunk shell / head into the
@@ -178,8 +186,8 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
         func=microduck_mdp.fallen_too_long,
         time_out=False,
         params={
-            "gate_z_below": GATE_Z,
-            "gate_tilt_above_deg": GATE_TILT_DEG,
+            "gate_z_below": TERM_GATE_Z,
+            "gate_tilt_above_deg": TERM_GATE_TILT_DEG,
             "max_duration_s": FALLEN_TIMEOUT_S,
         },
     )
