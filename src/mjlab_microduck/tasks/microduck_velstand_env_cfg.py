@@ -70,8 +70,19 @@ NUM_STEPS_PER_ENV = 24
 # genuinely toppled. The TERMINATION keeps the z-condition so sitters and
 # stuck-low envs get recycled (terminated) rather than paid.
 REWARD_GATE_TILT_DEG = 40.0   # recovery rewards: fallen = tilt > 40° ONLY
-TERM_GATE_Z = 0.10            # fallen_too_long: z < 0.10 OR tilt > 40°
+# TERM z-gate at 0.08, NOT 0.10 (run-3 lesson): a normally wobbling upright
+# robot dips to z=0.084-0.096 — 0.10 sits inside the early-learning envelope
+# and recycled crouch-walking explorers every 5 s. 0.08 still catches sitting
+# (z≈0.07) and prone (z≈0.05).
+TERM_GATE_Z = 0.08            # fallen_too_long: z < 0.08 OR tilt > 40°
 TERM_GATE_TILT_DEG = 40.0
+
+# The tax and bounty exist FOR THE RECOVERY PHASE. Run-3 lesson: fallen_tax
+# active from step 0 (dense, -0.5) taught "avoid tilt at all costs" within ~25
+# iters → crouch-freeze local optimum before walking could bootstrap (ep_len
+# pinned at the 5 s recycle, air_time never grew). Both ramp in at iter 1200 —
+# after the walk is established, before the prone ramp begins at 1500.
+RECOVERY_ECON_KICKIN_ITER = 1200
 
 # Failed-recovery backstop: continuously fallen this long → terminate/reset.
 FALLEN_TIMEOUT_S = 5.0
@@ -152,7 +163,7 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
     # recovery attempts cost action-rate/torque penalties, waiting cost 0.)
     cfg.rewards["fallen_tax"] = RewardTermCfg(
         func=microduck_mdp.fallen_state_penalty,
-        weight=-0.5,
+        weight=0.0,  # ramped to -0.5 at RECOVERY_ECON_KICKIN_ITER (see curriculum)
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
             "gate_tilt_above_deg": REWARD_GATE_TILT_DEG,
@@ -163,7 +174,7 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
     # signal the dense gated terms lack.
     cfg.rewards["recovery_success"] = RewardTermCfg(
         func=microduck_mdp.recovery_success,
-        weight=10.0,
+        weight=0.0,  # ramped to +10 at RECOVERY_ECON_KICKIN_ITER (see curriculum)
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
             "fallen_tilt_deg": REWARD_GATE_TILT_DEG,
@@ -223,6 +234,29 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
         params={
             "event_name": "random_prone_init",
             "param_stages": PRONE_RAMP_STAGES,
+        },
+    )
+
+    # Recovery economics ramp: tax + bounty OFF until the walk is established
+    # (see RECOVERY_ECON_KICKIN_ITER note above — run-3 crouch-freeze lesson).
+    cfg.curriculum["fallen_tax_weight"] = CurriculumTermCfg(
+        func=microduck_mdp.reward_weight,
+        params={
+            "reward_name": "fallen_tax",
+            "weight_stages": [
+                {"step": 0, "weight": 0.0},
+                {"step": RECOVERY_ECON_KICKIN_ITER * NUM_STEPS_PER_ENV, "weight": -0.5},
+            ],
+        },
+    )
+    cfg.curriculum["recovery_success_weight"] = CurriculumTermCfg(
+        func=microduck_mdp.reward_weight,
+        params={
+            "reward_name": "recovery_success",
+            "weight_stages": [
+                {"step": 0, "weight": 0.0},
+                {"step": RECOVERY_ECON_KICKIN_ITER * NUM_STEPS_PER_ENV, "weight": 10.0},
+            ],
         },
     )
 
