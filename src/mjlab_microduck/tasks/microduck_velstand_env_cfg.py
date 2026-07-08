@@ -49,7 +49,6 @@ from mjlab.rl import (
     RslRlOnPolicyRunnerCfg,
     RslRlModelCfg,
 )
-from mjlab.sensor import ContactMatch, ContactSensorCfg
 
 from mjlab_microduck.robot.microduck_constants import MICRODUCK_STANDUP_ROBOT_CFG
 from mjlab_microduck.tasks import mdp as microduck_mdp
@@ -100,25 +99,6 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
     # robot can physically lie on the ground and push off it.
     cfg.scene.entities = {"robot": MICRODUCK_STANDUP_ROBOT_CFG}
 
-    # Impact sensors for the recovery penalties.
-    trunk_impact_cfg = ContactSensorCfg(
-        name="trunk_impact_contact",
-        primary=ContactMatch(mode="body", pattern="trunk_base", entity="robot"),
-        secondary=ContactMatch(mode="body", pattern="terrain"),
-        fields=("force",),
-        reduce="netforce",
-        num_slots=1,
-    )
-    head_impact_cfg = ContactSensorCfg(
-        name="head_impact_contact",
-        primary=ContactMatch(mode="subtree", pattern="neck", entity="robot"),
-        secondary=ContactMatch(mode="body", pattern="terrain"),
-        fields=("force",),
-        reduce="netforce",
-        num_slots=1,
-    )
-    cfg.scene.sensors = (*cfg.scene.sensors, trunk_impact_cfg, head_impact_cfg)
-
     # ── Recovery reward layer — GATED on actually-being-fallen ────────────────
     # Exactly zero while walking upright (gate closed) → no dilution of the
     # velocity2 tracking rewards, no bounce farming. See _fallen_mask in mdp.py.
@@ -146,23 +126,51 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
             "gate_tilt_above_deg": REWARD_GATE_TILT_DEG,
         },
     )
-    # Impact penalties: discourage slamming the trunk shell / head into the
-    # ground during falls and recovery pushes. Ungated (always relevant).
-    cfg.rewards["trunk_impact_penalty"] = RewardTermCfg(
-        func=microduck_mdp.body_impact_cost,
-        weight=-0.1,
-        params={"sensor_name": trunk_impact_cfg.name, "threshold": 5.0},
-    )
-    cfg.rewards["head_impact_penalty"] = RewardTermCfg(
-        func=microduck_mdp.body_impact_cost,
-        weight=-1.0,
-        params={"sensor_name": head_impact_cfg.name, "threshold": 2.0},
-    )
+    # NO impact penalties (first run lesson #2): the standup SPECIALIST has
+    # none — the duck's recovery pushes off with head/trunk, and the head
+    # penalty (-1.0 @ 2 N) taxed exactly that strategy. Falls stayed cheaper
+    # than getting up. joint_torque_rate_l2 below covers landing harshness.
     # Standup's proven anti-jitter term: penalizes torque CHANGE (not magnitude
     # or rotation) → smooths transfer without blocking the recovery flip.
     cfg.rewards["joint_torque_rate_l2"] = RewardTermCfg(
         func=microduck_mdp.joint_torque_rate_l2,
         weight=-2e-3,
+    )
+
+    # ── Recovery economics (first-run lessons #3-#5) ──────────────────────────
+    # air_time zeroed while fallen: a robot lying on its trunk can rhythmically
+    # tap its feet through the swing window — the observed "shaking a leg" farm.
+    at = cfg.rewards["air_time"]
+    at_params = dict(at.params)
+    cfg.rewards["air_time"] = RewardTermCfg(
+        func=microduck_mdp.feet_air_time_upright,
+        weight=at.weight,
+        params={**at_params, "gate_tilt_above_deg": REWARD_GATE_TILT_DEG},
+    )
+    # Flat tax while fallen: lying still must be strictly worse than trying.
+    # (Without it, waiting 5 s for the fallen_too_long recycle was rational —
+    # recovery attempts cost action-rate/torque penalties, waiting cost 0.)
+    cfg.rewards["fallen_tax"] = RewardTermCfg(
+        func=microduck_mdp.fallen_state_penalty,
+        weight=-0.5,
+        params={
+            "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
+            "gate_tilt_above_deg": REWARD_GATE_TILT_DEG,
+        },
+    )
+    # One-shot bounty on a COMPLETED recovery (fallen ≥0.5 s → genuinely up),
+    # with hysteresis so gate-oscillation pays nothing. The strong endpoint
+    # signal the dense gated terms lack.
+    cfg.rewards["recovery_success"] = RewardTermCfg(
+        func=microduck_mdp.recovery_success,
+        weight=10.0,
+        params={
+            "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
+            "fallen_tilt_deg": REWARD_GATE_TILT_DEG,
+            "min_fallen_s": 0.5,
+            "up_tilt_deg": 25.0,
+            "up_z": 0.105,
+        },
     )
 
     # ── Events: prone init ────────────────────────────────────────────────────

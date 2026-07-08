@@ -490,6 +490,76 @@ def _fallen_mask(
     return fallen.float()
 
 
+def feet_air_time_upright(
+    env: ManagerBasedRlEnv,
+    gate_tilt_above_deg: float = 40.0,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    **air_time_kwargs,
+) -> torch.Tensor:
+    """velocity template feet_air_time, zeroed while FALLEN (tilt > gate).
+
+    velstand: a robot lying on its trunk can still tap its feet rhythmically
+    through the air-time window — the observed "lies there shaking a leg"
+    exploit. Air time is only meaningful upright.
+    """
+    from mjlab.tasks.velocity.mdp import feet_air_time as _template_air_time
+    reward = _template_air_time(env, **air_time_kwargs)
+    asset: Entity = env.scene[asset_cfg.name]
+    upright = 1.0 - _fallen_mask(env, asset, 0.0, gate_tilt_above_deg)
+    return reward * upright
+
+
+def fallen_state_penalty(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    gate_tilt_above_deg: float = 40.0,
+) -> torch.Tensor:
+    """1.0 while FALLEN (weight it negative): a flat per-step tax on staying
+    down. Without it, lying still is ~0/step while attempting recovery costs
+    action-rate/torque penalties — waiting for the fallen_too_long recycle was
+    the rational policy. (Penalties on bad states are safe; it's POSITIVE
+    rewards gated on bad states that get farmed.)"""
+    asset: Entity = env.scene[asset_cfg.name]
+    return _fallen_mask(env, asset, 0.0, gate_tilt_above_deg)
+
+
+def recovery_success(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    fallen_tilt_deg: float = 40.0,
+    min_fallen_s: float = 0.5,
+    up_tilt_deg: float = 25.0,
+    up_z: float = 0.105,
+) -> torch.Tensor:
+    """One-shot bounty on a COMPLETED recovery: fires on the frame where an env
+    that has been fallen (tilt > fallen_tilt for ≥ min_fallen_s) becomes
+    genuinely upright (tilt < up_tilt AND trunk z > up_z). Hysteresis: re-arms
+    only by being fallen again, so oscillating around the gate pays nothing.
+    Gives the sparse-but-strong endpoint gradient the dense gated terms lack.
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    z = torch.nan_to_num(
+        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
+    )
+    quat = asset.data.root_link_quat_w
+    cos_tilt = 1.0 - 2.0 * (quat[:, 1] ** 2 + quat[:, 2] ** 2)
+    fallen = cos_tilt < math.cos(math.radians(fallen_tilt_deg))
+    up = (cos_tilt > math.cos(math.radians(up_tilt_deg))) & (z > up_z)
+    if not hasattr(env, "_recovery_fallen_s"):
+        env._recovery_fallen_s = torch.zeros(env.num_envs, device=env.device)
+        env._recovery_armed = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
+    fresh = env.episode_length_buf <= 1
+    env._recovery_fallen_s[fresh] = 0.0
+    env._recovery_armed[fresh] = False
+    env._recovery_fallen_s = torch.where(
+        fallen, env._recovery_fallen_s + env.step_dt, torch.zeros_like(env._recovery_fallen_s)
+    )
+    env._recovery_armed |= env._recovery_fallen_s >= min_fallen_s
+    fired = env._recovery_armed & up
+    env._recovery_armed &= ~fired
+    return fired.float()
+
+
 def body_upright_linear(
     env: ManagerBasedRlEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
