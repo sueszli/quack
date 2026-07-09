@@ -32,6 +32,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 from netrc import netrc
 from pathlib import Path
 
@@ -166,6 +167,27 @@ def _pick_namespace(api: HfApi, preset: str | None) -> str:
         if raw in choices:
             return raw
         print(f"  invalid choice: {raw!r}")
+
+
+def _wait_for_start(
+    api: HfApi, job_id: str, namespace: str, timeout_s: float = 180.0
+) -> tuple[str, str | None]:
+    """Poll the job until it leaves the queued/starting states.
+
+    Returns (stage, message). Stages: RUNNING/COMPLETED (started fine),
+    ERROR (startup failure, e.g. volume mount), or whatever the last observed
+    stage was if the wait times out (queued jobs can legitimately wait long —
+    that is not an error).
+    """
+    deadline = time.monotonic() + timeout_s
+    stage, message = "", None
+    while time.monotonic() < deadline:
+        status = api.inspect_job(job_id=job_id, namespace=namespace).status
+        stage, message = status.stage, status.message
+        if stage in ("RUNNING", "COMPLETED", "ERROR", "DELETED", "CANCELED"):
+            return stage, message
+        time.sleep(5)
+    return stage, message
 
 
 def submit(argv: list[str]) -> int:
@@ -309,36 +331,54 @@ def submit(argv: list[str]) -> int:
         if cache_bucket is not None:
             api.create_bucket(cache_bucket, private=True, exist_ok=True)
 
-        # 3. Submit
+        # 3. Submit. Freshly created repos/buckets can fail to mount (a
+        # provisioning race: first run in a new namespace creates them seconds
+        # before the job starts — observed 2026-07). Watch startup and
+        # resubmit if the mount fails; by the second attempt the volumes are
+        # warm and mounting succeeds.
         print(f"[ckpt] checkpoints -> https://huggingface.co/{ckpt_repo}")
         print(f"[job] submitting (namespace={namespace}, flavor={args.flavor}, timeout={args.timeout})")
-        try:
-            job = api.run_job(
-                image=args.image,
-                command=["bash", "-c", BOOTSTRAP],
-                env=env,
-                secrets=secrets,
-                flavor=args.flavor,
-                timeout=args.timeout,
-                volumes=volumes,
-                namespace=namespace,
-            )
-        except Exception as e:
-            msg = str(e)
-            if "402" in msg or "Payment Required" in msg or "credit" in msg.lower():
-                print(
-                    "\n[job] ✗ Hugging Face Jobs billing error.\n"
-                    f"    The namespace {namespace!r} has insufficient Jobs credits.\n"
-                    "    → Add credits:   https://huggingface.co/settings/billing\n"
-                    "    → Or get HF Pro: https://huggingface.co/settings/billing/subscription",
-                    file=sys.stderr,
+        job = None
+        stage, message = "", None
+        for attempt in range(3):
+            if attempt:
+                print(f"[job] volume mount failed (provisioning race?) — resubmitting ({attempt + 1}/3)")
+                time.sleep(10)
+            try:
+                job = api.run_job(
+                    image=args.image,
+                    command=["bash", "-c", BOOTSTRAP],
+                    env=env,
+                    secrets=secrets,
+                    flavor=args.flavor,
+                    timeout=args.timeout,
+                    volumes=volumes,
+                    namespace=namespace,
                 )
-                return 2
-            raise
+            except Exception as e:
+                msg = str(e)
+                if "402" in msg or "Payment Required" in msg or "credit" in msg.lower():
+                    print(
+                        "\n[job] ✗ Hugging Face Jobs billing error.\n"
+                        f"    The namespace {namespace!r} has insufficient Jobs credits.\n"
+                        "    → Add credits:   https://huggingface.co/settings/billing\n"
+                        "    → Or get HF Pro: https://huggingface.co/settings/billing/subscription",
+                        file=sys.stderr,
+                    )
+                    return 2
+                raise
+            print(f"[job] id:  {job.id}")
+            if getattr(job, "url", None):
+                print(f"[job] url: {job.url}")
+            stage, message = _wait_for_start(api, job.id, namespace)
+            if stage == "ERROR" and "mount" in (message or "").lower():
+                continue  # provisioning race — resubmit
+            break
 
-    print(f"[job] id:  {job.id}")
-    if getattr(job, "url", None):
-        print(f"[job] url: {job.url}")
+    assert job is not None
+    if stage == "ERROR":
+        print(f"[job] ✗ failed to start: {message}", file=sys.stderr)
+        return 1
 
     if args.detach:
         return 0
