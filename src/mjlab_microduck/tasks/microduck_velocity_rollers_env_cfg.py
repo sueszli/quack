@@ -1,30 +1,74 @@
 """Microduck velocity environment — roller skate variant.
 
-TODO(new_cmd_obs branch): this env still uses the legacy 51D obs layout (twist
-only, 3D command). It needs migration to the unified 13D command vector
-(twist + head_pose + body_pose, total 61D obs) before its policies can be
-loaded by the new microduck_runtime --new-cmd-obs path. See
-project_new_cmd_obs.md for the layout and reference the migration done in
-microduck_velocity_env_cfg.py.
+MIGRATED to mjlab 1.3.0 + canonical BAM (2026-07), matching the velocity env's
+sim2real machinery, and updated for the NEW roller model:
+
+  - `get_walk_rollers_spec` now loads `robot_allcollisions_rollers.xml`
+    (it silently loaded the wheel-less standup model before): 14 actuated
+    joints + 4 passive wheels (passive_{L,R}{F,R}wheel), two per blade,
+    INTERSPERSED in the joint order (after each ankle) — everything resolves
+    joints by NAME, never by index.
+  - Legs run the canonical BAM actuator like every other variant (was a plain
+    XML PD — an actuator-physics mismatch, and no joint-friction DR).
+  - Obs migrated to the unified 61D layout (twist + zero-padded head/body
+    command slots) so roller policies load through the runtime's
+    --new-cmd-obs path. Symmetry OFF (SYMMETRY_CFG is hardcoded for the old
+    51D layout).
+  - DR/noise/delays matched to the velocity env's FIXED (non-accumulating,
+    per-env-verified) versions; wheel-bearing frictionloss DR kept
+    (dr.dof_frictionloss on the passive wheels + existing curriculum).
+
+Task design (unchanged — the roller recipe):
+  cmd_x semantics: 0 = coast, >0 = push to accelerate, <0 = brake.
+  cmd[2] = heading error via RelativeHeadingVelocityCommand.
+  Sole positive task reward is wheel_speed — the robot must actually spin its
+  wheels; braking/skating_air_time/forward_lean/heading_tracking shape the
+  skating style.
 """
 
+import math
 from copy import deepcopy
 
-# Symmetry
-ENABLE_SYMMETRY = True
+# Symmetry — OFF: SYMMETRY_CFG's obs permutation is hardcoded for the old 51D
+# layout and breaks on the 61D obs (same situation as all other v1.5+ envs).
+ENABLE_SYMMETRY = False
+
+# ── Domain randomisation toggles (matched to the velocity env) ────────────────
+ENABLE_COM_RANDOMIZATION             = True
+ENABLE_HEAD_COM_RANDOMIZATION        = True
+ENABLE_MASS_INERTIA_RANDOMIZATION    = True
+ENABLE_JOINT_FRICTION_RANDOMIZATION  = True   # BAM friction budget per-env (legs)
+ENABLE_ARMATURE_RANDOMIZATION        = True   # legs only — NOT the wheel bearings
+ENABLE_WHEEL_FRICTION_RANDOMIZATION  = True   # bearing frictionloss on passive wheels
+ENABLE_VELOCITY_PUSHES               = True
+ENABLE_IMU_ORIENTATION_RANDOMIZATION = True   # obs-level per-env rotation
+ENABLE_ENCODER_BIAS                  = True
+
+# ── Ranges (matched to the velocity env unless roller-specific) ───────────────
+COM_RANDOMIZATION_RANGE          = 0.003   # ±3mm initial, ramped via curriculum
+HEAD_COM_RANDOMIZATION_RANGE     = 0.003
+MASS_INERTIA_RANDOMIZATION_RANGE = (0.95, 1.05)
+JOINT_FRICTION_RANDOMIZATION_RANGE = (0.9, 1.1)
+ARMATURE_RANDOMIZATION_RANGE     = (0.9, 1.1)
+VELOCITY_PUSH_INTERVAL_S         = (3.0, 6.0)
+VELOCITY_PUSH_RANGE              = (-0.2, 0.2)  # roller-specific: gentler than walk ±0.3
+IMU_ORIENTATION_RANDOMIZATION_ANGLE = 6.0
+ENCODER_BIAS_RANGE               = (-0.015, 0.015)
 
 from mjlab.envs import ManagerBasedRlEnvCfg
+from mjlab.envs.mdp import dr
 from mjlab.envs.mdp.actions import JointPositionActionCfg
 from mjlab.managers import (
     CurriculumTermCfg,
     EventTermCfg,
     ObservationTermCfg,
     RewardTermCfg,
+    TerminationTermCfg,
 )
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.rl import (
     RslRlOnPolicyRunnerCfg,
-    RslRlPpoActorCriticCfg,
+    RslRlModelCfg,
 )
 from mjlab.sensor import ContactMatch, ContactSensorCfg
 from mjlab.tasks.velocity import mdp
@@ -34,6 +78,7 @@ from mjlab.utils.noise import UniformNoiseCfg as Unoise
 
 from mjlab_microduck.robot.microduck_constants import MICRODUCK_WALK_ROLLERS_ROBOT_CFG
 from mjlab_microduck.tasks import mdp as microduck_mdp
+from mjlab_microduck.tasks.microduck_velocity_env_cfg import HEAD_BODY_NAMES
 from mjlab_microduck.tasks.symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
 
 
@@ -42,7 +87,7 @@ def make_microduck_velocity_rollers_env_cfg(
 ) -> ManagerBasedRlEnvCfg:
     """Create Microduck roller skate velocity tracking environment configuration."""
 
-    # passive_.*: 999.0 means passive wheel joints are included but effectively ignored
+    # passive_.*: 999.0 → passive wheel joints are matched but effectively ignored
     std_standing = {
         r".*hip_yaw.*": 0.05,
         r".*hip_roll.*": 0.05,
@@ -76,13 +121,13 @@ def make_microduck_velocity_rollers_env_cfg(
         r".*passive_.*": 999.0,
     }
 
-    site_names = ["left_foot", "right_foot"]
-
+    # NEW roller model body names: the blades (subtrees include rims + wheels).
+    # The old pattern (roller_foot1|roller_foot2) matches nothing in this model.
     feet_ground_cfg = ContactSensorCfg(
         name="feet_ground_contact",
         primary=ContactMatch(
             mode="subtree",
-            pattern=r"^(roller_foot1|roller_foot2)$",
+            pattern=r"^(roller_blade|roller_blade_2)$",
             entity="robot",
         ),
         secondary=ContactMatch(mode="body", pattern="terrain"),
@@ -102,10 +147,6 @@ def make_microduck_velocity_rollers_env_cfg(
     )
 
     cfg = make_velocity_env_cfg()
-
-    cfg.observations["critic"].terms["foot_height"].params[
-        "asset_cfg"
-    ].site_names = site_names
 
     # Robot setup
     cfg.scene.entities = {"robot": MICRODUCK_WALK_ROLLERS_ROBOT_CFG}
@@ -199,79 +240,112 @@ def make_microduck_velocity_rollers_env_cfg(
         params={"command_name": "twist", "std": 0.8},
     )
 
+    # === TERMINATIONS ===
+    cfg.terminations["nan_state"] = TerminationTermCfg(
+        func=microduck_mdp.robot_state_is_nan,
+        time_out=False,
+    )
+
     # === EVENTS ===
     cfg.events["reset_action_history"] = EventTermCfg(
         func=microduck_mdp.reset_action_history,
         mode="reset",
     )
 
-    del cfg.events["foot_friction"]
+    del cfg.events["foot_friction"]  # wheels roll; ground friction lives in the XML
 
-    cfg.events["push_robot"] = EventTermCfg(
-        func=mdp.push_by_setting_velocity,
-        mode="interval",
-        interval_range_s=(3.0, 6.0),
-        params={
-            "velocity_range": {"x": (-0.2, 0.2), "y": (-0.2, 0.2)},
-            "asset_cfg": SceneEntityCfg("robot"),
-        },
-    )
+    if ENABLE_VELOCITY_PUSHES:
+        cfg.events["push_robot"] = EventTermCfg(
+            func=mdp.push_by_setting_velocity,
+            mode="interval",
+            interval_range_s=VELOCITY_PUSH_INTERVAL_S,
+            params={
+                "velocity_range": {"x": VELOCITY_PUSH_RANGE, "y": VELOCITY_PUSH_RANGE},
+                "asset_cfg": SceneEntityCfg("robot"),
+            },
+        )
 
     cfg.events["reset_base"].params["pose_range"]["z"] = (0.1335, 0.1435)
 
-    cfg.events["randomize_wheel_friction"] = EventTermCfg(
-        func=mdp.randomize_field,
-        mode="reset",
-        domain_randomization=True,
-        params={
-            "asset_cfg": SceneEntityCfg("robot", joint_names=(r"^passive_.*",)),
-            "operation": "abs",
-            "field": "dof_frictionloss",
-            "ranges": (0.000, 0.000),  # ramped up by wheel_friction_curriculum
-        },
-    )
+    # Wheel-bearing friction DR: real bearings have a little drag; the XML keeps
+    # frictionloss=0 for trainability and the curriculum ramps it in. mjlab 1.3.0
+    # stock dr op (operation="abs" writes the value directly; non-accumulating).
+    if ENABLE_WHEEL_FRICTION_RANDOMIZATION:
+        cfg.events["randomize_wheel_friction"] = EventTermCfg(
+            func=dr.dof_frictionloss,
+            mode="reset",
+            params={
+                "asset_cfg": SceneEntityCfg("robot", joint_names=(r"^passive_.*",)),
+                "operation": "abs",
+                "ranges": (0.000, 0.000),  # ramped up by wheel_friction_curriculum
+            },
+        )
 
-    cfg.events["randomize_com"] = EventTermCfg(
-        func=mdp.randomize_field,
-        mode="startup",
-        domain_randomization=True,
-        params={
-            "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
-            "operation": "add",
-            "field": "body_ipos",
-            "ranges": (-0.003, 0.003),
-        },
-    )
-    cfg.events["randomize_motor_gains"] = EventTermCfg(
-        func=microduck_mdp.randomize_delayed_actuator_gains,
-        mode="reset",
-        params={
-            "asset_cfg": SceneEntityCfg("robot"),
-            "operation": "scale",
-            "kp_range": (0.85, 1.15),
-            "kd_range": (0.9, 1.1),
-        },
-    )
-    cfg.events["randomize_mass_inertia"] = EventTermCfg(
-        func=microduck_mdp.randomize_mass_and_inertia,
-        mode="reset",
-        params={
-            "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
-            "scale_range": (0.95, 1.05),
-        },
-    )
-    cfg.events["randomize_imu_orientation"] = EventTermCfg(
-        func=microduck_mdp.randomize_imu_orientation,
-        mode="reset",
-        params={
-            "asset_cfg": SceneEntityCfg("robot"),
-            "max_angle_deg": 1.0,
-        },
-    )
+    # ── DR matched to the velocity env's FIXED versions ───────────────────────
+    if ENABLE_COM_RANDOMIZATION:
+        cfg.events["randomize_com"] = EventTermCfg(
+            func=dr.body_ipos,
+            mode="reset",
+            params={
+                "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
+                "operation": "add",
+                "ranges": (-COM_RANDOMIZATION_RANGE, COM_RANDOMIZATION_RANGE),
+            },
+        )
 
-    # === OBSERVATIONS ===
-    # Flat terrain: no terrain scan sensor, remove height_scan obs
+    if ENABLE_HEAD_COM_RANDOMIZATION:
+        cfg.events["randomize_head_com"] = EventTermCfg(
+            func=dr.body_ipos,
+            mode="reset",
+            params={
+                "asset_cfg": SceneEntityCfg("robot", body_names=HEAD_BODY_NAMES),
+                "operation": "add",
+                "ranges": (-HEAD_COM_RANDOMIZATION_RANGE, HEAD_COM_RANDOMIZATION_RANGE),
+            },
+        )
+
+    if ENABLE_MASS_INERTIA_RANDOMIZATION:
+        _mi_lo, _mi_hi = MASS_INERTIA_RANDOMIZATION_RANGE
+        cfg.events["randomize_mass_inertia"] = EventTermCfg(
+            func=dr.pseudo_inertia,
+            mode="startup",
+            params={
+                "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
+                "alpha_range": (math.log(_mi_lo) / 2.0, math.log(_mi_hi) / 2.0),
+            },
+        )
+
+    if ENABLE_JOINT_FRICTION_RANDOMIZATION:
+        cfg.events["randomize_joint_friction"] = EventTermCfg(
+            func=microduck_mdp.randomize_bam_friction,
+            mode="reset",
+            params={
+                "asset_cfg": SceneEntityCfg("robot"),
+                "scale_range": JOINT_FRICTION_RANDOMIZATION_RANGE,
+            },
+        )
+
+    if ENABLE_ARMATURE_RANDOMIZATION:
+        # Legs/head only — the wheel bearings' tiny armature is excluded (its DR
+        # is the frictionloss event above).
+        cfg.events["randomize_armature"] = EventTermCfg(
+            func=dr.joint_armature,
+            mode="reset",
+            params={
+                "asset_cfg": SceneEntityCfg("robot", joint_names=(r"^(?!passive_).*",)),
+                "operation": "scale",
+                "ranges": ARMATURE_RANDOMIZATION_RANGE,
+            },
+        )
+
+    # === OBSERVATIONS (unified 61D layout) ===
     del cfg.observations["actor"].terms["base_lin_vel"]
+    # 1.3.0 base template adds sensor-based foot_height + height_scan; the roller
+    # env has no terrain-height sensor.
+    del cfg.observations["critic"].terms["foot_height"]
+    del cfg.observations["actor"].terms["height_scan"]
+    del cfg.observations["critic"].terms["height_scan"]
+
     cfg.observations["critic"].terms["base_lin_vel"] = ObservationTermCfg(
         func=mdp.base_lin_vel,
         scale=1.0,
@@ -284,20 +358,30 @@ def make_microduck_velocity_rollers_env_cfg(
     cfg.observations["actor"].terms["base_ang_vel"] = deepcopy(
         cfg.observations["actor"].terms["base_ang_vel"]
     )
+    # IMU delay 0-1 control steps (matches velocity: the real dxl IMU path is fast)
     cfg.observations["actor"].terms["base_ang_vel"].delay_min_lag = 0
-    cfg.observations["actor"].terms["base_ang_vel"].delay_max_lag = 3
+    cfg.observations["actor"].terms["base_ang_vel"].delay_max_lag = 1
     cfg.observations["actor"].terms["base_ang_vel"].delay_update_period = 64
     cfg.observations["actor"].terms[gravity_term_name].delay_min_lag = 0
-    cfg.observations["actor"].terms[gravity_term_name].delay_max_lag = 3
+    cfg.observations["actor"].terms[gravity_term_name].delay_max_lag = 1
     cfg.observations["actor"].terms[gravity_term_name].delay_update_period = 64
-    cfg.observations["actor"].terms["base_ang_vel"].noise = Unoise(n_min=-0.024, n_max=0.024)
-    cfg.observations["actor"].terms[gravity_term_name].noise = Unoise(n_min=-0.007, n_max=0.007)
-    cfg.observations["actor"].terms["joint_pos"].noise = Unoise(n_min=-0.0006, n_max=0.0006)
-    cfg.observations["actor"].terms["joint_vel"].noise = Unoise(n_min=-0.24, n_max=0.24)
 
-    # 1-ctrl-step lag on joint_vel: the Dynamixel firmware computes
-    # present_velocity via a moving-average over the previous position-sample
-    # window, so the value the policy actually reads is ~1 control period old.
+    # Observation noise — matched to the velocity env
+    cfg.observations["actor"].terms["base_ang_vel"].noise = Unoise(n_min=-0.03, n_max=0.03)
+    cfg.observations["actor"].terms[gravity_term_name].noise = Unoise(n_min=-0.01, n_max=0.01)
+    cfg.observations["actor"].terms["joint_pos"].noise = Unoise(n_min=-0.001, n_max=0.001)
+    cfg.observations["actor"].terms["joint_vel"].noise = Unoise(n_min=-0.25, n_max=0.25)
+
+    # IMU mounting-misalignment DR (obs-level, actor only — matches velocity)
+    if ENABLE_IMU_ORIENTATION_RANDOMIZATION:
+        av = cfg.observations["actor"].terms["base_ang_vel"]
+        av.func = microduck_mdp.base_ang_vel_imu_misaligned
+        av.params = {"max_angle_deg": IMU_ORIENTATION_RANDOMIZATION_ANGLE}
+        g = cfg.observations["actor"].terms[gravity_term_name]
+        g.func = microduck_mdp.projected_gravity_imu_misaligned
+        g.params = {"max_angle_deg": IMU_ORIENTATION_RANDOMIZATION_ANGLE}
+
+    # 1-ctrl-step lag on joint_vel (Dynamixel present_velocity moving average)
     cfg.observations["actor"].terms["joint_vel"] = deepcopy(
         cfg.observations["actor"].terms["joint_vel"]
     )
@@ -305,18 +389,39 @@ def make_microduck_velocity_rollers_env_cfg(
     cfg.observations["actor"].terms["joint_vel"].delay_max_lag = 1
     cfg.observations["actor"].terms["joint_vel"].delay_update_period = 0
 
+    # Exclude the passive wheel joints from joint_pos/vel obs (obs dim 14, matches
+    # the action space). Deepcopy per group so the encoder-bias `biased` flag
+    # below applies to the actor only.
     passive_excluded = SceneEntityCfg("robot", joint_names=(r"^(?!passive_).*",))
-    cfg.observations["actor"].terms["joint_pos"].params["asset_cfg"] = passive_excluded
-    cfg.observations["actor"].terms["joint_vel"].params["asset_cfg"] = passive_excluded
-    cfg.observations["critic"].terms["joint_pos"].params["asset_cfg"] = deepcopy(passive_excluded)
-    cfg.observations["critic"].terms["joint_vel"].params["asset_cfg"] = deepcopy(passive_excluded)
+    for grp in ("actor", "critic"):
+        for term in ("joint_pos", "joint_vel"):
+            cfg.observations[grp].terms[term] = deepcopy(cfg.observations[grp].terms[term])
+            cfg.observations[grp].terms[term].params["asset_cfg"] = deepcopy(passive_excluded)
 
+    if ENABLE_ENCODER_BIAS:
+        cfg.events["encoder_bias"].params["bias_range"] = ENCODER_BIAS_RANGE
+        cfg.observations["actor"].terms["joint_pos"].params["biased"] = True
+        cfg.observations["critic"].terms["joint_pos"].params["biased"] = False
+    else:
+        cfg.events.pop("encoder_bias", None)
+
+    # Privileged wheel speeds for the critic (4 wheels in the new model).
     wheel_cfg = SceneEntityCfg("robot", joint_names=(r"^passive_.*",))
     cfg.observations["critic"].terms["wheel_vel"] = ObservationTermCfg(
         func=mdp.joint_vel_rel,
         scale=1.0,
         params={"asset_cfg": wheel_cfg},
     )
+
+    # Command obs parity with the 61D family layout: head/body slots zero-padded
+    # (the roller task drives heading through the twist slot instead).
+    for group in ("actor", "critic"):
+        cfg.observations[group].terms["head_command"] = ObservationTermCfg(
+            func=microduck_mdp.zero_command_padding, params={"dim": 4},
+        )
+        cfg.observations[group].terms["body_command"] = ObservationTermCfg(
+            func=microduck_mdp.zero_command_padding, params={"dim": 6},
+        )
 
     # === COMMANDS ===
     command: UniformVelocityCommandCfg = cfg.commands["twist"]
@@ -336,6 +441,9 @@ def make_microduck_velocity_rollers_env_cfg(
     cfg.scene.terrain.terrain_generator = None
 
     # === CURRICULUM ===
+    del cfg.curriculum["terrain_levels"]
+    del cfg.curriculum["command_vel"]
+
     cfg.curriculum["action_rate_weight"] = CurriculumTermCfg(
         func=microduck_mdp.reward_weight,
         params={
@@ -348,35 +456,19 @@ def make_microduck_velocity_rollers_env_cfg(
         },
     )
 
-    # cfg.curriculum["neck_joint_pos_l2_weight"] = CurriculumTermCfg(
-        # func=microduck_mdp.reward_weight,
-        # params={
-            # "reward_name": "neck_joint_pos_l2",
-            # "weight_stages": [
-                # {"step": 0,          "weight": 0.0},
-                # {"step": 1500 * 24,  "weight": -0.05},
-                # {"step": 2500 * 24,  "weight": -0.2},
-                # {"step": 4000 * 24,  "weight": -0.5},
-                # {"step": 6000 * 24,  "weight": -2.0},
-            # ],
-        # },
-    # )
-
-    del cfg.curriculum["terrain_levels"]
-    del cfg.curriculum["command_vel"]
-
-    cfg.curriculum["wheel_friction"] = CurriculumTermCfg(
-        func=microduck_mdp.wheel_friction_curriculum,
-        params={
-            "event_name": "randomize_wheel_friction",
-            "ranges_stages": [
-                {"step":    0 * 24,  "ranges": (0.000, 0.000)},
-                {"step":  750 * 24,  "ranges": (0.001, 0.001)},
-                {"step": 1500 * 24,  "ranges": (0.002, 0.002)},
-                {"step": 2500 * 24,  "ranges": (0.003, 0.003)},
-            ],
-        },
-    )
+    if ENABLE_WHEEL_FRICTION_RANDOMIZATION:
+        cfg.curriculum["wheel_friction"] = CurriculumTermCfg(
+            func=microduck_mdp.wheel_friction_curriculum,
+            params={
+                "event_name": "randomize_wheel_friction",
+                "ranges_stages": [
+                    {"step":    0 * 24,  "ranges": (0.000, 0.000)},
+                    {"step":  750 * 24,  "ranges": (0.001, 0.001)},
+                    {"step": 1500 * 24,  "ranges": (0.002, 0.002)},
+                    {"step": 2500 * 24,  "ranges": (0.003, 0.003)},
+                ],
+            },
+        )
 
     cfg.curriculum["heading_tracking_weight"] = CurriculumTermCfg(
         func=microduck_mdp.reward_weight,
@@ -391,23 +483,58 @@ def make_microduck_velocity_rollers_env_cfg(
         },
     )
 
+    # CoM randomization curricula — velocity's ramp, capped lower for the
+    # balance-sensitive skating task (audit lesson: ±30 mm forced a nervous
+    # gait on the walker; skates are even less forgiving).
+    if ENABLE_COM_RANDOMIZATION:
+        cfg.curriculum["com_range"] = CurriculumTermCfg(
+            func=microduck_mdp.com_range_curriculum,
+            params={
+                "event_name": "randomize_com",
+                "range_stages": [
+                    {"step": 0,         "range": 0.003},
+                    {"step": 500 * 24,  "range": 0.005},
+                    {"step": 1000 * 24, "range": 0.01},
+                ],
+            },
+        )
+    if ENABLE_HEAD_COM_RANDOMIZATION:
+        cfg.curriculum["head_com_range"] = CurriculumTermCfg(
+            func=microduck_mdp.com_range_curriculum,
+            params={
+                "event_name": "randomize_head_com",
+                "range_stages": [
+                    {"step": 0,         "range": 0.003},
+                    {"step": 500 * 24,  "range": 0.005},
+                    {"step": 1000 * 24, "range": 0.01},
+                ],
+            },
+        )
+
     return cfg
 
 
 MicroduckRollersRlCfg = RslRlOnPolicyRunnerCfg(
-    policy=RslRlPpoActorCriticCfg(
-        init_noise_std=1.0,
-        actor_obs_normalization=False,
-        critic_obs_normalization=False,
-        actor_hidden_dims=(512, 256, 128),
-        critic_hidden_dims=(512, 256, 128),
+    actor=RslRlModelCfg(
+        hidden_dims=(512, 256, 128),
         activation="elu",
+        obs_normalization=True,  # matches the family; normalizer baked into ONNX by export.py
+        distribution_cfg={
+            "class_name": "GaussianDistribution",
+            "init_std": 1.0,
+            "std_type": "scalar",
+        },
+    ),
+    critic=RslRlModelCfg(
+        hidden_dims=(512, 256, 128),
+        activation="elu",
+        obs_normalization=True,
     ),
     algorithm=PpoWithSymmetryCfg(
         value_loss_coef=1.0,
         use_clipped_value_loss=True,
         clip_param=0.2,
-        entropy_coef=0.03,
+        entropy_coef=0.03,  # roller-specific: higher exploration than the walk envs
         num_learning_epochs=5,
         num_mini_batches=4,
         learning_rate=1.0e-3,

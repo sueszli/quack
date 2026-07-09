@@ -48,6 +48,10 @@ from .microduck_ground_pick_env_cfg import (
     make_microduck_ground_pick_env_cfg,
     MicroduckGroundPickRlCfg,
 )
+from .microduck_velocity_rollers_env_cfg import (
+    make_microduck_velocity_rollers_env_cfg,
+    MicroduckRollersRlCfg,
+)
 
 # Standard velocity task
 register_mjlab_task(
@@ -159,3 +163,13 @@ register_mjlab_task(
     runner_cls=MicroduckOnPolicyRunner,
 )
 print("✓ GroundPick task registered: Mjlab-GroundPick-Rough-MicroDuck")
+
+# Roller skate velocity task (passive-wheel model; historical task id kept)
+register_mjlab_task(
+    task_id="Mjlab-Velocity-Flat-MicroDuck-Rollers",
+    env_cfg=make_microduck_velocity_rollers_env_cfg(),
+    play_env_cfg=make_microduck_velocity_rollers_env_cfg(play=True),
+    rl_cfg=MicroduckRollersRlCfg,
+    runner_cls=MicroduckOnPolicyRunner,
+)
+print("✓ Rollers task registered: Mjlab-Velocity-Flat-MicroDuck-Rollers")
