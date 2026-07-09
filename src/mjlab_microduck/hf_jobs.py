@@ -169,24 +169,30 @@ def _pick_namespace(api: HfApi, preset: str | None) -> str:
         print(f"  invalid choice: {raw!r}")
 
 
-def _wait_for_start(
-    api: HfApi, job_id: str, namespace: str, timeout_s: float = 180.0
+def _await_scheduling(
+    api: HfApi, job_id: str, namespace: str, budget_s: float = 1200.0
 ) -> tuple[str, str | None]:
-    """Poll the job until it leaves the queued/starting states.
+    """Poll until the job leaves SCHEDULING (image pull / queue / mounts).
 
-    Returns (stage, message). Stages: RUNNING/COMPLETED (started fine),
-    ERROR (startup failure, e.g. volume mount), or whatever the last observed
-    stage was if the wait times out (queued jobs can legitimately wait long —
-    that is not an error).
+    This phase legitimately takes minutes (the pytorch image pull alone is
+    ~5 min on a cold GPU node) and is also where volume-mount failures
+    surface, ~7 min in ("init container exhausted retries"). Returns
+    (stage, message) at the first non-SCHEDULING stage, or the last observed
+    one when the budget runs out (a long queue is not an error — the caller's
+    streaming loop keeps supervising).
     """
-    deadline = time.monotonic() + timeout_s
+    deadline = time.monotonic() + budget_s
+    last_note = time.monotonic()
     stage, message = "", None
     while time.monotonic() < deadline:
         status = api.inspect_job(job_id=job_id, namespace=namespace).status
         stage, message = status.stage, status.message
-        if stage in ("RUNNING", "COMPLETED", "ERROR", "DELETED", "CANCELED"):
+        if stage and stage != "SCHEDULING":
             return stage, message
-        time.sleep(5)
+        if time.monotonic() - last_note > 60:
+            print("[job] still scheduling (queue / image pull / volume mounts)...")
+            last_note = time.monotonic()
+        time.sleep(10)
     return stage, message
 
 
@@ -331,18 +337,17 @@ def submit(argv: list[str]) -> int:
         if cache_bucket is not None:
             api.create_bucket(cache_bucket, private=True, exist_ok=True)
 
-        # 3. Submit. Freshly created repos/buckets can fail to mount (a
-        # provisioning race: first run in a new namespace creates them seconds
-        # before the job starts — observed 2026-07). Watch startup and
-        # resubmit if the mount fails; by the second attempt the volumes are
-        # warm and mounting succeeds.
+        # 3. Submit. GPU-node volume mounts fail transiently ("init container
+        # exhausted retries", surfacing ~7 min into SCHEDULING — observed
+        # 2026-07 while an identical probe job mounted fine at the same time).
+        # Supervise the scheduling phase and resubmit on a mount failure.
         print(f"[ckpt] checkpoints -> https://huggingface.co/{ckpt_repo}")
         print(f"[job] submitting (namespace={namespace}, flavor={args.flavor}, timeout={args.timeout})")
         job = None
         stage, message = "", None
         for attempt in range(3):
             if attempt:
-                print(f"[job] volume mount failed (provisioning race?) — resubmitting ({attempt + 1}/3)")
+                print(f"[job] ✗ volume mount failed (flaky node) — resubmitting ({attempt + 1}/3)")
                 time.sleep(10)
             try:
                 job = api.run_job(
@@ -370,9 +375,13 @@ def submit(argv: list[str]) -> int:
             print(f"[job] id:  {job.id}")
             if getattr(job, "url", None):
                 print(f"[job] url: {job.url}")
-            stage, message = _wait_for_start(api, job.id, namespace)
+            if args.detach:
+                print("[job] --detach: not supervising startup — check the URL above; "
+                      "transient 'Volume mount failed' errors need a manual resubmit.")
+                return 0
+            stage, message = _await_scheduling(api, job.id, namespace)
             if stage == "ERROR" and "mount" in (message or "").lower():
-                continue  # provisioning race — resubmit
+                continue  # flaky node — resubmit
             break
 
     assert job is not None
@@ -380,13 +389,25 @@ def submit(argv: list[str]) -> int:
         print(f"[job] ✗ failed to start: {message}", file=sys.stderr)
         return 1
 
-    if args.detach:
-        return 0
-
+    # Supervise to completion: stream logs, re-attach if the stream drops
+    # (it returns empty while the container is still starting), and report
+    # the terminal status.
     print("[job] streaming logs (Ctrl-C detaches; the job keeps running)")
     try:
-        for line in api.fetch_job_logs(job_id=job.id, namespace=namespace, follow=True):
-            print(line)
+        while True:
+            try:
+                for line in api.fetch_job_logs(job_id=job.id, namespace=namespace, follow=True):
+                    print(line)
+            except Exception as e:
+                print(f"[job] log stream dropped ({e}); re-attaching")
+            status = api.inspect_job(job_id=job.id, namespace=namespace).status
+            if status.stage == "COMPLETED":
+                print("[job] ✓ completed")
+                return 0
+            if status.stage in ("ERROR", "DELETED", "CANCELED"):
+                print(f"[job] ✗ {status.stage}: {status.message}", file=sys.stderr)
+                return 1
+            time.sleep(10)
     except KeyboardInterrupt:
-        print(f"\n[job] detached. Job {job.id} is still running.")
-    return 0
+        print(f"\n[job] detached. Job {job.id} is still running: {getattr(job, 'url', job.id)}")
+        return 0
