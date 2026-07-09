@@ -1,56 +1,79 @@
 # HF Jobs training
 
 Train mjlab-microduck on Hugging Face's managed GPUs. Auth is the cached HF
-token from `hf auth login` — no GitHub PAT, no Docker registry to manage.
+token (`hf auth login` or `HF_TOKEN`); everything goes through the
+`huggingface_hub` Python API — the standalone `hf` CLI is not required.
 
 ## One-time setup
 
 ```fish
-uv tool install huggingface_hub   # installs the `hf` CLI globally
-hf auth login                     # cached token used by everything below
-wandb login                       # auto-detected from ~/.netrc and forwarded
+hf auth login    # or export HF_TOKEN (any tool that caches the token works)
+wandb login      # auto-detected from ~/.netrc and forwarded
 ```
 
 ## Submit a run
 
+Your normal train command, plus `--hf-jobs`:
+
 ```fish
-uv run scripts/hf/train_hf.py Mjlab-VelStand-Flat-MicroDuck \
-    --env.scene.num-envs 4096 --agent.max-iterations 5000
+uv run train Mjlab-Kick-Flat-MicroDuck \
+    --env.scene.num-envs 4096 --agent.max_iterations 4000 --hf-jobs
 ```
 
-Everything after the task id is forwarded to `uv run train` inside the job.
+You'll be asked which namespace to run under — your personal account or one
+of your orgs. Repos, uv-cache bucket, billing and the job itself all live in
+the chosen namespace. Pass `--namespace <name>` to skip the prompt
+(non-interactive runs default to personal).
+
+Without `--hf-jobs` the command behaves exactly as before (local training).
+Submission flags are consumed locally; everything else is forwarded to
+`uv run train` inside the job.
 
 Useful flags:
-- `--flavor l4x1` (default) / `a10g-large` / `a100-large` — see `hf jobs hardware`
+- `--namespace <name>` — account/org to run under; skips the prompt
+- `--flavor l4x1` (default) / `a10g-large` / `a100-large`
 - `--timeout 12h` (default) — job is killed past this
-- `--detach` — submit and return immediately (default streams logs)
-- `--dry-run` — build tarball, print the `hf jobs run` command, do not submit
+- `--detach` — submit and return immediately (default streams logs; Ctrl-C detaches without killing the job)
+- `--dry-run` — build tarball, print the job spec, do not submit
 - `--run-name <tag>` — overrides the auto-generated `<task>-<timestamp>` name
 - `--no-uv-cache` — disable the persistent `uv` cache bucket (first-run cost on every run)
 - `--no-wandb` — don't forward a wandb key
 
+(`uv run scripts/hf/train_hf.py <task> ...` still works — it's a shim to the
+same code, which lives in `src/mjlab_microduck/hf_jobs.py`.)
+
 ## What happens under the hood
 
-1. `git ls-files` snapshots tracked + uncommitted files → `src-<stamp>.tar.gz`.
-2. Tarball is uploaded to private dataset `<user>/mjlab-microduck-src`.
-3. Private model repo `<user>/<run-name>` is created for checkpoints.
-4. A private HF bucket `<user>/mjlab-uv-cache` is mounted at `/uv-cache` and used as `UV_CACHE_DIR` so wheel downloads persist across runs (first run cold, subsequent runs fast).
-5. `hf jobs run` launches a container that:
+1. `git ls-files` snapshots tracked + uncommitted files of the repo you run
+   from (worktree-aware) → `src-<stamp>.tar.gz`.
+2. Tarball is uploaded to private dataset `<namespace>/mjlab-microduck-src`.
+3. Private model repo `<namespace>/<run-name>` is created for checkpoints.
+4. A private HF bucket `<namespace>/mjlab-uv-cache` is mounted at `/uv-cache`
+   and used as `UV_CACHE_DIR` so wheel downloads persist across runs (first
+   run cold, subsequent runs fast).
+5. `HfApi.run_job` launches a container that:
    - installs `uv`, extracts the tarball, runs `uv sync` (warm-cached),
    - starts `scripts/hf/uploader.py` in background (watches `logs/rsl_rl/**/model_*.pt`, pushes every 60s),
    - runs `uv run train <task> <args>`,
    - does a final one-shot upload on exit.
-5. wandb (if `WANDB_API_KEY` is set locally) is forwarded as a secret — runs show up live in your wandb project.
+6. wandb credentials are forwarded as a secret — runs show up live in your
+   wandb project.
 
 ## Browsing checkpoints
 
-The submitter prints `https://huggingface.co/<user>/<run-name>` at start; new
-`.pt` files appear there during training.
+The submitter prints `https://huggingface.co/<namespace>/<run-name>` at
+start; new `.pt` files appear there during training.
 
 ## Managing jobs
 
-```fish
-hf jobs ps              # list
-hf jobs logs <job_id>   # tail
-hf jobs cancel <job_id>
+The job id and URL are printed at submission. From Python:
+
+```python
+from huggingface_hub import HfApi
+api = HfApi()
+api.list_jobs()                                  # or namespace="pollen-robotics"
+for l in api.fetch_job_logs(job_id="...", follow=True): print(l)
+api.cancel_job(job_id="...")
 ```
+
+(or the `hf jobs ps/logs/cancel` CLI if you have it installed.)
