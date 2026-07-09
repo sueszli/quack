@@ -1,13 +1,13 @@
 {
     "configuration": "default",
     "documentId": "804927696f06d877f3f1803e",
-    "documentMicroversion": "49900cb439825f734c36e098",
+    "documentMicroversion": "d4db44125b5801ab12e29ba6",
     "elementId": "d6fcdccc8b25aaa256e7e213",
     "fullConfiguration": "default",
     "id": "MKtTPacZZyojWma+b",
     "isStandardContent": false,
     "name": "power_support <1>",
-    "partId": "RRID",
+    "partId": "RDCD",
     "suppressed": false,
     "type": "Part"
 }

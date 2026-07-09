@@ -1,13 +1,13 @@
 {
     "configuration": "default",
     "documentId": "804927696f06d877f3f1803e",
-    "documentMicroversion": "49900cb439825f734c36e098",
-    "elementId": "d6fcdccc8b25aaa256e7e213",
+    "documentMicroversion": "d4db44125b5801ab12e29ba6",
+    "elementId": "451317b8e3aacc7f88e8f8ed",
     "fullConfiguration": "default",
     "id": "MpYBlDWICMN4d9B39",
     "isStandardContent": false,
     "name": "upper_leg_rigidity_plate <1>",
-    "partId": "RaDD",
+    "partId": "RxED",
     "suppressed": false,
     "type": "Part"
 }

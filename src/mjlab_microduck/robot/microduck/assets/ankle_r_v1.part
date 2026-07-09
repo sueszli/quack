@@ -2,12 +2,12 @@
     "configuration": "default",
     "documentId": "804927696f06d877f3f1803e",
     "documentMicroversion": "d4db44125b5801ab12e29ba6",
-    "elementId": "e34e27a4a091c95d26a71da8",
+    "elementId": "a48e2e3940da29620aa227db",
     "fullConfiguration": "default",
-    "id": "MNMyVEwhc7HfSm3EX",
+    "id": "MVF20+M0fcTMRu3W5",
     "isStandardContent": false,
-    "name": "xl330 <11>",
-    "partId": "JND",
+    "name": "ankle_r_v1 <1>",
+    "partId": "R1ID",
     "suppressed": false,
     "type": "Part"
 }
