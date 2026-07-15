@@ -189,10 +189,17 @@ def make_microduck_velocity_rollers_env_cfg(
         weight=-1.0,
         params={"sensor_name": "self_collision"},
     )
+    # Gated to the STANCE foot only (sensor_name) so lifting the swing foot is no
+    # longer punished — the old ungated -5.0 was minimised by keeping both blades
+    # flat on the ground (the swizzle) and actively fought the stride. Weight also
+    # softened -5.0 -> -2.0 to leave room for a slightly angled push.
     cfg.rewards["feet_flat"] = RewardTermCfg(
         func=microduck_mdp.feet_flat_penalty,
-        weight=-5.0,
-        params={"asset_cfg": SceneEntityCfg("robot", site_names=("left_foot", "right_foot"))},
+        weight=-2.0,
+        params={
+            "asset_cfg": SceneEntityCfg("robot", site_names=("left_foot", "right_foot")),
+            "sensor_name": "feet_ground_contact",
+        },
     )
     cfg.rewards["neck_action_rate_l2"] = RewardTermCfg(
         func=microduck_mdp.neck_action_rate_l2, weight=-0.5
@@ -248,13 +255,9 @@ def make_microduck_velocity_rollers_env_cfg(
         weight=1.5,
         params={"command_name": "twist", "target_pitch": 0.262, "std": 0.1},
     )
-    # Heading: cmd[2] = heading error (0=straight, +right/-left).
-    # Start low so wheel_speed dominates early; ramp up once skating is learned.
-    cfg.rewards["heading_tracking"] = RewardTermCfg(
-        func=microduck_mdp.heading_tracking_reward,
-        weight=1.0,
-        params={"command_name": "twist", "std": 0.8},
-    )
+    # Heading DISABLED for now — we focus on straight-line skating first (one
+    # fewer thing to learn). Re-add heading_tracking (+ its curriculum, + a
+    # non-zero ang_vel_z clip below) once the push/glide stride is solid.
 
     # === TERMINATIONS ===
     cfg.terminations["nan_state"] = TerminationTermCfg(
@@ -448,8 +451,9 @@ def make_microduck_velocity_rollers_env_cfg(
     # cmd_x semantics: 0=coast, >0=push to accelerate, <0=brake to stop
     command.ranges.lin_vel_x = (-0.5, 0.6)
     command.ranges.lin_vel_y = (0.0, 0.0)
-    # ang_vel_z range is used as clip limit for cmd[2] = heading error (rad)
-    command.ranges.ang_vel_z = (-1.0, 1.0)
+    # ang_vel_z range is the clip limit for cmd[2] = heading error (rad).
+    # Set to 0 → cmd[2] is always 0 → no turning demand (straight-line focus).
+    command.ranges.ang_vel_z = (0.0, 0.0)
     command.viz.z_offset = 0.5
     cfg.commands["twist"] = microduck_mdp.RelativeHeadingVelocityCommandCfg(**vars(command))
 
@@ -491,23 +495,8 @@ def make_microduck_velocity_rollers_env_cfg(
             },
         )
 
-    # Heading is CHEAP to farm (just face the right way, even while standing), so
-    # its weight must stay well below the task reward wheel_speed (=10.0). The old
-    # ramp to 8.0 let heading_tracking become the single largest reward (+7.37 at
-    # the end of run f8d5z5jq) and the policy abandoned skating. Cap it low and
-    # ramp only once skating is solid.
-    cfg.curriculum["heading_tracking_weight"] = CurriculumTermCfg(
-        func=microduck_mdp.reward_weight,
-        params={
-            "reward_name": "heading_tracking",
-            "weight_stages": [
-                {"step": 0,           "weight": 1.0},   # must match initial RewardTermCfg weight
-                {"step": 1000 * 24,   "weight": 1.5},   # skating should be solid before heading matters
-                {"step": 2000 * 24,   "weight": 2.0},
-                {"step": 3500 * 24,   "weight": 2.5},   # capped far below wheel_speed (10.0)
-            ],
-        },
-    )
+    # (heading_tracking_weight curriculum removed — heading is disabled while we
+    # focus on straight-line skating. Re-add together with the reward above.)
 
     # CoM randomization curricula — velocity's ramp, capped lower for the
     # balance-sensitive skating task (audit lesson: ±30 mm forced a nervous

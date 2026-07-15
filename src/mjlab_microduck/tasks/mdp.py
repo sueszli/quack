@@ -797,6 +797,7 @@ _ROLLER_FEET_SITE_CFG = SceneEntityCfg("robot", site_names=("left_foot", "right_
 def feet_flat_penalty(
     env: ManagerBasedRlEnv,
     asset_cfg: SceneEntityCfg = _ROLLER_FEET_SITE_CFG,
+    sensor_name: str | None = None,
 ) -> torch.Tensor:
     """Penalize foot sites not being parallel to the ground.
 
@@ -806,6 +807,14 @@ def feet_flat_penalty(
     from world-up, giving nonzero xy components.
 
     Max value ≈ 2.0 per foot (foot fully sideways), total ≈ 4.0.
+
+    When ``sensor_name`` is given, each foot's penalty is GATED by that foot's own
+    ground contact: the airborne (swing) foot is free to tilt, only the stance
+    blade is asked to stay flat (so its wheels keep gripping). Without this gate
+    the penalty punishes the recovery-foot lift a stride needs — it is minimised
+    by keeping BOTH blades flat on the ground, i.e. the swizzle. Assumes the site
+    order (left, right) matches the sensor slot order (roller_blade,
+    roller_blade_2) — both left-first in this model.
 
     Bug note: must normalize gravity PER ENV with dim=-1. Using torch.norm()
     without dim computes a scalar over all envs × 3 dims, making the vector
@@ -818,11 +827,19 @@ def feet_flat_penalty(
     gravity_w_n = F.normalize(asset.data.gravity_vec_w, dim=-1)  # (B, 3), unit vector per env
 
     foot_quats = asset.data.site_quat_w[:, asset_cfg.site_ids, :]  # (B, N_feet, 4)
-    total = torch.zeros(env.num_envs, device=env.device)
+    per_foot = torch.zeros(env.num_envs, foot_quats.shape[1], device=env.device)
     for i in range(foot_quats.shape[1]):
         proj = quat_apply_inverse(foot_quats[:, i, :], gravity_w_n)  # (B, 3)
-        total += torch.sum(torch.square(proj[:, :2]), dim=1)  # xy² only
-    return total
+        per_foot[:, i] = torch.sum(torch.square(proj[:, :2]), dim=1)  # xy² only
+
+    if sensor_name is not None:
+        from mjlab.sensor import ContactSensor
+        sensor: ContactSensor = env.scene[sensor_name]
+        contact_time = sensor.data.current_contact_time  # (B, N_feet)
+        assert contact_time is not None
+        per_foot = per_foot * (contact_time > 0.0).float()
+
+    return per_foot.sum(dim=1)
 
 
 def feet_tiptoe_alignment(
@@ -3270,26 +3287,26 @@ def single_support_reward(
     sensor_name: str,
     command_name: str,
     vel_gate_ref: float = 0.0,
+    double_penalty: float = 0.25,
 ) -> torch.Tensor:
-    """Reward single-support (a skating stride), penalise double-support (swizzle).
+    """Reward single-support (a skating stride), mildly discourage the swizzle.
 
-    A symmetric swizzle keeps BOTH blades on the ground the whole time and still
-    spins the wheels, so wheel_speed alone converges to it. Real skating is a
-    STRIDE: push off one blade while the other swings, i.e. single support that
-    alternates left/right.
+    Real skating is a STRIDE: push off one blade while the other swings, i.e.
+    single support that alternates left/right. A symmetric swizzle keeps BOTH
+    blades grounded the whole time and still spins the wheels, so wheel_speed
+    alone converges to it.
 
     Per step, counting blades in contact:
-      - exactly 1 blade down (stride)  → +1
-      - 2 blades down    (swizzle/glide) → -1
+      - exactly 1 blade down (stride)  → + clamp(cmd_x,0) · gate
+      - 2 blades down    (double supp) → − double_penalty · clamp(cmd_x,0)
       - 0 blades down    (flight/hop)  →  0
-    Scaled by clamp(cmd_x, 0) so it only shapes the push phase (silent on
-    coast/brake). Alternation emerges from pairing this with skating_air_time:
-    the swing foot must land to re-earn its air-time window, so support switches
-    sides.
 
-    When ``vel_gate_ref`` > 0 the whole term is multiplied by a forward-speed
-    gate, so stepping in place (no propulsion) earns nothing — this kills the
-    tap-dance hack where the policy alternates feet fast without skating.
+    The POSITIVE single-support reward is gated by forward speed (``vel_gate_ref``)
+    so stepping in place (no propulsion) earns nothing — kills the tap-dance hack.
+    The double-support penalty is small and UNGATED: brief double support during
+    weight transfer / push-off is NORMAL skating, so we only lightly discourage
+    PERMANENT double support (the swizzle) rather than forbid it. The real
+    anti-swizzle signal is skating_air_time — the swizzle never lifts a foot.
     """
     from mjlab.sensor import ContactSensor
     sensor: ContactSensor = env.scene[sensor_name]
@@ -3300,12 +3317,12 @@ def single_support_reward(
     single = (n_contact == 1).float()
     double = (n_contact >= 2).float()
 
-    cmd_x = env.command_manager.get_command(command_name)[:, 0]
-    reward = (single - double) * torch.clamp(cmd_x, min=0.0)
+    cmd_x = torch.clamp(env.command_manager.get_command(command_name)[:, 0], min=0.0)
+    single_r = single * cmd_x
     gate = _forward_progress_gate(env, vel_gate_ref)
     if gate is not None:
-        reward = reward * gate
-    return reward
+        single_r = single_r * gate
+    return single_r - double_penalty * double * cmd_x
 
 
 def forward_lean_reward(
