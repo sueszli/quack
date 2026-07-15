@@ -471,9 +471,130 @@ def neck_action_acceleration_l2(
     return torch.sum(torch.square(action_acc), dim=1)
 
 
+def _fallen_mask(
+    env: ManagerBasedRlEnv,
+    asset,
+    gate_z_below: float,
+    gate_tilt_above_deg: float,
+) -> torch.Tensor:
+    """Per-env float mask: 1.0 where the robot counts as FALLEN — trunk height
+    below `gate_z_below` OR tilt beyond `gate_tilt_above_deg`. Used to gate the
+    recovery rewards so they only steer while actually fallen and contribute
+    exactly zero during clean walking (no walk tax / bounce farming)."""
+    z = torch.nan_to_num(
+        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
+    )
+    quat = asset.data.root_link_quat_w
+    # cos(tilt) = R22 = 1 - 2(qx² + qy²)
+    cos_tilt = 1.0 - 2.0 * (quat[:, 1] ** 2 + quat[:, 2] ** 2)
+    fallen = (z < gate_z_below) | (cos_tilt < math.cos(math.radians(gate_tilt_above_deg)))
+    return fallen.float()
+
+
+def feet_air_time_upright(
+    env: ManagerBasedRlEnv,
+    gate_tilt_above_deg: float = 40.0,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    **air_time_kwargs,
+) -> torch.Tensor:
+    """velocity template feet_air_time, zeroed while FALLEN (tilt > gate).
+
+    velstand: a robot lying on its trunk can still tap its feet rhythmically
+    through the air-time window — the observed "lies there shaking a leg"
+    exploit. Air time is only meaningful upright.
+    """
+    from mjlab.tasks.velocity.mdp import feet_air_time as _template_air_time
+    reward = _template_air_time(env, **air_time_kwargs)
+    asset: Entity = env.scene[asset_cfg.name]
+    upright = 1.0 - _fallen_mask(env, asset, 0.0, gate_tilt_above_deg)
+    return reward * upright
+
+
+def upright_progress(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """Potential-based upright shaping: Δcos(tilt) per step.
+
+    Pays for PROGRESS toward upright, charges for progress toward fallen, and
+    pays exactly ZERO for holding any pose — so no state can farm it (the gated
+    state-reward it replaces was farmed from sitting, lying flat, and a
+    head-tripod lean across three velstand runs). Potential-based shaping is
+    policy-invariant (Ng et al.): it accelerates learning of recovery without
+    creating new optima. A full prone→stand recovery collects Δ≈+1 total
+    (× weight); a fall costs the same on the way down.
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    quat = asset.data.root_link_quat_w
+    cos_tilt = torch.nan_to_num(
+        1.0 - 2.0 * (quat[:, 1] ** 2 + quat[:, 2] ** 2), nan=1.0
+    )
+    if not hasattr(env, "_upright_potential_prev"):
+        env._upright_potential_prev = cos_tilt.clone()
+    # Freshly reset envs: no spurious delta from the previous episode's pose.
+    fresh = env.episode_length_buf <= 1
+    env._upright_potential_prev[fresh] = cos_tilt[fresh]
+    delta = cos_tilt - env._upright_potential_prev
+    env._upright_potential_prev = cos_tilt.clone()
+    return delta
+
+
+def fallen_state_penalty(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    gate_tilt_above_deg: float = 40.0,
+) -> torch.Tensor:
+    """1.0 while FALLEN (weight it negative): a flat per-step tax on staying
+    down. Without it, lying still is ~0/step while attempting recovery costs
+    action-rate/torque penalties — waiting for the fallen_too_long recycle was
+    the rational policy. (Penalties on bad states are safe; it's POSITIVE
+    rewards gated on bad states that get farmed.)"""
+    asset: Entity = env.scene[asset_cfg.name]
+    return _fallen_mask(env, asset, 0.0, gate_tilt_above_deg)
+
+
+def recovery_success(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    fallen_tilt_deg: float = 40.0,
+    min_fallen_s: float = 0.5,
+    up_tilt_deg: float = 25.0,
+    up_z: float = 0.105,
+) -> torch.Tensor:
+    """One-shot bounty on a COMPLETED recovery: fires on the frame where an env
+    that has been fallen (tilt > fallen_tilt for ≥ min_fallen_s) becomes
+    genuinely upright (tilt < up_tilt AND trunk z > up_z). Hysteresis: re-arms
+    only by being fallen again, so oscillating around the gate pays nothing.
+    Gives the sparse-but-strong endpoint gradient the dense gated terms lack.
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    z = torch.nan_to_num(
+        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
+    )
+    quat = asset.data.root_link_quat_w
+    cos_tilt = 1.0 - 2.0 * (quat[:, 1] ** 2 + quat[:, 2] ** 2)
+    fallen = cos_tilt < math.cos(math.radians(fallen_tilt_deg))
+    up = (cos_tilt > math.cos(math.radians(up_tilt_deg))) & (z > up_z)
+    if not hasattr(env, "_recovery_fallen_s"):
+        env._recovery_fallen_s = torch.zeros(env.num_envs, device=env.device)
+        env._recovery_armed = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
+    fresh = env.episode_length_buf <= 1
+    env._recovery_fallen_s[fresh] = 0.0
+    env._recovery_armed[fresh] = False
+    env._recovery_fallen_s = torch.where(
+        fallen, env._recovery_fallen_s + env.step_dt, torch.zeros_like(env._recovery_fallen_s)
+    )
+    env._recovery_armed |= env._recovery_fallen_s >= min_fallen_s
+    fired = env._recovery_armed & up
+    env._recovery_armed &= ~fired
+    return fired.float()
+
+
 def body_upright_linear(
     env: ManagerBasedRlEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    gate_z_below: float | None = None,
+    gate_tilt_above_deg: float = 40.0,
 ) -> torch.Tensor:
     """Linear reward for body uprightness — provides gradient at every tilt angle.
 
@@ -488,7 +609,12 @@ def body_upright_linear(
     quat = asset.data.root_link_quat_w  # (N, 4): [w, x, y, z]
     qx = quat[:, 1]
     qy = quat[:, 2]
-    return 1.0 - 2.0 * (qx * qx + qy * qy)
+    reward = 1.0 - 2.0 * (qx * qx + qy * qy)
+    if gate_z_below is not None:
+        # Recovery-gated variant (velstand): active only while fallen, exactly
+        # zero during clean walking so it can't dilute the tracking rewards.
+        reward = reward * _fallen_mask(env, asset, gate_z_below, gate_tilt_above_deg)
+    return reward
 
 
 def body_upright_gaussian(
@@ -638,6 +764,8 @@ def com_upward_velocity(
     env: ManagerBasedRlEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     max_height: float = 0.08,
+    gate_z_below: float | None = None,
+    gate_tilt_above_deg: float = 40.0,
 ) -> torch.Tensor:
     """Reward upward CoM velocity to incentivize dynamic standup motion.
 
@@ -652,7 +780,39 @@ def com_upward_velocity(
     )
     vz = torch.nan_to_num(asset.data.root_link_lin_vel_w[:, 2], nan=0.0)
     below_target = (com_z < max_height).float()
-    return torch.clamp(vz, min=0.0) * below_target
+    reward = torch.clamp(vz, min=0.0) * below_target
+    if gate_z_below is not None:
+        # Recovery-gated (velstand): without the gate this pays for dip-and-rise
+        # during gait whenever the trunk crosses max_height → bounce incentive.
+        reward = reward * _fallen_mask(env, asset, gate_z_below, gate_tilt_above_deg)
+    return reward
+
+
+def fallen_too_long(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    gate_z_below: float = 0.10,
+    gate_tilt_above_deg: float = 40.0,
+    max_duration_s: float = 5.0,
+) -> torch.Tensor:
+    """Terminate envs that have been continuously FALLEN for `max_duration_s`.
+
+    For envs that mix walking with fall recovery (velstand): the fell_over
+    termination gets disabled by curriculum so the policy can attempt recovery,
+    but without a backstop a failed recovery farms recovery-reward for the whole
+    20 s episode, starving the walk of data (audit: ~25% walking share). This
+    gives every fall a fair recovery window, then recycles the env.
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    fallen = _fallen_mask(env, asset, gate_z_below, gate_tilt_above_deg).bool()
+    if not hasattr(env, "_fallen_timer_s"):
+        env._fallen_timer_s = torch.zeros(env.num_envs, device=env.device)
+    # Freshly reset envs start with a clean timer.
+    env._fallen_timer_s[env.episode_length_buf <= 1] = 0.0
+    env._fallen_timer_s = torch.where(
+        fallen, env._fallen_timer_s + env.step_dt, torch.zeros_like(env._fallen_timer_s)
+    )
+    return env._fallen_timer_s >= max_duration_s
 
 
 def robot_state_is_nan(
@@ -3019,7 +3179,13 @@ def maybe_set_random_prone_orientation(
     of upright/face-down/face-up resets, which is the standard mixture for
     learning fall recovery alongside normal upright start.
     """
-    if env_ids is None or len(env_ids) == 0 or prone_prob <= 0.0:
+    if prone_prob <= 0.0:
+        return
+    # env_ids=None means "all envs" (the initial global reset passes None —
+    # the old early-return silently skipped prone init there).
+    if env_ids is None:
+        env_ids = torch.arange(env.num_envs, device=env.device)
+    if len(env_ids) == 0:
         return
     env_ids_t = env_ids.to(env.device, dtype=torch.long) if isinstance(env_ids, torch.Tensor) else torch.tensor(env_ids, device=env.device, dtype=torch.long)
     apply_mask = torch.rand(len(env_ids_t), device=env.device) < prone_prob
