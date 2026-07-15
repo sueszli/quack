@@ -225,26 +225,23 @@ def make_microduck_velocity_rollers_env_cfg(
     # Air time during push: pay the recovery-foot lift, but ONLY when the body is
     # actually moving forward (vel_gate_ref) — otherwise a fast in-place flutter
     # farmed this. threshold_min raised 0.05 → 0.15 to forbid the 2-3 Hz tapping
-    # cadence (a real stride swing is longer). Weight lowered 3.0 → 1.5 so that
-    # swinging in a loop stops being over-paid vs gliding (see glide below).
+    # cadence (a real stride swing is longer).
+    # NOTE: a glide reward was tried here (reward coasting with quiet legs) to slow
+    # the cadence, but as written it did NOT require single support, so a two-blade
+    # swizzle-coast farmed it and the gait regressed to swizzle — reverted. A future
+    # glide reward MUST require single support (one blade down) to be safe.
+    # [version B] window widened 0.15-0.45 -> 0.20-0.70 to reward longer, more
+    # ample swings (bigger strokes, slower cadence).
     cfg.rewards["skating_air_time"] = RewardTermCfg(
         func=microduck_mdp.skating_air_time_reward,
-        weight=1.5,
+        weight=3.0,
         params={
             "sensor_name": "feet_ground_contact",
             "command_name": "twist",
-            "threshold_min": 0.15,
-            "threshold_max": 0.45,
+            "threshold_min": 0.20,
+            "threshold_max": 0.70,
             "vel_gate_ref": 0.2,
         },
-    )
-    # Glide phase: reward coasting forward with quiet legs (the missing half of a
-    # stride). Gives value to the long single-blade glide so the policy stops
-    # kicking frantically and commits to each stroke.
-    cfg.rewards["glide"] = RewardTermCfg(
-        func=microduck_mdp.glide_reward,
-        weight=1.5,
-        params={"command_name": "twist", "vel_ref": 0.2},
     )
     # Single-support stride vs double-support swizzle. Rewards exactly-one-blade-
     # down and penalises both-down while pushing — the core anti-swizzle signal.
@@ -258,6 +255,11 @@ def make_microduck_velocity_rollers_env_cfg(
             "vel_gate_ref": 0.2,
         },
     )
+    # NOTE: a contact_frequency penalty was tried here to slow the cadence, but it
+    # penalises contact CHANGES — minimised by never lifting a foot (the swizzle),
+    # so it pushes toward exactly the gait we fought to leave. Reverted; the
+    # widened air-time window above is the safe cadence-slower (it forbids short
+    # swings without rewarding not-stepping).
     # Encourage slight forward lean when pushing to counteract backward torque.
     cfg.rewards["forward_lean"] = RewardTermCfg(
         func=microduck_mdp.forward_lean_reward,
@@ -473,14 +475,17 @@ def make_microduck_velocity_rollers_env_cfg(
     del cfg.curriculum["terrain_levels"]
     del cfg.curriculum["command_vel"]
 
+    # [version B] softened -0.5/-0.8/-1.0 -> -0.4/-0.5/-0.6 so the action-rate
+    # penalty damps movement amplitude less (bigger, more dynamic strokes). The
+    # widened air-time window (min 0.2 s) keeps the cadence from going frantic.
     cfg.curriculum["action_rate_weight"] = CurriculumTermCfg(
         func=microduck_mdp.reward_weight,
         params={
             "reward_name": "action_rate_l2",
             "weight_stages": [
-                {"step": 0, "weight": -0.5},
-                {"step": 250 * 24, "weight": -0.8},
-                {"step": 500 * 24, "weight": -1.0},
+                {"step": 0, "weight": -0.4},
+                {"step": 250 * 24, "weight": -0.5},
+                {"step": 500 * 24, "weight": -0.6},
             ],
         },
     )

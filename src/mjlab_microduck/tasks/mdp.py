@@ -3325,48 +3325,6 @@ def single_support_reward(
     return single_r - double_penalty * double * cmd_x
 
 
-def glide_reward(
-    env: ManagerBasedRlEnv,
-    command_name: str,
-    vel_ref: float = 0.2,
-    stillness_std: float = 5.0,
-    asset_cfg: SceneEntityCfg = SceneEntityCfg(
-        "robot", joint_names=(r".*(hip|knee|ankle).*",)
-    ),
-) -> torch.Tensor:
-    """Reward the GLIDE phase of a skating stride: moving forward, legs quiet.
-
-    Real skating alternates a short push (legs move, a foot swings) with a longer
-    glide (coast on the rolling blade, legs still). Nothing else here rewards the
-    glide — skating_air_time only pays during the swing — so the policy kicks
-    frantically to keep the air-time flowing. This term pays the quiet coast:
-
-        reward = forward_gate · stillness · (cmd_x >= 0)
-
-    - forward_gate = clamp(v_fwd, 0, vel_ref)/vel_ref → 0 when not moving forward,
-      so standing still earns nothing.
-    - stillness = exp(-Σ leg_joint_vel² / stillness_std²) → high only when the
-      legs are quiet; a kick (fast joint motion) gets ~0.
-    - active only on push/coast (cmd_x >= 0); silent on brake (we want to stop).
-
-    Pairs with single_support (be on one blade) and skating_air_time (lift the
-    swing foot) to compose push → glide → push.
-    """
-    forward_gate = _forward_progress_gate(env, vel_ref)
-    if forward_gate is None:
-        forward_gate = torch.ones(env.num_envs, device=env.device)
-
-    asset: Entity = env.scene[asset_cfg.name]
-    joint_vel_sq = torch.sum(
-        torch.square(asset.data.joint_vel[:, asset_cfg.joint_ids]), dim=1
-    )
-    stillness = torch.exp(-joint_vel_sq / stillness_std ** 2)
-
-    cmd_x = env.command_manager.get_command(command_name)[:, 0]
-    active = (cmd_x >= 0.0).float()
-    return forward_gate * stillness * active
-
-
 def forward_lean_reward(
     env: ManagerBasedRlEnv,
     command_name: str,
