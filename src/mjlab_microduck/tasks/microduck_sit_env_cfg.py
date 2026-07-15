@@ -349,6 +349,13 @@ def make_microduck_sit_env_cfg(
     cfg.commands["twist"] = microduck_mdp.VelocityCommandCommandOnlyCfg(**vars(command))
 
     # ── Events ────────────────────────────────────────────────────────────────
+    # BAM (mjlab_frictionloss branch) writes per-env dof_frictionloss/dof_damping
+    # every step; this no-op event registers those fields for per-world expansion.
+    cfg.events["expand_bam_friction_fields"] = EventTermCfg(
+        func=microduck_mdp.expand_bam_friction_fields,
+        mode="startup",
+    )
+
     cfg.events["reset_action_history"] = EventTermCfg(
         func=microduck_mdp.reset_action_history,
         mode="reset",

@@ -50,7 +50,7 @@ testbench_actuators = BamActuatorCfg(
     model="m6",
     target_names_expr=(r"1",),
     kp_fw=200.0,
-    max_current=1.75,
+    # max_current=1.75,
     delay_min_lag=0,
     delay_max_lag=3,
 )

@@ -15,6 +15,7 @@ from mjlab.entity import Entity
 from mjlab.tasks.velocity.mdp.velocity_command import UniformVelocityCommand, UniformVelocityCommandCfg
 from mjlab.managers.command_manager import CommandTerm
 from mjlab.managers import CommandTermCfg
+from mjlab.managers.event_manager import requires_model_fields
 from mjlab.utils.lab_api.math import matrix_from_quat, wrap_to_pi, quat_apply, quat_from_angle_axis
 from rsl_rl.algorithms.ppo import PPO as _PPO
 
@@ -1950,6 +1951,21 @@ def randomize_delayed_actuator_gains(
             kp_scale=kp_samples.mean(dim=1, keepdim=True),
             kd_scale=kd_samples.mean(dim=1, keepdim=True),
         )
+
+
+@requires_model_fields("dof_frictionloss", "dof_damping")
+def expand_bam_friction_fields(
+    env: ManagerBasedRlEnv,
+    env_ids: torch.Tensor,
+):
+    """No-op startup event whose only purpose is the decorator above.
+
+    bam's BamActuator (mjlab_frictionloss branch) writes a per-env friction
+    budget into MuJoCo's dof_frictionloss/dof_damping every step, which
+    requires those model fields to be expanded per world. mjlab expands
+    exactly the fields declared by event functions via requires_model_fields,
+    so every env using the BAM actuator must register this event.
+    """
 
 
 def randomize_bam_friction(
