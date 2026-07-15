@@ -210,6 +210,22 @@ def make_microduck_velocity_rollers_env_cfg(
     cfg.rewards["joint_torques_l2"] = RewardTermCfg(
         func=microduck_mdp.joint_torques_l2, weight=-1e-3
     )
+    # Deter over-driving joints onto their hard stops — a sim-only "free" trick
+    # (e.g. hip_roll commanded past its limit and parked on the stop) that won't
+    # transfer to the soft real servo. Penalises the actual qpos entering a
+    # 0.1 rad band before each leg-joint hard limit: wide skating motion stays
+    # allowed, but slamming the mechanical stop is costly. Lives on the qpos side
+    # (not action clip) so the low-kp servo keeps the command overshoot it needs.
+    cfg.rewards["joint_limit_proximity"] = RewardTermCfg(
+        func=microduck_mdp.joint_pos_limit_proximity,
+        weight=-1.0,
+        params={
+            "asset_cfg": SceneEntityCfg(
+                "robot", joint_names=(r".*(hip|knee|ankle).*",)
+            ),
+            "margin": 0.1,
+        },
+    )
     # Sole positive task reward — robot must spin wheels to get anything
     cfg.rewards["wheel_speed"] = RewardTermCfg(
         func=microduck_mdp.wheel_speed_reward,
@@ -230,16 +246,14 @@ def make_microduck_velocity_rollers_env_cfg(
     # the cadence, but as written it did NOT require single support, so a two-blade
     # swizzle-coast farmed it and the gait regressed to swizzle — reverted. A future
     # glide reward MUST require single support (one blade down) to be safe.
-    # [version B] window widened 0.15-0.45 -> 0.20-0.70 to reward longer, more
-    # ample swings (bigger strokes, slower cadence).
     cfg.rewards["skating_air_time"] = RewardTermCfg(
         func=microduck_mdp.skating_air_time_reward,
         weight=3.0,
         params={
             "sensor_name": "feet_ground_contact",
             "command_name": "twist",
-            "threshold_min": 0.20,
-            "threshold_max": 0.70,
+            "threshold_min": 0.15,
+            "threshold_max": 0.45,
             "vel_gate_ref": 0.2,
         },
     )
@@ -475,17 +489,14 @@ def make_microduck_velocity_rollers_env_cfg(
     del cfg.curriculum["terrain_levels"]
     del cfg.curriculum["command_vel"]
 
-    # [version B] softened -0.5/-0.8/-1.0 -> -0.4/-0.5/-0.6 so the action-rate
-    # penalty damps movement amplitude less (bigger, more dynamic strokes). The
-    # widened air-time window (min 0.2 s) keeps the cadence from going frantic.
     cfg.curriculum["action_rate_weight"] = CurriculumTermCfg(
         func=microduck_mdp.reward_weight,
         params={
             "reward_name": "action_rate_l2",
             "weight_stages": [
-                {"step": 0, "weight": -0.4},
-                {"step": 250 * 24, "weight": -0.5},
-                {"step": 500 * 24, "weight": -0.6},
+                {"step": 0, "weight": -0.5},
+                {"step": 250 * 24, "weight": -0.8},
+                {"step": 500 * 24, "weight": -1.0},
             ],
         },
     )
