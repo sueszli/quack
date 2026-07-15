@@ -215,27 +215,31 @@ def make_microduck_velocity_rollers_env_cfg(
         weight=1.0,
         params={"command_name": "twist", "vel_std": 0.3},
     )
-    # Air time during push: pay the recovery-foot lift. Boosted 1.0 → 3.0 — at
-    # 1.0 the swizzle (both blades grounded, ~0 air time) had almost nothing to
-    # gain by lifting a foot, so it never did.
+    # Air time during push: pay the recovery-foot lift, but ONLY when the body is
+    # actually moving forward (vel_gate_ref) — otherwise a fast in-place flutter
+    # farmed this. threshold_min raised 0.05 → 0.15 to forbid the 2-3 Hz tapping
+    # cadence (a real stride swing is longer).
     cfg.rewards["skating_air_time"] = RewardTermCfg(
         func=microduck_mdp.skating_air_time_reward,
         weight=3.0,
         params={
             "sensor_name": "feet_ground_contact",
             "command_name": "twist",
-            "threshold_min": 0.05,
-            "threshold_max": 0.4,
+            "threshold_min": 0.15,
+            "threshold_max": 0.45,
+            "vel_gate_ref": 0.2,
         },
     )
     # Single-support stride vs double-support swizzle. Rewards exactly-one-blade-
     # down and penalises both-down while pushing — the core anti-swizzle signal.
+    # Gated on forward speed too, so stepping that doesn't propel earns nothing.
     cfg.rewards["single_support"] = RewardTermCfg(
         func=microduck_mdp.single_support_reward,
         weight=3.0,
         params={
             "sensor_name": "feet_ground_contact",
             "command_name": "twist",
+            "vel_gate_ref": 0.2,
         },
     )
     # Encourage slight forward lean when pushing to counteract backward torque.

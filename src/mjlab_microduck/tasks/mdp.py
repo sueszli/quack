@@ -3223,12 +3223,18 @@ def skating_air_time_reward(
     command_name: str,
     threshold_min: float = 0.05,
     threshold_max: float = 0.4,
+    vel_gate_ref: float = 0.0,
 ) -> torch.Tensor:
     """Reward feet air time only when pushing (cmd_x > 0).
 
     Encourages the robot to lift each foot during the recovery phase of the
     skating stroke rather than dragging it on the ground.
     Scaled by cmd_x so the incentive grows with push intensity.
+
+    When ``vel_gate_ref`` > 0 the reward is also multiplied by a forward-speed
+    gate so lifting feet without propelling the body (tap-dancing on the spot)
+    earns nothing. ``threshold_min`` sets the shortest swing that counts — raise
+    it to forbid a frantic high-cadence flutter.
     """
     from mjlab.sensor import ContactSensor
     sensor: ContactSensor = env.scene[sensor_name]
@@ -3239,13 +3245,31 @@ def skating_air_time_reward(
     reward = torch.sum(in_range.float(), dim=1)
 
     cmd_x = env.command_manager.get_command(command_name)[:, 0]
-    return reward * torch.clamp(cmd_x, min=0.0)
+    reward = reward * torch.clamp(cmd_x, min=0.0)
+    gate = _forward_progress_gate(env, vel_gate_ref)
+    if gate is not None:
+        reward = reward * gate
+    return reward
+
+
+def _forward_progress_gate(env: ManagerBasedRlEnv, v_ref: float) -> torch.Tensor | None:
+    """0→1 ramp in body forward speed: 0 when standing still, 1 at/above v_ref.
+
+    Used to gate stride-shaping rewards so that stepping which does NOT propel
+    the body (e.g. tap-dancing on the spot) earns nothing — the reward for the
+    FORM of a stride is only paid when the stride actually does its JOB (moving
+    forward). Returns None when disabled (v_ref <= 0)."""
+    if v_ref <= 0.0:
+        return None
+    v_fwd = env.scene["robot"].data.root_link_lin_vel_b[:, 0]
+    return (v_fwd.clamp(min=0.0) / v_ref).clamp(max=1.0)
 
 
 def single_support_reward(
     env: ManagerBasedRlEnv,
     sensor_name: str,
     command_name: str,
+    vel_gate_ref: float = 0.0,
 ) -> torch.Tensor:
     """Reward single-support (a skating stride), penalise double-support (swizzle).
 
@@ -3262,6 +3286,10 @@ def single_support_reward(
     coast/brake). Alternation emerges from pairing this with skating_air_time:
     the swing foot must land to re-earn its air-time window, so support switches
     sides.
+
+    When ``vel_gate_ref`` > 0 the whole term is multiplied by a forward-speed
+    gate, so stepping in place (no propulsion) earns nothing — this kills the
+    tap-dance hack where the policy alternates feet fast without skating.
     """
     from mjlab.sensor import ContactSensor
     sensor: ContactSensor = env.scene[sensor_name]
@@ -3273,7 +3301,11 @@ def single_support_reward(
     double = (n_contact >= 2).float()
 
     cmd_x = env.command_manager.get_command(command_name)[:, 0]
-    return (single - double) * torch.clamp(cmd_x, min=0.0)
+    reward = (single - double) * torch.clamp(cmd_x, min=0.0)
+    gate = _forward_progress_gate(env, vel_gate_ref)
+    if gate is not None:
+        reward = reward * gate
+    return reward
 
 
 def forward_lean_reward(
