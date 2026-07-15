@@ -3242,6 +3242,40 @@ def skating_air_time_reward(
     return reward * torch.clamp(cmd_x, min=0.0)
 
 
+def single_support_reward(
+    env: ManagerBasedRlEnv,
+    sensor_name: str,
+    command_name: str,
+) -> torch.Tensor:
+    """Reward single-support (a skating stride), penalise double-support (swizzle).
+
+    A symmetric swizzle keeps BOTH blades on the ground the whole time and still
+    spins the wheels, so wheel_speed alone converges to it. Real skating is a
+    STRIDE: push off one blade while the other swings, i.e. single support that
+    alternates left/right.
+
+    Per step, counting blades in contact:
+      - exactly 1 blade down (stride)  → +1
+      - 2 blades down    (swizzle/glide) → -1
+      - 0 blades down    (flight/hop)  →  0
+    Scaled by clamp(cmd_x, 0) so it only shapes the push phase (silent on
+    coast/brake). Alternation emerges from pairing this with skating_air_time:
+    the swing foot must land to re-earn its air-time window, so support switches
+    sides.
+    """
+    from mjlab.sensor import ContactSensor
+    sensor: ContactSensor = env.scene[sensor_name]
+    contact_time = sensor.data.current_contact_time  # (num_envs, num_feet)
+    assert contact_time is not None
+
+    n_contact = torch.sum((contact_time > 0.0).float(), dim=1)  # (num_envs,)
+    single = (n_contact == 1).float()
+    double = (n_contact >= 2).float()
+
+    cmd_x = env.command_manager.get_command(command_name)[:, 0]
+    return (single - double) * torch.clamp(cmd_x, min=0.0)
+
+
 def forward_lean_reward(
     env: ManagerBasedRlEnv,
     command_name: str,

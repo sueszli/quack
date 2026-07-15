@@ -215,15 +215,27 @@ def make_microduck_velocity_rollers_env_cfg(
         weight=1.0,
         params={"command_name": "twist", "vel_std": 0.3},
     )
-    # Small air time reward during push to encourage lifting feet in recovery phase.
+    # Air time during push: pay the recovery-foot lift. Boosted 1.0 → 3.0 — at
+    # 1.0 the swizzle (both blades grounded, ~0 air time) had almost nothing to
+    # gain by lifting a foot, so it never did.
     cfg.rewards["skating_air_time"] = RewardTermCfg(
         func=microduck_mdp.skating_air_time_reward,
-        weight=1.0,
+        weight=3.0,
         params={
             "sensor_name": "feet_ground_contact",
             "command_name": "twist",
             "threshold_min": 0.05,
             "threshold_max": 0.4,
+        },
+    )
+    # Single-support stride vs double-support swizzle. Rewards exactly-one-blade-
+    # down and penalises both-down while pushing — the core anti-swizzle signal.
+    cfg.rewards["single_support"] = RewardTermCfg(
+        func=microduck_mdp.single_support_reward,
+        weight=3.0,
+        params={
+            "sensor_name": "feet_ground_contact",
+            "command_name": "twist",
         },
     )
     # Encourage slight forward lean when pushing to counteract backward torque.
@@ -457,28 +469,38 @@ def make_microduck_velocity_rollers_env_cfg(
     )
 
     if ENABLE_WHEEL_FRICTION_RANDOMIZATION:
+        # Delayed + softened ramp: the previous schedule started adding bearing
+        # drag at iter 750 — right when wheel_speed peaked — and reached 0.003,
+        # which (with the heading ramp below) pushed the policy off skating into
+        # a heading-farming local optimum. Keep the wheels free until skating is
+        # robust, then add gentle, realistic drag.
         cfg.curriculum["wheel_friction"] = CurriculumTermCfg(
             func=microduck_mdp.wheel_friction_curriculum,
             params={
                 "event_name": "randomize_wheel_friction",
                 "ranges_stages": [
-                    {"step":    0 * 24,  "ranges": (0.000, 0.000)},
-                    {"step":  750 * 24,  "ranges": (0.001, 0.001)},
-                    {"step": 1500 * 24,  "ranges": (0.002, 0.002)},
-                    {"step": 2500 * 24,  "ranges": (0.003, 0.003)},
+                    {"step":    0 * 24,  "ranges": (0.0000, 0.0000)},
+                    {"step": 2000 * 24,  "ranges": (0.0005, 0.0005)},
+                    {"step": 3500 * 24,  "ranges": (0.0010, 0.0010)},
+                    {"step": 5000 * 24,  "ranges": (0.0015, 0.0015)},
                 ],
             },
         )
 
+    # Heading is CHEAP to farm (just face the right way, even while standing), so
+    # its weight must stay well below the task reward wheel_speed (=10.0). The old
+    # ramp to 8.0 let heading_tracking become the single largest reward (+7.37 at
+    # the end of run f8d5z5jq) and the policy abandoned skating. Cap it low and
+    # ramp only once skating is solid.
     cfg.curriculum["heading_tracking_weight"] = CurriculumTermCfg(
         func=microduck_mdp.reward_weight,
         params={
             "reward_name": "heading_tracking",
             "weight_stages": [
                 {"step": 0,           "weight": 1.0},   # must match initial RewardTermCfg weight
-                {"step": 500  * 24,   "weight": 3.0},   # robot should be skating by now
-                {"step": 1000 * 24,   "weight": 5.0},
-                {"step": 2000 * 24,   "weight": 8.0},
+                {"step": 1000 * 24,   "weight": 1.5},   # skating should be solid before heading matters
+                {"step": 2000 * 24,   "weight": 2.0},
+                {"step": 3500 * 24,   "weight": 2.5},   # capped far below wheel_speed (10.0)
             ],
         },
     )
