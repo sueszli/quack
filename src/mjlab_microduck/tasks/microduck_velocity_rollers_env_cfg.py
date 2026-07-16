@@ -157,6 +157,11 @@ def make_microduck_velocity_rollers_env_cfg(
     joint_pos_action = cfg.actions["joint_pos"]
     assert isinstance(joint_pos_action, JointPositionActionCfg)
     joint_pos_action.scale = 1.0
+    # NOTE: an env-side action clip was tried here to bound the target, but the
+    # deployment pipeline (infer_policy.py) does NOT clip → the clip would only
+    # exist in sim, a train/deploy mismatch. The over-command deterrent lives
+    # policy-side instead (action_over_limit reward below), baked into the network
+    # so it transfers with the ONNX.
 
     # === REWARDS ===
     keep = {"pose", "upright", "body_ang_vel", "angular_momentum", "action_rate_l2"}
@@ -210,21 +215,16 @@ def make_microduck_velocity_rollers_env_cfg(
     cfg.rewards["joint_torques_l2"] = RewardTermCfg(
         func=microduck_mdp.joint_torques_l2, weight=-1e-3
     )
-    # Deter over-driving joints onto their hard stops — a sim-only "free" trick
-    # (e.g. hip_roll commanded past its limit and parked on the stop) that won't
-    # transfer to the soft real servo. Penalises the actual qpos entering a
-    # 0.1 rad band before each leg-joint hard limit: wide skating motion stays
-    # allowed, but slamming the mechanical stop is costly. Lives on the qpos side
-    # (not action clip) so the low-kp servo keeps the command overshoot it needs.
-    cfg.rewards["joint_limit_proximity"] = RewardTermCfg(
-        func=microduck_mdp.joint_pos_limit_proximity,
-        weight=-1.0,
-        params={
-            "asset_cfg": SceneEntityCfg(
-                "robot", joint_names=(r".*(hip|knee|ankle).*",)
-            ),
-            "margin": 0.1,
-        },
+    # Deter OVER-COMMANDING a joint past its hard stop (policy-side, transfers via
+    # the ONNX). hip_roll's ±0.38 rad limit vs the ±10 rad ctrlrange let the low-kp
+    # servo be commanded far past the stop and slam it with max torque — a fragile
+    # sim-only trick. This penalises only the COMMAND beyond (limit + 0.3 overshoot),
+    # so the joint keeps its full reachable range (a qpos penalty stole that range
+    # and broke the gait) while the wild over-drive is discouraged.
+    cfg.rewards["action_over_limit"] = RewardTermCfg(
+        func=microduck_mdp.action_over_limit_penalty,
+        weight=-0.5,
+        params={"action_name": "joint_pos", "overshoot": 0.3},
     )
     # Sole positive task reward — robot must spin wheels to get anything
     cfg.rewards["wheel_speed"] = RewardTermCfg(

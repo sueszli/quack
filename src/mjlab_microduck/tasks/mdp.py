@@ -3325,6 +3325,41 @@ def single_support_reward(
     return single_r - double_penalty * double * cmd_x
 
 
+def action_over_limit_penalty(
+    env: ManagerBasedRlEnv,
+    action_name: str = "joint_pos",
+    overshoot: float = 0.3,
+) -> torch.Tensor:
+    """Penalise commanding a joint target beyond its hard limit (+ overshoot).
+
+    Policy-side deterrent against over-driving a joint onto its mechanical stop:
+    e.g. hip_roll has a ±0.38 rad limit but a ±10 rad ctrlrange, so the low-kp
+    servo can be commanded far past the stop to slam it with max torque — a
+    fragile sim-only trick that will not transfer.
+
+    Reads the commanded target (raw_action · scale + offset) and penalises only
+    the part BEYOND (hard_limit + overshoot):
+
+        penalty = Σ relu(target - (hi + overshoot)) + relu((lo - overshoot) - target)
+
+    Unlike a qpos-limit penalty, this fires on the COMMAND, not the joint
+    position — so the joint may still reach its full range (command ≈ limit) and
+    no usable amplitude is stolen. Because it constrains the policy's OUTPUT, the
+    learned behaviour is baked into the network and transfers to deployment
+    WITHOUT any env-side action clip (which would only exist in sim → mismatch).
+    ``overshoot`` gives the low-kp servo the headroom to reach near-limit targets
+    under load; only the wild over-drive past that is penalised.
+    """
+    term = env.action_manager.get_term(action_name)
+    target = term.raw_action * term.scale + term.offset  # (B, action_dim) abs targets
+    jnt_ids = term.target_ids
+    hard = env.scene["robot"].data.joint_pos_limits[:, jnt_ids]  # (B, action_dim, 2)
+    lo = hard[..., 0] - overshoot
+    hi = hard[..., 1] + overshoot
+    over = (target - hi).clip(min=0.0) + (lo - target).clip(min=0.0)
+    return torch.sum(over, dim=-1)
+
+
 def forward_lean_reward(
     env: ManagerBasedRlEnv,
     command_name: str,
