@@ -3325,6 +3325,54 @@ def single_support_reward(
     return single_r - double_penalty * double * cmd_x
 
 
+def glide_reward(
+    env: ManagerBasedRlEnv,
+    sensor_name: str,
+    command_name: str,
+    vel_ref: float = 0.2,
+    stillness_std: float = 5.0,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg(
+        "robot", joint_names=(r".*(hip|knee|ankle).*",)
+    ),
+) -> torch.Tensor:
+    """Reward the GLIDE phase of a stride: coast on ONE blade with quiet legs.
+
+    Nothing else rewards gliding — skating_air_time pays each swing, so the policy
+    maximises swing FREQUENCY (frantic kicking). This term pays staying on one
+    foot and coasting, giving the policy a reason to slow down and commit to each
+    stroke:
+
+        reward = single_support · forward_gate · stillness · (cmd_x >= 0)
+
+    - single_support: exactly ONE blade in contact. REQUIRED — this is the fix vs
+      the earlier broken glide, which omitted it and let a two-blade swizzle-coast
+      farm the reward and regress the gait.
+    - forward_gate = clamp(v_fwd,0,vel_ref)/vel_ref → 0 when not moving forward.
+    - stillness = exp(-Σ leg_joint_vel² / stillness_std²) → high only when legs
+      are quiet; a kick (fast joint motion) gets ~0, so only a real glide pays.
+    - active on push/coast only (cmd_x >= 0); silent on brake.
+    """
+    from mjlab.sensor import ContactSensor
+    sensor: ContactSensor = env.scene[sensor_name]
+    contact_time = sensor.data.current_contact_time  # (num_envs, num_feet)
+    assert contact_time is not None
+    single = (torch.sum((contact_time > 0.0).float(), dim=1) == 1).float()
+
+    forward_gate = _forward_progress_gate(env, vel_ref)
+    if forward_gate is None:
+        forward_gate = torch.ones(env.num_envs, device=env.device)
+
+    asset: Entity = env.scene[asset_cfg.name]
+    joint_vel_sq = torch.sum(
+        torch.square(asset.data.joint_vel[:, asset_cfg.joint_ids]), dim=1
+    )
+    stillness = torch.exp(-joint_vel_sq / stillness_std ** 2)
+
+    cmd_x = env.command_manager.get_command(command_name)[:, 0]
+    active = (cmd_x >= 0.0).float()
+    return single * forward_gate * stillness * active
+
+
 def action_over_limit_penalty(
     env: ManagerBasedRlEnv,
     action_name: str = "joint_pos",

@@ -253,21 +253,30 @@ def make_microduck_velocity_rollers_env_cfg(
     )
     # Air time during push: pay the recovery-foot lift, but ONLY when the body is
     # actually moving forward (vel_gate_ref) — otherwise a fast in-place flutter
-    # farmed this. threshold_min raised 0.05 → 0.15 to forbid the 2-3 Hz tapping
-    # cadence (a real stride swing is longer).
-    # NOTE: a glide reward was tried here (reward coasting with quiet legs) to slow
-    # the cadence, but as written it did NOT require single support, so a two-blade
-    # swizzle-coast farmed it and the gait regressed to swizzle — reverted. A future
-    # glide reward MUST require single support (one blade down) to be safe.
+    # farmed this. threshold_min raised 0.15 → 0.25 to forbid ultra-short swings
+    # (caps the frantic kick cadence); glide below rewards the slow phase.
     cfg.rewards["skating_air_time"] = RewardTermCfg(
         func=microduck_mdp.skating_air_time_reward,
         weight=3.0,
         params={
             "sensor_name": "feet_ground_contact",
             "command_name": "twist",
-            "threshold_min": 0.15,
+            "threshold_min": 0.25,
             "threshold_max": 0.45,
             "vel_gate_ref": 0.2,
+        },
+    )
+    # Glide phase (single-support REQUIRED, unlike the earlier broken attempt):
+    # reward coasting on one blade with quiet legs so the policy commits to each
+    # stroke instead of kicking frantically. This is what actually slows the
+    # cadence — air_time alone rewards swing frequency.
+    cfg.rewards["glide"] = RewardTermCfg(
+        func=microduck_mdp.glide_reward,
+        weight=1.5,
+        params={
+            "sensor_name": "feet_ground_contact",
+            "command_name": "twist",
+            "vel_ref": 0.2,
         },
     )
     # Single-support stride vs double-support swizzle. Rewards exactly-one-blade-
