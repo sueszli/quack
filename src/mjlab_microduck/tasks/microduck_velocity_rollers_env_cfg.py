@@ -226,6 +226,19 @@ def make_microduck_velocity_rollers_env_cfg(
         weight=-0.5,
         params={"action_name": "joint_pos", "overshoot": 0.3},
     )
+    # Pull hip_roll back toward neutral so the stance stops resting splayed on the
+    # hip_roll limits. L1 = constant gradient: it gently closes the legs AT REST,
+    # but the strong stride rewards (wheel_speed, single_support, air_time) easily
+    # overpower it during an active push → closes the posture WITHOUT preventing
+    # the lateral push stroke. Tune: raise if still splayed, lower if it flattens
+    # the stride. (Physics caveat: if the soft hip_roll servo can't hold a narrow
+    # stance under body weight, the policy will bend knees / lower CoM to unload
+    # it — or, if no stable narrow stance exists, it stays partly splayed.)
+    cfg.rewards["hip_roll_neutral"] = RewardTermCfg(
+        func=microduck_mdp.joint_deviation_l1,
+        weight=-0.5,
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=(r".*hip_roll.*",))},
+    )
     # Sole positive task reward — robot must spin wheels to get anything
     cfg.rewards["wheel_speed"] = RewardTermCfg(
         func=microduck_mdp.wheel_speed_reward,
