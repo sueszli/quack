@@ -736,6 +736,41 @@ def com_height_target(
     return reward
 
 
+def crouch_height_target(
+    phase: torch.Tensor,
+    height_low: float,
+    height_high: float,
+    hold_lo: float = 0.375,
+    hold_hi: float = 0.625,
+) -> torch.Tensor:
+    """Cible de hauteur du tronc « en trapèze » le long de la phase [0,1).
+
+    phase ∈ [0, hold_lo)      : descente   height_high -> height_low
+    phase ∈ [hold_lo, hold_hi): palier      height_low   (la glisse accroupie)
+    phase ∈ [hold_hi, 1.0)    : remontée    height_low  -> height_high
+
+    Args:
+        phase: (B,) phase par env, dans [0, 1).
+        height_low: hauteur du tronc accroupi (m).
+        height_high: hauteur du tronc debout (m).
+        hold_lo, hold_hi: bornes du palier bas en fraction de phase.
+    Returns:
+        (B,) hauteur-cible en mètres.
+    """
+    descend = phase < hold_lo
+    hold = (phase >= hold_lo) & (phase < hold_hi)
+
+    frac_d = phase / hold_lo
+    t_descend = height_high + (height_low - height_high) * frac_d
+
+    t_hold = torch.full_like(phase, height_low)
+
+    frac_r = (phase - hold_hi) / (1.0 - hold_hi)
+    t_rise = height_low + (height_high - height_low) * frac_r
+
+    return torch.where(descend, t_descend, torch.where(hold, t_hold, t_rise))
+
+
 def neck_joint_vel_l2(
     env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG
 ) -> torch.Tensor:
