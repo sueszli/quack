@@ -3213,6 +3213,86 @@ def set_random_ground_state(
             env.sim.data.qpos[sit_env_ids, 7:] += noise
 
 
+# Deep-crouch anchor pose (velstand run-5): the "stuck" mid-recovery basin —
+# knees folded under the body, trunk pitched forward, feet flat. Values chosen
+# by extending the HOME zig-zag (hip fwd / knee back / ankle fwd, sign
+# conventions per the SIT keyframe fold directions) to deep flexion, inside
+# the ±1.57 joint limits. hip_yaw/hip_roll/neck stay at HOME.
+_CROUCH_ANCHOR_BY_NAME = {
+    "left_hip_pitch": -1.15,
+    "left_knee": 1.25,
+    "left_ankle": 1.05,
+    "right_hip_pitch": 1.15,
+    "right_knee": -1.25,
+    "right_ankle": -1.05,
+}
+
+
+def set_random_crouch_state(
+    env: ManagerBasedRlEnv,
+    env_ids: torch.Tensor,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    depth_min: float = 0.35,
+    depth_max: float = 1.0,
+    pitch_max_deg: float = 55.0,
+    joint_noise: float = 0.12,
+    z_stand: float = 0.115,
+    z_deep: float = 0.06,
+):
+    """Reset selected envs into a random mid-recovery crouch.
+
+    Reverse curriculum for the recovery last mile (velstand run-5 lesson):
+    prone-init episodes spend most of their fallen budget getting TO the deep
+    crouch and are recycled shortly after reaching it, so the crouch→stand
+    mile gets almost no on-policy data — the policy converged to parking
+    there. Seeding resets ACROSS that mile (depth λ ∈ [depth_min, depth_max]
+    between standing and the deep-crouch anchor, trunk pitch and z scaled
+    with λ) makes the frontier dense from step 0 of the episode.
+    """
+    if env_ids is None or len(env_ids) == 0:
+        return
+    env_ids = env_ids.to(env.device, dtype=torch.long)
+    num = len(env_ids)
+    asset: Entity = env.scene[asset_cfg.name]
+
+    lam = torch.rand(num, device=env.device) * (depth_max - depth_min) + depth_min
+
+    # Joints: lerp HOME → anchor on the leg pitch chain, uniform noise on all.
+    joints = asset.data.default_joint_pos[env_ids].clone()
+    for name, anchor in _CROUCH_ANCHOR_BY_NAME.items():
+        ids, _ = asset.find_joints(f"^{name}$")
+        j = ids[0]
+        joints[:, j] = joints[:, j] + lam * (anchor - joints[:, j])
+    joints += (torch.rand_like(joints) * 2 - 1) * joint_noise
+
+    # Base orientation: forward pitch scaled with depth (the stuck basin is a
+    # forward crouch from both fall directions), random yaw, small roll noise.
+    pitch = lam * math.radians(pitch_max_deg) \
+        + (torch.rand(num, device=env.device) * 2 - 1) * math.radians(10.0)
+    pitch = torch.clamp(pitch, min=math.radians(5.0))
+    roll = (torch.rand(num, device=env.device) * 2 - 1) * math.radians(8.0)
+    yaw = torch.rand(num, device=env.device) * 2 * np.pi - np.pi
+    cy = torch.cos(yaw * 0.5); sy = torch.sin(yaw * 0.5)
+    cp = torch.cos(pitch * 0.5); sp = torch.sin(pitch * 0.5)
+    cr = torch.cos(roll * 0.5); sr = torch.sin(roll * 0.5)
+    # ZYX intrinsic Euler → quaternion (yaw * pitch * roll), as in
+    # set_random_ground_state's sitting branch.
+    qw = cr * cp * cy + sr * sp * sy
+    qx = sr * cp * cy - cr * sp * sy
+    qy = cr * sp * cy + sr * cp * sy
+    qz = cr * cp * sy - sr * sp * cy
+    quat = torch.stack([qw, qx, qy, qz], dim=1)
+
+    # Trunk height scaled with depth, small upward margin to settle cleanly.
+    z = z_stand + lam * (z_deep - z_stand) \
+        + torch.rand(num, device=env.device) * 0.01
+
+    env.sim.data.qpos[env_ids, 2] = z
+    env.sim.data.qpos[env_ids, 3:7] = quat
+    env.sim.data.qpos[env_ids, 7:] = joints
+    env.sim.data.qvel[env_ids, :] = 0.0
+
+
 def maybe_set_random_prone_orientation(
     env: ManagerBasedRlEnv,
     env_ids: torch.Tensor,
@@ -3221,6 +3301,7 @@ def maybe_set_random_prone_orientation(
     face_down_prob: float = 0.5,
     prone_z_min: float = 0.20,
     prone_z_max: float = 0.25,
+    crouch_prob: float = 0.0,
 ):
     """Reset event that overrides orientation to prone with probability `prone_prob`.
 
@@ -3235,8 +3316,12 @@ def maybe_set_random_prone_orientation(
     At prone_prob=2/3 and face_down_prob=0.5 you get a balanced 33/33/33 split
     of upright/face-down/face-up resets, which is the standard mixture for
     learning fall recovery alongside normal upright start.
+
+    With ``crouch_prob`` > 0, an additional exclusive slice of envs is reset
+    into a random mid-recovery crouch via ``set_random_crouch_state`` (reverse
+    curriculum for the recovery last mile — see its docstring).
     """
-    if prone_prob <= 0.0:
+    if prone_prob <= 0.0 and crouch_prob <= 0.0:
         return
     # env_ids=None means "all envs" (the initial global reset passes None —
     # the old early-return silently skipped prone init there).
@@ -3245,8 +3330,10 @@ def maybe_set_random_prone_orientation(
     if len(env_ids) == 0:
         return
     env_ids_t = env_ids.to(env.device, dtype=torch.long) if isinstance(env_ids, torch.Tensor) else torch.tensor(env_ids, device=env.device, dtype=torch.long)
-    apply_mask = torch.rand(len(env_ids_t), device=env.device) < prone_prob
-    selected = env_ids_t[apply_mask]
+    # One draw partitions envs into exclusive prone / crouch / untouched slices.
+    u = torch.rand(len(env_ids_t), device=env.device)
+    selected = env_ids_t[u < prone_prob]
+    crouch_selected = env_ids_t[(u >= prone_prob) & (u < prone_prob + crouch_prob)]
     if len(selected) > 0:
         set_random_prone_orientation(
             env, selected, asset_cfg=asset_cfg, face_down_prob=face_down_prob
@@ -3254,6 +3341,8 @@ def maybe_set_random_prone_orientation(
         # Override z so the prone body has head/neck clearance when settling.
         z = torch.rand(len(selected), device=env.device) * (prone_z_max - prone_z_min) + prone_z_min
         env.sim.data.qpos[selected, 2] = z
+    if len(crouch_selected) > 0:
+        set_random_crouch_state(env, crouch_selected, asset_cfg=asset_cfg)
 
 
 def event_param_curriculum(

@@ -33,6 +33,18 @@ bounty and (2) a fallen_tax hysteresis that keeps taxing after a fall until
 that definition is met, and (3) height_progress — a potential-based Δz term
 giving the crouch→stand last mile the dense gradient nothing else provides.
 
+Run-6 lesson (still parked at 4k): fixing the economics wasn't enough — the
+bounty fired (rising recovery_success curve) but stayed exploration-rare,
+because the last mile got almost no on-policy DATA: a prone episode spends
+most of its 5 s fallen budget getting TO the crouch, then fallen_too_long
+recycles it right at the frontier. The old velstand learned recovery fast
+precisely because 2/3 prone resets + 20 s episodes made fallen-state data
+abundant (at the cost of the walk). Run-6 recovers that data density without
+the starvation: (1) crouch_prob reverse-curriculum slice — reset directly
+into random mid-recovery crouches, dense last-mile data from step 0; (2)
+fallen timeout 5 → 8 s; (3) economics at 800 (walk is stable by ~750) and
+the whole prone ramp pulled ~500 iters earlier.
+
 Phases (as before, but with a recovery backstop):
   Phase 1 (0 → 500 iters): `fell_over` termination active (70°) → clean
     walking first.
@@ -101,20 +113,30 @@ RECOVERED_UP_Z = 0.09
 # The tax and bounty exist FOR THE RECOVERY PHASE. Run-3 lesson: fallen_tax
 # active from step 0 (dense, -0.5) taught "avoid tilt at all costs" within ~25
 # iters → crouch-freeze local optimum before walking could bootstrap (ep_len
-# pinned at the 5 s recycle, air_time never grew). Both ramp in at iter 1200 —
-# after the walk is established, before the prone ramp begins at 1500.
-RECOVERY_ECON_KICKIN_ITER = 1200
+# pinned at the 5 s recycle, air_time never grew). Run-6 revision: the walk is
+# established well before 1200 (air_time plateaus ~750 in run 5), so the
+# economics now kick in at 800 — the old 1200 just delayed recovery learning.
+RECOVERY_ECON_KICKIN_ITER = 800
 
 # Failed-recovery backstop: continuously fallen this long → terminate/reset.
-FALLEN_TIMEOUT_S = 5.0
+# Run-6: 5 s → 8 s. At 5 s a face-down recovery spent most of its budget
+# getting TO the deep crouch and was recycled right at the frontier — almost
+# no on-policy data for the crouch→stand last mile.
+FALLEN_TIMEOUT_S = 8.0
 
-# Prone-init ramp (phase 3): capped at 45% prone (was 2/3 — starved the walk).
-# Face-down introduced first (easier recovery), face-up mixed in later.
+# Prone + crouch init ramp (phase 3). Prone capped at 45% (was 2/3 — starved
+# the walk); face-down first (easier recovery), face-up mixed in later.
+# Run-6: crouch_prob adds a REVERSE-CURRICULUM slice — envs reset directly
+# into random mid-recovery crouches (see set_random_crouch_state) so the
+# last mile gets dense data instead of only being reached at the tail of rare
+# good rollouts. Whole ramp pulled earlier (walk is stable by ~750; run 5
+# only reached full task difficulty at 2500, judging the fix on ~0 iters).
 PRONE_RAMP_STAGES = [
-    {"step": 0,                        "params": {"prone_prob": 0.00, "face_down_prob": 1.0}},
-    {"step": 1500 * NUM_STEPS_PER_ENV, "params": {"prone_prob": 0.15, "face_down_prob": 0.80}},
-    {"step": 2000 * NUM_STEPS_PER_ENV, "params": {"prone_prob": 0.30, "face_down_prob": 0.65}},
-    {"step": 2500 * NUM_STEPS_PER_ENV, "params": {"prone_prob": 0.45, "face_down_prob": 0.50}},
+    {"step": 0,                        "params": {"prone_prob": 0.00, "face_down_prob": 1.0,  "crouch_prob": 0.00}},
+    {"step": 800 * NUM_STEPS_PER_ENV,  "params": {"prone_prob": 0.10, "face_down_prob": 1.0,  "crouch_prob": 0.15}},
+    {"step": 1200 * NUM_STEPS_PER_ENV, "params": {"prone_prob": 0.20, "face_down_prob": 0.80, "crouch_prob": 0.15}},
+    {"step": 1600 * NUM_STEPS_PER_ENV, "params": {"prone_prob": 0.30, "face_down_prob": 0.65, "crouch_prob": 0.15}},
+    {"step": 2000 * NUM_STEPS_PER_ENV, "params": {"prone_prob": 0.45, "face_down_prob": 0.50, "crouch_prob": 0.15}},
 ]
 
 
@@ -242,6 +264,7 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
             "face_down_prob": 1.0,
             "prone_z_min": 0.05,
             "prone_z_max": 0.09,
+            "crouch_prob": 0.0,       # ramped by the prone_init_prob curriculum
         },
     )
 
