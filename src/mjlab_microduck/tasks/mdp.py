@@ -771,6 +771,67 @@ def crouch_height_target(
     return torch.where(descend, t_descend, torch.where(hold, t_hold, t_rise))
 
 
+def crouch_glide_reward_from_values(
+    com_height: torch.Tensor,
+    cmd_cos: torch.Tensor,
+    cmd_sin: torch.Tensor,
+    height_low: float,
+    height_high: float,
+    hold_lo: float = 0.375,
+    hold_hi: float = 0.625,
+    std: float = 0.02,
+) -> torch.Tensor:
+    """Récompense gaussienne du suivi de la cible de hauteur (fonction pure).
+
+    Décode la phase depuis [cos, sin] puis compare la hauteur mesurée à la
+    cible-trapèze. Retourne exp(-((h - cible)/std)^2) ∈ (0, 1].
+    """
+    phase = (torch.atan2(cmd_sin, cmd_cos) / (2 * torch.pi)) % 1.0
+    target = crouch_height_target(phase, height_low, height_high, hold_lo, hold_hi)
+    return torch.exp(-((com_height - target) / std) ** 2)
+
+
+def crouch_glide_height_by_phase(
+    env: ManagerBasedRlEnv,
+    command_name: str = "twist",
+    height_low: float = 0.075,
+    height_high: float = 0.11,
+    hold_lo: float = 0.375,
+    hold_hi: float = 0.625,
+    std: float = 0.02,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """Reward principale : suit la cible de hauteur du tronc le long de la phase.
+
+    La hauteur du CoM est calculée comme dans `com_height_target` (world z moins
+    l'origine du terrain, nan->0). La phase provient de la commande GroundPick.
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    com_height = torch.nan_to_num(
+        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
+    )
+    cmd = env.command_manager.get_command(command_name)
+    return crouch_glide_reward_from_values(
+        com_height, cmd[:, 0], cmd[:, 1],
+        height_low, height_high, hold_lo, hold_hi, std,
+    )
+
+
+def forward_speed_reward(
+    env: ManagerBasedRlEnv,
+    vel_ref: float = 0.2,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """Récompense la vitesse avant du tronc (conserver l'élan / ne pas freiner).
+
+    Indépendante de la commande (la commande porte la phase, pas la vitesse).
+    tanh(clamp(vx, 0)/vel_ref) → sature à ~1, ne récompense jamais reculer.
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    vx = asset.data.root_link_lin_vel_b[:, 0]
+    return torch.tanh(torch.clamp(vx, min=0.0) / vel_ref)
+
+
 def neck_joint_vel_l2(
     env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG
 ) -> torch.Tensor:
