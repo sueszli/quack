@@ -306,9 +306,21 @@ def make_microduck_velocity_rollers_env_cfg(
         weight=1.5,
         params={"command_name": "twist", "target_pitch": 0.262, "std": 0.1},
     )
-    # Heading DISABLED for now — we focus on straight-line skating first (one
-    # fewer thing to learn). Re-add heading_tracking (+ its curriculum, + a
-    # non-zero ang_vel_z clip below) once the push/glide stride is solid.
+    # Heading command DISABLED for now (straight-line focus) — but we still keep
+    # it going STRAIGHT: track_angular_velocity rewards yaw-rate ≈ command[2]
+    # (clamped to 0) so the robot stops drifting/curving to the side (it also
+    # lightly damps trunk roll/pitch ang-vel). Moderate weight so it doesn't fight
+    # the natural skating sway. Re-add real heading_tracking (+ its curriculum, +
+    # a non-zero ang_vel_z clip) once the push/glide stride is solid.
+    cfg.rewards["heading_straight"] = RewardTermCfg(
+        func=mdp.track_angular_velocity,
+        weight=1.0,
+        params={
+            "std": 0.5,
+            "command_name": "twist",
+            "asset_cfg": SceneEntityCfg("robot"),
+        },
+    )
 
     # === TERMINATIONS ===
     cfg.terminations["nan_state"] = TerminationTermCfg(
