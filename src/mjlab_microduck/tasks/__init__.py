@@ -52,6 +52,10 @@ from .microduck_velocity_rollers_env_cfg import (
     make_microduck_velocity_rollers_env_cfg,
     MicroduckRollersRlCfg,
 )
+from .microduck_roller_crouch_env_cfg import (
+    make_microduck_roller_crouch_env_cfg,
+    MicroduckRollerCrouchRlCfg,
+)
 
 # Standard velocity task
 register_mjlab_task(
@@ -173,3 +177,12 @@ register_mjlab_task(
     runner_cls=MicroduckOnPolicyRunner,
 )
 print("✓ Rollers task registered: Mjlab-Velocity-Flat-MicroDuck-Rollers")
+
+register_mjlab_task(
+    task_id="Mjlab-RollerCrouch-Flat-MicroDuck",
+    env_cfg=make_microduck_roller_crouch_env_cfg(),
+    play_env_cfg=make_microduck_roller_crouch_env_cfg(play=True),
+    rl_cfg=MicroduckRollerCrouchRlCfg,
+    runner_cls=MicroduckOnPolicyRunner,
+)
+print("✓ RollerCrouch task registered: Mjlab-RollerCrouch-Flat-MicroDuck")
