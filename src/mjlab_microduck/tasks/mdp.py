@@ -539,18 +539,75 @@ def upright_progress(
     return delta
 
 
+def height_progress(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    ceiling: float = 0.115,
+) -> torch.Tensor:
+    """Potential-based height shaping: Δ min(trunk z, ceiling) per step.
+
+    The z-axis companion to ``upright_progress`` (velstand crouch-endpoint
+    lesson): the last mile of a recovery — extending the knees out of a deep
+    crouch — is mostly a HEIGHT change at modest tilt, exactly where the
+    Gaussian upright/pose rewards are flat and Δcos(tilt) is tiny. Rising pays,
+    falling charges, holding pays zero, so gait bobbing nets zero and nothing
+    can farm it. Capped at ``ceiling`` (just below full-stand trunk z ≈ 0.117)
+    so hopping above stance height pays nothing extra.
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    z = torch.nan_to_num(
+        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
+    )
+    pot = torch.clamp(z, max=ceiling)
+    if not hasattr(env, "_height_potential_prev"):
+        env._height_potential_prev = pot.clone()
+    fresh = env.episode_length_buf <= 1
+    env._height_potential_prev[fresh] = pot[fresh]
+    delta = pot - env._height_potential_prev
+    env._height_potential_prev = pot.clone()
+    return delta
+
+
 def fallen_state_penalty(
     env: ManagerBasedRlEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     gate_tilt_above_deg: float = 40.0,
+    release_tilt_below_deg: float | None = None,
+    release_z_above: float | None = None,
 ) -> torch.Tensor:
     """1.0 while FALLEN (weight it negative): a flat per-step tax on staying
     down. Without it, lying still is ~0/step while attempting recovery costs
     action-rate/torque penalties — waiting for the fallen_too_long recycle was
     the rational policy. (Penalties on bad states are safe; it's POSITIVE
-    rewards gated on bad states that get farmed.)"""
+    rewards gated on bad states that get farmed.)
+
+    With ``release_*`` set, the tax has HYSTERESIS (velstand crouch-endpoint
+    lesson): a fall arms it and it keeps paying until the robot is genuinely
+    up (tilt < release_tilt AND z > release_z), not merely under the arming
+    gate. Without it, a crouch just below the 40° gate is a zero-cost rest
+    state — recoveries learned to park there instead of finishing the stand.
+    Arms only on a genuine fall, so gait-cycle tilt wobble is never taxed."""
     asset: Entity = env.scene[asset_cfg.name]
-    return _fallen_mask(env, asset, 0.0, gate_tilt_above_deg)
+    fallen = _fallen_mask(env, asset, 0.0, gate_tilt_above_deg).bool()
+    if release_tilt_below_deg is None:
+        return fallen.float()
+    z = torch.nan_to_num(
+        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
+    )
+    quat = asset.data.root_link_quat_w
+    cos_tilt = 1.0 - 2.0 * (quat[:, 1] ** 2 + quat[:, 2] ** 2)
+    up = cos_tilt > math.cos(math.radians(release_tilt_below_deg))
+    if release_z_above is not None:
+        up &= z > release_z_above
+    if not hasattr(env, "_fallen_tax_armed"):
+        env._fallen_tax_armed = torch.zeros(
+            env.num_envs, dtype=torch.bool, device=env.device
+        )
+    fresh = env.episode_length_buf <= 1
+    env._fallen_tax_armed[fresh] = False
+    env._fallen_tax_armed |= fallen
+    env._fallen_tax_armed &= ~up
+    return env._fallen_tax_armed.float()
 
 
 def recovery_success(

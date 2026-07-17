@@ -24,6 +24,15 @@ Design now:
   - joint_torque_rate_l2 (standup's proven anti-jitter) for transfer
     smoothness — penalizes torque CHANGE, never blocks the recovery flip.
 
+Run-5 lesson (crouch endpoint): recoveries walked nicely but parked in a deep
+crouch just past the 40° gates — every dense recovery term stops paying there,
+and the recovery_success bounty demanded z > 0.105, above the policy's real
+standing envelope (0.084–0.096), so it never fired. Fixes: (1) shared
+"recovery complete" definition (tilt < 25° AND z > 0.09 — reachable) for the
+bounty and (2) a fallen_tax hysteresis that keeps taxing after a fall until
+that definition is met, and (3) height_progress — a potential-based Δz term
+giving the crouch→stand last mile the dense gradient nothing else provides.
+
 Phases (as before, but with a recovery backstop):
   Phase 1 (0 → 500 iters): `fell_over` termination active (70°) → clean
     walking first.
@@ -77,6 +86,18 @@ REWARD_GATE_TILT_DEG = 40.0   # recovery rewards: fallen = tilt > 40° ONLY
 TERM_GATE_Z = 0.08            # fallen_too_long: z < 0.08 OR tilt > 40°
 TERM_GATE_TILT_DEG = 40.0
 
+# "Recovery COMPLETE" definition — shared by the recovery_success bounty and
+# the fallen_tax release (run-5 crouch-endpoint lesson). z threshold must sit
+# INSIDE the policy's real standing envelope: run 3 measured a normally
+# wobbling upright robot at z ≈ 0.084–0.096, and the full STAND keyframe
+# settles at ≈ 0.117. The old up_z=0.105 demanded standing TALLER than the
+# policy ever is in practice → the bounty never fired → recoveries converged
+# to a deep crouch just past the 40° gates (where every dense recovery term
+# stops paying) instead of finishing the stand. 0.09 is reachable every stand
+# yet still 2 cm above sitting (z ≈ 0.07) and 4 cm above prone (z ≈ 0.05).
+RECOVERED_UP_TILT_DEG = 25.0
+RECOVERED_UP_Z = 0.09
+
 # The tax and bounty exist FOR THE RECOVERY PHASE. Run-3 lesson: fallen_tax
 # active from step 0 (dense, -0.5) taught "avoid tilt at all costs" within ~25
 # iters → crouch-freeze local optimum before walking could bootstrap (ep_len
@@ -125,6 +146,20 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
             "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
         },
     )
+    # z-axis companion to upright_progress (run-5 crouch-endpoint lesson): the
+    # crouch→stand last mile is mostly a HEIGHT change at modest tilt — where
+    # Δcos(tilt) is tiny and the Gaussian upright/pose rewards are flat. Same
+    # potential-based construction: unfarmable (holding/bobbing nets zero),
+    # ungated, charges falls symmetrically. Full prone→stand rise (0.05 →
+    # 0.115 m) collects Δ≈+0.065 × 30 ≈ +2; the crouch→stand mile ≈ +1.
+    cfg.rewards["height_progress"] = RewardTermCfg(
+        func=microduck_mdp.height_progress,
+        weight=30.0,
+        params={
+            "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
+            "ceiling": 0.115,
+        },
+    )
     cfg.rewards["com_upward_velocity"] = RewardTermCfg(
         func=microduck_mdp.com_upward_velocity,
         weight=0.0,  # recovery term — ramped in at RECOVERY_ECON_KICKIN_ITER
@@ -169,6 +204,15 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
             "gate_tilt_above_deg": REWARD_GATE_TILT_DEG,
+            # Hysteresis (run-5 crouch-endpoint lesson): recoveries parked in a
+            # deep crouch just under the 40° gate — past every recovery term's
+            # gate, but short of standing. With release conditions matching the
+            # recovery_success bounty (below), a fall keeps taxing until the
+            # stand is actually FINISHED; the sub-40° crouch is no longer a
+            # zero-cost rest state. Arms only on tilt > 40°, so normal gait is
+            # never taxed.
+            "release_tilt_below_deg": RECOVERED_UP_TILT_DEG,
+            "release_z_above": RECOVERED_UP_Z,
         },
     )
     # One-shot bounty on a COMPLETED recovery (fallen ≥0.5 s → genuinely up),
@@ -181,8 +225,8 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
             "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
             "fallen_tilt_deg": REWARD_GATE_TILT_DEG,
             "min_fallen_s": 0.5,
-            "up_tilt_deg": 25.0,
-            "up_z": 0.105,
+            "up_tilt_deg": RECOVERED_UP_TILT_DEG,
+            "up_z": RECOVERED_UP_Z,  # was 0.105 — unreachable, see constant note
         },
     )
 
