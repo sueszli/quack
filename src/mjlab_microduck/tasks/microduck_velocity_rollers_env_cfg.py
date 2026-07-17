@@ -255,9 +255,13 @@ def make_microduck_velocity_rollers_env_cfg(
     # actually moving forward (vel_gate_ref) — otherwise a fast in-place flutter
     # farmed this. threshold_min raised 0.15 → 0.25 to forbid ultra-short swings
     # (caps the frantic kick cadence); glide below rewards the slow phase.
+    # air_time rewards each swing → drives swing FREQUENCY; glide rewards staying
+    # on one blade → drives commitment. Balance tilted toward glide (3.0) over
+    # air_time (2.0) because the cadence was still too fast. air_time kept high
+    # enough (2.0) that lifting the foot stays worthwhile.
     cfg.rewards["skating_air_time"] = RewardTermCfg(
         func=microduck_mdp.skating_air_time_reward,
-        weight=3.0,
+        weight=2.0,
         params={
             "sensor_name": "feet_ground_contact",
             "command_name": "twist",
@@ -268,11 +272,11 @@ def make_microduck_velocity_rollers_env_cfg(
     )
     # Glide phase (single-support REQUIRED, unlike the earlier broken attempt):
     # reward coasting on one blade with quiet legs so the policy commits to each
-    # stroke instead of kicking frantically. This is what actually slows the
-    # cadence — air_time alone rewards swing frequency.
+    # stroke instead of kicking frantically. Weight raised 1.5 → 3.0 to actually
+    # out-weigh the swing-frequency pull of air_time.
     cfg.rewards["glide"] = RewardTermCfg(
         func=microduck_mdp.glide_reward,
-        weight=1.5,
+        weight=3.0,
         params={
             "sensor_name": "feet_ground_contact",
             "command_name": "twist",
