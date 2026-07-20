@@ -180,16 +180,6 @@ def make_microduck_roller_crouch_env_cfg(play: bool = False) -> ManagerBasedRlEn
     )
     del cfg.events["foot_friction"]
 
-    # Vitesse d'entrée : le robot démarre en roulant vers l'avant (élan à conserver)
-    cfg.events["entry_velocity"] = EventTermCfg(
-        func=mdp.push_by_setting_velocity,
-        mode="reset",
-        params={
-            "velocity_range": {"x": ENTRY_VELOCITY_X, "y": (0.0, 0.0)},
-            "asset_cfg": SceneEntityCfg("robot"),
-        },
-    )
-
     if ENABLE_VELOCITY_PUSHES:
         cfg.events["push_robot"] = EventTermCfg(
             func=mdp.push_by_setting_velocity,
@@ -202,6 +192,12 @@ def make_microduck_roller_crouch_env_cfg(play: bool = False) -> ManagerBasedRlEn
         )
 
     cfg.events["reset_base"].params["pose_range"]["z"] = (0.1335, 0.1435)
+    # Vitesse d'entrée : le robot démarre en roulant vers l'avant (élan à conserver
+    # pendant l'accroupi). Injectée via reset_root_state_uniform (état par défaut
+    # PROPRE + range), et NON via push_by_setting_velocity en mode reset qui, lui,
+    # additionne à la vitesse racine courante (potentiellement divergente) et fait
+    # exploser le free-joint de la base -> NaN. Voir le commentaire ENTRY_VELOCITY_X.
+    cfg.events["reset_base"].params["velocity_range"] = {"x": ENTRY_VELOCITY_X}
 
     if ENABLE_WHEEL_FRICTION_RANDOMIZATION:
         cfg.events["randomize_wheel_friction"] = EventTermCfg(

@@ -21,6 +21,17 @@ def test_cfg_has_crouch_and_forward_rewards():
         assert gone not in cfg.rewards
 
 
-def test_cfg_has_entry_velocity_event():
+def test_entry_velocity_applied_safely_via_reset_base():
+    # Regression: entry momentum must be injected through reset_base's
+    # velocity_range (reset_root_state_uniform sets it from the clean default
+    # state), NOT via a mode="reset" push_by_setting_velocity event, which adds
+    # to the current (possibly divergent) root velocity and blows the base
+    # free-joint up to NaN. See the env cfg comment on ENTRY_VELOCITY_X.
     cfg = make_microduck_roller_crouch_env_cfg()
-    assert "entry_velocity" in cfg.events
+    # the buggy reset-push event must NOT exist
+    assert "entry_velocity" not in cfg.events
+    # forward entry velocity must be carried by reset_base, with a positive range
+    vr = cfg.events["reset_base"].params.get("velocity_range")
+    assert vr and "x" in vr
+    lo, hi = vr["x"]
+    assert lo > 0.0 and hi >= lo
