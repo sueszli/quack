@@ -83,7 +83,7 @@ FULL_COLLISION = CollisionCfg(
 # kp_fw kept at 200 (microduck's preserved firmware stiffness; microban uses 125).
 actuators = FrictionDRBamActuatorCfg(
     motor_name="xl330",
-    model="m6",
+    model="m4", # Was m6
     target_names_expr=(r"^(?!passive_).*",),
     kp_fw=200.0,  # microduck's preserved firmware stiffness (microban uses 125)
     # vin_range=(6.9, 7.9),
