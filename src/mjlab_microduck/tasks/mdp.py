@@ -3581,6 +3581,11 @@ class GroundPickPhaseCommand(UniformVelocityCommand):
         super().__init__(cfg, env)
         self._gp_phase = torch.zeros(self.num_envs, device=self.device)
         self._period = float(getattr(cfg, "period", self.PERIOD))
+        # When False, each episode starts at phase 0 (standing) instead of a
+        # random phase. Matches the runtime, where the button starts the cycle
+        # at phase 0 from standing. Default True keeps the historical ground_pick
+        # behavior (random phase to decorrelate envs).
+        self._randomize_phase = bool(getattr(cfg, "randomize_phase", True))
 
     @property
     def command(self) -> torch.Tensor:
@@ -3594,7 +3599,10 @@ class GroundPickPhaseCommand(UniformVelocityCommand):
 
     def reset(self, env_ids: torch.Tensor | None) -> dict:
         if env_ids is not None and len(env_ids) > 0:
-            self._gp_phase[env_ids] = torch.rand(len(env_ids), device=self.device)
+            if self._randomize_phase:
+                self._gp_phase[env_ids] = torch.rand(len(env_ids), device=self.device)
+            else:
+                self._gp_phase[env_ids] = 0.0
         return {}
 
     def _resample_command(self, env_ids: torch.Tensor) -> None:
@@ -3613,6 +3621,7 @@ from dataclasses import dataclass as _dataclass
 class GroundPickPhaseCommandCfg(UniformVelocityCommandCfg):
     class_type: type = GroundPickPhaseCommand
     period: float = 4.0  # cycle length in seconds; sitstand uses 8.0
+    randomize_phase: bool = True  # False -> each episode starts at phase 0 (standing)
 
     def build(self, env: ManagerBasedRlEnv) -> "GroundPickPhaseCommand":
         return GroundPickPhaseCommand(self, env)

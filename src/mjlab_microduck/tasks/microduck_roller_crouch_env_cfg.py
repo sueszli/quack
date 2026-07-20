@@ -42,8 +42,17 @@ ENCODER_BIAS_RANGE               = (-0.015, 0.015)
 # Geste : hauteurs cibles (m) et vitesse d'entrée (élan)
 CROUCH_HEIGHT_HIGH = 0.11    # tronc debout
 CROUCH_HEIGHT_LOW  = 0.075   # tronc accroupi (à affiner en play)
-CROUCH_STD         = 0.02
+CROUCH_STD         = 0.045   # tolérance de suivi (m) — élargie pour donner du gradient
 ENTRY_VELOCITY_X   = (0.2, 0.5)  # m/s : le robot arrive en roulant
+
+# Timing du cycle (phase). Période 6 s -> descente plus lente (moins violente) :
+#   descente [0, HOLD_LO]        = 0.417*6 ≈ 2.5 s
+#   palier   [HOLD_LO, HOLD_HI]  = (0.583-0.417)*6 ≈ 1.0 s  (glisse accroupie)
+#   remontée [HOLD_HI, 1.0]      = (1-0.583)*6 ≈ 2.5 s
+# NB: la période DOIT matcher --ground-pick-period au déploiement (6.0).
+CROUCH_PERIOD = 6.0
+HOLD_LO       = 0.417
+HOLD_HI       = 0.583
 
 from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.envs.mdp import dr
@@ -119,20 +128,21 @@ def make_microduck_roller_crouch_env_cfg(play: bool = False) -> ManagerBasedRlEn
     # Reward principale : cible de hauteur trapèze le long de la phase
     cfg.rewards["crouch_glide_height"] = RewardTermCfg(
         func=microduck_mdp.crouch_glide_height_by_phase,
-        weight=4.0,
+        weight=6.0,
         params={
             "command_name": "twist",
             "height_low": CROUCH_HEIGHT_LOW,
             "height_high": CROUCH_HEIGHT_HIGH,
-            "hold_lo": 0.375,
-            "hold_hi": 0.625,
+            "hold_lo": HOLD_LO,
+            "hold_hi": HOLD_HI,
             "std": CROUCH_STD,
         },
     )
-    # Conserver l'élan (ne pas freiner) — indépendant de la commande
+    # Conserver l'élan (ne pas freiner) — indépendant de la commande.
+    # Poids réduit (2->1) pour qu'il ne farme plus le "reste bas et glisse".
     cfg.rewards["forward_speed"] = RewardTermCfg(
         func=microduck_mdp.forward_speed_reward,
-        weight=2.0,
+        weight=1.0,
         params={"vel_ref": 0.2},
     )
     # Fin de phase : converger vers la pose roller debout pour rendre la main proprement
@@ -140,12 +150,12 @@ def make_microduck_roller_crouch_env_cfg(play: bool = False) -> ManagerBasedRlEn
     _NECK_JOINTS = [5, 6, 7, 8]
     cfg.rewards["return_pose_legs"] = RewardTermCfg(
         func=microduck_mdp.ground_pick_return_pose,
-        weight=3.0,
+        weight=4.0,
         params={"std": 0.3, "command_name": "twist", "joint_indices": _LEG_JOINTS},
     )
     cfg.rewards["return_pose_neck"] = RewardTermCfg(
         func=microduck_mdp.ground_pick_return_pose,
-        weight=3.0,
+        weight=4.0,
         params={"std": 0.15, "command_name": "twist", "joint_indices": _NECK_JOINTS},
     )
     # Stabilité de glisse
@@ -326,8 +336,16 @@ def make_microduck_roller_crouch_env_cfg(play: bool = False) -> ManagerBasedRlEn
     command: UniformVelocityCommandCfg = cfg.commands["twist"]
     command.rel_standing_envs = 0.0
     command.rel_heading_envs = 0.0
+    # period=CROUCH_PERIOD (descente plus lente) ; randomize_phase=False -> chaque
+    # épisode démarre debout (phase 0), comme au déploiement (le bouton lance le
+    # cycle à phase 0). Évite d'apprendre "reste bas" depuis des départs déjà bas.
     cfg.commands["twist"] = microduck_mdp.GroundPickPhaseCommandCfg(
-        **{**vars(command), "class_type": microduck_mdp.GroundPickPhaseCommand, "period": 4.0}
+        **{
+            **vars(command),
+            "class_type": microduck_mdp.GroundPickPhaseCommand,
+            "period": CROUCH_PERIOD,
+            "randomize_phase": False,
+        }
     )
 
     cfg.scene.terrain.terrain_type = "plane"

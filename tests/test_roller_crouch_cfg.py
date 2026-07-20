@@ -6,10 +6,12 @@ from mjlab_microduck.tasks import mdp as microduck_mdp
 
 def test_cfg_uses_phase_command():
     cfg = make_microduck_roller_crouch_env_cfg()
-    assert isinstance(
-        cfg.commands["twist"], microduck_mdp.GroundPickPhaseCommandCfg
-    )
-    assert cfg.commands["twist"].period == 4.0
+    cmd = cfg.commands["twist"]
+    assert isinstance(cmd, microduck_mdp.GroundPickPhaseCommandCfg)
+    # period must match --ground-pick-period at deploy (slower descent = 6 s)
+    assert cmd.period == 6.0
+    # each episode starts standing (phase 0), matching the runtime trigger
+    assert cmd.randomize_phase is False
 
 
 def test_cfg_has_crouch_and_forward_rewards():
