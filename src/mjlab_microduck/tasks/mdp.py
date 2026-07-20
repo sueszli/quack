@@ -3469,6 +3469,41 @@ def glide_reward(
     return single * forward_gate * stillness * active
 
 
+def heading_hold_reward(
+    env: ManagerBasedRlEnv,
+    std: float = 0.4,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """Reward holding the SPAWN heading (go straight) — corrective, angle-based.
+
+    Rewards the yaw ANGLE staying near the heading captured at reset:
+        reward = exp(-wrap(yaw - yaw_spawn)² / std²)
+
+    This is the RIGHT way to go straight (vs penalising yaw-RATE, which just tells
+    the policy 'never turn' → it can't steer back and drifts open-loop). Here a
+    drift lowers the reward, and the policy is free to yaw back to recover it.
+
+    The spawn heading is captured per-env on the first step(s) after reset
+    (episode_length_buf <= 1), when the robot is still ~at its spawn pose. Reads
+    root_link_quat_w, which is fresh at reward time (post physics step). Heading-
+    invariant: the reference is each env's own random spawn yaw, so it works with
+    the full-circle yaw randomisation at reset.
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    quat = asset.data.root_link_quat_w  # (N, 4) [w, x, y, z]
+    w, x, y, z = quat[:, 0], quat[:, 1], quat[:, 2], quat[:, 3]
+    yaw = torch.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
+
+    if not hasattr(env, "_heading_ref") or env._heading_ref.shape[0] != env.num_envs:
+        env._heading_ref = yaw.clone()
+    just_reset = env.episode_length_buf <= 1
+    env._heading_ref = torch.where(just_reset, yaw, env._heading_ref)
+
+    err = yaw - env._heading_ref
+    err = torch.atan2(torch.sin(err), torch.cos(err))  # wrap to [-π, π]
+    return torch.exp(-(err ** 2) / std ** 2)
+
+
 def action_over_limit_penalty(
     env: ManagerBasedRlEnv,
     action_name: str = "joint_pos",

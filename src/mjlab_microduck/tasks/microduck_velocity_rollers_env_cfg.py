@@ -306,14 +306,16 @@ def make_microduck_velocity_rollers_env_cfg(
         weight=1.5,
         params={"command_name": "twist", "target_pitch": 0.262, "std": 0.1},
     )
-    # Heading DISABLED for now — straight-line focus. Re-add heading_tracking
-    # (+ its curriculum, + a non-zero ang_vel_z clip) once the stride is solid.
-    # NOTE: a track_angular_velocity "heading_straight" reward (yaw-rate -> 0) was
-    # tried to reduce side-drift but made it WORSE: rewarding zero yaw-rate
-    # discourages the corrective steering needed to stay straight (the policy
-    # freezes its yaw and drifts open-loop). The right fix is a HEADING-ANGLE hold
-    # (reward yaw near the spawn heading), which ALLOWS corrective yaw — not a
-    # yaw-rate penalty.
+    # Heading command DISABLED (straight-line focus), but we hold the heading so it
+    # doesn't drift: heading_hold rewards the yaw ANGLE staying near the spawn
+    # heading. Corrective (allows yaw to steer back) — unlike a yaw-RATE penalty,
+    # which froze the yaw and made drift WORSE (tried and reverted). Re-add real
+    # heading_tracking (turning) once the stride is solid.
+    cfg.rewards["heading_hold"] = RewardTermCfg(
+        func=microduck_mdp.heading_hold_reward,
+        weight=1.0,
+        params={"std": 0.4, "asset_cfg": SceneEntityCfg("robot")},
+    )
 
     # === TERMINATIONS ===
     cfg.terminations["nan_state"] = TerminationTermCfg(
