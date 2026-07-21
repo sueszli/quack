@@ -26,14 +26,6 @@ from bam.mjlab import BamActuator, BamActuatorCfg
 class FrictionDRBamActuator(BamActuator):
     """BamActuator + per-env friction_scale on the BAM friction budget."""
 
-    def __init__(self, cfg, entity, target_ids, target_names) -> None:
-        super().__init__(cfg, entity, target_ids, target_names)
-        # Same live-attribute override pattern the base class uses for
-        # vin/kp_fw: compute_control reads max_current each step, so setting
-        # it here is sufficient. None disables the firmware current limiter
-        # (torque then bounded only by PWM/voltage — battery stall torque).
-        self._bam_model.actuator.max_current = cfg.max_current
-
     def initialize(self, mj_model, model, data, device) -> None:
         super().initialize(mj_model, model, data, device)
         # kp_scale is (num_envs, 1); mirror it for a per-env friction multiplier.
@@ -62,13 +54,6 @@ class FrictionDRBamActuator(BamActuator):
 @dataclass(kw_only=True)
 class FrictionDRBamActuatorCfg(BamActuatorCfg):
     """Drop-in for BamActuatorCfg that builds a friction-DR-capable actuator."""
-
-    # Firmware current limit [A]. bam's XL330Actuator hardcodes 1.75 (the real
-    # XL330 firmware default) with no BamActuatorCfg override; this field makes
-    # it configurable. None removes the limiter entirely — only do that if the
-    # real robot's firmware limit is raised to match, else sim torque exceeds
-    # what hardware can deliver.
-    max_current: float | None = 1.75
 
     def build(self, entity, target_ids, target_names) -> FrictionDRBamActuator:
         return FrictionDRBamActuator(self, entity, target_ids, target_names)
