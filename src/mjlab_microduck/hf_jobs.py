@@ -49,7 +49,11 @@ set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -qq -y --no-install-recommends git curl ca-certificates xz-utils >/dev/null
-curl -LsSf https://astral.sh/uv/install.sh | sh >/dev/null
+# Pinned uv: the cache bucket persists across jobs, and a floating "latest" uv
+# reading entries written by an older uv corrupts installs (seen 2026-07-21:
+# bam's built-wheel cache entry from a 0.9.x-era job made 0.11.30 fail with
+# "The wheel is invalid: Missing .dist-info directory").
+curl -LsSf https://astral.sh/uv/0.11.30/install.sh | sh >/dev/null
 export PATH="/root/.local/bin:$PATH"
 
 mkdir -p /work && cd /work
@@ -57,7 +61,13 @@ echo "[bootstrap] extracting source $SRC_TARBALL"
 tar -xzf "/src/$SRC_TARBALL"
 
 echo "[bootstrap] uv sync"
-uv sync --no-progress
+# Self-heal a poisoned persistent cache: a bad entry fails sync
+# deterministically, so nuke the cache and rebuild it once before giving up.
+uv sync --no-progress || {
+    echo "[bootstrap] uv sync failed — cleaning uv cache and retrying"
+    uv cache clean || true
+    uv sync --no-progress
+}
 
 echo "[bootstrap] launching checkpoint uploader"
 mkdir -p logs/rsl_rl
@@ -239,11 +249,17 @@ def submit(argv: list[str]) -> int:
         "--uv-cache-bucket",
         default=None,
         help="HF bucket used as UV_CACHE_DIR to persist wheels across runs. "
-             "Defaults to <namespace>/mjlab-uv-cache. Use --no-uv-cache to disable.",
+             "Defaults to <namespace>/mjlab-uv-cache. Requires --uv-cache.",
     )
     ap.add_argument(
-        "--no-uv-cache", action="store_true",
-        help="Disable the persistent uv cache bucket.",
+        "--uv-cache", action="store_true",
+        help="Mount a persistent uv cache bucket (OFF by default: the FUSE "
+             "bucket mount does not support hardlinks, so `uv sync` falls back "
+             "to full-copying ~6 GB of unpacked packages through the network "
+             "mount — far slower than just re-downloading wheels from PyPI, "
+             "which HF's datacenter bandwidth handles in ~1 min; it also "
+             "poisons across uv versions: a 0.9.x-era entry made 0.11.30 die "
+             "with 'wheel is invalid: Missing .dist-info', 2026-07-21).",
     )
     ap.add_argument(
         "--no-wandb", action="store_true",
@@ -295,9 +311,12 @@ def submit(argv: list[str]) -> int:
 
     volumes = [Volume(type="dataset", source=src_repo, mount_path="/src", read_only=True)]
 
-    # Persistent uv cache (skips multi-minute wheel downloads on every job)
+    # Persistent uv cache — opt-in via --uv-cache (see the flag's help text:
+    # cross-filesystem installs from the FUSE bucket are slower than fresh
+    # PyPI downloads, and a stale entry deterministically killed uv sync on
+    # 2026-07-21).
     cache_bucket: str | None = None
-    if not args.no_uv_cache:
+    if args.uv_cache:
         cache_bucket = args.uv_cache_bucket or f"{namespace}/mjlab-uv-cache"
         volumes.append(Volume(type="bucket", source=cache_bucket, mount_path="/uv-cache"))
         env["UV_CACHE_DIR"] = "/uv-cache"
