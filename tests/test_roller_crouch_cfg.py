@@ -16,8 +16,13 @@ def test_cfg_uses_phase_command():
 
 def test_cfg_has_crouch_and_forward_rewards():
     cfg = make_microduck_roller_crouch_env_cfg()
-    assert "crouch_glide_height" in cfg.rewards
+    # pose-based objective (standing<->crouch) + L1 bootstrap
+    assert "crouch_glide_pose" in cfg.rewards
+    assert "crouch_glide_pose_l1" in cfg.rewards
     assert "forward_speed" in cfg.rewards
+    # the crouch pose is carried by-name and includes the leg fold
+    cp = cfg.rewards["crouch_glide_pose"].params["crouch_pose"]
+    assert "left_knee" in cp and "right_knee" in cp
     # rewards de patinage actif retirées (pas de stride pendant le trick)
     for gone in ("braking", "skating_air_time", "single_support", "glide", "wheel_speed"):
         assert gone not in cfg.rewards

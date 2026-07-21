@@ -54,6 +54,27 @@ CROUCH_PERIOD = 6.0
 HOLD_LO       = 0.417
 HOLD_HI       = 0.583
 
+# Pose ACCROUPI cible (rad, par NOM d'articulation) — composée dans
+# scripts/crouch_pose_editor.py. La reward interpole DEBOUT(HOME) <-> cette pose
+# selon la phase. Résolution par nom -> robuste aux roues intercalées.
+CROUCH_POSE = {
+    "left_hip_yaw": 0.0001,
+    "left_hip_roll": -0.0005,
+    "left_hip_pitch": 1.5711,
+    "left_knee": 1.5711,
+    "left_ankle": -0.0006,
+    "neck_pitch": 1.0485,
+    "head_pitch": 0.9995,
+    "head_yaw": -0.0006,
+    "head_roll": 0.0000,
+    "right_hip_yaw": -0.0004,
+    "right_hip_roll": 0.0006,
+    "right_hip_pitch": -1.5711,
+    "right_knee": -1.5711,
+    "right_ankle": 0.0013,
+}
+CROUCH_POSE_STD = 0.4  # tolérance gaussienne par joint (rad)
+
 from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.envs.mdp import dr
 from mjlab.envs.mdp.actions import JointPositionActionCfg
@@ -125,38 +146,33 @@ def make_microduck_roller_crouch_env_cfg(play: bool = False) -> ManagerBasedRlEn
     cfg.rewards["angular_momentum"].weight = -0.02
     cfg.rewards["action_rate_l2"].weight = -1.0
 
-    # Reward principale : cible de hauteur trapèze le long de la phase
-    cfg.rewards["crouch_glide_height"] = RewardTermCfg(
-        func=microduck_mdp.crouch_glide_height_by_phase,
+    # Reward principale : POSE interpolée par la phase (DEBOUT <-> ACCROUPI).
+    # Directive : dit au robot la configuration articulaire exacte à chaque
+    # instant. « Se relever » (phase->1, cible = HOME) est récompensé EXACTEMENT
+    # comme « s'accroupir » (palier, cible = CROUCH_POSE) — symétrique.
+    _pose_params = {
+        "command_name": "twist",
+        "crouch_pose": CROUCH_POSE,
+        "hold_lo": HOLD_LO,
+        "hold_hi": HOLD_HI,
+    }
+    cfg.rewards["crouch_glide_pose"] = RewardTermCfg(
+        func=microduck_mdp.crouch_glide_pose_by_phase,
         weight=6.0,
-        params={
-            "command_name": "twist",
-            "height_low": CROUCH_HEIGHT_LOW,
-            "height_high": CROUCH_HEIGHT_HIGH,
-            "hold_lo": HOLD_LO,
-            "hold_hi": HOLD_HI,
-            "std": CROUCH_STD,
-        },
+        params={**_pose_params, "std": CROUCH_POSE_STD},
+    )
+    # Bootstrap L1 : gradient constant vers la cible même quand la gaussienne
+    # sature loin de la pose.
+    cfg.rewards["crouch_glide_pose_l1"] = RewardTermCfg(
+        func=microduck_mdp.crouch_glide_pose_l1,
+        weight=2.0,
+        params=_pose_params,
     )
     # Conserver l'élan (ne pas freiner) — indépendant de la commande.
-    # Poids réduit (2->1) pour qu'il ne farme plus le "reste bas et glisse".
     cfg.rewards["forward_speed"] = RewardTermCfg(
         func=microduck_mdp.forward_speed_reward,
         weight=1.0,
         params={"vel_ref": 0.2},
-    )
-    # Fin de phase : converger vers la pose roller debout pour rendre la main proprement
-    _LEG_JOINTS = [0, 1, 2, 3, 4, 9, 10, 11, 12, 13]
-    _NECK_JOINTS = [5, 6, 7, 8]
-    cfg.rewards["return_pose_legs"] = RewardTermCfg(
-        func=microduck_mdp.ground_pick_return_pose,
-        weight=4.0,
-        params={"std": 0.3, "command_name": "twist", "joint_indices": _LEG_JOINTS},
-    )
-    cfg.rewards["return_pose_neck"] = RewardTermCfg(
-        func=microduck_mdp.ground_pick_return_pose,
-        weight=4.0,
-        params={"std": 0.15, "command_name": "twist", "joint_indices": _NECK_JOINTS},
     )
     # Stabilité de glisse
     cfg.rewards["feet_flat"] = RewardTermCfg(

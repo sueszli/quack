@@ -832,6 +832,77 @@ def forward_speed_reward(
     return torch.tanh(torch.clamp(vx, min=0.0) / vel_ref)
 
 
+def _crouch_pose_error(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg,
+    command_name: str,
+    crouch_pose: dict,
+    hold_lo: float,
+    hold_hi: float,
+):
+    """(cur, target) joint tensors for the phase-interpolated crouch pose.
+
+    Target interpolates per joint DEFAULT(=standing/HOME) <-> crouch_pose by the
+    trapezoid blend b(phase) in [0,1] (0 = standing at the phase extremities,
+    1 = full crouch on the hold plateau). Joints are resolved BY NAME so the
+    passive-wheel interspersing on the roller robot never shifts an index.
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    cmd = env.command_manager.get_command(command_name)
+    phase = (torch.atan2(cmd[:, 1], cmd[:, 0]) / (2 * torch.pi)) % 1.0  # (B,)
+    blend = crouch_height_target(phase, 1.0, 0.0, hold_lo, hold_hi)      # (B,) 0..1
+
+    names = list(crouch_pose.keys())
+    ids = [int(asset.find_joints([n])[0][0]) for n in names]
+    default = asset.data.default_joint_pos[:, ids]                      # (B,k)
+    crouch = torch.tensor(
+        [crouch_pose[n] for n in names], device=env.device, dtype=default.dtype
+    ).unsqueeze(0)                                                      # (1,k)
+    target = default + blend.unsqueeze(-1) * (crouch - default)         # (B,k)
+    cur = asset.data.joint_pos[:, ids]                                 # (B,k)
+    return cur, target
+
+
+def crouch_glide_pose_by_phase(
+    env: ManagerBasedRlEnv,
+    command_name: str = "twist",
+    crouch_pose: Optional[dict] = None,
+    std: float = 0.4,
+    hold_lo: float = 0.375,
+    hold_hi: float = 0.625,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """Gaussian match to a phase-interpolated joint pose (standing <-> crouch).
+
+    Directive reward: tells the robot the exact joint configuration to be in at
+    each phase. Standing back up (phase->1, target = HOME) is rewarded exactly
+    like crouching (hold, target = crouch_pose) — symmetric by construction.
+    """
+    cur, target = _crouch_pose_error(
+        env, asset_cfg, command_name, crouch_pose or {}, hold_lo, hold_hi
+    )
+    return torch.exp(-((cur - target) / std) ** 2).mean(dim=-1)
+
+
+def crouch_glide_pose_l1(
+    env: ManagerBasedRlEnv,
+    command_name: str = "twist",
+    crouch_pose: Optional[dict] = None,
+    hold_lo: float = 0.375,
+    hold_hi: float = 0.625,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """L1 bootstrap toward the phase-interpolated crouch pose (negative penalty).
+
+    Constant gradient everywhere — gives the policy a direction to the target
+    pose even when the Gaussian above has saturated to ~0 far from it.
+    """
+    cur, target = _crouch_pose_error(
+        env, asset_cfg, command_name, crouch_pose or {}, hold_lo, hold_hi
+    )
+    return -(cur - target).abs().mean(dim=-1)
+
+
 def neck_joint_vel_l2(
     env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG
 ) -> torch.Tensor:
