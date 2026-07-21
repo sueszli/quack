@@ -90,7 +90,7 @@ actuators = FrictionDRBamActuatorCfg(
     vin_range=(6.5, 8.2),
     vin_drop_gain_range=(0.0, 0.2),
     vin_min=6.0,
-    # max_current=1.75,
+    max_current=None,  # firmware current limiter removed (bam default: 1.75 A)
     delay_min_lag=3,
     delay_max_lag=6,
 )
