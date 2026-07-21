@@ -45,6 +45,20 @@ into random mid-recovery crouches, dense last-mile data from step 0; (2)
 fallen timeout 5 → 8 s; (3) economics at 800 (walk is stable by ~750) and
 the whole prone ramp pulled ~500 iters earlier.
 
+Run-7 lesson (headless eval of run 6 vs run 5 @4k, 2026-07-21): the crouch
+slice WORKED — run 6 stands truly vertical (tilt ≈1°, z ≈0.117) and recovers
+94–97% from crouch inits — but prone recovery collapsed to 0% (run 5: gets up
+from prone but parks at ~30°). Cause: run 6 turned on tax + bounty + prone +
+crouch ALL at iter 800, deleting the tax-free natural-fall window (500→1200 in
+run 5) where prone-flip exploration was cheap and the dense progress terms
+alone taught it — run 5's recovery_success was already firing the moment its
+weight turned on at 1200. With the tax live from 800 and hopeless prone
+episodes bleeding -0.5/step for the full 8 s timeout, the run-3 avoidance/
+freeze mechanism re-emerged for prone states while PPO capacity went to the
+easy crouch-slice reward. Run-7: keep the crouch slice (validated) + 8 s
+timeout, restore econ to 1200 and prone to the run-5 ramp (1500+), crouch
+slice alone from 800 (harmless pre-econ: it just adds stand-tall data).
+
 Phases (as before, but with a recovery backstop):
   Phase 1 (0 → 500 iters): `fell_over` termination active (70°) → clean
     walking first.
@@ -113,10 +127,12 @@ RECOVERED_UP_Z = 0.09
 # The tax and bounty exist FOR THE RECOVERY PHASE. Run-3 lesson: fallen_tax
 # active from step 0 (dense, -0.5) taught "avoid tilt at all costs" within ~25
 # iters → crouch-freeze local optimum before walking could bootstrap (ep_len
-# pinned at the 5 s recycle, air_time never grew). Run-6 revision: the walk is
-# established well before 1200 (air_time plateaus ~750 in run 5), so the
-# economics now kick in at 800 — the old 1200 just delayed recovery learning.
-RECOVERY_ECON_KICKIN_ITER = 800
+# pinned at the 5 s recycle, air_time never grew). Run-6 tried 800 ("walk is
+# stable by ~750") and prone recovery never bootstrapped — 1200 was never
+# about the walk; it bought a TAX-FREE window (fell_over off at 500 → econ on
+# at 1200) where natural-fall get-up attempts cost nothing and the dense
+# progress terms alone could teach them. Run-7 restores it.
+RECOVERY_ECON_KICKIN_ITER = 1200
 
 # Failed-recovery backstop: continuously fallen this long → terminate/reset.
 # Run-6: 5 s → 8 s. At 5 s a face-down recovery spent most of its budget
@@ -129,14 +145,17 @@ FALLEN_TIMEOUT_S = 8.0
 # Run-6: crouch_prob adds a REVERSE-CURRICULUM slice — envs reset directly
 # into random mid-recovery crouches (see set_random_crouch_state) so the
 # last mile gets dense data instead of only being reached at the tail of rare
-# good rollouts. Whole ramp pulled earlier (walk is stable by ~750; run 5
-# only reached full task difficulty at 2500, judging the fix on ~0 iters).
+# good rollouts. Run-7: back to the run-5 prone schedule (prone AFTER econ,
+# which is AFTER a tax-free natural-fall window — see econ note above); run 6
+# started prone+econ together at 800 and prone recovery never bootstrapped.
+# Crouch slice alone starts at 800: near-upright states, tax-free until econ,
+# and it doubles as full-stand posture data (run 6 stood truly vertical).
 PRONE_RAMP_STAGES = [
     {"step": 0,                        "params": {"prone_prob": 0.00, "face_down_prob": 1.0,  "crouch_prob": 0.00}},
-    {"step": 800 * NUM_STEPS_PER_ENV,  "params": {"prone_prob": 0.10, "face_down_prob": 1.0,  "crouch_prob": 0.15}},
-    {"step": 1200 * NUM_STEPS_PER_ENV, "params": {"prone_prob": 0.20, "face_down_prob": 0.80, "crouch_prob": 0.15}},
-    {"step": 1600 * NUM_STEPS_PER_ENV, "params": {"prone_prob": 0.30, "face_down_prob": 0.65, "crouch_prob": 0.15}},
-    {"step": 2000 * NUM_STEPS_PER_ENV, "params": {"prone_prob": 0.45, "face_down_prob": 0.50, "crouch_prob": 0.15}},
+    {"step": 800 * NUM_STEPS_PER_ENV,  "params": {"prone_prob": 0.00, "face_down_prob": 1.0,  "crouch_prob": 0.15}},
+    {"step": 1500 * NUM_STEPS_PER_ENV, "params": {"prone_prob": 0.15, "face_down_prob": 0.80, "crouch_prob": 0.15}},
+    {"step": 2000 * NUM_STEPS_PER_ENV, "params": {"prone_prob": 0.30, "face_down_prob": 0.65, "crouch_prob": 0.15}},
+    {"step": 2500 * NUM_STEPS_PER_ENV, "params": {"prone_prob": 0.45, "face_down_prob": 0.50, "crouch_prob": 0.15}},
 ]
 
 
