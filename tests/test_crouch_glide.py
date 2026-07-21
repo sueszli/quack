@@ -31,6 +31,31 @@ def test_crouch_height_target_rise_midpoint():
     assert torch.allclose(t, torch.tensor([(0.11 + 0.075) / 2]), atol=1e-6)
 
 
+# ── crouch_pose_blend : 4 segments (descente / bas / montée / debout) ─────────
+# breakpoints de test : descente [0,0.1), bas [0.1,0.5), montée [0.5,0.6),
+# debout [0.6,1.0).
+_BLEND = dict(descent_end=0.10, hold_end=0.50, rise_end=0.60)
+
+
+def test_blend_zero_standing_at_start_and_top_hold():
+    phase = torch.tensor([0.0, 0.6, 0.8, 0.999])  # début + palier haut
+    b = mdp.crouch_pose_blend(phase, **_BLEND)
+    assert torch.allclose(b, torch.zeros(4), atol=1e-6)
+
+
+def test_blend_one_on_low_hold():
+    phase = torch.tensor([0.10, 0.3, 0.499])  # palier bas
+    b = mdp.crouch_pose_blend(phase, **_BLEND)
+    assert torch.allclose(b, torch.ones(3), atol=1e-6)
+
+
+def test_blend_descent_and_rise_midpoints():
+    # milieu descente (0.05 sur [0,0.1)) → 0.5 ; milieu montée (0.55 sur [0.5,0.6)) → 0.5
+    phase = torch.tensor([0.05, 0.55])
+    b = mdp.crouch_pose_blend(phase, **_BLEND)
+    assert torch.allclose(b, torch.tensor([0.5, 0.5]), atol=1e-6)
+
+
 def test_reward_is_one_when_height_matches_target():
     # phase 0.5 (plein palier) → cible = height_low ; si com_height == height_low → reward 1
     cmd_cos = torch.tensor([math.cos(2 * math.pi * 0.5)])  # -1

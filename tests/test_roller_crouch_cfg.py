@@ -8,8 +8,9 @@ def test_cfg_uses_phase_command():
     cfg = make_microduck_roller_crouch_env_cfg()
     cmd = cfg.commands["twist"]
     assert isinstance(cmd, microduck_mdp.GroundPickPhaseCommandCfg)
-    # period must match --ground-pick-period at deploy (1s down + 1s hold + 1s up)
-    assert cmd.period == 3.0
+    # period must match --ground-pick-period at deploy
+    # (0.5s down + 2s low + 0.5s up + 2s standing = 5s)
+    assert cmd.period == 5.0
     # each episode starts standing (phase 0), matching the runtime trigger
     assert cmd.randomize_phase is False
 

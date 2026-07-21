@@ -832,25 +832,49 @@ def forward_speed_reward(
     return torch.tanh(torch.clamp(vx, min=0.0) / vel_ref)
 
 
+def crouch_pose_blend(
+    phase: torch.Tensor,
+    descent_end: float,
+    hold_end: float,
+    rise_end: float,
+) -> torch.Tensor:
+    """Blend 0..1 le long de la phase [0,1) — 0 = pose debout, 1 = pose accroupie.
+
+    [0, descent_end)      : 0 -> 1  (se baisser)
+    [descent_end, hold_end): 1      (bas / accroupi)
+    [hold_end, rise_end)  : 1 -> 0  (se lever)
+    [rise_end, 1.0)       : 0       (haut / debout, repos)
+    """
+    b = torch.zeros_like(phase)
+    descend = phase < descent_end
+    b = torch.where(descend, phase / descent_end, b)
+    low = (phase >= descent_end) & (phase < hold_end)
+    b = torch.where(low, torch.ones_like(phase), b)
+    rise = (phase >= hold_end) & (phase < rise_end)
+    b = torch.where(rise, 1.0 - (phase - hold_end) / (rise_end - hold_end), b)
+    return b
+
+
 def _crouch_pose_error(
     env: ManagerBasedRlEnv,
     asset_cfg: SceneEntityCfg,
     command_name: str,
     crouch_pose: dict,
-    hold_lo: float,
-    hold_hi: float,
+    descent_end: float,
+    hold_end: float,
+    rise_end: float,
 ):
     """(cur, target) joint tensors for the phase-interpolated crouch pose.
 
     Target interpolates per joint DEFAULT(=standing/HOME) <-> crouch_pose by the
-    trapezoid blend b(phase) in [0,1] (0 = standing at the phase extremities,
-    1 = full crouch on the hold plateau). Joints are resolved BY NAME so the
-    passive-wheel interspersing on the roller robot never shifts an index.
+    4-segment blend b(phase) in [0,1] (0 = standing, 1 = crouch). Joints are
+    resolved BY NAME so the passive-wheel interspersing on the roller robot never
+    shifts an index.
     """
     asset: Entity = env.scene[asset_cfg.name]
     cmd = env.command_manager.get_command(command_name)
     phase = (torch.atan2(cmd[:, 1], cmd[:, 0]) / (2 * torch.pi)) % 1.0  # (B,)
-    blend = crouch_height_target(phase, 1.0, 0.0, hold_lo, hold_hi)      # (B,) 0..1
+    blend = crouch_pose_blend(phase, descent_end, hold_end, rise_end)   # (B,) 0..1
 
     names = list(crouch_pose.keys())
     ids = [int(asset.find_joints([n])[0][0]) for n in names]
@@ -868,18 +892,19 @@ def crouch_glide_pose_by_phase(
     command_name: str = "twist",
     crouch_pose: Optional[dict] = None,
     std: float = 0.4,
-    hold_lo: float = 0.375,
-    hold_hi: float = 0.625,
+    descent_end: float = 0.10,
+    hold_end: float = 0.50,
+    rise_end: float = 0.60,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
 ) -> torch.Tensor:
     """Gaussian match to a phase-interpolated joint pose (standing <-> crouch).
 
     Directive reward: tells the robot the exact joint configuration to be in at
-    each phase. Standing back up (phase->1, target = HOME) is rewarded exactly
-    like crouching (hold, target = crouch_pose) — symmetric by construction.
+    each phase. Standing back up (target = HOME) is rewarded exactly like
+    crouching (target = crouch_pose) — symmetric by construction.
     """
     cur, target = _crouch_pose_error(
-        env, asset_cfg, command_name, crouch_pose or {}, hold_lo, hold_hi
+        env, asset_cfg, command_name, crouch_pose or {}, descent_end, hold_end, rise_end
     )
     return torch.exp(-((cur - target) / std) ** 2).mean(dim=-1)
 
@@ -888,8 +913,9 @@ def crouch_glide_pose_l1(
     env: ManagerBasedRlEnv,
     command_name: str = "twist",
     crouch_pose: Optional[dict] = None,
-    hold_lo: float = 0.375,
-    hold_hi: float = 0.625,
+    descent_end: float = 0.10,
+    hold_end: float = 0.50,
+    rise_end: float = 0.60,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
 ) -> torch.Tensor:
     """L1 bootstrap toward the phase-interpolated crouch pose (negative penalty).
@@ -898,7 +924,7 @@ def crouch_glide_pose_l1(
     pose even when the Gaussian above has saturated to ~0 far from it.
     """
     cur, target = _crouch_pose_error(
-        env, asset_cfg, command_name, crouch_pose or {}, hold_lo, hold_hi
+        env, asset_cfg, command_name, crouch_pose or {}, descent_end, hold_end, rise_end
     )
     return -(cur - target).abs().mean(dim=-1)
 

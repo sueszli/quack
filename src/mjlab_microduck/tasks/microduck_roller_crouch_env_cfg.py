@@ -39,20 +39,18 @@ VELOCITY_PUSH_RANGE              = (-0.2, 0.2)
 IMU_ORIENTATION_RANDOMIZATION_ANGLE = 6.0
 ENCODER_BIAS_RANGE               = (-0.015, 0.015)
 
-# Geste : hauteurs cibles (m) et vitesse d'entrée (élan)
-CROUCH_HEIGHT_HIGH = 0.11    # tronc debout
-CROUCH_HEIGHT_LOW  = 0.075   # tronc accroupi (à affiner en play)
-CROUCH_STD         = 0.045   # tolérance de suivi (m) — élargie pour donner du gradient
 ENTRY_VELOCITY_X   = (0.2, 0.5)  # m/s : le robot arrive en roulant
 
-# Timing du cycle (phase). Période 3 s, trois tiers égaux :
-#   descente [0, HOLD_LO]        = (1/3)*3 = 1.0 s
-#   palier   [HOLD_LO, HOLD_HI]  = (1/3)*3 = 1.0 s  (glisse accroupie)
-#   remontée [HOLD_HI, 1.0]      = (1/3)*3 = 1.0 s
-# NB: la période DOIT matcher --ground-pick-period au déploiement (3.0).
-CROUCH_PERIOD = 3.0
-HOLD_LO       = 1.0 / 3.0
-HOLD_HI       = 2.0 / 3.0
+# Timing du cycle (phase), 4 segments sur une période de 5 s :
+#   descente     [0, DESCENT_END]        = 0.10*5 = 0.5 s  (se baisser)
+#   bas/accroupi [DESCENT_END, HOLD_END] = 0.40*5 = 2.0 s  (glisse accroupie)
+#   remontée     [HOLD_END, RISE_END]    = 0.10*5 = 0.5 s  (se lever)
+#   haut/debout  [RISE_END, 1.0]         = 0.40*5 = 2.0 s  (repos debout)
+# NB: la période DOIT matcher --ground-pick-period au déploiement (5.0).
+CROUCH_PERIOD = 5.0
+DESCENT_END   = 0.10
+HOLD_END      = 0.50
+RISE_END      = 0.60
 
 # Pose ACCROUPI cible (rad, par NOM d'articulation) — composée dans
 # scripts/crouch_pose_editor.py. La reward interpole DEBOUT(HOME) <-> cette pose
@@ -153,8 +151,9 @@ def make_microduck_roller_crouch_env_cfg(play: bool = False) -> ManagerBasedRlEn
     _pose_params = {
         "command_name": "twist",
         "crouch_pose": CROUCH_POSE,
-        "hold_lo": HOLD_LO,
-        "hold_hi": HOLD_HI,
+        "descent_end": DESCENT_END,
+        "hold_end": HOLD_END,
+        "rise_end": RISE_END,
     }
     cfg.rewards["crouch_glide_pose"] = RewardTermCfg(
         func=microduck_mdp.crouch_glide_pose_by_phase,
