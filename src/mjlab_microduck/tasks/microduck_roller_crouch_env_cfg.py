@@ -45,14 +45,14 @@ CROUCH_HEIGHT_LOW  = 0.075   # tronc accroupi (à affiner en play)
 CROUCH_STD         = 0.045   # tolérance de suivi (m) — élargie pour donner du gradient
 ENTRY_VELOCITY_X   = (0.2, 0.5)  # m/s : le robot arrive en roulant
 
-# Timing du cycle (phase). Période 6 s -> descente plus lente (moins violente) :
-#   descente [0, HOLD_LO]        = 0.417*6 ≈ 2.5 s
-#   palier   [HOLD_LO, HOLD_HI]  = (0.583-0.417)*6 ≈ 1.0 s  (glisse accroupie)
-#   remontée [HOLD_HI, 1.0]      = (1-0.583)*6 ≈ 2.5 s
-# NB: la période DOIT matcher --ground-pick-period au déploiement (6.0).
-CROUCH_PERIOD = 6.0
-HOLD_LO       = 0.417
-HOLD_HI       = 0.583
+# Timing du cycle (phase). Période 3 s, trois tiers égaux :
+#   descente [0, HOLD_LO]        = (1/3)*3 = 1.0 s
+#   palier   [HOLD_LO, HOLD_HI]  = (1/3)*3 = 1.0 s  (glisse accroupie)
+#   remontée [HOLD_HI, 1.0]      = (1/3)*3 = 1.0 s
+# NB: la période DOIT matcher --ground-pick-period au déploiement (3.0).
+CROUCH_PERIOD = 3.0
+HOLD_LO       = 1.0 / 3.0
+HOLD_HI       = 2.0 / 3.0
 
 # Pose ACCROUPI cible (rad, par NOM d'articulation) — composée dans
 # scripts/crouch_pose_editor.py. La reward interpole DEBOUT(HOME) <-> cette pose
