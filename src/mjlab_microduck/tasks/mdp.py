@@ -673,9 +673,25 @@ def robot_state_is_nan(
     Our custom reward functions guard against NaN internally with nan_to_num,
     but standard mjlab rewards can still be NaN here. One NaN reward is
     tolerable because done=True prevents it propagating backward through GAE.
+
+    Couvre TOUT l'état physique, pas seulement joint_pos : la divergence du
+    contact fait souvent exploser le FREE-JOINT de base (position/orientation/
+    vitesse) ou les ROUES passives, pas les joints actionnés. Ces quantités
+    alimentent des termes d'obs critic (base_lin_vel, base_ang_vel,
+    projected_gravity, wheel_vel) ; si on ne les surveille pas, l'env ne se
+    reset pas et le NaN atteint l'obs → le check_nan de rsl_rl tue tout
+    l'entraînement. On teste la non-finitude (NaN ET inf, l'inf devenant NaN en
+    aval lors de la normalisation de projected_gravity).
     """
     asset: Entity = env.scene[asset_cfg.name]
-    return torch.any(torch.isnan(asset.data.joint_pos), dim=1)
+    d = asset.data
+    bad = ~torch.isfinite(d.joint_pos).all(dim=1)
+    bad |= ~torch.isfinite(d.joint_vel).all(dim=1)
+    bad |= ~torch.isfinite(d.root_link_pos_w).all(dim=1)
+    bad |= ~torch.isfinite(d.root_link_quat_w).all(dim=1)
+    bad |= ~torch.isfinite(d.root_link_lin_vel_w).all(dim=1)
+    bad |= ~torch.isfinite(d.root_link_ang_vel_w).all(dim=1)
+    return bad
 
 
 def root_height_below(
