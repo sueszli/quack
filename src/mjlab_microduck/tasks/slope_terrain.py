@@ -47,6 +47,7 @@ class FlatRampTerrainCfg(SubTerrainCfg):
     flat_length: float = 2.0                       # plat de départ (m)
     ramp_length_range: tuple = (3.0, 8.0)          # longueur horizontale rampe (m), tirée au hasard
     runout_length: float = 4.0                     # plat de sortie en bas (m)
+    spawn_margin: float = 0.5                       # distance spawn -> bord de la rampe (m)
     deg_min: float = RAMP_DEG_MIN
     deg_max: float = RAMP_DEG_MAX
     thickness: float = 0.5                          # épaisseur des box (m)
@@ -93,7 +94,10 @@ class FlatRampTerrainCfg(SubTerrainCfg):
             pos=(runout_cx, 0.0, -drop - t / 2.0),
         )
 
-        origin = np.array([self.flat_length * 0.4, 0.0, 0.0])
+        # Spawn près du bord de la rampe (à spawn_margin en amont) : le robot a
+        # peu de plat à parcourir, il arrive donc sur la rampe avec son élan.
+        spawn_x = max(0.0, self.flat_length - self.spawn_margin)
+        origin = np.array([spawn_x, 0.0, 0.0])
         return TerrainOutput(
             origin=origin,
             geometries=[

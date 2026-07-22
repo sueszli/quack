@@ -25,7 +25,7 @@ from mjlab_microduck.tasks.microduck_velocity_rollers_env_cfg import (
 )
 from mjlab_microduck.tasks.symmetry import PpoWithSymmetryCfg
 
-ENTRY_VELOCITY_X = (0.2, 0.5)  # impulsion vers l'avant au reset (m/s)
+ENTRY_VELOCITY_X = (0.6, 1.0)  # impulsion vers l'avant au reset (m/s) : assez pour atteindre la rampe
 
 # Géométrie du terrain plat+rampe+sortie.
 FLAT_LENGTH        = 2.0
