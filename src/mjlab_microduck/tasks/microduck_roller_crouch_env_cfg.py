@@ -72,6 +72,7 @@ CROUCH_POSE = {
     "right_ankle": 0.0013,
 }
 CROUCH_POSE_STD = 0.4  # tolérance gaussienne par joint (rad)
+CROUCH_LEAN_PITCH = 0.08  # léger penché avant pendant l'accroupi (rad ≈ 4.6°)
 
 from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.envs.mdp import dr
@@ -172,6 +173,20 @@ def make_microduck_roller_crouch_env_cfg(play: bool = False) -> ManagerBasedRlEn
         func=microduck_mdp.forward_speed_reward,
         weight=1.0,
         params={"vel_ref": 0.2},
+    )
+    # Léger penché avant pendant l'accroupi -> contre la bascule arrière observée
+    # sur le vrai robot lors de la descente rapide. Gaté par le blend (crouch only).
+    cfg.rewards["crouch_forward_lean"] = RewardTermCfg(
+        func=microduck_mdp.crouch_forward_lean,
+        weight=1.0,
+        params={
+            "command_name": "twist",
+            "target_pitch": CROUCH_LEAN_PITCH,
+            "std": 0.1,
+            "descent_end": DESCENT_END,
+            "hold_end": HOLD_END,
+            "rise_end": RISE_END,
+        },
     )
     # Stabilité de glisse
     cfg.rewards["feet_flat"] = RewardTermCfg(

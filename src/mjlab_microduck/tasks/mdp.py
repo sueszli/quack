@@ -929,6 +929,31 @@ def crouch_glide_pose_l1(
     return -(cur - target).abs().mean(dim=-1)
 
 
+def crouch_forward_lean(
+    env: ManagerBasedRlEnv,
+    command_name: str = "twist",
+    target_pitch: float = 0.08,
+    std: float = 0.1,
+    descent_end: float = 0.10,
+    hold_end: float = 0.50,
+    rise_end: float = 0.60,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot", body_names=("trunk_base",)),
+) -> torch.Tensor:
+    """Léger penché AVANT du tronc pendant l'accroupi (gaté par le blend crouch).
+
+    Contre la bascule arrière induite par la flexion rapide des hanches. Proxy de
+    pitch = projected_gravity_b[:,0] (positif = vers l'avant, vérifié). La porte
+    (blend) vaut 1 pendant descente+bas, 0 debout → ne biaise QUE l'accroupi.
+    target_pitch petit = "de très peu".
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    cmd = env.command_manager.get_command(command_name)
+    phase = (torch.atan2(cmd[:, 1], cmd[:, 0]) / (2 * torch.pi)) % 1.0
+    gate = crouch_pose_blend(phase, descent_end, hold_end, rise_end)
+    lean = asset.data.projected_gravity_b[:, 0]
+    return gate * torch.exp(-((lean - target_pitch) ** 2) / std ** 2)
+
+
 def neck_joint_vel_l2(
     env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG
 ) -> torch.Tensor:
