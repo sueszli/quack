@@ -56,6 +56,10 @@ from .microduck_roller_crouch_env_cfg import (
     make_microduck_roller_crouch_env_cfg,
     MicroduckRollerCrouchRlCfg,
 )
+from .microduck_roller_slope_env_cfg import (
+    make_microduck_roller_slope_env_cfg,
+    MicroduckRollerSlopeRlCfg,
+)
 
 # Standard velocity task
 register_mjlab_task(
@@ -186,3 +190,12 @@ register_mjlab_task(
     runner_cls=MicroduckOnPolicyRunner,
 )
 print("✓ RollerCrouch task registered: Mjlab-RollerCrouch-Flat-MicroDuck")
+
+register_mjlab_task(
+    task_id="Mjlab-RollerSlope-Flat-MicroDuck",
+    env_cfg=make_microduck_roller_slope_env_cfg(),
+    play_env_cfg=make_microduck_roller_slope_env_cfg(play=True),
+    rl_cfg=MicroduckRollerSlopeRlCfg,
+    runner_cls=MicroduckOnPolicyRunner,
+)
+print("✓ RollerSlope task registered: Mjlab-RollerSlope-Flat-MicroDuck")

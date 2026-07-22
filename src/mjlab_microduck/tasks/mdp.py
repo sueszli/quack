@@ -678,6 +678,24 @@ def robot_state_is_nan(
     return torch.any(torch.isnan(asset.data.joint_pos), dim=1)
 
 
+def root_height_below(
+    env: ManagerBasedRlEnv,
+    min_height: float,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """Terminate when the trunk drops below ``min_height`` in world z.
+
+    Utilisé par roller_slope comme « tombé dans le vide » : le terrain a un
+    plat de sortie au bas de la rampe, donc une descente normale ne passe
+    jamais sous le niveau du plat de sortie le plus bas. Choisir min_height
+    en dessous de ce niveau => la terminaison ne se déclenche que si le robot
+    quitte le solide et chute dans le vide. Indépendant de la géométrie exacte
+    de la rampe (longueur/pente).
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    return asset.data.root_link_pos_w[:, 2] < min_height
+
+
 def is_alive(env: ManagerBasedRlEnv) -> torch.Tensor:
     """
     Reward for staying alive (not terminated)
@@ -2477,6 +2495,42 @@ def com_range_curriculum(
 
     event_cfg.params["ranges"] = (-current_range, current_range)
     return torch.tensor([current_range])
+
+
+def slope_move_masks(distance: "torch.Tensor", size_x: float):
+    """Masques de promotion/rétrogradation du curriculum de pente.
+
+    move_up   : a parcouru plus de 40% de la tuile → il a dévalé la rampe,
+                on la rend plus raide. Aligné sur la termination
+                terrain_edge_reached (~3.8 m, threshold_fraction=0.95 par
+                défaut sur size_x=8.0), qui termine l'épisode avant le seuil
+                de moitié (4.0 m) — sans cet alignement un traverseur réussi
+                n'est jamais promu.
+    move_down : a à peine avancé (< 20% de la tuile) → chute/blocage précoce,
+                on adoucit la rampe.
+    """
+    move_up = distance > size_x * 0.4
+    move_down = (distance < size_x * 0.2) & (~move_up)
+    return move_up, move_down
+
+
+def terrain_levels_slope(env: ManagerBasedRlEnv, env_ids: torch.Tensor) -> torch.Tensor:
+    """Curriculum de raideur pour roller_slope (pas de vitesse commandée).
+
+    Progression basée sur la distance en x parcourue depuis l'origine de spawn.
+    """
+    asset = env.scene["robot"]
+    terrain = env.scene.terrain
+    assert terrain is not None
+    terrain_generator = terrain.cfg.terrain_generator
+    assert terrain_generator is not None
+
+    distance = (
+        asset.data.root_link_pos_w[env_ids, 0] - env.scene.env_origins[env_ids, 0]
+    )
+    move_up, move_down = slope_move_masks(distance, terrain_generator.size[0])
+    terrain.update_env_origins(env_ids, move_up, move_down)
+    return torch.mean(terrain.terrain_levels.float())
 
 
 def velocity_command_ranges_curriculum(
