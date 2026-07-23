@@ -33,6 +33,11 @@ SPAWN_ON_RAMP      = 0.3          # spawn ce nb de m sur la rampe (gravité -> r
 TILE_SIZE          = (15.0, 4.0)  # >= flat + ramp_max + runout (= 14) + marge
 SPAWN_YAW          = (0.0, 0.0)   # face à la descente (+x), fixe
 
+# Au PLAY (uv run play), difficulté imposée à toutes les tuiles pour choisir la
+# pente affichée (1.0 = la plus raide ~20°, 0.5 = moyenne, 0.0 = la plus douce).
+# À l'entraînement (play=False), le curriculum gère la difficulté normalement.
+PLAY_DIFFICULTY    = 1.0
+
 # Terminaison « tombé dans le vide » : sous le plat de sortie le plus bas
 # (rampe la plus raide et la plus longue), avec marge => ne se déclenche jamais
 # pendant une descente normale, seulement si le robot quitte le solide.
@@ -63,6 +68,12 @@ def make_microduck_roller_slope_env_cfg(play: bool = False) -> ManagerBasedRlEnv
         ),
         max_init_terrain_level=0,  # démarrer sur la rampe la plus douce
     )
+
+    # Au play : toutes les tuiles à la même difficulté (PLAY_DIFFICULTY) pour
+    # visualiser la pente voulue (par défaut la plus raide) — sinon tout le monde
+    # spawn sur la plus douce (max_init_terrain_level=0).
+    if play:
+        cfg.scene.terrain.terrain_generator.difficulty_range = (PLAY_DIFFICULTY, PLAY_DIFFICULTY)
 
     # === COMMANDE neutralisée (équilibre pur) ===
     command = cfg.commands["twist"]
@@ -136,6 +147,15 @@ def make_microduck_roller_slope_env_cfg(play: bool = False) -> ManagerBasedRlEnv
     cfg.terminations["nan_state"] = TerminationTermCfg(
         func=microduck_mdp.robot_state_is_nan, time_out=False,
     )
+
+    # === OBS : assainir les NaN/Inf (robustesse aux divergences de contact rares) ===
+    # Un contact rare (~1/25M pas-env) fait diverger le free-joint en NaN. À cause
+    # du décalage d'un sous-pas, la terminaison nan_state ne l'attrape qu'AU PAS
+    # SUIVANT (reset), mais le NaN atteint déjà l'obs du pas courant -> check_nan de
+    # rsl_rl tue l'entraînement. nan_policy="sanitize" remplace NaN/Inf par 0 dans
+    # l'obs renvoyée (pas de crash) ; nan_state reset ensuite l'env fautif.
+    for grp in ("actor", "critic"):
+        cfg.observations[grp].nan_policy = "sanitize"
 
     # === EVENTS ===
     cfg.events["reset_action_history"] = EventTermCfg(

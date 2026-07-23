@@ -59,6 +59,13 @@ def test_void_termination_present_no_edge_termination():
     assert "out_of_terrain_bounds" not in cfg.terminations
 
 
+def test_obs_nan_policy_sanitize():
+    # obs assainies : un NaN de contact rare ne doit pas tuer l'entraînement
+    cfg = make_microduck_roller_slope_env_cfg()
+    assert cfg.observations["actor"].nan_policy == "sanitize"
+    assert cfg.observations["critic"].nan_policy == "sanitize"
+
+
 def test_terrain_tile_fits_geometry():
     # la tuile doit contenir plat + rampe_max + sortie
     cfg = make_microduck_roller_slope_env_cfg()
