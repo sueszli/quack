@@ -31,7 +31,7 @@ ENABLE_IMU_ORIENTATION_RANDOMIZATION = True   # match velocity: obs-level per-en
 ENABLE_ENCODER_BIAS                  = True   # match velocity: per-env joint encoder offset (actor obs)
 
 # ── Ranges (matched to the velocity env) ──────────────────────────────────────
-COM_RANDOMIZATION_RANGE             = 0.003           # ramped to 0.02 via com_range curriculum
+COM_RANDOMIZATION_RANGE             = 0.003           # ramped to 0.015 via com_range curriculum (velocity's 2026-07 audit cap; was 0.02 here)
 HEAD_COM_RANDOMIZATION_RANGE        = 0.003           # ramped to 0.01 via head_com_range curriculum
 MASS_INERTIA_RANDOMIZATION_RANGE    = (0.95, 1.05)
 ARMATURE_RANDOMIZATION_RANGE        = (0.9, 1.1)
@@ -40,12 +40,12 @@ ENCODER_BIAS_RANGE                  = (-0.015, 0.015)
 KP_RANDOMIZATION_RANGE              = (0.85, 1.15)    # unused (kp DR off)
 KD_RANDOMIZATION_RANGE              = (0.9, 1.1)      # unused (kd DR off)
 VELOCITY_PUSH_INTERVAL_S            = (3.0, 6.0)
-# Softer than velocity's ±0.5: a ±0.5 m/s instant velocity shove is violent for a
-# STATIC stander (velocity walks with momentum + a wider dynamic base), which drove
-# frantic tiny-step recovery. ±0.25 gives more deliberate recovery. (push curriculum
-# below ramps up to this final value.)
-VELOCITY_PUSH_RANGE                 = (-0.25, 0.25)
-IMU_ORIENTATION_RANDOMIZATION_ANGLE = 2.0
+# Match velocity's ±0.3 (velocity was itself softened from ±0.5 in the 2026-07
+# audit). The push curriculum below still ramps 0 → ±0.08 → this final value so
+# the sit-rise bootstrap isn't shoved around from step 0 (velocity pushes at
+# full strength from step 0, but it starts standing, not seated/prone).
+VELOCITY_PUSH_RANGE                 = (-0.3, 0.3)
+IMU_ORIENTATION_RANDOMIZATION_ANGLE = 6.0  # match velocity (was 2.0 — pre-audit value; real IMU has ~5° systematic pitch error + estimator drift, 2° trained too narrow a band)
 
 # Episode length: long enough for a gentle rise + brief stabilisation.
 EPISODE_LENGTH_S = 6.0
@@ -178,11 +178,23 @@ def make_microduck_standup_env_cfg(
     #   (3) trunk stays upright throughout (failure mode: tip backward while
     #       extending legs; no "low z is safe" regime as in sit)
     #   (4) joint/action motion stays smooth (sim2real regularisers)
+    #
+    # 2026-07 TRANSFER FIX (violent/shaky on the real robot): ALL task weights
+    # below divided by 4 (8→2, 30→7.5, 15→3.75, …) so the total task mass
+    # (~12) matches velocity2's (~11) and the shared sim2real regularisers act
+    # at the same RELATIVE strength as in the well-transferring velocity2 env.
+    # Previously the task mass was ~49, so nominally-identical regulariser
+    # weights were effectively ~4× weaker here → jitter/limit-cycle around the
+    # standing point was nearly free. Internal ratios between task terms are
+    # unchanged (uniform scaling), so the per-term rationale comments below
+    # still hold — just read their absolute reward numbers ×4. PPO normalises
+    # advantages, so the global scale itself doesn't matter; only the
+    # task↔regulariser ratio does.
 
     # Pose target — legs+hips+knees+ankles. target_overrides=None → HOME.
     cfg.rewards["pose_stand_legs"] = RewardTermCfg(
         func=microduck_mdp.pose_target_match,
-        weight=8.0,
+        weight=2.0,
         params={
             "std": 0.5,
             "joint_indices": _LEG_JOINTS,
@@ -197,7 +209,7 @@ def make_microduck_standup_env_cfg(
     # reward fights head_pose_tracking's gradient.
     cfg.rewards["head_pose_tracking"] = RewardTermCfg(
         func=microduck_mdp.head_pose_tracking,
-        weight=3.0,
+        weight=0.75,
         params={"command_name": "head_pose", "std": 0.5},
     )
 
@@ -208,7 +220,7 @@ def make_microduck_standup_env_cfg(
     # close the gap on the remaining joints.
     cfg.rewards["pose_stand_l1"] = RewardTermCfg(
         func=microduck_mdp.pose_l1_penalty,
-        weight=5.0,
+        weight=1.25,
         params={
             # Legs only — neck/head are steered by head_pose_tracking.
             "joint_indices": _LEG_JOINTS,
@@ -226,7 +238,7 @@ def make_microduck_standup_env_cfg(
     #    same range, ~3× the marginal pull.
     cfg.rewards["height_stand"] = RewardTermCfg(
         func=microduck_mdp.height_target_gaussian,
-        weight=4.0,
+        weight=1.0,
         params={
             "std":           0.04,
             "target_height": STAND_Z,
@@ -235,7 +247,7 @@ def make_microduck_standup_env_cfg(
     )
     cfg.rewards["height_stand_sharp"] = RewardTermCfg(
         func=microduck_mdp.height_target_gaussian,
-        weight=4.0,
+        weight=1.0,
         params={
             "std":           0.015,
             "target_height": STAND_Z,
@@ -248,7 +260,7 @@ def make_microduck_standup_env_cfg(
     # of "stay sitting" forces exploration.
     cfg.rewards["height_stand_l1"] = RewardTermCfg(
         func=microduck_mdp.height_l1_penalty,
-        weight=30.0,
+        weight=7.5,
         params={
             "target_height": STAND_Z,
             "asset_cfg":     SceneEntityCfg("robot", body_names=("trunk_base",)),
@@ -266,7 +278,7 @@ def make_microduck_standup_env_cfg(
     # park at ~0.108 (gate-off altitude) and never finish the climb.
     cfg.rewards["com_upward_velocity"] = RewardTermCfg(
         func=microduck_mdp.com_upward_velocity,
-        weight=3.0,
+        weight=0.75,
         params={
             "asset_cfg":  SceneEntityCfg("robot", body_names=("trunk_base",)),
             "max_height": 0.125,
@@ -278,7 +290,7 @@ def make_microduck_standup_env_cfg(
     # so the two pressures together select for smooth constant-velocity rise.
     cfg.rewards["gentle_rise"] = RewardTermCfg(
         func=microduck_mdp.trunk_vertical_accel_penalty,
-        weight=-0.02,
+        weight=-0.005,
         params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))},
     )
 
@@ -293,7 +305,7 @@ def make_microduck_standup_env_cfg(
     #    exact regime.
     cfg.rewards["upright_linear"] = RewardTermCfg(
         func=microduck_mdp.body_upright_linear,
-        weight=6.0,
+        weight=1.5,
         params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))},
     )
     # Sharp Gaussian upright, gated by trunk z. Pays only when the robot is
@@ -304,7 +316,7 @@ def make_microduck_standup_env_cfg(
     # ~0.1 = visible gradient that pulls toward vertical.
     cfg.rewards["upright_sharp"] = RewardTermCfg(
         func=microduck_mdp.upright_gaussian_at_height,
-        weight=6.0,
+        weight=1.5,
         params={
             "std":         0.3,
             "height_low":  SIT_Z,
@@ -320,7 +332,7 @@ def make_microduck_standup_env_cfg(
     # gradient) while the goal still scores ~1.0 (clear attractor).
     cfg.rewards["standing_composite"] = RewardTermCfg(
         func=microduck_mdp.standing_composite_score,
-        weight=15.0,
+        weight=3.75,
         params={
             "target_height":    STAND_Z,
             "height_std":       0.04,    # 4cm — broad, covers the climb
@@ -332,43 +344,28 @@ def make_microduck_standup_env_cfg(
         },
     )
 
-    # ── Sim2real regularisers (smoothness) ────────────────────────────────────
-    # action_rate base weight + curriculum matched to the velocity env (see below)
-    # Base weight matches velocity (-0.6); the action_rate_weight curriculum
-    # below ramps it -0.4 → -0.8 → -1.0 (same stages as velocity).
-    # ── Sim2real regularisers — MATCHED to the velocity env ───────────────────
-    # Deliberately light, same as the (well-transferring) velocity policy. The
-    # previous heavy standup values suppressed the large rolling/angular motion a
-    # ground recovery needs → the policy froze when supine. Matching velocity:
-    #   • body_ang_vel  -0.6 → -0.15   (freezing-recovery damper, kept LOW)
-    #   • REMOVE hip_yaw_roll_deviation (velocity has none; it blocked the roll)
-    #   • joint_torques_l2  -5e-3 → -1e-3
-    #   • ADD neck_action_rate_l2 (-0.1), keep angular_momentum (-0.02), soft_landing
+    # ── Sim2real regularisers — MATCHED to velocity2 (2026-07) ───────────────
+    # velocity2's exact set and absolute weights:
+    #   • action_rate_l2: -0.1 at stage 0, ramped -0.1 → -1.0 by iter 1500
+    #     (action_rate_weight curriculum below, velocity2's exact stages)
+    #   • body_ang_vel -0.05, angular_momentum -0.02
+    #   • microduck-only extras DROPPED, like velocity2 drops them:
+    #     neck_action_rate_l2, joint_torques_l2, joint_torque_rate_l2, soft_landing
+    # Parity is made REAL by the ÷4 task-stack scaling above — previously the
+    # same absolute weights were ~4× weaker relative to the ~49 task mass.
     #
-    # TRANSFER FIX (violent / shaky / overshoot-tip-repeat on the real robot):
-    # matching velocity's smoothness verbatim under-damps standup — walking's gait
-    # keeps the policy busy/smooth; standup just corrects around equilibrium and
-    # with almost no damping forms an oscillation limit-cycle. Restore DAMPING
-    # without restoring the MOTION-BLOCKERS (body_ang_vel/hip_yaw_roll high).
-    #
-    # HISTORY: a first attempt also raised body_ang_vel -0.05→-0.15 and pushed the
-    # action_rate curriculum end -1.0→-1.2. That bundle KILLED back-recovery (both
-    # are motion-blockers: body_ang_vel penalizes the flip's trunk rotation directly;
-    # a strong action_rate slows the fast recovery action). Reverted BOTH to their
-    # "stood-from-everywhere" values. Kept only the pure anti-jitter term:
-    #   • joint_torque_rate_l2 -2e-3 — penalizes torque CHANGE (jitter), NOT torque
-    #     magnitude or trunk rotation, so it damps shake without blocking a flip.
-    # If recovery is STILL blocked, halve this to -1e-3 next; if it's smooth but
-    # still shaky, escalate to latency/obs-noise DR (dynamics-side), not more reward.
-    cfg.rewards["action_rate_l2"]       = RewardTermCfg(func=mdp.action_rate_l2,                 weight=-0.6)
-    cfg.rewards["neck_action_rate_l2"]  = RewardTermCfg(func=microduck_mdp.neck_action_rate_l2,  weight=-0.1)
-    cfg.rewards["joint_torques_l2"]     = RewardTermCfg(func=microduck_mdp.joint_torques_l2,     weight=-1e-3)
-    cfg.rewards["joint_torque_rate_l2"] = RewardTermCfg(func=microduck_mdp.joint_torque_rate_l2, weight=-2e-3)
+    # HISTORY / RISK: at the OLD task scale, raising body_ang_vel to -0.15 and
+    # the action_rate end to -1.2 killed back-recovery (both are motion-blockers
+    # for the flip). At the new ÷4 scale, body_ang_vel -0.05 ≈ -0.2 old-units —
+    # WATCH face-down/face-up recovery as ground_state_mix ramps them in
+    # (iters 600–2500). If recovery freezes: halve body_ang_vel to -0.025
+    # first, then soften the action_rate curriculum end to -0.6.
+    cfg.rewards["action_rate_l2"] = RewardTermCfg(func=mdp.action_rate_l2, weight=-0.1)
 
     cfg.rewards["body_ang_vel"].params["asset_cfg"].body_names = ("trunk_base",)
-    cfg.rewards["body_ang_vel"].weight = -0.05     # motion-blocker: kept LIGHT (was -0.15, froze recovery)
-    cfg.rewards["angular_momentum"].weight = -0.02  # velocity value (was deleted)
-    cfg.rewards["soft_landing"].weight = -1e-05     # velocity value (was deleted)
+    cfg.rewards["body_ang_vel"].weight = -0.05      # motion-blocker: kept LIGHT (velocity2 value)
+    cfg.rewards["angular_momentum"].weight = -0.02  # velocity2 value
+    cfg.rewards.pop("soft_landing", None)           # velocity2 removes it
 
     cfg.rewards["self_collisions"] = RewardTermCfg(
         func=mdp.self_collision_cost,
@@ -377,8 +374,8 @@ def make_microduck_standup_env_cfg(
     )
 
     # Drop only the base "upright" Gaussian — standup uses its own
-    # upright_linear/upright_sharp instead. (angular_momentum/soft_landing kept
-    # above to match velocity; hip_yaw_roll_deviation dropped to match velocity.)
+    # upright_linear/upright_sharp instead. (angular_momentum kept above to match
+    # velocity2; soft_landing/hip_yaw_roll_deviation dropped to match velocity2.)
     if "upright" in cfg.rewards:
         del cfg.rewards["upright"]
 
@@ -404,11 +401,13 @@ def make_microduck_standup_env_cfg(
         cfg.observations["actor"].terms["base_ang_vel"]
     )
 
+    # IMU obs delay: max_lag 1 (was 3 = 60 ms worst case) — match velocity's
+    # 2026-07 audit value; the real dxl IMU path is fast (±20 ms envelope).
     cfg.observations["actor"].terms["base_ang_vel"].delay_min_lag = 0
-    cfg.observations["actor"].terms["base_ang_vel"].delay_max_lag = 3
+    cfg.observations["actor"].terms["base_ang_vel"].delay_max_lag = 1
     cfg.observations["actor"].terms["base_ang_vel"].delay_update_period = 64
     cfg.observations["actor"].terms[gravity_term_name].delay_min_lag = 0
-    cfg.observations["actor"].terms[gravity_term_name].delay_max_lag = 3
+    cfg.observations["actor"].terms[gravity_term_name].delay_max_lag = 1
     cfg.observations["actor"].terms[gravity_term_name].delay_update_period = 64
 
     # Obs noise matched to the velocity env.
@@ -704,8 +703,11 @@ def make_microduck_standup_env_cfg(
     # fixed at the source by the STAND2 forward-shifted standing pose. head_pose
     # tracking stays at its baseline (weight 3.0, std 0.5) + head_pose_range.
 
-    # CoM-randomization range curricula — match velocity (ramp 0.003 → 0.02 trunk,
-    # 0.003 → 0.01 head over the first ~2000 / ~1000 iters).
+    # CoM-randomization range curricula — match velocity (ramp 0.003 → 0.015 trunk,
+    # 0.003 → 0.01 head over the first ~1500 / ~1000 iters). Trunk capped at
+    # ±15 mm per velocity's 2026-07 audit: beyond that the randomized CoM can
+    # leave the foot support polygon entirely, which trains hyper-reactive
+    # correction. (The old 0.02 final stage here exceeded that cap.)
     if ENABLE_COM_RANDOMIZATION:
         cfg.curriculum["com_range"] = CurriculumTermCfg(
             func=microduck_mdp.com_range_curriculum,
@@ -716,7 +718,6 @@ def make_microduck_standup_env_cfg(
                     {"step": 500 * 24,  "range": 0.005},
                     {"step": 1000 * 24, "range": 0.01},
                     {"step": 1500 * 24, "range": 0.015},
-                    {"step": 2000 * 24, "range": 0.02},
                 ],
             },
         )
@@ -747,18 +748,22 @@ def make_microduck_standup_env_cfg(
             },
         )
 
-    # action_rate curriculum — velocity's ramp (-0.4 → -0.8 → -1.0). A first
-    # transfer attempt pushed the end to -1.2, but that (with body_ang_vel -0.15)
-    # blocked back-recovery — action_rate slows the fast recovery action. Reverted
-    # to -1.0; smoothness is instead carried by joint_torque_rate_l2 (rewards block).
+    # action_rate curriculum — velocity2's exact ramp (-0.1 → -1.0 by iter 1500).
+    # Gentler early stages than the old -0.4/-0.8/-1.0-by-500 ramp: the rise
+    # skill gets discovered under light smoothing, then damping tightens.
+    # (Old note, still relevant: a -1.2 end once blocked back-recovery; -1.0 is
+    # the ceiling. With the ÷4 task scale this -1.0 now actually bites.)
     cfg.curriculum["action_rate_weight"] = CurriculumTermCfg(
         func=microduck_mdp.reward_weight,
         params={
             "reward_name":   "action_rate_l2",
             "weight_stages": [
-                {"step": 0,         "weight": -0.4},
-                {"step": 250 * 24,  "weight": -0.8},
-                {"step": 500 * 24,  "weight": -1.0},
+                {"step": 0,          "weight": -0.1},
+                {"step": 500 * 24,   "weight": -0.2},
+                {"step": 750 * 24,   "weight": -0.4},
+                {"step": 1000 * 24,  "weight": -0.6},
+                {"step": 1250 * 24,  "weight": -0.8},
+                {"step": 1500 * 24,  "weight": -1.0},
             ],
         },
     )
