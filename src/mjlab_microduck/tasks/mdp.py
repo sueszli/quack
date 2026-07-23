@@ -3693,6 +3693,36 @@ def glide_reward(
     return single * forward_gate * stillness * active
 
 
+def recover_pose_reward(
+    env: ManagerBasedRlEnv,
+    pose_std: float = 0.4,
+    stillness_std: float = 5.0,
+    vel_ref: float = 0.2,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg(
+        "robot", joint_names=(r".*(hip|knee|ankle).*",)
+    ),
+) -> torch.Tensor:
+    """Reward returning to the DEFAULT leg pose during the coast/pause.
+
+    Composes a "stroke -> recover-to-neutral pause -> stroke" gait: rewards being
+    near the default leg pose (legs under the body) WITH quiet legs WHILE gliding
+    forward. High only during the pause (legs quiet, near default), ~0 during a push
+    (legs moving / deviated). Re-centres the stance each cycle -> fights splay/drift.
+
+        reward = exp(-Σ(q-q_default)²/pose_std²) · exp(-Σq̇²/stillness_std²) · fwd_gate
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    ids = asset_cfg.joint_ids
+    q_err = asset.data.joint_pos[:, ids] - asset.data.default_joint_pos[:, ids]
+    pose_prox = torch.exp(-torch.sum(q_err ** 2, dim=1) / pose_std ** 2)
+    joint_vel_sq = torch.sum(torch.square(asset.data.joint_vel[:, ids]), dim=1)
+    stillness = torch.exp(-joint_vel_sq / stillness_std ** 2)
+    gate = _forward_progress_gate(env, vel_ref)
+    if gate is None:
+        gate = torch.ones(env.num_envs, device=env.device)
+    return pose_prox * stillness * gate
+
+
 def gait_symmetry_penalty(
     env: ManagerBasedRlEnv,
     sensor_name: str,

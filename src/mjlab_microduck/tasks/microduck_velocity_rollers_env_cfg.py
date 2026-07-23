@@ -287,17 +287,29 @@ def make_microduck_velocity_rollers_env_cfg(
     # out-weigh the swing-frequency pull of air_time.
     cfg.rewards["glide"] = RewardTermCfg(
         func=microduck_mdp.glide_reward,
-        weight=4.0,  # 3.0 -> 4.0: reinforce the long single-support glide vs the
-                     # per-swing air_time reward, to further slow the choppy cadence
+        weight=2.0,  # 4.0 -> 2.0: make room for recover_pose so the pause is a
+                     # return-to-neutral (both blades down) rather than a long
+                     # single-support glide
         params={
             "sensor_name": "feet_ground_contact",
             "command_name": "twist",
             "vel_ref": 0.2,
         },
     )
+    # The PAUSE between strokes = return to the default leg pose, quiet, while
+    # coasting. Composes stroke -> recover-to-neutral -> stroke, and re-centres the
+    # stance each cycle (fights splay/drift). ~0 during a push (legs moving).
+    cfg.rewards["recover_pose"] = RewardTermCfg(
+        func=microduck_mdp.recover_pose_reward,
+        weight=3.0,
+        params={"pose_std": 0.4, "stillness_std": 5.0, "vel_ref": 0.2},
+    )
     # Single-support stride vs double-support swizzle. Rewards exactly-one-blade-
     # down and penalises both-down while pushing — the core anti-swizzle signal.
     # Gated on forward speed too, so stepping that doesn't propel earns nothing.
+    # double_penalty 0.25 -> 0.0: the recover-to-default PAUSE (recover_pose below)
+    # is a both-blades-down neutral coast — we no longer want to penalise double
+    # support. air_time + gait_symmetry still ensure it lifts/alternates (no swizzle).
     cfg.rewards["single_support"] = RewardTermCfg(
         func=microduck_mdp.single_support_reward,
         weight=3.0,
@@ -305,6 +317,7 @@ def make_microduck_velocity_rollers_env_cfg(
             "sensor_name": "feet_ground_contact",
             "command_name": "twist",
             "vel_gate_ref": 0.2,
+            "double_penalty": 0.0,
         },
     )
     # Balance left/right leg usage. With symmetry augmentation OFF nothing stops a
