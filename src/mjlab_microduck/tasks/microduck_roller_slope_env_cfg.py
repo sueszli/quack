@@ -25,14 +25,13 @@ from mjlab_microduck.tasks.microduck_velocity_rollers_env_cfg import (
 )
 from mjlab_microduck.tasks.symmetry import PpoWithSymmetryCfg
 
-ENTRY_VELOCITY_X = (0.6, 1.0)  # impulsion vers l'avant au reset (m/s) : assez pour atteindre la rampe
-
 # Géométrie du terrain plat+rampe+sortie.
 FLAT_LENGTH        = 2.0
 RAMP_LENGTH_RANGE  = (3.0, 8.0)   # longueur horizontale de la rampe, tirée au hasard par tuile
 RUNOUT_LENGTH      = 4.0          # plat de sortie en bas
+SPAWN_ON_RAMP      = 0.3          # spawn ce nb de m sur la rampe (gravité -> roulement, pas de patinage)
 TILE_SIZE          = (15.0, 4.0)  # >= flat + ramp_max + runout (= 14) + marge
-SPAWN_YAW_RANGE    = (-0.349, 0.349)  # ±20° autour de la descente (+x)
+SPAWN_YAW          = (0.0, 0.0)   # face à la descente (+x), fixe
 
 # Terminaison « tombé dans le vide » : sous le plat de sortie le plus bas
 # (rampe la plus raide et la plus longue), avec marge => ne se déclenche jamais
@@ -58,6 +57,7 @@ def make_microduck_roller_slope_env_cfg(play: bool = False) -> ManagerBasedRlEnv
                     flat_length=FLAT_LENGTH,
                     ramp_length_range=RAMP_LENGTH_RANGE,
                     runout_length=RUNOUT_LENGTH,
+                    spawn_on_ramp=SPAWN_ON_RAMP,
                 )
             },
         ),
@@ -73,12 +73,15 @@ def make_microduck_roller_slope_env_cfg(play: bool = False) -> ManagerBasedRlEnv
     if getattr(command.ranges, "ang_vel_z", None) is not None:
         command.ranges.ang_vel_z = (0.0, 0.0)
 
-    # === RESET : face à la descente (±20°) + impulsion vers l'avant sur le plat ===
-    # Le yaw hérité est aléatoire (-180°/+180°) ; on le restreint autour de la
-    # descente (+x) pour que le corps regarde vers le bas de la pente, tout en
-    # gardant une petite variation pour la robustesse.
-    cfg.events["reset_base"].params["pose_range"]["yaw"] = SPAWN_YAW_RANGE
-    cfg.events["reset_base"].params["velocity_range"] = {"x": ENTRY_VELOCITY_X}
+    # === RESET : toujours face à la descente (+x), PAS de poussée de base ===
+    # Le yaw hérité est aléatoire (-180°/+180°) -> on le fixe à 0 (face au bas de
+    # la pente). Aucune vitesse de base injectée : le robot spawne sur la rampe
+    # (voir spawn_on_ramp), la gravité fait rouler les roues (élan aux roues,
+    # sans glissement). L'ancienne poussée de base (base rapide, roues immobiles)
+    # patinait -> pic de contact -> divergence NaN, et le robot "marchait pour
+    # s'arrêter" au lieu de rouler.
+    cfg.events["reset_base"].params["pose_range"]["yaw"] = SPAWN_YAW
+    cfg.events["reset_base"].params["velocity_range"] = {}
 
     # === RÉCOMPENSES : équilibre + posture debout nominale ===
     keep = {"action_rate_l2"}

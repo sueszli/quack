@@ -23,10 +23,12 @@ def test_command_is_neutralised():
         assert cmd.ranges.ang_vel_z == (0.0, 0.0)
 
 
-def test_entry_velocity_set_on_reset_base():
+def test_no_base_velocity_push():
+    # plus de poussée de base (source de patinage/NaN) : l'élan vient de la
+    # gravité, le robot spawne sur la rampe.
     cfg = make_microduck_roller_slope_env_cfg()
     vr = cfg.events["reset_base"].params["velocity_range"]
-    assert vr["x"][0] > 0.0  # impulsion vers l'avant
+    assert vr.get("x", (0.0, 0.0)) == (0.0, 0.0)
 
 
 def test_has_upright_and_pose_rewards():
@@ -43,10 +45,9 @@ def test_no_roller_rewards_survive():
 
 
 def test_spawn_yaw_faces_downhill():
-    # yaw restreint autour de 0 (descente +x), pas le -pi/+pi hérité
+    # yaw fixe à 0 : toujours face au bas de la pente (+x), pas le -pi/+pi hérité
     cfg = make_microduck_roller_slope_env_cfg()
-    lo, hi = cfg.events["reset_base"].params["pose_range"]["yaw"]
-    assert lo > -0.6 and hi < 0.6  # ~±20°, bien plus serré que ±180°
+    assert cfg.events["reset_base"].params["pose_range"]["yaw"] == (0.0, 0.0)
 
 
 def test_void_termination_present_no_edge_termination():

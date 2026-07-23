@@ -39,11 +39,12 @@ def test_flat_ramp_builds_geoms_and_origin_on_flat():
     out = cfg.function(difficulty=0.5, spec=spec, rng=np.random.default_rng(0))
     # trois géométries : plat de départ + rampe + plat de sortie
     assert len(out.geometries) == 3
-    # origine sur le plat, PRÈS du bord de la rampe (dans le dernier mètre du plat)
-    assert cfg.flat_length - 1.0 <= out.origin[0] <= cfg.flat_length
-    assert abs(out.origin[2]) < 1e-6
-    # à ~spawn_margin du bord de la rampe (x = flat_length)
-    assert abs((cfg.flat_length - out.origin[0]) - cfg.spawn_margin) < 1e-6
+    # origine SUR la rampe (au-delà du plat), donc x > flat_length et z < 0
+    assert out.origin[0] == cfg.flat_length + cfg.spawn_on_ramp
+    assert out.origin[2] < 0.0
+    # z = surface inclinée à spawn_on_ramp du bord (drop = d * tan(angle))
+    angle = ramp_angle_by_difficulty(0.5, cfg.deg_min, cfg.deg_max)
+    assert abs(out.origin[2] - (-cfg.spawn_on_ramp * math.tan(angle))) < 1e-9
 
 
 def test_flat_ramp_steeper_at_higher_difficulty():
