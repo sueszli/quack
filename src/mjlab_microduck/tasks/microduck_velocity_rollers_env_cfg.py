@@ -287,29 +287,22 @@ def make_microduck_velocity_rollers_env_cfg(
     # out-weigh the swing-frequency pull of air_time.
     cfg.rewards["glide"] = RewardTermCfg(
         func=microduck_mdp.glide_reward,
-        weight=2.0,  # 4.0 -> 2.0: make room for recover_pose so the pause is a
-                     # return-to-neutral (both blades down) rather than a long
-                     # single-support glide
+        weight=4.0,
         params={
             "sensor_name": "feet_ground_contact",
             "command_name": "twist",
             "vel_ref": 0.2,
         },
     )
-    # The PAUSE between strokes = return to the default leg pose, quiet, while
-    # coasting. Composes stroke -> recover-to-neutral -> stroke, and re-centres the
-    # stance each cycle (fights splay/drift). ~0 during a push (legs moving).
-    cfg.rewards["recover_pose"] = RewardTermCfg(
-        func=microduck_mdp.recover_pose_reward,
-        weight=3.0,
-        params={"pose_std": 0.4, "stillness_std": 5.0, "vel_ref": 0.2},
-    )
+    # NOTE: a recover_pose reward (reward default leg pose + quiet + coasting during
+    # the pause) was tried to get "stroke -> recover-to-neutral -> stroke", but
+    # rewarding the SYMMETRIC default posture + dropping single_support's double
+    # penalty re-opened the symmetric swizzle -> reverted. A proper retry must be
+    # PHASE-GATED (reward the neutral only briefly right after a stroke, not
+    # continuously) and keep the double-support penalty.
     # Single-support stride vs double-support swizzle. Rewards exactly-one-blade-
     # down and penalises both-down while pushing — the core anti-swizzle signal.
     # Gated on forward speed too, so stepping that doesn't propel earns nothing.
-    # double_penalty 0.25 -> 0.0: the recover-to-default PAUSE (recover_pose below)
-    # is a both-blades-down neutral coast — we no longer want to penalise double
-    # support. air_time + gait_symmetry still ensure it lifts/alternates (no swizzle).
     cfg.rewards["single_support"] = RewardTermCfg(
         func=microduck_mdp.single_support_reward,
         weight=3.0,
@@ -317,7 +310,6 @@ def make_microduck_velocity_rollers_env_cfg(
             "sensor_name": "feet_ground_contact",
             "command_name": "twist",
             "vel_gate_ref": 0.2,
-            "double_penalty": 0.0,
         },
     )
     # Balance left/right leg usage. With symmetry augmentation OFF nothing stops a
