@@ -75,8 +75,13 @@ class FlatRampTerrainCfg(SubTerrainCfg):
         )
 
         # 2) Rampe : box tourné de +angle autour de +y (le bord +x descend).
+        # Décalage -(t/2)·sin(angle) en x : sans lui, le bord HAUT de la surface
+        # inclinée tombe à x=flat_length+(t/2)sin(a) -> petit trou entre la
+        # plateforme plate (finit à flat_length) et la rampe. Avec, le haut de la
+        # rampe touche pile le bord de la plateforme (raccord net), et le bas
+        # touche pile le plat de sortie.
         surf_len = ramp_length / math.cos(angle)
-        ramp_cx = self.flat_length + ramp_length / 2.0
+        ramp_cx = self.flat_length + ramp_length / 2.0 - (t / 2.0) * math.sin(angle)
         ramp_cz = -(drop / 2.0) - (t / 2.0) * math.cos(angle)
         half = angle / 2.0
         ramp = body.add_geom(

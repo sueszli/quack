@@ -58,6 +58,20 @@ def test_flat_ramp_steeper_at_higher_difficulty():
     assert hard.geometries[1].geom.pos[2] < easy.geometries[1].geom.pos[2]
 
 
+def test_ramp_joins_flat_platform_no_gap():
+    # le haut de la rampe doit toucher le bord de la plateforme plate (x=flat_length) :
+    # centre rampe décalé de -(t/2)*sin(angle) en x.
+    cfg = FlatRampTerrainCfg()
+    cfg.size = (15.0, 4.0)
+    out = cfg.function(0.5, _empty_terrain_spec(), np.random.default_rng(0))
+    ramp = out.geometries[1].geom
+    angle = ramp_angle_by_difficulty(0.5, cfg.deg_min, cfg.deg_max)
+    surf_half = ramp.size[0]
+    ramp_len = surf_half * 2.0 * math.cos(angle)
+    expected_cx = cfg.flat_length + ramp_len / 2.0 - (cfg.thickness / 2.0) * math.sin(angle)
+    assert abs(ramp.pos[0] - expected_cx) < 1e-6
+
+
 def test_flat_ramp_runout_at_ramp_bottom():
     # le plat de sortie (3e géométrie) est au niveau du bas de la rampe (z<0),
     # et sa surface est plate (box non tourné : quat identité).

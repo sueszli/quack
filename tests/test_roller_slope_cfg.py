@@ -23,12 +23,20 @@ def test_command_is_neutralised():
         assert cmd.ranges.ang_vel_z == (0.0, 0.0)
 
 
-def test_no_base_velocity_push():
-    # plus de poussée de base (source de patinage/NaN) : l'élan vient de la
-    # gravité, le robot spawne sur la rampe.
+def test_small_entry_push():
+    # petit élan initial vers l'avant (aligné descente) pour s'engager sur la rampe,
+    # bien plus petit que l'ancien 0.6-1.0 qui patinait.
     cfg = make_microduck_roller_slope_env_cfg()
     vr = cfg.events["reset_base"].params["velocity_range"]
-    assert vr.get("x", (0.0, 0.0)) == (0.0, 0.0)
+    lo, hi = vr["x"]
+    assert 0.0 < lo <= hi <= 0.5
+
+
+def test_has_heading_hold_reward():
+    # aller droit : maintien du yaw de spawn
+    cfg = make_microduck_roller_slope_env_cfg()
+    assert "heading_hold" in cfg.rewards
+    assert cfg.rewards["heading_hold"].weight > 0.0
 
 
 def test_has_upright_and_pose_rewards():
@@ -44,11 +52,12 @@ def test_has_descent_speed_reward():
     assert cfg.rewards["descent_speed"].weight > 0.0
 
 
-def test_no_roller_rewards_survive():
+def test_no_roller_skating_rewards_survive():
+    # les rewards de PATINAGE du roller ne doivent pas survivre (heading_hold est
+    # ré-ajouté volontairement pour aller droit, donc pas dans cette liste).
     cfg = make_microduck_roller_slope_env_cfg()
-    assert "wheel_speed" not in cfg.rewards
-    assert "braking" not in cfg.rewards
-    assert "heading_hold" not in cfg.rewards
+    for name in ("wheel_speed", "braking", "skating_air_time", "glide", "forward_lean"):
+        assert name not in cfg.rewards
 
 
 def test_spawn_yaw_faces_downhill():

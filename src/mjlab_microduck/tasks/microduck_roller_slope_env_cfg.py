@@ -30,6 +30,7 @@ FLAT_LENGTH        = 2.0
 RAMP_LENGTH_RANGE  = (3.0, 8.0)   # longueur horizontale de la rampe, tirée au hasard par tuile
 RUNOUT_LENGTH      = 4.0          # plat de sortie en bas
 SPAWN_ON_RAMP      = 0.3          # spawn ce nb de m sur la rampe (gravité -> roulement, pas de patinage)
+ENTRY_VELOCITY_X   = (0.25, 0.45) # petit élan initial vers l'avant/descente (m/s)
 TILE_SIZE          = (15.0, 4.0)  # >= flat + ramp_max + runout (= 14) + marge
 SPAWN_YAW          = (0.0, 0.0)   # face à la descente (+x), fixe
 
@@ -92,7 +93,11 @@ def make_microduck_roller_slope_env_cfg(play: bool = False) -> ManagerBasedRlEnv
     # patinait -> pic de contact -> divergence NaN, et le robot "marchait pour
     # s'arrêter" au lieu de rouler.
     cfg.events["reset_base"].params["pose_range"]["yaw"] = SPAWN_YAW
-    cfg.events["reset_base"].params["velocity_range"] = {}
+    # Petit élan initial vers l'avant (aligné sur la descente +x, yaw=0), pour
+    # l'aider à s'engager sur la rampe. Petit -> peu de patinage (l'ancien 0.6-1.0
+    # patinait et faisait "marcher pour s'arrêter") ; le NaN rare est de toute
+    # façon assaini côté obs.
+    cfg.events["reset_base"].params["velocity_range"] = {"x": ENTRY_VELOCITY_X}
 
     # === RÉCOMPENSES : équilibre + posture debout nominale ===
     keep = {"action_rate_l2"}
@@ -118,6 +123,12 @@ def make_microduck_roller_slope_env_cfg(play: bool = False) -> ManagerBasedRlEnv
     # a intérêt à glisser tant qu'il reste équilibré (compromis naturel).
     cfg.rewards["descent_speed"] = RewardTermCfg(
         func=microduck_mdp.descent_speed_reward, weight=3.0, params={"cap": 0.8},
+    )
+    # ALLER DROIT : maintenir le yaw de spawn (= 0 = face à la descente). Corrigeant
+    # (le robot peut se rattraper), c'est la bonne façon d'aller tout droit. NB: la
+    # symétrie PPO (SYMMETRY_CFG) est codée pour l'ancien obs 51D -> inutilisable ici.
+    cfg.rewards["heading_hold"] = RewardTermCfg(
+        func=microduck_mdp.heading_hold_reward, weight=1.5, params={"std": 0.4},
     )
     cfg.rewards["feet_flat"] = RewardTermCfg(
         func=microduck_mdp.feet_flat_penalty,
