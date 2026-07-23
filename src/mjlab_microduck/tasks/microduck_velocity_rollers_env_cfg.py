@@ -236,8 +236,10 @@ def make_microduck_velocity_rollers_env_cfg(
     # it — or, if no stable narrow stance exists, it stays partly splayed.)
     cfg.rewards["hip_roll_neutral"] = RewardTermCfg(
         func=microduck_mdp.joint_deviation_l1,
-        weight=-1.0,  # -0.5 -> -1.0: close the leg gap MORE of the time (still
-                      # overpowered by the stride rewards during an active push)
+        weight=-2.0,  # -1.0 -> -2.0: stronger centring pull. Sim already keeps hip_roll
+                      # narrow, but a stronger corrective may help the REAL robot resist
+                      # whatever spreads the legs (deployment/disturbance). Lower if it
+                      # flattens the push.
         params={"asset_cfg": SceneEntityCfg("robot", joint_names=(r".*hip_roll.*",))},
     )
     # Sole positive task reward — robot must spin wheels to get anything
