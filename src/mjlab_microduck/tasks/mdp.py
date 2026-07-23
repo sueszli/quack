@@ -712,6 +712,26 @@ def root_height_below(
     return asset.data.root_link_pos_w[:, 2] < min_height
 
 
+def descent_speed_reward(
+    env: ManagerBasedRlEnv,
+    cap: float = 0.8,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """Récompense la vitesse d'avance vers le BAS de la pente (monde +x).
+
+    La rampe descend en +x, donc la vitesse linéaire monde en x mesure la
+    progression de descente. Plafonnée à ``cap`` m/s : encourage à se laisser
+    glisser sans pousser à dévaler de plus en plus vite. Nulle si le robot
+    recule/remonte (vx < 0). Sans cette récompense, l'optimum est de rester
+    immobile et droit (le robot « freine » au lieu de glisser). NaN-safe.
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    vx = torch.nan_to_num(
+        asset.data.root_link_lin_vel_w[:, 0], nan=0.0, posinf=0.0, neginf=0.0
+    )
+    return torch.clamp(vx, min=0.0, max=cap)
+
+
 def is_alive(env: ManagerBasedRlEnv) -> torch.Tensor:
     """
     Reward for staying alive (not terminated)

@@ -37,6 +37,13 @@ def test_has_upright_and_pose_rewards():
         assert name in cfg.rewards
 
 
+def test_has_descent_speed_reward():
+    # récompense de "se laisser glisser" : vitesse de descente, poids positif
+    cfg = make_microduck_roller_slope_env_cfg()
+    assert "descent_speed" in cfg.rewards
+    assert cfg.rewards["descent_speed"].weight > 0.0
+
+
 def test_no_roller_rewards_survive():
     cfg = make_microduck_roller_slope_env_cfg()
     assert "wheel_speed" not in cfg.rewards

@@ -113,6 +113,12 @@ def make_microduck_roller_slope_env_cfg(play: bool = False) -> ManagerBasedRlEnv
     cfg.rewards["standing_pose_l1"] = RewardTermCfg(
         func=microduck_mdp.pose_l1_penalty, weight=1.0,
     )
+    # Se LAISSER GLISSER : récompense la vitesse de descente (monde +x), plafonnée.
+    # Sans elle, l'optimum est de rester immobile et droit (il "freine"). Avec, il
+    # a intérêt à glisser tant qu'il reste équilibré (compromis naturel).
+    cfg.rewards["descent_speed"] = RewardTermCfg(
+        func=microduck_mdp.descent_speed_reward, weight=3.0, params={"cap": 0.8},
+    )
     cfg.rewards["feet_flat"] = RewardTermCfg(
         func=microduck_mdp.feet_flat_penalty,
         weight=-2.0,
