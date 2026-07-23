@@ -3661,6 +3661,37 @@ def glide_reward(
     return single * forward_gate * stillness * active
 
 
+def gait_symmetry_penalty(
+    env: ManagerBasedRlEnv,
+    sensor_name: str,
+) -> torch.Tensor:
+    """Penalize lopsided left/right foot usage (one blade doing most of the work).
+
+    With symmetry augmentation OFF, nothing stops the policy learning an asymmetric
+    stride that pushes mostly with one leg — which veers and destabilises (esp. at
+    launch). Accumulates per-foot swing time over the episode and penalises the
+    normalised imbalance |L - R| / (L + R):
+      - balanced alternating stride  -> ~0 (no penalty)
+      - one foot swinging much more   -> ~1 (max penalty)
+    Only the CUMULATIVE imbalance is penalised — the instantaneous single-support
+    asymmetry of a real stride (one foot swinging now) is fine.
+    """
+    from mjlab.sensor import ContactSensor
+    sensor: ContactSensor = env.scene[sensor_name]
+    air = sensor.data.current_air_time  # (N, num_feet)
+    assert air is not None
+
+    if not hasattr(env, "_swing_accum") or env._swing_accum.shape[0] != env.num_envs:
+        env._swing_accum = torch.zeros(env.num_envs, air.shape[1], device=env.device)
+    reset = env.episode_length_buf <= 1
+    env._swing_accum[reset] = 0.0
+    env._swing_accum += (air > 0.0).float() * env.step_dt
+
+    L = env._swing_accum[:, 0]
+    R = env._swing_accum[:, 1]
+    return torch.abs(L - R) / (L + R + 1e-3)
+
+
 def heading_hold_reward(
     env: ManagerBasedRlEnv,
     std: float = 0.4,

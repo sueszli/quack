@@ -241,10 +241,15 @@ def make_microduck_velocity_rollers_env_cfg(
         params={"asset_cfg": SceneEntityCfg("robot", joint_names=(r".*hip_roll.*",))},
     )
     # Sole positive task reward — robot must spin wheels to get anything
+    # vel_scale 0.5 -> 0.3: the tanh target speed. Measured on a trained ckpt, the
+    # policy only reaches ~0.33 m/s at max push, so a 0.5 target sat on the
+    # un-saturated tanh slope and kept pushing it to go faster than it can (over-
+    # reach -> launch instability). 0.3 saturates near the achievable speed, so it
+    # is 'content' there instead of over-driving.
     cfg.rewards["wheel_speed"] = RewardTermCfg(
         func=microduck_mdp.wheel_speed_reward,
         weight=10.0,
-        params={"command_name": "twist", "vel_scale": 0.5},
+        params={"command_name": "twist", "vel_scale": 0.3},
     )
     # Brake: reward stopping when cmd_x < 0. Silent at cmd_x >= 0 (coast/push).
     cfg.rewards["braking"] = RewardTermCfg(
@@ -301,6 +306,15 @@ def make_microduck_velocity_rollers_env_cfg(
             "command_name": "twist",
             "vel_gate_ref": 0.2,
         },
+    )
+    # Balance left/right leg usage. With symmetry augmentation OFF nothing stops a
+    # lopsided stride (pushing mostly with one leg) that veers and destabilises,
+    # esp. at launch. Penalises the cumulative swing-time imbalance |L-R|/(L+R);
+    # the instantaneous one-foot-swinging asymmetry of a real stride is fine.
+    cfg.rewards["gait_symmetry"] = RewardTermCfg(
+        func=microduck_mdp.gait_symmetry_penalty,
+        weight=-1.0,
+        params={"sensor_name": "feet_ground_contact"},
     )
     # NOTE: a contact_frequency penalty was tried here to slow the cadence, but it
     # penalises contact CHANGES — minimised by never lifting a foot (the swizzle),
