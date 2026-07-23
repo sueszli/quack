@@ -57,8 +57,15 @@ def make_microduck_velocity2_env_cfg(
     r["track_angular_velocity"].weight = 2.0
     r["track_angular_velocity"].params["std"] = math.sqrt(0.5)
     r["pose"].weight = 1.0
-    r["upright"].weight = 1.0
-    r["upright"].params["std"] = math.sqrt(0.1)
+    # upright: deliberately stronger than microban (was 1.0 / sqrt(0.1)).
+    # 2026-07 pitch-vs-speed eval (claude_experiments/eval_velocity2_pitch_vs_speed.py):
+    # the policy walks with a +2-4° steady forward lean (p90 ~6-8°) and ~2/3 of
+    # push-induced falls at speed are FORWARD. At weight 1.0 / std²=0.1 a 4° lean
+    # cost ~0.05/step — effectively free. At 2.0 / std²=0.05 it costs ~0.19/step:
+    # enough gradient to hold the trunk level in steady gait while transient lean
+    # (push recovery, accel) stays affordable.
+    r["upright"].weight = 2.0
+    r["upright"].params["std"] = math.sqrt(0.05)
     # Drop microduck-only posture extras.
     r.pop("com_height_target", None)
     r.pop("stillness_at_zero_command", None)
