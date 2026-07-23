@@ -265,19 +265,19 @@ def make_microduck_velocity_rollers_env_cfg(
     # on one blade → drives commitment. Balance tilted toward glide (3.0) over
     # air_time (2.0) because the cadence was still too fast. air_time kept high
     # enough (2.0) that lifting the foot stays worthwhile.
-    # [experimental] Wide slow window [0.40, 1.00] to strongly test the cadence
-    # effect: swings must last 0.4-1.0 s to earn -> very deliberate, slow strokes.
-    # WATCH: 0.40 min is aggressive — if the policy can't reliably hold a swing
-    # that long it may earn no air_time and stop lifting (swizzle). Dial back
-    # toward [0.30, 0.70] if that happens.
+    # Calm gait: the aggressive [0.40, 1.00] window forced big long swings ->
+    # violent kicks that tipped the real robot. Back to a gentle [0.15, 0.45]
+    # (small swings allowed, none forced long) and weight 2.0 -> 1.5 so swinging
+    # is less incentivised (lower cadence). glide (below) rewards the coast, so it
+    # pushes only occasionally.
     cfg.rewards["skating_air_time"] = RewardTermCfg(
         func=microduck_mdp.skating_air_time_reward,
-        weight=2.0,
+        weight=1.5,
         params={
             "sensor_name": "feet_ground_contact",
             "command_name": "twist",
-            "threshold_min": 0.40,
-            "threshold_max": 1.00,
+            "threshold_min": 0.15,
+            "threshold_max": 0.45,
             "vel_gate_ref": 0.2,
         },
     )
@@ -543,14 +543,19 @@ def make_microduck_velocity_rollers_env_cfg(
     del cfg.curriculum["terrain_levels"]
     del cfg.curriculum["command_vel"]
 
+    # action_rate penalty raised (-0.5/-0.8/-1.0 -> -1.0/-1.5/-2.0) for a CALMER
+    # gait: this is the main "less movement" lever — it penalises fast/large action
+    # changes, so motions become smaller, smoother AND less frequent (rapid
+    # alternation = big action change = penalised). Dial back if it gets sluggish
+    # / can't push enough to move.
     cfg.curriculum["action_rate_weight"] = CurriculumTermCfg(
         func=microduck_mdp.reward_weight,
         params={
             "reward_name": "action_rate_l2",
             "weight_stages": [
-                {"step": 0, "weight": -0.5},
-                {"step": 250 * 24, "weight": -0.8},
-                {"step": 500 * 24, "weight": -1.0},
+                {"step": 0, "weight": -1.0},
+                {"step": 250 * 24, "weight": -1.5},
+                {"step": 500 * 24, "weight": -2.0},
             ],
         },
     )
