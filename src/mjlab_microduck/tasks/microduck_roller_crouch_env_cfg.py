@@ -56,20 +56,21 @@ RISE_END      = 0.60
 # scripts/crouch_pose_editor.py. La reward interpole DEBOUT(HOME) <-> cette pose
 # selon la phase. Résolution par nom -> robuste aux roues intercalées.
 CROUCH_POSE = {
-    "left_hip_yaw": 0.0001,
-    "left_hip_roll": -0.0005,
-    "left_hip_pitch": 1.5711,
-    "left_knee": 1.5711,
-    "left_ankle": -0.0006,
-    "neck_pitch": 1.0485,
-    "head_pitch": 0.9995,
-    "head_yaw": -0.0006,
-    "head_roll": 0.0000,
-    "right_hip_yaw": -0.0004,
-    "right_hip_roll": 0.0006,
-    "right_hip_pitch": -1.5711,
-    "right_knee": -1.5711,
-    "right_ankle": 0.0013,
+    # Lue sur le VRAI robot (Dynamixel XL330, read_pose.py) — pose tenable.
+    "left_hip_yaw": -0.0184,
+    "left_hip_roll": 0.0169,
+    "left_hip_pitch": 1.5493,
+    "left_knee": 1.5309,
+    "left_ankle": -0.0276,
+    "neck_pitch": 1.0569,
+    "head_pitch": 1.2057,
+    "head_yaw": -0.0169,
+    "head_roll": -0.0353,
+    "right_hip_yaw": -0.0092,
+    "right_hip_roll": -0.0138,
+    "right_hip_pitch": -1.6705,
+    "right_knee": -1.5907,
+    "right_ankle": 0.0552,
 }
 CROUCH_POSE_STD = 0.4  # tolérance gaussienne par joint (rad)
 CROUCH_LEAN_PITCH = 0.08  # léger penché avant pendant l'accroupi (rad ≈ 4.6°)
