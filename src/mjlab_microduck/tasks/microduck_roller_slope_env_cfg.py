@@ -12,7 +12,7 @@ import math
 
 from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.envs import mdp as base_mdp
-from mjlab.managers import CurriculumTermCfg, EventTermCfg, RewardTermCfg, TerminationTermCfg
+from mjlab.managers import EventTermCfg, RewardTermCfg, TerminationTermCfg
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.rl import RslRlOnPolicyRunnerCfg, RslRlModelCfg
 from mjlab.terrains import TerrainEntityCfg
@@ -33,10 +33,9 @@ SPAWN_ON_RAMP      = 0.3          # spawn ce nb de m sur la rampe (gravité -> r
 TILE_SIZE          = (15.0, 4.0)  # >= flat + ramp_max + runout (= 14) + marge
 SPAWN_YAW          = (0.0, 0.0)   # face à la descente (+x), fixe
 
-# Au PLAY (uv run play), difficulté imposée à toutes les tuiles pour choisir la
-# pente affichée (1.0 = la plus raide ~20°, 0.5 = moyenne, 0.0 = la plus douce).
-# À l'entraînement (play=False), le curriculum gère la difficulté normalement.
-PLAY_DIFFICULTY    = 1.0
+# Raideur au PLAY : None = aléatoire (comme à l'entraînement). Mettre une valeur
+# 0..1 pour forcer une pente précise (1.0 = la plus raide ~20°, 0.5 = moyenne).
+PLAY_DIFFICULTY    = None
 
 # Terminaison « tombé dans le vide » : sous le plat de sortie le plus bas
 # (rampe la plus raide et la plus longue), avec marge => ne se déclenche jamais
@@ -66,13 +65,14 @@ def make_microduck_roller_slope_env_cfg(play: bool = False) -> ManagerBasedRlEnv
                 )
             },
         ),
-        max_init_terrain_level=0,  # démarrer sur la rampe la plus douce
+        max_init_terrain_level=None,  # None -> raideur ALÉATOIRE (niveau tiré sur
+                                      # toutes les rangées) à chaque env, pas de
+                                      # blocage sur la plus douce.
     )
 
-    # Au play : toutes les tuiles à la même difficulté (PLAY_DIFFICULTY) pour
-    # visualiser la pente voulue (par défaut la plus raide) — sinon tout le monde
-    # spawn sur la plus douce (max_init_terrain_level=0).
-    if play:
+    # Au play : par défaut aléatoire comme à l'entraînement (PLAY_DIFFICULTY=None).
+    # Mettre une valeur (0..1) pour forcer une raideur précise (1.0 = plus raide).
+    if play and PLAY_DIFFICULTY is not None:
         cfg.scene.terrain.terrain_generator.difficulty_range = (PLAY_DIFFICULTY, PLAY_DIFFICULTY)
 
     # === COMMANDE neutralisée (équilibre pur) ===
@@ -162,10 +162,13 @@ def make_microduck_roller_slope_env_cfg(play: bool = False) -> ManagerBasedRlEnv
         func=microduck_mdp.reset_action_history, mode="reset",
     )
 
-    # === CURRICULUM : raideur de la rampe ===
+    # === CURRICULUM : aucun ===
+    # Difficulté aléatoire (via max_init_terrain_level=None) et FIXE par env : pas
+    # de promotion/rétrogradation. Le robot voit d'emblée toute la gamme de pentes
+    # répartie sur les 4096 envs, plutôt qu'une montée progressive qui restait
+    # bloquée sur la plus douce.
     for name in list(cfg.curriculum.keys()):
         del cfg.curriculum[name]
-    cfg.curriculum["terrain_levels"] = CurriculumTermCfg(func=microduck_mdp.terrain_levels_slope)
 
     return cfg
 
