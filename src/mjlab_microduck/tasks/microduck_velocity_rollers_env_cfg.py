@@ -260,14 +260,19 @@ def make_microduck_velocity_rollers_env_cfg(
     # on one blade → drives commitment. Balance tilted toward glide (3.0) over
     # air_time (2.0) because the cadence was still too fast. air_time kept high
     # enough (2.0) that lifting the foot stays worthwhile.
+    # [experimental] Wide slow window [0.40, 1.00] to strongly test the cadence
+    # effect: swings must last 0.4-1.0 s to earn -> very deliberate, slow strokes.
+    # WATCH: 0.40 min is aggressive — if the policy can't reliably hold a swing
+    # that long it may earn no air_time and stop lifting (swizzle). Dial back
+    # toward [0.30, 0.70] if that happens.
     cfg.rewards["skating_air_time"] = RewardTermCfg(
         func=microduck_mdp.skating_air_time_reward,
         weight=2.0,
         params={
             "sensor_name": "feet_ground_contact",
             "command_name": "twist",
-            "threshold_min": 0.25,
-            "threshold_max": 0.45,
+            "threshold_min": 0.40,
+            "threshold_max": 1.00,
             "vel_gate_ref": 0.2,
         },
     )
@@ -277,7 +282,8 @@ def make_microduck_velocity_rollers_env_cfg(
     # out-weigh the swing-frequency pull of air_time.
     cfg.rewards["glide"] = RewardTermCfg(
         func=microduck_mdp.glide_reward,
-        weight=3.0,
+        weight=4.0,  # 3.0 -> 4.0: reinforce the long single-support glide vs the
+                     # per-swing air_time reward, to further slow the choppy cadence
         params={
             "sensor_name": "feet_ground_contact",
             "command_name": "twist",
