@@ -55,22 +55,36 @@ RISE_END      = 0.60
 # Pose ACCROUPI cible (rad, par NOM d'articulation) — composée dans
 # scripts/crouch_pose_editor.py. La reward interpole DEBOUT(HOME) <-> cette pose
 # selon la phase. Résolution par nom -> robuste aux roues intercalées.
+# Pose DEBOUT (départ/fin du trick). Défaut = HOME du sim (convention validée
+# égale à la lecture robot). Remplace ces valeurs par une lecture read_pose.py
+# du robot debout si tu veux une autre station debout.
+# ⚠️ au déploiement, à la fin du trick le runtime rend la main à la policy roller
+# qui repart de HOME — garde STAND_POSE proche de HOME pour un retour propre.
+STAND_POSE = {
+    # Lue sur le VRAI robot (read_pose.py) — station debout voulue pour le trick.
+    "left_hip_yaw": -0.0476, "left_hip_roll": -0.0629, "left_hip_pitch": -0.2869,
+    "left_knee": 0.9618, "left_ankle": 1.1674,
+    "neck_pitch": 0.6029, "head_pitch": 0.543, "head_yaw": -0.069, "head_roll": -0.0414,
+    "right_hip_yaw": -0.0337, "right_hip_roll": -0.0061, "right_hip_pitch": 0.1534,
+    "right_knee": -0.9725, "right_ankle": -1.0646,
+}
+
 CROUCH_POSE = {
     # Lue sur le VRAI robot (Dynamixel XL330, read_pose.py) — pose tenable.
     "left_hip_yaw": -0.0184,
-    "left_hip_roll": 0.0169,
-    "left_hip_pitch": 1.5493,
-    "left_knee": 1.5309,
-    "left_ankle": -0.0276,
-    "neck_pitch": 1.0569,
-    "head_pitch": 1.2057,
-    "head_yaw": -0.0169,
-    "head_roll": -0.0353,
-    "right_hip_yaw": -0.0092,
-    "right_hip_roll": -0.0138,
-    "right_hip_pitch": -1.6705,
+    "left_hip_roll": 0.0307,
+    "left_hip_pitch": 1.4082,
+    "left_knee": 1.5248,
+    "left_ankle": -0.0675,
+    "neck_pitch": 1.0937,
+    "head_pitch": 1.2149,
+    "head_yaw": -0.0184,
+    "head_roll": -0.0368,
+    "right_hip_yaw": 0.0184,
+    "right_hip_roll": -0.0169,
+    "right_hip_pitch": -1.4757,
     "right_knee": -1.5907,
-    "right_ankle": 0.0552,
+    "right_ankle": 0.0568,
 }
 CROUCH_POSE_STD = 0.4  # tolérance gaussienne par joint (rad)
 CROUCH_LEAN_PITCH = 0.08  # léger penché avant pendant l'accroupi (rad ≈ 4.6°)
@@ -153,6 +167,7 @@ def make_microduck_roller_crouch_env_cfg(play: bool = False) -> ManagerBasedRlEn
     _pose_params = {
         "command_name": "twist",
         "crouch_pose": CROUCH_POSE,
+        "stand_pose": STAND_POSE,
         "descent_end": DESCENT_END,
         "hold_end": HOLD_END,
         "rise_end": RISE_END,

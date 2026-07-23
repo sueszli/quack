@@ -917,13 +917,14 @@ def _crouch_pose_error(
     descent_end: float,
     hold_end: float,
     rise_end: float,
+    stand_pose: Optional[dict] = None,
 ):
     """(cur, target) joint tensors for the phase-interpolated crouch pose.
 
-    Target interpolates per joint DEFAULT(=standing/HOME) <-> crouch_pose by the
-    4-segment blend b(phase) in [0,1] (0 = standing, 1 = crouch). Joints are
-    resolved BY NAME so the passive-wheel interspersing on the roller robot never
-    shifts an index.
+    Target interpolates per joint STAND <-> crouch_pose by the 4-segment blend
+    b(phase) in [0,1] (0 = standing, 1 = crouch). STAND is `stand_pose` where
+    given, else the model DEFAULT (HOME). Joints are resolved BY NAME so the
+    passive-wheel interspersing on the roller robot never shifts an index.
     """
     asset: Entity = env.scene[asset_cfg.name]
     cmd = env.command_manager.get_command(command_name)
@@ -932,12 +933,19 @@ def _crouch_pose_error(
 
     names = list(crouch_pose.keys())
     ids = [int(asset.find_joints([n])[0][0]) for n in names]
-    default = asset.data.default_joint_pos[:, ids]                      # (B,k)
+    default = asset.data.default_joint_pos[:, ids]                     # (B,k)
+
+    stand = default.clone()                                            # source pose
+    if stand_pose:
+        for j, n in enumerate(names):
+            if n in stand_pose:
+                stand[:, j] = stand_pose[n]
     crouch = torch.tensor(
         [crouch_pose[n] for n in names], device=env.device, dtype=default.dtype
-    ).unsqueeze(0)                                                      # (1,k)
-    target = default + blend.unsqueeze(-1) * (crouch - default)         # (B,k)
-    cur = asset.data.joint_pos[:, ids]                                 # (B,k)
+    ).unsqueeze(0)                                                     # (1,k)
+
+    target = stand + blend.unsqueeze(-1) * (crouch - stand)           # (B,k)
+    cur = asset.data.joint_pos[:, ids]                                # (B,k)
     return cur, target
 
 
@@ -945,20 +953,22 @@ def crouch_glide_pose_by_phase(
     env: ManagerBasedRlEnv,
     command_name: str = "twist",
     crouch_pose: Optional[dict] = None,
+    stand_pose: Optional[dict] = None,
     std: float = 0.4,
     descent_end: float = 0.10,
     hold_end: float = 0.50,
     rise_end: float = 0.60,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
 ) -> torch.Tensor:
-    """Gaussian match to a phase-interpolated joint pose (standing <-> crouch).
+    """Gaussian match to a phase-interpolated joint pose (stand <-> crouch).
 
     Directive reward: tells the robot the exact joint configuration to be in at
-    each phase. Standing back up (target = HOME) is rewarded exactly like
+    each phase. Standing back up (target = stand_pose) is rewarded exactly like
     crouching (target = crouch_pose) — symmetric by construction.
     """
     cur, target = _crouch_pose_error(
-        env, asset_cfg, command_name, crouch_pose or {}, descent_end, hold_end, rise_end
+        env, asset_cfg, command_name, crouch_pose or {},
+        descent_end, hold_end, rise_end, stand_pose,
     )
     return torch.exp(-((cur - target) / std) ** 2).mean(dim=-1)
 
@@ -967,6 +977,7 @@ def crouch_glide_pose_l1(
     env: ManagerBasedRlEnv,
     command_name: str = "twist",
     crouch_pose: Optional[dict] = None,
+    stand_pose: Optional[dict] = None,
     descent_end: float = 0.10,
     hold_end: float = 0.50,
     rise_end: float = 0.60,
@@ -978,7 +989,8 @@ def crouch_glide_pose_l1(
     pose even when the Gaussian above has saturated to ~0 far from it.
     """
     cur, target = _crouch_pose_error(
-        env, asset_cfg, command_name, crouch_pose or {}, descent_end, hold_end, rise_end
+        env, asset_cfg, command_name, crouch_pose or {},
+        descent_end, hold_end, rise_end, stand_pose,
     )
     return -(cur - target).abs().mean(dim=-1)
 
