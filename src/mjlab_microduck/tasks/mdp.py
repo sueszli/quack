@@ -3166,6 +3166,7 @@ def set_random_ground_state(
     sitting_joint_overrides: Optional[dict] = None,
     sitting_joint_noise_std: float = 0.0,
     sitting_tilt_max: float = 0.0,
+    face_up_roll_max: float = 0.0,
 ):
     """Reset to a random ground state: face-down, face-up, sitting, or standing.
 
@@ -3226,6 +3227,39 @@ def set_random_ground_state(
     is_fu    = (u >= p_fd) & (u < p_fu)
     is_sit   = (u >= p_fu) & (u < p_sit)
     is_stand = u >= p_sit
+
+    # Face-up partial-roll noise: rotate the supine pose about the body's long
+    # axis by uniform ±face_up_roll_max. WHY (2026-07, back-recovery was
+    # seed-lucky): the reward landscape between supine and prone is FLAT —
+    # upright_linear (cos tilt) is ≈0 through the whole roll, height doesn't
+    # change — so rolling off the back only pays via the front-rise path that
+    # follows, a long-horizon dependency that noisy exploration rarely finds
+    # from a perfectly flat supine start. With roll noise, a fraction of
+    # face-up spawns start near-on-side (partway along the roll): the policy
+    # learns roll-completion from easy starts and generalizes back to flat
+    # supine — a built-in reverse curriculum. Uniform sampling keeps every
+    # difficulty represented (flat back |roll|<15° ≈ 17% at ±90°), so no
+    # annealing schedule is needed, and varied post-fall poses are realistic
+    # DR for deployment anyway.
+    if face_up_roll_max > 0.0:
+        theta = (torch.rand(num, device=env.device) * 2 - 1) * face_up_roll_max
+        ct = torch.cos(theta * 0.5)
+        st = torch.sin(theta * 0.5)
+        # Log-roll = rotation about the body's LONG axis, which is body z (the
+        # spine: trunk z is up when standing → horizontal when lying). NOT body
+        # x — supine leaves body x pointing skyward, so an x-roll would only
+        # spin the robot in place like the yaw noise already does.
+        # Body-frame rotation → right-multiply: q_fu ⊗ [ct, 0, 0, st].
+        w, x, y, z = face_up[:, 0], face_up[:, 1], face_up[:, 2], face_up[:, 3]
+        face_up = torch.stack(
+            [
+                w * ct - z * st,
+                x * ct + y * st,
+                y * ct - x * st,
+                w * st + z * ct,
+            ],
+            dim=1,
+        )
 
     # Sitting and standing share the same upright orientation (identity + optional
     # ±sitting_tilt_max); they differ only in trunk height and joint pose.

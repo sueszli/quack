@@ -587,6 +587,13 @@ def make_microduck_standup_env_cfg(
             # would free-fall ~15 cm before landing).
             "prone_z_min":               0.05,
             "prone_z_max":               0.09,
+            # Partial-roll noise on face-up spawns (±90° about the body long
+            # axis): back-recovery was seed-lucky (1 success / 3 failures with
+            # equivalent rewards) because the reward landscape from flat
+            # supine to prone is flat — no gradient until the roll completes.
+            # Near-on-side spawns put starts partway along the roll → built-in
+            # reverse curriculum. See set_random_ground_state in mdp.py.
+            "face_up_roll_max":          math.radians(90),
             "sitting_joint_overrides":   SITTING_JOINT_OVERRIDES,
             "sitting_joint_noise_std":   0.12,           # ≈ 7° per joint
             "sitting_tilt_max":          math.radians(10),  # ±10° pitch/roll
