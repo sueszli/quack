@@ -2061,6 +2061,91 @@ def phase_pose_blend(
     return b
 
 
+def _phase_pose_error(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg,
+    command_name: str,
+    target_pose: dict,
+    descent_end: float,
+    hold_end: float,
+    rise_end: float,
+    source_pose: Optional[dict] = None,
+):
+    """(cur, target) pour la pose interpolée par la phase, résolue PAR NOM.
+
+    Cible = source + blend(phase)·(target_pose - source), source = STAND
+    (`source_pose` si fourni, sinon le DEFAULT/HOME du modèle). blend ∈ [0,1]
+    (0 = STAND, 1 = target_pose) via `phase_pose_blend`.
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    cmd = env.command_manager.get_command(command_name)
+    phase = (torch.atan2(cmd[:, 1], cmd[:, 0]) / (2 * torch.pi)) % 1.0  # (B,)
+    blend = phase_pose_blend(phase, descent_end, hold_end, rise_end)     # (B,)
+
+    names = list(target_pose.keys())
+    ids = [int(asset.find_joints([n])[0][0]) for n in names]
+    default = asset.data.default_joint_pos[:, ids]                       # (B,k)
+
+    source = default.clone()
+    if source_pose:
+        for j, n in enumerate(names):
+            if n in source_pose:
+                source[:, j] = source_pose[n]
+    target_vec = torch.tensor(
+        [target_pose[n] for n in names], device=env.device, dtype=default.dtype
+    ).unsqueeze(0)                                                       # (1,k)
+
+    target = source + blend.unsqueeze(-1) * (target_vec - source)        # (B,k)
+    cur = asset.data.joint_pos[:, ids]                                   # (B,k)
+    return cur, target
+
+
+def phase_pose_track(
+    env: ManagerBasedRlEnv,
+    command_name: str = "twist",
+    target_pose: Optional[dict] = None,
+    source_pose: Optional[dict] = None,
+    std: float = 0.3,
+    descent_end: float = 0.15,
+    hold_end: float = 0.50,
+    rise_end: float = 0.65,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """Gaussienne sur la pose articulaire vs cible interpolée STAND<->DOWN.
+
+    Reward directif : indique la config articulaire exacte à chaque phase. Se
+    relever (cible → STAND) est récompensé exactement comme se baisser (cible →
+    DOWN) — symétrique par construction. Résolution PAR NOM.
+    """
+    cur, target = _phase_pose_error(
+        env, asset_cfg, command_name, target_pose or {},
+        descent_end, hold_end, rise_end, source_pose,
+    )
+    return torch.exp(-((cur - target) / std) ** 2).mean(dim=-1)
+
+
+def phase_pose_track_l1(
+    env: ManagerBasedRlEnv,
+    command_name: str = "twist",
+    target_pose: Optional[dict] = None,
+    source_pose: Optional[dict] = None,
+    descent_end: float = 0.15,
+    hold_end: float = 0.50,
+    rise_end: float = 0.65,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """Bootstrap L1 vers la cible interpolée (pénalité négative).
+
+    Gradient constant partout — donne une direction vers la cible même quand la
+    gaussienne ci-dessus a saturé à ~0 loin de la cible.
+    """
+    cur, target = _phase_pose_error(
+        env, asset_cfg, command_name, target_pose or {},
+        descent_end, hold_end, rise_end, source_pose,
+    )
+    return -(cur - target).abs().mean(dim=-1)
+
+
 def phase_pose_match(
     env: ManagerBasedRlEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
