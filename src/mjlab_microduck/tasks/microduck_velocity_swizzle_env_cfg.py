@@ -17,7 +17,7 @@ roller recipe NATURALLY converges to a swizzle, so we reuse the stride env whole
 import dataclasses
 
 from mjlab.envs import ManagerBasedRlEnvCfg
-from mjlab.managers import RewardTermCfg
+from mjlab.managers import CurriculumTermCfg, RewardTermCfg
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 
 from mjlab_microduck.tasks import mdp as microduck_mdp
@@ -50,6 +50,45 @@ def make_microduck_velocity_swizzle_env_cfg(play: bool = False) -> ManagerBasedR
         func=microduck_mdp.grounded_reward,
         weight=1.0,
         params={"sensor_name": "feet_ground_contact", "command_name": "twist"},
+    )
+
+    # --- Heading curriculum: go STRAIGHT first, then FOLLOW a commanded direction ---
+    # The stride env disabled heading (ang_vel_z=(0,0), heading_hold, no heading_tracking).
+    # Re-enable the heading command so cmd[2] carries the heading error to a sampled
+    # target, and add heading_tracking (starts at 0). A curriculum then swaps the two:
+    #   phase 1 (straight): heading_hold dominant, heading_tracking off
+    #   phase 2 (follow):   heading_hold -> 0, heading_tracking -> up
+    cfg.commands["twist"].ranges.ang_vel_z = (-1.0, 1.0)
+
+    cfg.rewards["heading_tracking"] = RewardTermCfg(
+        func=microduck_mdp.heading_tracking_reward,
+        weight=0.0,  # ramped up by the curriculum below (must match its step-0 value)
+        params={"command_name": "twist", "std": 0.5},
+    )
+
+    cfg.curriculum["heading_hold_weight"] = CurriculumTermCfg(
+        func=microduck_mdp.reward_weight,
+        params={
+            "reward_name": "heading_hold",
+            "weight_stages": [
+                {"step": 0,          "weight": 1.0},   # must match heading_hold's initial weight
+                {"step": 1000 * 24,  "weight": 1.0},   # hold straight while the swizzle solidifies
+                {"step": 1750 * 24,  "weight": 0.5},
+                {"step": 2500 * 24,  "weight": 0.0},
+            ],
+        },
+    )
+    cfg.curriculum["heading_tracking_weight"] = CurriculumTermCfg(
+        func=microduck_mdp.reward_weight,
+        params={
+            "reward_name": "heading_tracking",
+            "weight_stages": [
+                {"step": 0,          "weight": 0.0},
+                {"step": 1000 * 24,  "weight": 0.0},   # straight-only until here
+                {"step": 1750 * 24,  "weight": 1.5},
+                {"step": 2500 * 24,  "weight": 3.0},
+            ],
+        },
     )
 
     return cfg
