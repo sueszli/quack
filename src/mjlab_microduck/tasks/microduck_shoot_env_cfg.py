@@ -229,7 +229,11 @@ def make_microduck_shoot_env_cfg(play: bool = False, rough: bool = False) -> Man
 
     cfg.rewards["angular_momentum"].weight = -0.02
 
-    cfg.rewards["soft_landing"].weight = -1e-5
+    # soft_landing (reward de marche hérité de velocity) référence le capteur 2-pieds
+    # "feet_ground_contact" qu'on a supprimé, et n'a aucun sens pour un shoot debout
+    # (le pied d'appui ne se pose jamais) -> on le retire.
+    if "soft_landing" in cfg.rewards:
+        del cfg.rewards["soft_landing"]
 
     # Pied GAUCHE planté (appui). feet_grounded_reward avec un capteur mono-pied
     # -> found ∈ {0,1} -> reward ∈ {0,0.5} ; poids 6.0 => contribution max ~3.0.
