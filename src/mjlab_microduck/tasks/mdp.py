@@ -1286,13 +1286,18 @@ def wheel_speed_reward(
     command_name: str,
     wheel_radius: float = 0.0175,
     vel_scale: float = 0.5,
+    bidirectional: bool = False,
 ) -> torch.Tensor:
-    """Reward forward wheel spin proportional to commanded speed.
+    """Reward wheel spin proportional to commanded push.
 
     All 4 wheels spin positive for forward motion (verified visually).
     tanh saturation at vel_scale m/s equivalent prevents runaway.
-    Provides gradient at low body speeds when velocity tracking reward is near-zero.
-    Only fires for forward commands.
+
+    - ``bidirectional=False`` (default): forward only — reward forward spin for
+      cmd_x > 0, silent otherwise (cmd_x < 0 handled by the braking reward).
+    - ``bidirectional=True``: reward wheel spin in the COMMANDED direction —
+      forward for cmd_x > 0, backward for cmd_x < 0 — with magnitude |cmd_x|.
+      Lets cmd_x < 0 mean "go backward" instead of "brake".
     """
     cmd_x = env.command_manager.get_command(command_name)[:, 0]  # (B,)
 
@@ -1307,6 +1312,10 @@ def wheel_speed_reward(
     forward_omega = (vel[:, lf_ids[0]] + vel[:, lr_ids[0]] + vel[:, rf_ids[0]] + vel[:, rr_ids[0]]) / 4.0
 
     omega_scale = vel_scale / wheel_radius
+    if bidirectional:
+        # spin aligned with the command sign (fwd for +, back for -)
+        aligned = torch.sign(cmd_x) * forward_omega
+        return torch.abs(cmd_x) * torch.tanh(torch.clamp(aligned, min=0.0) / omega_scale)
     return torch.clamp(cmd_x, min=0.0) * torch.tanh(torch.clamp(forward_omega, min=0.0) / omega_scale)
 
 
@@ -3731,7 +3740,8 @@ def grounded_reward(
     """Reward BOTH blades in contact — a classic swizzle stays grounded (no lifting).
 
     Mirror of single_support_reward but rewarding double support (n_contact >= 2),
-    scaled by clamp(cmd_x, 0) so it only shapes the push phase.
+    scaled by |cmd_x| so it shapes the push phase in EITHER direction (forward or
+    backward — the swizzle env drives cmd_x < 0 as "go backward").
     """
     from mjlab.sensor import ContactSensor
     sensor: ContactSensor = env.scene[sensor_name]
@@ -3739,7 +3749,7 @@ def grounded_reward(
     assert contact_time is not None
     n_contact = torch.sum((contact_time > 0.0).float(), dim=1)
     grounded = (n_contact >= 2).float()
-    cmd_x = torch.clamp(env.command_manager.get_command(command_name)[:, 0], min=0.0)
+    cmd_x = torch.abs(env.command_manager.get_command(command_name)[:, 0])
     return grounded * cmd_x
 
 

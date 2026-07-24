@@ -52,6 +52,16 @@ def make_microduck_velocity_swizzle_env_cfg(play: bool = False) -> ManagerBasedR
         params={"sensor_name": "feet_ground_contact", "command_name": "twist"},
     )
 
+    # --- Backward locomotion (option A): cmd_x < 0 means GO BACKWARD (not brake) ---
+    # wheel_speed rewards wheel spin in the COMMANDED direction (fwd for +, back for
+    # -); the braking reward is dropped (negative no longer means "stop"); command
+    # range symmetrised so forward and backward get equal push range. To stop, command
+    # cmd_x ~ 0 (coast). grounded uses |cmd_x| so it holds the blades down both ways.
+    cfg.rewards["wheel_speed"].params["bidirectional"] = True
+    if "braking" in cfg.rewards:
+        del cfg.rewards["braking"]
+    cfg.commands["twist"].ranges.lin_vel_x = (-0.6, 0.6)
+
     # --- Heading curriculum: go STRAIGHT first, then FOLLOW a commanded direction ---
     # The stride env disabled heading (ang_vel_z=(0,0), heading_hold, no heading_tracking).
     # Re-enable the heading command so cmd[2] carries the heading error to a sampled
