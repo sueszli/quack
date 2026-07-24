@@ -2077,6 +2077,9 @@ def _phase_pose_error(
     (`source_pose` si fourni, sinon le DEFAULT/HOME du modèle). blend ∈ [0,1]
     (0 = STAND, 1 = target_pose) via `phase_pose_blend`.
     """
+    if not target_pose:
+        raise ValueError("_phase_pose_error requires a non-empty target_pose dict")
+
     asset: Entity = env.scene[asset_cfg.name]
     cmd = env.command_manager.get_command(command_name)
     phase = (torch.atan2(cmd[:, 1], cmd[:, 0]) / (2 * torch.pi)) % 1.0  # (B,)

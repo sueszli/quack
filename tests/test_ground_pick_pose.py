@@ -95,6 +95,17 @@ def test_phase_pose_track_returns_to_stand():
     assert torch.allclose(r, torch.tensor([1.0]), atol=1e-6), r
 
 
+def test_phase_pose_track_affine_interpolation_nonzero_home():
+    # HOME (source) nonzero, blend 0.5 at phase 0.075:
+    # target = home + 0.5*(down-home) = [0.4,-0.4] + 0.5*([1,-1]-[0.4,-0.4]) = [0.7,-0.7]
+    from mjlab.managers.scene_entity_config import SceneEntityCfg
+    cfg = SceneEntityCfg("robot")
+    home = torch.tensor([[0.4, -0.4]])
+    env = _FakeEnv(NAMES, torch.tensor([[0.7, -0.7]]), home.clone(), phase=0.075)
+    r = phase_pose_track(env, target_pose=DOWN, asset_cfg=cfg)
+    assert torch.allclose(r, torch.tensor([1.0]), atol=1e-6), r
+
+
 def test_ground_pick_cmd_cfg_has_randomize_phase_default_true():
     from mjlab_microduck.tasks.mdp import GroundPickPhaseCommandCfg
     from mjlab.tasks.velocity.mdp import UniformVelocityCommandCfg
