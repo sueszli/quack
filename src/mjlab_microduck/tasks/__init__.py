@@ -48,6 +48,10 @@ from .microduck_ground_pick_env_cfg import (
     make_microduck_ground_pick_env_cfg,
     MicroduckGroundPickRlCfg,
 )
+from .microduck_shoot_env_cfg import (
+    make_microduck_shoot_env_cfg,
+    MicroduckShootRlCfg,
+)
 
 # Standard velocity task
 register_mjlab_task(
@@ -159,3 +163,13 @@ register_mjlab_task(
     runner_cls=MicroduckOnPolicyRunner,
 )
 print("✓ GroundPick task registered: Mjlab-GroundPick-Rough-MicroDuck")
+
+# Shoot task — standing kick with the right leg while the left leg stays planted
+register_mjlab_task(
+    task_id="Mjlab-Shoot-Flat-MicroDuck",
+    env_cfg=make_microduck_shoot_env_cfg(),
+    play_env_cfg=make_microduck_shoot_env_cfg(play=True),
+    rl_cfg=MicroduckShootRlCfg,
+    runner_cls=MicroduckOnPolicyRunner,
+)
+print("✓ Shoot task registered: Mjlab-Shoot-Flat-MicroDuck")
