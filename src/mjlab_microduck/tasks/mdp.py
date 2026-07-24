@@ -2061,6 +2061,43 @@ def phase_pose_blend(
     return b
 
 
+def kick_pose_target(
+    phase: torch.Tensor,
+    stand: torch.Tensor,
+    back: torch.Tensor,
+    forward: torch.Tensor,
+    windup_end: float,
+    kick_end: float,
+    return_end: float,
+) -> torch.Tensor:
+    """Cible articulaire interpolée d'un geste de shoot à 4 keyframes.
+
+    phase (B,) ∈ [0,1). stand/back/forward (k,) ou (1,k). Retour (B,k).
+
+    [0, windup_end)        STAND   -> BACK     (armement)
+    [windup_end, kick_end) BACK    -> FORWARD  (frappe sèche)
+    [kick_end, return_end) FORWARD -> STAND    (retour)
+    [return_end, 1.0)      STAND             (repos)
+    """
+    p = phase.unsqueeze(-1)  # (B,1)
+
+    def interp(a, b, s):
+        return a + s * (b - a)
+
+    s1 = (p / windup_end).clamp(0.0, 1.0)
+    s2 = ((p - windup_end) / (kick_end - windup_end)).clamp(0.0, 1.0)
+    s3 = ((p - kick_end) / (return_end - kick_end)).clamp(0.0, 1.0)
+
+    seg1 = interp(stand, back, s1)
+    seg2 = interp(back, forward, s2)
+    seg3 = interp(forward, stand, s3)  # à s3=1 (phase>=return_end) => STAND
+
+    out = seg1
+    out = torch.where(p >= windup_end, seg2, out)
+    out = torch.where(p >= kick_end, seg3, out)
+    return out
+
+
 def _phase_pose_error(
     env: ManagerBasedRlEnv,
     asset_cfg: SceneEntityCfg,
