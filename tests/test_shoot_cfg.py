@@ -46,9 +46,16 @@ def test_shoot_cfg_builds_with_phase_command():
 
 def test_shoot_cfg_has_kick_rewards_and_no_walking():
     cfg = make_microduck_shoot_env_cfg()
-    assert "kick_pose_track" in cfg.rewards
-    assert "kick_pose_l1" in cfg.rewards
-    assert "support_foot_grounded" in cfg.rewards
+    for present in ("kick_pose_track", "kick_pose_l1", "support_leg_pose",
+                    "com_over_support", "support_foot_grounded"):
+        assert present in cfg.rewards, present
     for gone in ("track_linear_velocity", "track_angular_velocity",
                  "mouth_ground_proximity", "ground_pick_return_pose_legs"):
         assert gone not in cfg.rewards
+
+
+def test_shoot_com_reward_targets_left_support_foot():
+    cfg = make_microduck_shoot_env_cfg()
+    com = cfg.rewards["com_over_support"]
+    assert com.func is microduck_mdp.com_over_support_foot
+    assert com.params["asset_cfg"].site_names == ("left_foot",)

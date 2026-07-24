@@ -3,6 +3,8 @@ import torch
 from mjlab_microduck.tasks.mdp import (
     GroundPickPhaseCommand,
     GroundPickPhaseCommandCfg,
+    com_over_support_foot,
+    kick_engagement,
     kick_pose_target,
     kick_pose_track,
     kick_pose_track_l1,
@@ -182,3 +184,75 @@ def test_kick_track_l1_zero_when_perfect():
     env = _FakeEnv(torch.tensor([[0.0, 0.0]]), torch.tensor([0.0]))
     r = kick_pose_track_l1(env, stand_pose=STAND_D, back_pose=BACK_D, forward_pose=FWD_D)
     assert torch.allclose(r, torch.tensor([0.0]), atol=1e-6)
+
+
+def test_kick_track_joint_names_subset_only_evaluates_subset():
+    # phase=0 -> cible STAND={a:0,b:0}. joint_pos a=0 (juste), b=5 (faux).
+    # Full track -> moyenne(1, ~0) ~ 0.5 ; subset ["a"] -> seul a évalué -> 1.0.
+    env = _FakeEnv(torch.tensor([[0.0, 5.0]]), torch.tensor([0.0]))
+    full = kick_pose_track(env, stand_pose=STAND_D, back_pose=BACK_D, forward_pose=FWD_D)
+    sub = kick_pose_track(env, stand_pose=STAND_D, back_pose=BACK_D, forward_pose=FWD_D,
+                          joint_names=["a"])
+    assert torch.allclose(sub, torch.tensor([1.0]), atol=1e-6)
+    assert (full < 0.6).all() and (full > 0.4).all()
+
+
+def test_kick_engagement_keypoints():
+    W, R = 0.35, 0.75
+    phase = torch.tensor([0.0, W / 2, W, 0.5, R, 0.9])
+    g = kick_engagement(phase, W, R)
+    expected = torch.tensor([0.0, 0.5, 1.0, 1.0, 0.0, 0.0])
+    assert torch.allclose(g, expected, atol=1e-6), g
+
+
+def test_kick_engagement_range():
+    phase = torch.linspace(0.0, 1.0, 101)
+    g = kick_engagement(phase, 0.35, 0.75)
+    assert g.min() >= 0.0 and g.max() <= 1.0
+
+
+# ── com_over_support_foot (stub env: CoM + site) ────────────────────────────
+class _ComAsset:
+    def __init__(self, com_xy, foot_xy):
+        self.data = type("D", (), {})()
+        self.data.root_com_pos_w = torch.tensor([[com_xy[0], com_xy[1], 0.1]])
+        self.data.site_pos_w = torch.tensor([[[foot_xy[0], foot_xy[1], 0.0]]])
+
+
+class _AssetCfgStub:
+    name = "robot"
+    site_ids = [0]
+
+
+class _ComEnv:
+    def __init__(self, com_xy, foot_xy, phase):
+        asset = _ComAsset(com_xy, foot_xy)
+        self.scene = _FakeScene(asset)
+        p = torch.tensor([phase])
+        cmd = torch.stack(
+            [torch.cos(2 * torch.pi * p), torch.sin(2 * torch.pi * p),
+             torch.zeros_like(p)], dim=-1)
+        self.command_manager = _FakeCmdMgr(cmd)
+        self.device = "cpu"
+        self.num_envs = 1
+
+
+def test_com_reward_gated_off_at_rest():
+    # phase 0.9 = repos STAND -> gate 0 -> reward 0 même CoM pile sur le pied.
+    env = _ComEnv((0.0, 0.0), (0.0, 0.0), phase=0.9)
+    r = com_over_support_foot(env, _AssetCfgStub(), std=0.04)
+    assert torch.allclose(r, torch.tensor([0.0]), atol=1e-6)
+
+
+def test_com_reward_peaks_over_foot_during_kick():
+    # phase 0.5 = frappe (gate 1) ; CoM exactement sur le pied -> reward ~1.
+    env = _ComEnv((0.3, -0.1), (0.3, -0.1), phase=0.5)
+    r = com_over_support_foot(env, _AssetCfgStub(), std=0.04)
+    assert torch.allclose(r, torch.tensor([1.0]), atol=1e-6)
+
+
+def test_com_reward_low_when_far_from_foot_during_kick():
+    # phase 0.5 (gate 1) ; CoM à 10 cm du pied, std 4 cm -> reward ~0.
+    env = _ComEnv((0.4, -0.1), (0.3, -0.1), phase=0.5)
+    r = com_over_support_foot(env, _AssetCfgStub(), std=0.04)
+    assert (r < 0.01).all()

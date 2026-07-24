@@ -202,6 +202,19 @@ def make_microduck_shoot_env_cfg(play: bool = False, rough: bool = False) -> Man
             del cfg.rewards[name]
 
     # ── Objectif : suivi de la pose interpolée du shoot ───────────────────────
+    # On sépare le suivi en deux groupes (les poses restent complètes 14 joints) :
+    #  - GESTE : jambe droite (frappe) + cou/tête → tracé SERRÉ (le mouvement visible).
+    #  - APPUI : jambe gauche → tracé LÂCHE (grand std, petit poids) pour laisser la
+    #    policy adducter/décaler le bassin et transférer le poids (cf. com_over_support).
+    # Sans ce relâchement, le suivi serré de la jambe gauche fige le bassin centré et
+    # empêche tout équilibre unipède.
+    GESTURE_JOINTS = [
+        "right_hip_yaw", "right_hip_roll", "right_hip_pitch", "right_knee", "right_ankle",
+        "neck_pitch", "head_pitch", "head_yaw", "head_roll",
+    ]
+    SUPPORT_JOINTS = [
+        "left_hip_yaw", "left_hip_roll", "left_hip_pitch", "left_knee", "left_ankle",
+    ]
     _pose_params = {
         "command_name": "twist",
         "stand_pose": STAND_POSE,
@@ -211,15 +224,34 @@ def make_microduck_shoot_env_cfg(play: bool = False, rough: bool = False) -> Man
         "kick_end": KICK_END,
         "return_end": RETURN_END,
     }
+    # Geste (droite + cou) — serré.
     cfg.rewards["kick_pose_track"] = RewardTermCfg(
         func=microduck_mdp.kick_pose_track,
         weight=6.0,
-        params={**_pose_params, "std": 0.4},
+        params={**_pose_params, "std": 0.35, "joint_names": GESTURE_JOINTS},
     )
     cfg.rewards["kick_pose_l1"] = RewardTermCfg(
         func=microduck_mdp.kick_pose_track_l1,
         weight=2.0,
-        params=dict(_pose_params),
+        params={**_pose_params, "joint_names": GESTURE_JOINTS},
+    )
+    # Jambe d'appui (gauche) — prior lâche (grand std, petit poids).
+    cfg.rewards["support_leg_pose"] = RewardTermCfg(
+        func=microduck_mdp.kick_pose_track,
+        weight=1.0,
+        params={**_pose_params, "std": 0.9, "joint_names": SUPPORT_JOINTS},
+    )
+    # Transfert du poids : CoM au-dessus du pied gauche, gaté sur la frappe.
+    cfg.rewards["com_over_support"] = RewardTermCfg(
+        func=microduck_mdp.com_over_support_foot,
+        weight=3.0,
+        params={
+            "asset_cfg": SceneEntityCfg("robot", site_names=("left_foot",)),
+            "command_name": "twist",
+            "std": 0.04,
+            "windup_end": WINDUP_END,
+            "return_end": RETURN_END,
+        },
     )
 
     # ── Équilibre / appui (jambe unique) ──────────────────────────────────────
