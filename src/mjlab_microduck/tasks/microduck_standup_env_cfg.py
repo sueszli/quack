@@ -276,22 +276,47 @@ def make_microduck_standup_env_cfg(
     # max_height set just above STAND_Z (0.12 → 0.125) so the reward stays
     # active through the final cm of rise. Earlier 0.11 caused the policy to
     # park at ~0.108 (gate-off altitude) and never finish the climb.
+    # max_vz=0.15: cap the rewarded rise speed (2026-07 smoothness pass — the
+    # real robot's rise was violent: overshoot → tip → retry loop). Uncapped,
+    # reward ∝ vz pays MORE for an explosive launch. At 0.15 m/s the full
+    # sit→stand rise (~45 mm) takes ~0.3 s — brisk but controlled; any faster
+    # earns nothing extra. Bootstrap intact: all upward motion still pays.
     cfg.rewards["com_upward_velocity"] = RewardTermCfg(
         func=microduck_mdp.com_upward_velocity,
         weight=0.75,
         params={
             "asset_cfg":  SceneEntityCfg("robot", body_names=("trunk_base",)),
             "max_height": 0.125,
+            "max_vz":     0.15,
         },
     )
 
     # Gentle rise — penalty on |a_z|. Compatible with com_upward_velocity:
     # constant positive vz collects upward-velocity reward AND has a_z = 0,
     # so the two pressures together select for smooth constant-velocity rise.
+    # Doubled -0.005 → -0.01 (2026-07 smoothness pass), pairs with the vz cap:
+    # cap kills the fast-rise incentive, |a_z| picks the smoothest of the
+    # remaining rise profiles.
     cfg.rewards["gentle_rise"] = RewardTermCfg(
         func=microduck_mdp.trunk_vertical_accel_penalty,
-        weight=-0.005,
+        weight=-0.01,
         params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))},
+    )
+
+    # Arrival damper — trunk ω_xy² gated on height (zero below 0.09 m, full
+    # above 0.11 m). The real-robot failure loop (rise → overshoot vertical →
+    # tip → retry) is excess angular momentum AT ARRIVAL; the flip/roll below
+    # the gate stays completely free, unlike a global body_ang_vel increase
+    # (the known recovery-killer). At -0.1, a 3 rad/s arrival wobble costs
+    # 0.9/step — comparable to the standing rewards it would otherwise farm.
+    cfg.rewards["arrival_damping"] = RewardTermCfg(
+        func=microduck_mdp.body_ang_vel_at_height,
+        weight=-0.1,
+        params={
+            "height_low":  0.09,
+            "height_high": 0.11,
+            "asset_cfg":   SceneEntityCfg("robot", body_names=("trunk_base",)),
+        },
     )
 
     # Upright — two-layer like the height reward.
@@ -360,7 +385,19 @@ def make_microduck_standup_env_cfg(
     # WATCH face-down/face-up recovery as ground_state_mix ramps them in
     # (iters 600–2500). If recovery freezes: halve body_ang_vel to -0.025
     # first, then soften the action_rate curriculum end to -0.6.
+    #
+    # 2026-07 smoothness pass (rise still violent + overshoot-retry loop on the
+    # real robot after the ÷4 rescale): added PHASE-TARGETED damping instead of
+    # global increases — com_upward_velocity vz cap, gentle_rise ×2,
+    # arrival_damping (all in the rewards block above), plus joint_torque_rate_l2
+    # back here. Torque-RATE penalizes jitter/reversals, not torque magnitude or
+    # trunk rotation, so it damps shake without blocking the flip (this exact
+    # term survived the old recovery-killer purge). -1e-3 at the ÷4 scale ≈
+    # 2× its old effective strength.
     cfg.rewards["action_rate_l2"] = RewardTermCfg(func=mdp.action_rate_l2, weight=-0.1)
+    cfg.rewards["joint_torque_rate_l2"] = RewardTermCfg(
+        func=microduck_mdp.joint_torque_rate_l2, weight=-1e-3
+    )
 
     cfg.rewards["body_ang_vel"].params["asset_cfg"].body_names = ("trunk_base",)
     cfg.rewards["body_ang_vel"].weight = -0.05      # motion-blocker: kept LIGHT (velocity2 value)

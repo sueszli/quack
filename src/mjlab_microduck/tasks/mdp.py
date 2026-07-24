@@ -727,6 +727,37 @@ def upright_gaussian_at_height(
     return upright_g * smooth
 
 
+def body_ang_vel_at_height(
+    env: ManagerBasedRlEnv,
+    height_low: float,
+    height_high: float,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """Trunk ``sum(ω_xy²)`` penalty weighted by smoothstep on trunk z.
+
+    Height-gated arrival damper: zero below ``height_low`` (ground recovery —
+    flips/rolls need large trunk rotation and must stay free), full above
+    ``height_high`` (near standing height, where remaining rotation is
+    overshoot/wobble, not useful motion). Trains a braking phase at the top
+    of the rise without touching the dynamics below — unlike a global
+    body_ang_vel increase, which is a known recovery-killer (standup env
+    history: -0.15 global froze back-recovery).
+
+    Same formula as mjlab's body_angular_velocity_penalty (world-frame ω_xy
+    of the body, z-rotation free) but returns the gated POSITIVE cost; use a
+    negative weight.
+    """
+    asset = env.scene[asset_cfg.name]
+    ang_vel = asset.data.body_link_ang_vel_w[:, asset_cfg.body_ids, :].squeeze(1)
+    cost = torch.sum(torch.square(ang_vel[:, :2]), dim=1)
+    z = torch.nan_to_num(
+        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
+    )
+    t = torch.clamp((z - height_low) / max(height_high - height_low, 1e-6), 0.0, 1.0)
+    smooth = t * t * (3.0 - 2.0 * t)
+    return cost * smooth
+
+
 def standing_composite_score(
     env: ManagerBasedRlEnv,
     target_height: float,
@@ -823,12 +854,20 @@ def com_upward_velocity(
     max_height: float = 0.08,
     gate_z_below: float | None = None,
     gate_tilt_above_deg: float = 40.0,
+    max_vz: float | None = None,
 ) -> torch.Tensor:
     """Reward upward CoM velocity to incentivize dynamic standup motion.
 
     Gated by height: only active while the CoM is below `max_height` (the
     standing target). Once standing, the reward is zero so the robot has no
     incentive to keep squatting to farm upward-velocity reward.
+
+    ``max_vz`` (optional): cap the rewarded velocity. Uncapped, the reward is
+    proportional to vz, which pays MORE per step for an explosive launch —
+    a violent-rise incentive. With a cap, any rise ≥ max_vz earns the same,
+    so the gentlest rise that reaches the cap is optimal (the |a_z| penalty
+    then picks the smooth one). The bootstrap property is preserved: any
+    upward motion still pays immediately.
     """
     asset: Entity = env.scene[asset_cfg.name]
     # nan_to_num: MuJoCo can produce NaN on contact instability; treat as z=0
@@ -837,7 +876,7 @@ def com_upward_velocity(
     )
     vz = torch.nan_to_num(asset.data.root_link_lin_vel_w[:, 2], nan=0.0)
     below_target = (com_z < max_height).float()
-    reward = torch.clamp(vz, min=0.0) * below_target
+    reward = torch.clamp(vz, min=0.0, max=max_vz) * below_target
     if gate_z_below is not None:
         # Recovery-gated (velstand): without the gate this pays for dip-and-rise
         # during gait whenever the trunk crosses max_height → bounce incentive.
