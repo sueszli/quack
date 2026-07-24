@@ -26,3 +26,13 @@ def test_ground_pick_cfg_command_is_phase_no_randomize():
     assert cmd.class_type is GroundPickPhaseCommand
     assert cmd.period == 4.0
     assert cmd.randomize_phase is False
+
+
+def test_ground_pick_rough_variant_builds():
+    cfg = make_microduck_ground_pick_env_cfg(rough=True)
+    assert "phase_pose_track" in cfg.rewards
+
+
+def test_ground_pick_play_variant_builds():
+    cfg = make_microduck_ground_pick_env_cfg(play=True)
+    assert cfg.commands["twist"].randomize_phase is False
