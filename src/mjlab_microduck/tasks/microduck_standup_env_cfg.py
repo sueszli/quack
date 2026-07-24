@@ -276,46 +276,55 @@ def make_microduck_standup_env_cfg(
     # max_height set just above STAND_Z (0.12 → 0.125) so the reward stays
     # active through the final cm of rise. Earlier 0.11 caused the policy to
     # park at ~0.108 (gate-off altitude) and never finish the climb.
-    # max_vz=0.15: cap the rewarded rise speed (2026-07 smoothness pass — the
-    # real robot's rise was violent: overshoot → tip → retry loop). Uncapped,
-    # reward ∝ vz pays MORE for an explosive launch. At 0.15 m/s the full
-    # sit→stand rise (~45 mm) takes ~0.3 s — brisk but controlled; any faster
-    # earns nothing extra. Bootstrap intact: all upward motion still pays.
+    # max_vz: cap the rewarded rise speed (anti-explosive-launch — uncapped,
+    # reward ∝ vz pays MORE per step for a violent rise). LESSON from the
+    # 2026-07-24 broken run: 0.15 was tuned for the ~45 mm sit→stand rise and
+    # ignored that PRONE recovery is ballistic — the push-off needs high vz,
+    # and this uncapped reward was precisely what made flip attempts
+    # immediately profitable. At 0.15 face-up envs froze ("do nothing" beat a
+    # taxed attempt). 0.30 still caps the sit-rise well below launch speeds
+    # while leaving the prone push-off fully paid.
     cfg.rewards["com_upward_velocity"] = RewardTermCfg(
         func=microduck_mdp.com_upward_velocity,
         weight=0.75,
         params={
             "asset_cfg":  SceneEntityCfg("robot", body_names=("trunk_base",)),
             "max_height": 0.125,
-            "max_vz":     0.15,
+            "max_vz":     0.30,
         },
     )
 
     # Gentle rise — penalty on |a_z|. Compatible with com_upward_velocity:
     # constant positive vz collects upward-velocity reward AND has a_z = 0,
     # so the two pressures together select for smooth constant-velocity rise.
-    # Doubled -0.005 → -0.01 (2026-07 smoothness pass), pairs with the vz cap:
-    # cap kills the fast-rise incentive, |a_z| picks the smoothest of the
-    # remaining rise profiles.
+    # NOTE this term is GLOBAL (not phase-gated): prone flips pay it in full
+    # (impacts + push-off are |a_z| spikes). The 2026-07-24 attempt to double
+    # it to -0.01 contributed to the face-up freeze; -0.005 is the ceiling
+    # unless it gets a height/tilt gate like arrival_damping.
     cfg.rewards["gentle_rise"] = RewardTermCfg(
         func=microduck_mdp.trunk_vertical_accel_penalty,
-        weight=-0.01,
+        weight=-0.005,
         params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))},
     )
 
-    # Arrival damper — trunk ω_xy² gated on height (zero below 0.09 m, full
-    # above 0.11 m). The real-robot failure loop (rise → overshoot vertical →
-    # tip → retry) is excess angular momentum AT ARRIVAL; the flip/roll below
-    # the gate stays completely free, unlike a global body_ang_vel increase
-    # (the known recovery-killer). At -0.1, a 3 rad/s arrival wobble costs
-    # 0.9/step — comparable to the standing rewards it would otherwise farm.
+    # Arrival damper — trunk ω_xy², gated on height AND tilt. The real-robot
+    # failure loop (rise → overshoot vertical → tip → retry) is excess angular
+    # momentum AT ARRIVAL. First version (2026-07-24, z-gate only [0.09,0.11],
+    # weight -0.1) built a reward wall right before the finish: the final
+    # straighten (tilt 60°→0) is itself a big trunk rotation inside the z
+    # gate, so the policy parked bent-over below the gate and front-recovery
+    # never completed. The tilt gate (zero cost above 45° tilt, full below
+    # 20°) frees the approach TO vertical and only damps wobble AROUND
+    # vertical; weight halved for the same reason.
     cfg.rewards["arrival_damping"] = RewardTermCfg(
         func=microduck_mdp.body_ang_vel_at_height,
-        weight=-0.1,
+        weight=-0.05,
         params={
-            "height_low":  0.09,
-            "height_high": 0.11,
-            "asset_cfg":   SceneEntityCfg("robot", body_names=("trunk_base",)),
+            "height_low":    0.09,
+            "height_high":   0.11,
+            "tilt_full_deg": 20.0,
+            "tilt_zero_deg": 45.0,
+            "asset_cfg":     SceneEntityCfg("robot", body_names=("trunk_base",)),
         },
     )
 

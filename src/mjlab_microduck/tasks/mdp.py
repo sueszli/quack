@@ -732,20 +732,26 @@ def body_ang_vel_at_height(
     height_low: float,
     height_high: float,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    tilt_full_deg: float | None = None,
+    tilt_zero_deg: float = 45.0,
 ) -> torch.Tensor:
-    """Trunk ``sum(ω_xy²)`` penalty weighted by smoothstep on trunk z.
+    """Trunk ``sum(ω_xy²)`` penalty gated by trunk z (and optionally tilt).
 
     Height-gated arrival damper: zero below ``height_low`` (ground recovery —
     flips/rolls need large trunk rotation and must stay free), full above
-    ``height_high`` (near standing height, where remaining rotation is
-    overshoot/wobble, not useful motion). Trains a braking phase at the top
-    of the rise without touching the dynamics below — unlike a global
-    body_ang_vel increase, which is a known recovery-killer (standup env
-    history: -0.15 global froze back-recovery).
+    ``height_high``. Same formula as mjlab's body_angular_velocity_penalty
+    (world-frame ω_xy, z-rotation free) but returns the gated POSITIVE cost;
+    use a negative weight.
 
-    Same formula as mjlab's body_angular_velocity_penalty (world-frame ω_xy
-    of the body, z-rotation free) but returns the gated POSITIVE cost; use a
-    negative weight.
+    ``tilt_full_deg`` (optional but STRONGLY recommended): additionally gate
+    by tilt — full cost only when tilt ≤ tilt_full_deg, zero when
+    ≥ tilt_zero_deg, smoothstep between. LESSON (2026-07 run that broke
+    front-recovery): with a height gate alone, the final straighten of a
+    bent-over rise (tilt 60°→0 happening INSIDE the z gate) is itself a
+    large trunk rotation — taxing it builds a reward wall right before the
+    finish, and the policy parks bent-over below the gate instead. With the
+    tilt gate, the approach TO vertical is free; only residual wobble
+    AROUND vertical (the overshoot→tip→retry oscillation) is damped.
     """
     asset = env.scene[asset_cfg.name]
     ang_vel = asset.data.body_link_ang_vel_w[:, asset_cfg.body_ids, :].squeeze(1)
@@ -754,8 +760,18 @@ def body_ang_vel_at_height(
         asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
     )
     t = torch.clamp((z - height_low) / max(height_high - height_low, 1e-6), 0.0, 1.0)
-    smooth = t * t * (3.0 - 2.0 * t)
-    return cost * smooth
+    gate = t * t * (3.0 - 2.0 * t)
+    if tilt_full_deg is not None:
+        quat = asset.data.root_link_quat_w
+        cos_tilt = 1.0 - 2.0 * (quat[:, 1] ** 2 + quat[:, 2] ** 2)
+        tilt_deg = torch.rad2deg(torch.acos(cos_tilt.clamp(-1.0, 1.0)))
+        s = torch.clamp(
+            (tilt_zero_deg - tilt_deg) / max(tilt_zero_deg - tilt_full_deg, 1e-6),
+            0.0,
+            1.0,
+        )
+        gate = gate * (s * s * (3.0 - 2.0 * s))
+    return cost * gate
 
 
 def standing_composite_score(
