@@ -2098,6 +2098,85 @@ def kick_pose_target(
     return out
 
 
+def _kick_pose_error(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg,
+    command_name: str,
+    stand_pose: dict,
+    back_pose: dict,
+    forward_pose: dict,
+    windup_end: float,
+    kick_end: float,
+    return_end: float,
+):
+    """(cur, target) pour le geste de shoot, joints résolus PAR NOM.
+
+    Les 3 poses partagent les mêmes clés (14 joints). L'ordre des noms est
+    donné par `stand_pose`.
+    """
+    if not stand_pose:
+        raise ValueError("_kick_pose_error requires a non-empty stand_pose dict")
+    asset: Entity = env.scene[asset_cfg.name]
+    names = list(stand_pose.keys())
+    ids = [int(asset.find_joints([n])[0][0]) for n in names]
+
+    def vec(d):
+        return torch.tensor([d[n] for n in names], device=env.device,
+                            dtype=asset.data.joint_pos.dtype)
+
+    stand_v, back_v, fwd_v = vec(stand_pose), vec(back_pose), vec(forward_pose)
+
+    cmd = env.command_manager.get_command(command_name)
+    phase = (torch.atan2(cmd[:, 1], cmd[:, 0]) / (2 * torch.pi)) % 1.0  # (B,)
+    target = kick_pose_target(phase, stand_v, back_v, fwd_v,
+                              windup_end, kick_end, return_end)          # (B,k)
+    cur = asset.data.joint_pos[:, ids]                                   # (B,k)
+    return cur, target
+
+
+def kick_pose_track(
+    env: ManagerBasedRlEnv,
+    command_name: str = "twist",
+    stand_pose: Optional[dict] = None,
+    back_pose: Optional[dict] = None,
+    forward_pose: Optional[dict] = None,
+    std: float = 0.4,
+    windup_end: float = 0.35,
+    kick_end: float = 0.45,
+    return_end: float = 0.75,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """Gaussienne sur la pose articulaire vs cible interpolée du shoot.
+
+    Reward directif et symétrique : chaque phase impose la config articulaire
+    exacte. Résolution PAR NOM.
+    """
+    cur, target = _kick_pose_error(
+        env, asset_cfg, command_name, stand_pose or {}, back_pose or {},
+        forward_pose or {}, windup_end, kick_end, return_end,
+    )
+    return torch.exp(-((cur - target) / std) ** 2).mean(dim=-1)
+
+
+def kick_pose_track_l1(
+    env: ManagerBasedRlEnv,
+    command_name: str = "twist",
+    stand_pose: Optional[dict] = None,
+    back_pose: Optional[dict] = None,
+    forward_pose: Optional[dict] = None,
+    windup_end: float = 0.35,
+    kick_end: float = 0.45,
+    return_end: float = 0.75,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """Bootstrap L1 vers la cible interpolée (gradient constant, pénalité<=0)."""
+    cur, target = _kick_pose_error(
+        env, asset_cfg, command_name, stand_pose or {}, back_pose or {},
+        forward_pose or {}, windup_end, kick_end, return_end,
+    )
+    return -(cur - target).abs().mean(dim=-1)
+
+
 def _phase_pose_error(
     env: ManagerBasedRlEnv,
     asset_cfg: SceneEntityCfg,
