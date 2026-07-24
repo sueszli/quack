@@ -3512,6 +3512,14 @@ class RelativeHeadingVelocityCommand(VelocityCommandCommandOnly):
         # Clip limit for cmd[2]: use ang_vel_z[1] from cfg (the positive bound)
         ang_rng = cfg.ranges.ang_vel_z
         self._heading_max = float(ang_rng[1]) if ang_rng else 1.0
+        # Optional low-pass on cmd_x (lin_vel_x): when set, cmd_x ramps toward its
+        # resampled target instead of jumping — smooths a forward↔backward reversal
+        # (passes gently through 0) so the policy doesn't slam and fall. Opt-in via
+        # cfg.cmd_x_lowpass_alpha (None = off), so only tasks that set it are affected.
+        self._lp_alpha = getattr(cfg, "cmd_x_lowpass_alpha", None)
+        if self._lp_alpha is not None:
+            self._cmd_x_target = torch.zeros(self.num_envs, device=self.device)
+            self._cmd_x_smoothed = torch.zeros(self.num_envs, device=self.device)
 
     def _resample_command(self, env_ids: torch.Tensor) -> None:
         super()._resample_command(env_ids)
@@ -3522,6 +3530,9 @@ class RelativeHeadingVelocityCommand(VelocityCommandCommandOnly):
         )
         # Zero ang_vel slot; _update_command will fill it each step
         self.vel_command_b[env_ids, 2] = 0.0
+        if self._lp_alpha is not None:
+            # Capture the freshly-sampled cmd_x as the target to ramp toward.
+            self._cmd_x_target[env_ids] = self.vel_command_b[env_ids, 0]
 
     def _update_command(self) -> None:
         # Do NOT call super()._update_command() — it would run the heading
@@ -3534,6 +3545,13 @@ class RelativeHeadingVelocityCommand(VelocityCommandCommandOnly):
         delta = self._target_heading_w - current_yaw
         heading_error = torch.atan2(torch.sin(delta), torch.cos(delta))
         self.vel_command_b[:, 2] = heading_error.clamp(-self._heading_max, self._heading_max)
+        if self._lp_alpha is not None:
+            # First-order low-pass toward the target, kept in a separate buffer so a
+            # resample (which jumps vel_command_b[:,0] to the target) doesn't skip the
+            # ramp: cmd_x_smoothed ← α·cmd_x_smoothed + (1−α)·target, then written out.
+            a = self._lp_alpha
+            self._cmd_x_smoothed = a * self._cmd_x_smoothed + (1.0 - a) * self._cmd_x_target
+            self.vel_command_b[:, 0] = self._cmd_x_smoothed
 
     def _update_metrics(self) -> None:
         pass  # No velocity tracking metrics for heading command
@@ -3751,6 +3769,29 @@ def grounded_reward(
     grounded = (n_contact >= 2).float()
     cmd_x = torch.abs(env.command_manager.get_command(command_name)[:, 0])
     return grounded * cmd_x
+
+
+def hip_roll_rest_penalty(
+    env: ManagerBasedRlEnv,
+    command_name: str,
+    command_threshold: float = 0.1,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot", joint_names=(r".*hip_roll.*",)),
+) -> torch.Tensor:
+    """Close the legs when IDLE: penalise hip_roll deviation from neutral, but ONLY
+    when the command is ~0 (|cmd_x| < command_threshold). During a push (|cmd_x|
+    large) it is silent, so the swizzle is free to spread its legs; at rest/coast it
+    pulls them back together. Returns Σ|hip_roll - default| gated by at-rest; use a
+    negative weight.
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    ids = asset_cfg.joint_ids
+    err = torch.sum(
+        torch.abs(asset.data.joint_pos[:, ids] - asset.data.default_joint_pos[:, ids]),
+        dim=-1,
+    )
+    cmd_x = env.command_manager.get_command(command_name)[:, 0]
+    at_rest = (torch.abs(cmd_x) < command_threshold).float()
+    return err * at_rest
 
 
 def gait_symmetry_penalty(
