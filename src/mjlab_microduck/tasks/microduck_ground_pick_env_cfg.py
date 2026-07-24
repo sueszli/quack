@@ -90,15 +90,16 @@ from mjlab_microduck.tasks.symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
 
 # ── Poses cibles du geste (rad, par NOM) ──────────────────────────────────────
 # STAND = HOME (default_joint_pos du modèle) — ne pas redéfinir ici : source du
-# blend. DOWN = pli avant profond (bouche vers le sol), valeurs initiales tirées
-# du keyframe FOLD de scene_walk.xml. ⚠️ REMPLAÇABLE par une lecture read_pose.py
-# du vrai robot posé bouche-au-sol quand disponible.
+# blend. DOWN = pose bouche-au-sol **lue sur le vrai robot** (read_pose.py, couple
+# coupé, bouche posée contre le sol) — convention rad = celle du sim.
+# NB: neck_pitch=-2.44 dépasse la borne sim d'origine (-1.571) → la plage du joint
+# neck_pitch a été élargie à -2.6 dans robot_allcollisions.xml pour l'atteindre.
 DOWN_POSE = {
-    "left_hip_yaw": 0.0, "left_hip_roll": 0.0, "left_hip_pitch": 1.57,
-    "left_knee": 1.57, "left_ankle": 0.0,
-    "neck_pitch": 1.0, "head_pitch": 1.0, "head_yaw": 0.0, "head_roll": 0.0,
-    "right_hip_yaw": 0.0, "right_hip_roll": 0.0, "right_hip_pitch": -1.57,
-    "right_knee": -1.57, "right_ankle": 0.0,
+    "left_hip_yaw": -0.0046, "left_hip_roll": 0.0399, "left_hip_pitch": 0.7133,
+    "left_knee": 1.4327, "left_ankle": 0.6903,
+    "neck_pitch": -2.4421, "head_pitch": -0.9112, "head_yaw": 0.023, "head_roll": -0.0399,
+    "right_hip_yaw": -0.0169, "right_hip_roll": 0.1074, "right_hip_pitch": -0.5706,
+    "right_knee": -1.491, "right_ankle": -0.7808,
 }
 
 # Timing du cycle (fractions de phase), période 4 s :
