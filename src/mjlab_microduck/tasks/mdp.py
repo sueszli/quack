@@ -3693,6 +3693,56 @@ def glide_reward(
     return single * forward_gate * stillness * active
 
 
+def leg_symmetry_reward(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    joint_bases: tuple = ("hip_yaw", "hip_roll", "hip_pitch", "knee", "ankle"),
+) -> torch.Tensor:
+    """Reward left/right legs mirroring — the swizzle's defining symmetry.
+
+    The robot uses mirrored L/R sign conventions, so a bilaterally-symmetric config
+    satisfies q_left + q_right ≈ 0 per matched joint pair. Returns
+    ``-mean_pairs |q_left + q_right|`` (L1, constant gradient); use with a POSITIVE
+    weight so asymmetry is penalised and the symmetric swizzle is favoured. L/R index
+    pairs are resolved once by name and cached on env.
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    if not hasattr(env, "_leg_sym_ids"):
+        left, right = [], []
+        for base in joint_bases:
+            li, _ = asset.find_joints([f"left_{base}"])
+            ri, _ = asset.find_joints([f"right_{base}"])
+            left.append(li[0])
+            right.append(ri[0])
+        env._leg_sym_ids = (
+            torch.tensor(left, device=env.device),
+            torch.tensor(right, device=env.device),
+        )
+    lids, rids = env._leg_sym_ids
+    q = asset.data.joint_pos
+    return -torch.abs(q[:, lids] + q[:, rids]).mean(dim=-1)
+
+
+def grounded_reward(
+    env: ManagerBasedRlEnv,
+    sensor_name: str,
+    command_name: str,
+) -> torch.Tensor:
+    """Reward BOTH blades in contact — a classic swizzle stays grounded (no lifting).
+
+    Mirror of single_support_reward but rewarding double support (n_contact >= 2),
+    scaled by clamp(cmd_x, 0) so it only shapes the push phase.
+    """
+    from mjlab.sensor import ContactSensor
+    sensor: ContactSensor = env.scene[sensor_name]
+    contact_time = sensor.data.current_contact_time  # (num_envs, num_feet)
+    assert contact_time is not None
+    n_contact = torch.sum((contact_time > 0.0).float(), dim=1)
+    grounded = (n_contact >= 2).float()
+    cmd_x = torch.clamp(env.command_manager.get_command(command_name)[:, 0], min=0.0)
+    return grounded * cmd_x
+
+
 def gait_symmetry_penalty(
     env: ManagerBasedRlEnv,
     sensor_name: str,

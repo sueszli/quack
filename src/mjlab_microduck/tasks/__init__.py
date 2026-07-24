@@ -52,6 +52,10 @@ from .microduck_velocity_rollers_env_cfg import (
     make_microduck_velocity_rollers_env_cfg,
     MicroduckRollersRlCfg,
 )
+from .microduck_velocity_swizzle_env_cfg import (
+    make_microduck_velocity_swizzle_env_cfg,
+    MicroduckSwizzleRlCfg,
+)
 from .microduck_roller_crouch_env_cfg import (
     make_microduck_roller_crouch_env_cfg,
     MicroduckRollerCrouchRlCfg,
@@ -181,6 +185,16 @@ register_mjlab_task(
     runner_cls=MicroduckOnPolicyRunner,
 )
 print("✓ Rollers task registered: Mjlab-Velocity-Flat-MicroDuck-Rollers")
+
+# Roller SWIZZLE task — clean classic swizzle (symmetric, feet grounded).
+register_mjlab_task(
+    task_id="Mjlab-Velocity-Swizzle-MicroDuck",
+    env_cfg=make_microduck_velocity_swizzle_env_cfg(),
+    play_env_cfg=make_microduck_velocity_swizzle_env_cfg(play=True),
+    rl_cfg=MicroduckSwizzleRlCfg,
+    runner_cls=MicroduckOnPolicyRunner,
+)
+print("✓ Swizzle task registered: Mjlab-Velocity-Swizzle-MicroDuck")
 
 register_mjlab_task(
     task_id="Mjlab-RollerCrouch-Flat-MicroDuck",
