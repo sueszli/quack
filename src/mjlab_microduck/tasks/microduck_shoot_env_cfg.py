@@ -97,8 +97,8 @@ WINDUP_END = 0.35    # STAND -> BACK
 KICK_END = 0.45      # BACK -> FORWARD (segment court = frappe sèche)
 RETURN_END = 0.75    # FORWARD -> STAND, puis repos jusqu'à 1.0
 
-# ── Poses (rad, 14 joints, mouth exclu) — PLACEHOLDERS, à lire sur le vrai robot ──
-# Convention: jambe droite frappe (hanche/genou droit actifs), gauche en appui.
+# ── Poses (rad, 14 joints, mouth exclu) ──────────────────────────────────────
+# Convention: jambe droite frappe, gauche en appui.
 # STAND_POSE est seedée sur la pose HOME de station debout du sim (HOME_FRAME
 # dans microduck_constants.py) afin que φ=0 corresponde exactement à la
 # configuration de reset (invariant de cohérence reset<->cible de phase).
@@ -109,21 +109,41 @@ STAND_POSE = {
     "right_hip_yaw": 0.0, "right_hip_roll": 0.0873, "right_hip_pitch": 0.4579,
     "right_knee": 0.0049, "right_ankle": -0.4530,
 }
-KICK_BACK_POSE = {  # armement: hanche droite en extension arrière + genou fléchi
-    **STAND_POSE,
-    "right_hip_pitch": -0.6,
-    "right_knee": 0.8,
-    "right_ankle": -0.2,
+# KICK_BACK_POSE / KICK_FWD_POSE : poses complètes relevées sur le vrai robot via
+# read_pose.py (couple coupé, robot posé à la main). Tout le corps bouge (jambe
+# gauche d'appui + cou compris), d'où des dicts explicites 14 joints.
+KICK_BACK_POSE = {  # armement (pied droit reculé)
+    "left_hip_yaw": -0.1058,
+    "left_hip_roll": 0.1626,
+    "left_hip_pitch": 0.6964,
+    "left_knee": 0.1381,
+    "left_ankle": 0.2485,
+    "neck_pitch": -0.0138,
+    "head_pitch": 0.0721,
+    "head_yaw": -0.1289,
+    "head_roll": 0.0031,
+    "right_hip_yaw": -0.043,
+    "right_hip_roll": 0.0506,
+    "right_hip_pitch": -0.1657,
+    "right_knee": -0.7148,
+    "right_ankle": -0.5415,
 }
-KICK_FWD_POSE = {  # frappe: hanche droite fléchie avant + genou tendu
-    **STAND_POSE,
-    "right_hip_pitch": 0.7,
-    "right_knee": -0.1,
-    "right_ankle": 0.1,
+KICK_FWD_POSE = {  # frappe (pied droit vers l'avant)
+    "left_hip_yaw": 0.4847,
+    "left_hip_roll": -0.0629,
+    "left_hip_pitch": -0.0476,
+    "left_knee": 0.8483,
+    "left_ankle": 0.3758,
+    "neck_pitch": -0.1948,
+    "head_pitch": 0.0644,
+    "head_yaw": -0.1212,
+    "head_roll": -0.0215,
+    "right_hip_yaw": -0.043,
+    "right_hip_roll": 0.1104,
+    "right_hip_pitch": -0.2838,
+    "right_knee": -0.7747,
+    "right_ankle": -0.6657,
 }
-# NOTE au releveur de poses : remplacer ces valeurs par des lectures read_pose.py
-# (couple coupé, robot posé à la main dans chaque position). Garder les 14 clés
-# identiques dans les 3 dicts.
 
 
 def make_microduck_shoot_env_cfg(play: bool = False, rough: bool = False) -> ManagerBasedRlEnvCfg:
