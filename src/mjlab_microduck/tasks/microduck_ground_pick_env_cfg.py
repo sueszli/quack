@@ -88,6 +88,29 @@ from mjlab_microduck.tasks.microduck_velocity_env_cfg import (
 from mjlab_microduck.tasks.symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
 
 
+# ── Poses cibles du geste (rad, par NOM) ──────────────────────────────────────
+# STAND = HOME (default_joint_pos du modèle) — ne pas redéfinir ici : source du
+# blend. DOWN = pli avant profond (bouche vers le sol), valeurs initiales tirées
+# du keyframe FOLD de scene_walk.xml. ⚠️ REMPLAÇABLE par une lecture read_pose.py
+# du vrai robot posé bouche-au-sol quand disponible.
+DOWN_POSE = {
+    "left_hip_yaw": 0.0, "left_hip_roll": 0.0, "left_hip_pitch": 1.57,
+    "left_knee": 1.57, "left_ankle": 0.0,
+    "neck_pitch": 1.0, "head_pitch": 1.0, "head_yaw": 0.0, "head_roll": 0.0,
+    "right_hip_yaw": 0.0, "right_hip_roll": 0.0, "right_hip_pitch": -1.57,
+    "right_knee": -1.57, "right_ankle": 0.0,
+}
+
+# Timing du cycle (fractions de phase), période 4 s :
+#   descente [0, DESCENT_END) ~0.6s / bas [DESCENT_END, HOLD_END) ~1.4s /
+#   remontée [HOLD_END, RISE_END) ~0.6s / repos [RISE_END, 1) ~1.4s
+GP_PERIOD    = 4.0
+DESCENT_END  = 0.15
+HOLD_END     = 0.50
+RISE_END     = 0.65
+POSE_STD     = 0.3
+
+
 def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) -> ManagerBasedRlEnvCfg:
     """Create Microduck ground pick environment configuration."""
 
@@ -149,7 +172,7 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
         "foot_clearance",
         "foot_swing_height",
         "foot_slip",
-        "pose",           # replaced by phase-conditioned ground_pick_return_pose
+        "pose",           # replaced by phase_pose_track / phase_pose_track_l1
     ]:
         if name in cfg.rewards:
             del cfg.rewards[name]
@@ -162,7 +185,7 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     # (std=0.03 was too tight — exp(-(0.2/0.03)²)≈0, zero gradient from standing height)
     cfg.rewards["mouth_ground_proximity"] = RewardTermCfg(
         func=microduck_mdp.mouth_ground_proximity,
-        weight=2.0,
+        weight=1.0,
         params={
             "asset_cfg": SceneEntityCfg("robot", site_names=["mouth_tip"]),
             "std": 0.10,
@@ -171,43 +194,31 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
         },
     )
 
-    # Approach phase: reward mouth tip x-axis pointing downward (perpendicular to ground).
-    # alignment ∈ [-1, 1]: 1 = x-axis perfectly vertical, 0 = horizontal, -1 = pointing up.
-    cfg.rewards["mouth_perpendicular_to_ground"] = RewardTermCfg(
-        func=microduck_mdp.mouth_perpendicular_to_ground,
-        weight=1.0,
-        params={
-            "asset_cfg": SceneEntityCfg("robot", site_names=["mouth_tip"]),
-            "command_name": "twist",
-        },
-    )
-
-    # Return phase — legs. Under mjlab 1.3.0 + canonical BAM the passive jaw
-    # joints are no longer part of the articulation, so joint_pos is the clean
-    # 14-joint layout: 0-4 left leg, 5-8 neck/head, 9-13 right leg. (Was the old
-    # 16-joint layout [0-4, 11-15] with passive_1/passive_2 at 9,10.)
-    _LEG_JOINTS = [0, 1, 2, 3, 4, 9, 10, 11, 12, 13]
-    cfg.rewards["ground_pick_return_pose_legs"] = RewardTermCfg(
-        func=microduck_mdp.ground_pick_return_pose,
-        weight=4.0,
-        params={
-            "std": 0.3,
-            "command_name": "twist",
-            "joint_indices": _LEG_JOINTS,
-        },
-    )
-
-    # Return phase — neck/head (joints 5-8): tight std to prevent backward overshoot
-    # and head-body collision (head geoms have no collision mesh, so self_collisions
-    # can't catch it — the pose reward is the only guard).
-    _NECK_JOINTS = [5, 6, 7, 8]
-    cfg.rewards["ground_pick_return_pose_neck"] = RewardTermCfg(
-        func=microduck_mdp.ground_pick_return_pose,
+    # Suivi de pose interpolée par la phase (STAND<->DOWN<->STAND). Directif et
+    # symétrique : le retour debout est récompensé exactement comme la descente.
+    cfg.rewards["phase_pose_track"] = RewardTermCfg(
+        func=microduck_mdp.phase_pose_track,
         weight=6.0,
         params={
-            "std": 0.15,
             "command_name": "twist",
-            "joint_indices": _NECK_JOINTS,
+            "target_pose": DOWN_POSE,
+            "std": POSE_STD,
+            "descent_end": DESCENT_END,
+            "hold_end": HOLD_END,
+            "rise_end": RISE_END,
+            "asset_cfg": SceneEntityCfg("robot"),
+        },
+    )
+    cfg.rewards["phase_pose_track_l1"] = RewardTermCfg(
+        func=microduck_mdp.phase_pose_track_l1,
+        weight=2.0,
+        params={
+            "command_name": "twist",
+            "target_pose": DOWN_POSE,
+            "descent_end": DESCENT_END,
+            "hold_end": HOLD_END,
+            "rise_end": RISE_END,
+            "asset_cfg": SceneEntityCfg("robot"),
         },
     )
 
@@ -228,7 +239,7 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     # get the mouth to the ground is to tip forward and faceplant (feet lift off) —
     # exactly the failure seen in play. Rewarding ground contact forces a proper
     # planted crouch instead. Weight is set above the mouth_ground_proximity gain
-    # (2.0) so lifting a foot to reach lower never pays off. Always-on: the feet
+    # (1.0) so lifting a foot to reach lower never pays off. Always-on: the feet
     # should never leave the ground during either phase.
     cfg.rewards["feet_grounded"] = RewardTermCfg(
         func=microduck_mdp.feet_grounded_reward,
@@ -366,7 +377,12 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     command.rel_standing_envs = 0.0
     command.rel_heading_envs  = 0.0
     cfg.commands["twist"] = microduck_mdp.GroundPickPhaseCommandCfg(
-        **{**vars(command), "class_type": microduck_mdp.GroundPickPhaseCommand}
+        **{
+            **vars(command),
+            "class_type": microduck_mdp.GroundPickPhaseCommand,
+            "period": GP_PERIOD,
+            "randomize_phase": False,
+        }
     )
 
     # ── Terminations ──────────────────────────────────────────────────────────

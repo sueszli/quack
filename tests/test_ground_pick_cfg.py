@@ -1,0 +1,28 @@
+from mjlab_microduck.tasks.microduck_ground_pick_env_cfg import (
+    make_microduck_ground_pick_env_cfg,
+)
+from mjlab_microduck.tasks.mdp import GroundPickPhaseCommand
+
+
+def test_ground_pick_cfg_builds_with_pose_rewards():
+    cfg = make_microduck_ground_pick_env_cfg()
+    rewards = cfg.rewards
+    assert "phase_pose_track" in rewards
+    assert "phase_pose_track_l1" in rewards
+    assert rewards["phase_pose_track"].weight == 6.0
+    assert rewards["phase_pose_track_l1"].weight == 2.0
+    # filet bouche-sol conservé mais allégé
+    assert "mouth_ground_proximity" in rewards
+    assert rewards["mouth_ground_proximity"].weight == 1.0
+    # anciennes mécaniques retirées
+    assert "mouth_perpendicular_to_ground" not in rewards
+    assert "ground_pick_return_pose_legs" not in rewards
+    assert "ground_pick_return_pose_neck" not in rewards
+
+
+def test_ground_pick_cfg_command_is_phase_no_randomize():
+    cfg = make_microduck_ground_pick_env_cfg()
+    cmd = cfg.commands["twist"]
+    assert cmd.class_type is GroundPickPhaseCommand
+    assert cmd.period == 4.0
+    assert cmd.randomize_phase is False
