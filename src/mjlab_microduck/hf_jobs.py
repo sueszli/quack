@@ -390,6 +390,22 @@ def submit(argv: list[str]) -> int:
                         file=sys.stderr,
                     )
                     return 2
+                if "403" in msg or "Forbidden" in msg or "required permissions" in msg.lower():
+                    print(
+                        "\n[job] ✗ Hugging Face Jobs permission error (403).\n"
+                        "    Your HF token authenticates fine but is NOT allowed to use the Jobs API\n"
+                        f"    for namespace {namespace!r}. This is a token-scope problem, not billing.\n"
+                        "    → Create/edit a fine-grained token WITH the Jobs permission enabled:\n"
+                        "        https://huggingface.co/settings/tokens\n"
+                        "      (fine-grained → under your user AND/OR the org, tick the 'Jobs' permissions),\n"
+                        "      then re-login locally:  hf auth login\n"
+                        "    → Verify:  python -c \"from huggingface_hub import HfApi; \"\n"
+                        "               \"print(list(HfApi().list_jobs(namespace='<ns>')))\"  (must not 403)\n"
+                        "    (If Jobs are enabled but still blocked, the namespace may also need an HF\n"
+                        "     plan/credits that include Jobs — see the billing link above.)",
+                        file=sys.stderr,
+                    )
+                    return 3
                 raise
             print(f"[job] id:  {job.id}")
             if getattr(job, "url", None):
