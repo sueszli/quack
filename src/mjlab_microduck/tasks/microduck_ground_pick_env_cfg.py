@@ -97,7 +97,9 @@ from mjlab_microduck.tasks.symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
 DOWN_POSE = {
     "left_hip_yaw": -0.0046, "left_hip_roll": 0.0399, "left_hip_pitch": 0.7133,
     "left_knee": 1.4327, "left_ankle": 0.6903,
-    "neck_pitch": -2.4421, "head_pitch": -0.9112, "head_yaw": 0.023, "head_roll": -0.0399,
+    # head_pitch relevé de la lecture brute (-0.9112) pour que la bouche approche
+    # le sol sans s'y écraser complètement.
+    "neck_pitch": -2.4421, "head_pitch": -0.76, "head_yaw": 0.023, "head_roll": -0.0399,
     "right_hip_yaw": -0.0169, "right_hip_roll": 0.1074, "right_hip_pitch": -0.5706,
     "right_knee": -1.491, "right_ankle": -0.7808,
 }
@@ -279,9 +281,10 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     # Head-on-ground impact penalty: forces > threshold (N) cost weight × (force-threshold)
     # per step. Discourages slamming the head into the ground when reaching for it
     # without preventing gentle contact (the mouth_tip site can still kiss the ground).
+    # Poids renforcé (-0.5 -> -2.0) : la policy arrivait trop fort au sol.
     cfg.rewards["head_impact_penalty"] = RewardTermCfg(
         func=microduck_mdp.body_impact_cost,
-        weight=-0.5,
+        weight=-2.0,
         params={"sensor_name": head_impact_cfg.name, "threshold": 2.0},
     )
 
