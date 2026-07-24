@@ -2038,6 +2038,29 @@ def upright_while_tall(
     return upright * smooth
 
 
+def phase_pose_blend(
+    phase: torch.Tensor,
+    descent_end: float,
+    hold_end: float,
+    rise_end: float,
+) -> torch.Tensor:
+    """Blend 0..1 le long de la phase [0,1) — 0 = pose STAND, 1 = pose DOWN.
+
+    [0, descent_end)       : 0 -> 1  (se baisser)
+    [descent_end, hold_end): 1       (bas)
+    [hold_end, rise_end)   : 1 -> 0  (se lever)
+    [rise_end, 1.0)        : 0       (haut / repos)
+    """
+    b = torch.zeros_like(phase)
+    descend = phase < descent_end
+    b = torch.where(descend, phase / descent_end, b)
+    low = (phase >= descent_end) & (phase < hold_end)
+    b = torch.where(low, torch.ones_like(phase), b)
+    rise = (phase >= hold_end) & (phase < rise_end)
+    b = torch.where(rise, 1.0 - (phase - hold_end) / (rise_end - hold_end), b)
+    return b
+
+
 def phase_pose_match(
     env: ManagerBasedRlEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
