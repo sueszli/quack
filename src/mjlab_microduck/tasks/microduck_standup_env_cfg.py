@@ -276,21 +276,21 @@ def make_microduck_standup_env_cfg(
     # max_height set just above STAND_Z (0.12 → 0.125) so the reward stays
     # active through the final cm of rise. Earlier 0.11 caused the policy to
     # park at ~0.108 (gate-off altitude) and never finish the climb.
-    # max_vz: cap the rewarded rise speed (anti-explosive-launch — uncapped,
-    # reward ∝ vz pays MORE per step for a violent rise). LESSON from the
-    # 2026-07-24 broken run: 0.15 was tuned for the ~45 mm sit→stand rise and
-    # ignored that PRONE recovery is ballistic — the push-off needs high vz,
-    # and this uncapped reward was precisely what made flip attempts
-    # immediately profitable. At 0.15 face-up envs froze ("do nothing" beat a
-    # taxed attempt). 0.30 still caps the sit-rise well below launch speeds
-    # while leaving the prone push-off fully paid.
+    # NO max_vz cap (reverted 2026-07-24, second broken run): capping the
+    # rewarded rise speed — even at a generous 0.30 — shrinks the payoff of
+    # noisy recovery ATTEMPTS during the discovery phase, and face-up/face-down
+    # recovery never got learned. Both broken runs shared the same wandb
+    # signature regardless of cap value (0.15 or 0.30) and gate tuning:
+    # standing metrics drop at the ground_state_mix stages (1500/2500) instead
+    # of recovering like the reference run. Smoothing is now done by the
+    # LATE-phased penalty curricula below instead (see arrival_damping /
+    # smoothness_polish comments).
     cfg.rewards["com_upward_velocity"] = RewardTermCfg(
         func=microduck_mdp.com_upward_velocity,
         weight=0.75,
         params={
             "asset_cfg":  SceneEntityCfg("robot", body_names=("trunk_base",)),
             "max_height": 0.125,
-            "max_vz":     0.30,
         },
     )
 
@@ -307,18 +307,23 @@ def make_microduck_standup_env_cfg(
         params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))},
     )
 
-    # Arrival damper — trunk ω_xy², gated on height AND tilt. The real-robot
-    # failure loop (rise → overshoot vertical → tip → retry) is excess angular
-    # momentum AT ARRIVAL. First version (2026-07-24, z-gate only [0.09,0.11],
-    # weight -0.1) built a reward wall right before the finish: the final
-    # straighten (tilt 60°→0) is itself a big trunk rotation inside the z
-    # gate, so the policy parked bent-over below the gate and front-recovery
-    # never completed. The tilt gate (zero cost above 45° tilt, full below
-    # 20°) frees the approach TO vertical and only damps wobble AROUND
-    # vertical; weight halved for the same reason.
+    # Arrival damper — trunk ω_xy², gated on height AND tilt (zero above 45°
+    # tilt / below 0.09 m, full below 20° tilt / above 0.11 m). Targets the
+    # real-robot failure loop: rise → overshoot vertical → tip → retry.
+    #
+    # STARTS AT WEIGHT 0 — introduced at iter 3000 by the arrival_damping
+    # curriculum below. Two broken runs (2026-07-24) proved that ANY
+    # attempt-tax active during the recovery DISCOVERY phase (ground_state_mix
+    # ramps face-down/face-up until iter 2500) prevents the flip from being
+    # found at all: exploration of the hard poses is noisy thrash, taxing it
+    # makes attempts net-negative, "do nothing" wins. Gate refinement (tilt
+    # gating, halved weight, generous vz cap) did NOT change the failure
+    # signature — the fix is timing, not magnitude. From iter 3000 the skills
+    # already exist and keep being exercised by prone resets, so the damping
+    # fine-tunes their execution instead of blocking their discovery.
     cfg.rewards["arrival_damping"] = RewardTermCfg(
         func=microduck_mdp.body_ang_vel_at_height,
-        weight=-0.05,
+        weight=0.0,
         params={
             "height_low":    0.09,
             "height_high":   0.11,
@@ -395,17 +400,17 @@ def make_microduck_standup_env_cfg(
     # (iters 600–2500). If recovery freezes: halve body_ang_vel to -0.025
     # first, then soften the action_rate curriculum end to -0.6.
     #
-    # 2026-07 smoothness pass (rise still violent + overshoot-retry loop on the
-    # real robot after the ÷4 rescale): added PHASE-TARGETED damping instead of
-    # global increases — com_upward_velocity vz cap, gentle_rise ×2,
-    # arrival_damping (all in the rewards block above), plus joint_torque_rate_l2
-    # back here. Torque-RATE penalizes jitter/reversals, not torque magnitude or
-    # trunk rotation, so it damps shake without blocking the flip (this exact
-    # term survived the old recovery-killer purge). -1e-3 at the ÷4 scale ≈
-    # 2× its old effective strength.
+    # 2026-07 smoothness polish (rise violent + overshoot-retry loop on the
+    # real robot after the ÷4 rescale): joint_torque_rate_l2 (anti-jitter:
+    # penalizes torque CHANGE, not magnitude/rotation) + arrival_damping
+    # (rewards block above). BOTH start at weight 0 and are introduced at iter
+    # 3000 by the smoothness-polish curricula below — the reward set is
+    # IDENTICAL to the working 2026-07-23 run until then. See the
+    # arrival_damping comment for why timing (discovery vs fine-tuning), not
+    # magnitude, is what decides whether these terms break recovery.
     cfg.rewards["action_rate_l2"] = RewardTermCfg(func=mdp.action_rate_l2, weight=-0.1)
     cfg.rewards["joint_torque_rate_l2"] = RewardTermCfg(
-        func=microduck_mdp.joint_torque_rate_l2, weight=-1e-3
+        func=microduck_mdp.joint_torque_rate_l2, weight=0.0
     )
 
     cfg.rewards["body_ang_vel"].params["asset_cfg"].body_names = ("trunk_base",)
@@ -810,6 +815,36 @@ def make_microduck_standup_env_cfg(
                 {"step": 1000 * 24,  "weight": -0.6},
                 {"step": 1250 * 24,  "weight": -0.8},
                 {"step": 1500 * 24,  "weight": -1.0},
+            ],
+        },
+    )
+
+    # Smoothness-polish curricula — introduce the anti-violence terms only
+    # AFTER the recovery skills exist. ground_state_mix finishes ramping the
+    # hard poses at iter 2500; from 3000 on, prone resets keep exercising the
+    # learned flips while these penalties fine-tune their execution (brake at
+    # arrival, less jitter). Two runs proved the same weights active from
+    # step 0 prevent the flips from ever being DISCOVERED (attempt-tax on
+    # exploration). If recovery degrades after 3000, soften the last stage,
+    # do NOT move the introduction earlier.
+    cfg.curriculum["arrival_damping_weight"] = CurriculumTermCfg(
+        func=microduck_mdp.reward_weight,
+        params={
+            "reward_name":   "arrival_damping",
+            "weight_stages": [
+                {"step": 0,          "weight": 0.0},
+                {"step": 3000 * 24,  "weight": -0.025},
+                {"step": 4000 * 24,  "weight": -0.05},
+            ],
+        },
+    )
+    cfg.curriculum["torque_rate_weight"] = CurriculumTermCfg(
+        func=microduck_mdp.reward_weight,
+        params={
+            "reward_name":   "joint_torque_rate_l2",
+            "weight_stages": [
+                {"step": 0,          "weight": 0.0},
+                {"step": 3000 * 24,  "weight": -1e-3},
             ],
         },
     )
