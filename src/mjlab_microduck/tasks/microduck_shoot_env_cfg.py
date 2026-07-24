@@ -280,6 +280,17 @@ def make_microduck_shoot_env_cfg(play: bool = False, rough: bool = False) -> Man
     del cfg.observations["actor"].terms["height_scan"]
     del cfg.observations["critic"].terms["height_scan"]
 
+    # The critic keeps three privileged foot obs (foot_air_time / foot_contact /
+    # foot_contact_forces) inherited from the velocity base; they reference the
+    # walking sensor by name. We renamed the two-foot "feet_ground_contact" to the
+    # left-foot-only "left_foot_ground_contact" (support foot), so repoint them —
+    # otherwise ObservationManager raises KeyError at env construction. The sensor
+    # exposes found/force + track_air_time, so all three terms compute cleanly.
+    for _foot_term in ("foot_air_time", "foot_contact", "foot_contact_forces"):
+        cfg.observations["critic"].terms[_foot_term].params["sensor_name"] = (
+            left_foot_ground_cfg.name
+        )
+
     gravity_term_name = "projected_gravity"
     cfg.observations["actor"].terms[gravity_term_name] = deepcopy(
         cfg.observations["actor"].terms[gravity_term_name]
