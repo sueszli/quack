@@ -99,12 +99,15 @@ RETURN_END = 0.75    # FORWARD -> STAND, puis repos jusqu'à 1.0
 
 # ── Poses (rad, 14 joints, mouth exclu) — PLACEHOLDERS, à lire sur le vrai robot ──
 # Convention: jambe droite frappe (hanche/genou droit actifs), gauche en appui.
+# STAND_POSE est seedée sur la pose HOME de station debout du sim (HOME_FRAME
+# dans microduck_constants.py) afin que φ=0 corresponde exactement à la
+# configuration de reset (invariant de cohérence reset<->cible de phase).
 STAND_POSE = {
-    "left_hip_yaw": 0.0, "left_hip_roll": 0.0, "left_hip_pitch": 0.0,
-    "left_knee": 0.0, "left_ankle": 0.0,
-    "neck_pitch": 0.0, "head_pitch": 0.0, "head_yaw": 0.0, "head_roll": 0.0,
-    "right_hip_yaw": 0.0, "right_hip_roll": 0.0, "right_hip_pitch": 0.0,
-    "right_knee": 0.0, "right_ankle": 0.0,
+    "left_hip_yaw": 0.0, "left_hip_roll": -0.0873, "left_hip_pitch": -0.4579,
+    "left_knee": -0.0049, "left_ankle": 0.4530,
+    "neck_pitch": 0.3491, "head_pitch": 0.3491, "head_yaw": 0.0, "head_roll": 0.0,
+    "right_hip_yaw": 0.0, "right_hip_roll": 0.0873, "right_hip_pitch": 0.4579,
+    "right_knee": 0.0049, "right_ankle": -0.4530,
 }
 KICK_BACK_POSE = {  # armement: hanche droite en extension arrière + genou fléchi
     **STAND_POSE,

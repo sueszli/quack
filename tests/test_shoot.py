@@ -1,5 +1,7 @@
+import pytest
 import torch
 from mjlab_microduck.tasks.mdp import (
+    GroundPickPhaseCommand,
     GroundPickPhaseCommandCfg,
     kick_pose_target,
     kick_pose_track,
@@ -24,6 +26,60 @@ def test_phase_cmd_randomize_flag_settable_false():
         randomize_phase=False,
     )
     assert cfg.randomize_phase is False
+
+
+class _StubEnv:
+    """Only what ManagerTermBase.device/num_envs read off self._env."""
+
+    def __init__(self, num_envs: int):
+        self.device = "cpu"
+        self.num_envs = num_envs
+
+
+def _minimal_phase_command(randomize_phase: bool, num_envs: int) -> GroundPickPhaseCommand:
+    """Build a GroundPickPhaseCommand without going through __init__ (which
+    needs a full ManagerBasedRlEnv/scene). reset() only touches
+    self._gp_phase / self._randomize_phase / self.device (the latter is a
+    read-only property proxying self._env.device), so we seed exactly those
+    attributes and then exercise the REAL reset() method — no
+    reimplementation of its logic."""
+    cmd = object.__new__(GroundPickPhaseCommand)
+    cmd._env = _StubEnv(num_envs)
+    cmd._randomize_phase = randomize_phase
+    cmd._gp_phase = torch.full((num_envs,), 0.3)
+    return cmd
+
+
+def test_phase_command_reset_zeroes_phase_when_not_randomized():
+    # randomize_phase=False (shoot task config) -> reset() must snap phase to
+    # exactly 0 for every reset env, matching the deployment slot's one-shot
+    # button-A semantics (φ=0 == STAND).
+    cmd = _minimal_phase_command(randomize_phase=False, num_envs=4)
+    env_ids = torch.tensor([0, 2, 3])
+    result = cmd.reset(env_ids)
+
+    assert result == {}
+    assert torch.equal(cmd._gp_phase[env_ids], torch.zeros(len(env_ids)))
+    # untouched env keeps its previous phase
+    assert cmd._gp_phase[1].item() == pytest.approx(0.3)
+
+
+def test_phase_command_reset_randomizes_phase_when_enabled():
+    # Sanity check for the opposite branch: randomize_phase=True resamples
+    # (near-certainly) away from the seeded 0.3 value, and stays in [0, 1).
+    cmd = _minimal_phase_command(randomize_phase=True, num_envs=4)
+    env_ids = torch.tensor([0, 1, 2, 3])
+    torch.manual_seed(0)
+    cmd.reset(env_ids)
+
+    assert (cmd._gp_phase >= 0.0).all() and (cmd._gp_phase < 1.0).all()
+
+
+def test_phase_command_reset_noop_on_empty_env_ids():
+    cmd = _minimal_phase_command(randomize_phase=False, num_envs=3)
+    before = cmd._gp_phase.clone()
+    cmd.reset(torch.tensor([], dtype=torch.long))
+    assert torch.equal(cmd._gp_phase, before)
 
 
 W, K, R = 0.35, 0.45, 0.75  # windup_end, kick_end, return_end
