@@ -93,3 +93,20 @@ def test_phase_pose_track_returns_to_stand():
     env = _env([0.0, 0.0], phase=0.80)
     r = phase_pose_track(env, target_pose=DOWN, asset_cfg=cfg)
     assert torch.allclose(r, torch.tensor([1.0]), atol=1e-6), r
+
+
+def test_ground_pick_cmd_cfg_has_randomize_phase_default_true():
+    from mjlab_microduck.tasks.mdp import GroundPickPhaseCommandCfg
+    from mjlab.tasks.velocity.mdp import UniformVelocityCommandCfg
+    # construit une cfg minimale en copiant une cfg velocity par défaut
+    # NOTE: adapté de `asset_name` (brief) -> `entity_name` (API locale de
+    # UniformVelocityCommandCfg, qui n'a pas de champ `asset_name`).
+    base = UniformVelocityCommandCfg(
+        entity_name="robot", resampling_time_range=(10.0, 10.0),
+        ranges=UniformVelocityCommandCfg.Ranges(
+            lin_vel_x=(0.0, 0.0), lin_vel_y=(0.0, 0.0), ang_vel_z=(0.0, 0.0),
+        ),
+    )
+    cfg = GroundPickPhaseCommandCfg(**{**vars(base)})
+    assert cfg.randomize_phase is True
+    assert cfg.period == 4.0
