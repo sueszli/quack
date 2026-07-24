@@ -105,12 +105,14 @@ DOWN_POSE = {
 }
 
 # Timing du cycle (fractions de phase), période 4 s :
-#   descente [0, DESCENT_END) ~0.6s / bas [DESCENT_END, HOLD_END) ~1.4s /
-#   remontée [HOLD_END, RISE_END) ~0.6s / repos [RISE_END, 1) ~1.4s
+#   descente [0, DESCENT_END) ~0.8s / bas [DESCENT_END, HOLD_END) ~1.2s /
+#   remontée [HOLD_END, RISE_END) ~1.0s / repos [RISE_END, 1) ~1.0s
+# Descente rallongée (arrivée plus douce) et remontée rallongée (le cou a un gros
+# débattement à remonter : neck_pitch -2.44 -> +0.35).
 GP_PERIOD    = 4.0
-DESCENT_END  = 0.15
+DESCENT_END  = 0.20
 HOLD_END     = 0.50
-RISE_END     = 0.65
+RISE_END     = 0.75
 POSE_STD     = 0.3
 
 
@@ -262,8 +264,12 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     )
 
     # Neck/head smoothness — higher weight because head is heavily used.
+    # Cou faiblement pénalisé : ce geste demande un GROS débattement du cou
+    # (neck_pitch -2.44 <-> +0.35, deux fois par cycle). La valeur lourde (-1.0)
+    # héritée de l'ancien ground_pick empêchait le cou de remonter (tête coincée
+    # en bas au retour).
     cfg.rewards["neck_action_rate_l2"] = RewardTermCfg(
-        func=microduck_mdp.neck_action_rate_l2, weight=-1.0
+        func=microduck_mdp.neck_action_rate_l2, weight=-0.3
     )
 
     # Joint torque penalty — increased to further penalise fast/forceful moves.
@@ -281,11 +287,12 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     # Head-on-ground impact penalty: forces > threshold (N) cost weight × (force-threshold)
     # per step. Discourages slamming the head into the ground when reaching for it
     # without preventing gentle contact (the mouth_tip site can still kiss the ground).
-    # Poids renforcé (-0.5 -> -2.0) : la policy arrivait trop fort au sol.
+    # Poids renforcé (-0.5 -> -2.0) et seuil abaissé (2.0 -> 1.0 N) : la policy
+    # arrivait encore trop fort — pénaliser plus tôt et plus fort les impacts.
     cfg.rewards["head_impact_penalty"] = RewardTermCfg(
         func=microduck_mdp.body_impact_cost,
         weight=-2.0,
-        params={"sensor_name": head_impact_cfg.name, "threshold": 2.0},
+        params={"sensor_name": head_impact_cfg.name, "threshold": 1.0},
     )
 
     # ── Observations (identical 61D layout to walking policy) ──────────────────
