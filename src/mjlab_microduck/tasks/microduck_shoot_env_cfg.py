@@ -15,7 +15,7 @@ Phase encoding (in the command slot, 3-D):
 
 Phase is NOT randomised per env (randomize_phase=False): every episode starts
 at φ=0 (STAND), matching the deployment slot's one-shot trigger semantics.
-PERIOD = 2.5 s.
+PERIOD = 8.0 s (ralenti pour vérifier les poses ; abaisser une fois validées).
 
 ── mjlab 1.3.0 + canonical BAM ────────────────────────────────────────────────
 Migrated to match the velocity env's sim2real machinery: fixed (non-accumulating)
@@ -92,7 +92,8 @@ from mjlab_microduck.tasks.symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
 
 
 # ── Timings du geste (phase normalisée [0,1)) ────────────────────────────────
-SHOOT_PERIOD = 2.5   # s — durée d'un cycle (doit matcher --ground-pick-period au déploiement)
+SHOOT_PERIOD = 8.0   # s — durée d'un cycle (doit matcher --ground-pick-period au déploiement).
+                     # Ralenti (2.5 -> 8.0) pour vérifier visuellement les poses ; à réduire une fois validées.
 WINDUP_END = 0.35    # STAND -> BACK
 KICK_END = 0.45      # BACK -> FORWARD (segment court = frappe sèche)
 RETURN_END = 0.75    # FORWARD -> STAND, puis repos jusqu'à 1.0
