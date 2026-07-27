@@ -61,17 +61,6 @@ def make_microduck_velocity_swizzle_env_cfg(play: bool = False) -> ManagerBasedR
     if "braking" in cfg.rewards:
         del cfg.rewards["braking"]
     cfg.commands["twist"].ranges.lin_vel_x = (-0.6, 0.6)
-    # Low-pass cmd_x so a forward↔backward reversal ramps smoothly through 0 instead
-    # of jumping — otherwise the policy slams into the reversal and falls.
-    cfg.commands["twist"].cmd_x_lowpass_alpha = 0.95
-
-    # Close the legs when idle: pull hip_roll to neutral only when |cmd_x| ~ 0
-    # (at rest/coast). Silent during a push, so the swizzle still spreads to propel.
-    cfg.rewards["hip_roll_rest"] = RewardTermCfg(
-        func=microduck_mdp.hip_roll_rest_penalty,
-        weight=-1.0,
-        params={"command_name": "twist", "command_threshold": 0.1},
-    )
 
     # --- Heading curriculum: go STRAIGHT first, then FOLLOW a commanded direction ---
     # The stride env disabled heading (ang_vel_z=(0,0), heading_hold, no heading_tracking).
