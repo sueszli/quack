@@ -43,7 +43,7 @@ def test_balance_rewards_no_fixed_pose():
     # équilibre libre : upright/alive/glisse présents, mais PAS de pose fixe
     # imposée (il doit pouvoir bouger son centre de gravité pour tenir la pente).
     cfg = make_microduck_roller_slope_env_cfg()
-    for name in ("upright", "alive", "feet_flat", "wheel_glide"):
+    for name in ("upright", "alive", "feet_flat", "wheel_glide", "neck_joint_pos_l2"):
         assert name in cfg.rewards
     assert "standing_pose" not in cfg.rewards
     assert "standing_pose_l1" not in cfg.rewards

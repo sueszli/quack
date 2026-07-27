@@ -161,6 +161,13 @@ def make_microduck_roller_slope_env_cfg(play: bool = False) -> ManagerBasedRlEnv
     cfg.rewards["neck_action_rate_l2"] = RewardTermCfg(
         func=microduck_mdp.neck_action_rate_l2, weight=-0.5,
     )
+    # GARDER LA TÊTE DROITE : pénalise la déviation des joints cou/tête par rapport
+    # à la position home. On a retiré la pose fixe des JAMBES (pour l'équilibre
+    # libre), mais rien ne tenait la tête -> elle partait n'importe où. Ceci ne
+    # contraint QUE la tête/cou, pas les jambes.
+    cfg.rewards["neck_joint_pos_l2"] = RewardTermCfg(
+        func=microduck_mdp.neck_joint_pos_l2, weight=-0.75,
+    )
     cfg.rewards["joint_torques_l2"] = RewardTermCfg(
         func=microduck_mdp.joint_torques_l2, weight=-1e-3,
     )
