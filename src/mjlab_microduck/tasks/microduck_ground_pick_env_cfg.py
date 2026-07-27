@@ -97,22 +97,24 @@ from mjlab_microduck.tasks.symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
 DOWN_POSE = {
     "left_hip_yaw": -0.0046, "left_hip_roll": 0.0399, "left_hip_pitch": 0.7133,
     "left_knee": 1.4327, "left_ankle": 0.6903,
-    # neck_pitch relevé de la lecture brute (-2.4421 -> -2.35) : touche le sol mais
-    # moins violemment que la lecture brute. head_pitch = lecture brute.
-    "neck_pitch": -2.35, "head_pitch": -0.9112, "head_yaw": 0.023, "head_roll": -0.0399,
+    # neck_pitch ~= lecture brute (la hauteur de la bouche dépend surtout du pli
+    # des jambes, pas du neck : -2.35..-2.60 ne bouge la bouche que d'~1 cm).
+    "neck_pitch": -2.40, "head_pitch": -0.9112, "head_yaw": 0.023, "head_roll": -0.0399,
     "right_hip_yaw": -0.0169, "right_hip_roll": 0.1074, "right_hip_pitch": -0.5706,
     "right_knee": -1.491, "right_ankle": -0.7808,
 }
 
-# Timing du cycle (fractions de phase), période 4 s :
-#   descente [0, DESCENT_END) ~0.8s / bas [DESCENT_END, HOLD_END) ~1.2s /
-#   remontée [HOLD_END, RISE_END) ~1.4s / repos [RISE_END, 1) ~0.6s
-# Descente rallongée (arrivée douce) et remontée rallongée à ~1.4s : extension
-# lente/contrôlée du corps -> meilleur équilibre au relever.
-GP_PERIOD    = 4.0
-DESCENT_END  = 0.20
-HOLD_END     = 0.50
-RISE_END     = 0.85
+# Timing du cycle (fractions de phase), période 6 s :
+#   descente [0, DESCENT_END) ~0.9s / bas [DESCENT_END, HOLD_END) ~0.9s /
+#   remontée [HOLD_END, RISE_END) ~1.5s / repos [RISE_END, 1) ~2.7s
+# Période allongée (4 -> 6 s) avec un LONG repos debout (~2.7s) : espace les
+# ground-pick pour que le déséquilibre d'un cycle se stabilise avant le suivant,
+# et remontée lente (~1.5s) pour un relever contrôlé.
+# ⚠️ --ground-pick-period au déploiement DOIT valoir 6.0.
+GP_PERIOD    = 6.0
+DESCENT_END  = 0.15
+HOLD_END     = 0.30
+RISE_END     = 0.55
 POSE_STD     = 0.3
 
 
@@ -184,20 +186,11 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
 
     # ── Rewards: main ground pick objectives ──────────────────────────────────
 
-    # Approach phase: reward mouth tip being close to the ground.
-    # std=0.10 m provides gradient from ~20 cm away so the policy gets a useful
-    # signal even from the fully-upright start pose.
-    # (std=0.03 was too tight — exp(-(0.2/0.03)²)≈0, zero gradient from standing height)
-    cfg.rewards["mouth_ground_proximity"] = RewardTermCfg(
-        func=microduck_mdp.mouth_ground_proximity,
-        weight=1.0,
-        params={
-            "asset_cfg": SceneEntityCfg("robot", site_names=["mouth_tip"]),
-            "std": 0.10,
-            "target_height": 0.0,
-            "command_name": "twist",
-        },
-    )
+    # NOTE: mouth_ground_proximity RETIRÉ. Il récompensait la bouche à z=0 (dans le
+    # sol), en conflit avec la cible de pose (bouche ~au sol via le pli des jambes).
+    # La policy exploitait ce z=0 en PIQUANT dans le sol (arme la tête puis tape,
+    # de plus en plus fort avec l'entraînement). Le positionnement de la bouche est
+    # désormais entièrement porté par phase_pose_track (la pose DOWN réelle).
 
     # Suivi de pose interpolée par la phase (STAND<->DOWN<->STAND). Directif et
     # symétrique : le retour debout est récompensé exactement comme la descente.
@@ -292,7 +285,7 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     cfg.rewards["head_impact_penalty"] = RewardTermCfg(
         func=microduck_mdp.body_impact_cost,
         weight=-2.0,
-        params={"sensor_name": head_impact_cfg.name, "threshold": 1.0},
+        params={"sensor_name": head_impact_cfg.name, "threshold": 3.0},
     )
 
     # ── Observations (identical 61D layout to walking policy) ──────────────────
