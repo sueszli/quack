@@ -1,9 +1,14 @@
 """Microduck ground pick task.
 
-Episodic policy that crouches, touches the ground with its mouth tip, then
+Episodic policy that crouches to bring its mouth tip AS CLOSE AS POSSIBLE to the
+ground WITHOUT touching it (correctly oriented, mouth pointing down), then
 returns to a clean standing pose — all while remaining stable and robust to
 pushes.  The obs/action spaces are identical to the walking policy so the two
 can be switched at runtime with a single key-press.
+
+Objectif espace-tâche (pas de pose DOWN) : mouth_ground_proximity tire la bouche
+vers le sol, head_impact_penalty (fort) interdit le contact -> équilibre = bouche
+juste au-dessus ; mouth_perpendicular_to_ground l'oriente vers le bas.
 
 Phase encoding (in the command slot, 3-D):
     command = [cos(2π·phase), sin(2π·phase), 0]
@@ -88,51 +93,6 @@ from mjlab_microduck.tasks.microduck_velocity_env_cfg import (
 from mjlab_microduck.tasks.symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
 
 
-# ── Poses cibles du geste (rad, par NOM) ──────────────────────────────────────
-# STAND = HOME (default_joint_pos du modèle) — ne pas redéfinir ici : source du
-# blend. DOWN = pose bouche-au-sol **lue sur le vrai robot** (read_pose.py, couple
-# coupé, bouche posée contre le sol) — convention rad = celle du sim.
-# NB: neck_pitch=-2.44 dépasse la borne sim d'origine (-1.571) → la plage du joint
-# neck_pitch a été élargie à -2.6 dans robot_allcollisions.xml pour l'atteindre.
-# Pose DOWN RÉGÉNÉRÉE (2026-07-27) — la lecture brute posait deux problèmes :
-#   (a) bouche commandée À z=0 (dans le sol) une fois les pieds posés -> la policy
-#       enfonçait la tête (tape fort quel que soit le poids d'impact) ;
-#   (b) jambes ASYMÉTRIQUES (hip_pitch L+0.71/R-0.57, hip_roll même signe) ->
-#       le robot penchait -> impossible de se relever.
-# Corrigée : jambes SYMÉTRIQUES (miroir G/D, magnitudes moyennées) + profondeur à
-# 0.9 pour que la bouche EFFLEURE (~+0.6 cm au-dessus du sol, pieds posés) au lieu
-# d'être enfoncée. Tête centrée (head_yaw/roll = 0). Orientation bouche->sol
-# vérifiée (axe bouche z ≈ -1) et rendu visuel OK.
-DOWN_POSE = {
-    "left_hip_yaw": 0.0, "left_hip_roll": -0.073, "left_hip_pitch": 0.532,
-    "left_knee": 1.315, "left_ankle": 0.707,
-    "neck_pitch": -2.40, "head_pitch": -0.9112, "head_yaw": 0.0, "head_roll": 0.0,
-    "right_hip_yaw": 0.0, "right_hip_roll": 0.073, "right_hip_pitch": -0.532,
-    "right_knee": -1.315, "right_ankle": -0.707,
-}
-
-# Timing du cycle (fractions de phase), période 6 s :
-#   descente [0, DESCENT_END) ~0.9s / bas [DESCENT_END, HOLD_END) ~0.9s /
-#   remontée SÉQUENCÉE / repos [RISE_END, 1) ~2.7s
-# Relevage séquencé (tête d'abord, puis redressement) :
-#   - TÊTE   : remonte [HOLD_END, RISE_HEAD_END)  = 0.30->0.42  (~0.7s)
-#   - JAMBES : restent pliées jusqu'à RISE_HEAD_END puis remontent
-#              [RISE_HEAD_END, RISE_END) = 0.42->0.55  (~0.8s)
-#   -> la tête se relève d'abord (recentre le CoM), puis le corps se redresse.
-# ⚠️ --ground-pick-period au déploiement DOIT valoir 6.0.
-GP_PERIOD     = 6.0
-DESCENT_END   = 0.15
-HOLD_END      = 0.30
-RISE_HEAD_END = 0.42   # fin de remontée TÊTE = début de remontée JAMBES
-RISE_END      = 0.55
-POSE_STD      = 0.3
-
-# Groupes de joints pour le relevage séquencé.
-_HEAD_JOINTS = ("neck_pitch", "head_pitch", "head_yaw", "head_roll")
-DOWN_HEAD = {k: v for k, v in DOWN_POSE.items() if k in _HEAD_JOINTS}
-DOWN_LEGS = {k: v for k, v in DOWN_POSE.items() if k not in _HEAD_JOINTS}
-
-
 def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) -> ManagerBasedRlEnvCfg:
     """Create Microduck ground pick environment configuration."""
 
@@ -194,62 +154,68 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
         "foot_clearance",
         "foot_swing_height",
         "foot_slip",
-        "pose",           # replaced by phase_pose_track / phase_pose_track_l1
+        "pose",           # replaced by phase-conditioned ground_pick_return_pose
     ]:
         if name in cfg.rewards:
             del cfg.rewards[name]
 
     # ── Rewards: main ground pick objectives ──────────────────────────────────
 
-    # NOTE: mouth_ground_proximity RETIRÉ. Il récompensait la bouche à z=0 (dans le
-    # sol), en conflit avec la cible de pose (bouche ~au sol via le pli des jambes).
-    # La policy exploitait ce z=0 en PIQUANT dans le sol (arme la tête puis tape,
-    # de plus en plus fort avec l'entraînement). Le positionnement de la bouche est
-    # désormais entièrement porté par phase_pose_track (la pose DOWN réelle).
+    # Approach phase: reward mouth tip getting AS CLOSE AS POSSIBLE to the ground.
+    # target_height=0 tire la bouche vers le sol ; std=0.10 donne du gradient dès
+    # ~20 cm (depuis la station debout). Le "SANS TOUCHER" est assuré par
+    # head_impact_penalty (fort) plus bas -> l'équilibre est la bouche juste
+    # au-dessus du sol. Poids monté 2.0 -> 3.0 pour tirer plus près.
+    cfg.rewards["mouth_ground_proximity"] = RewardTermCfg(
+        func=microduck_mdp.mouth_ground_proximity,
+        weight=3.0,
+        params={
+            "asset_cfg": SceneEntityCfg("robot", site_names=["mouth_tip"]),
+            "std": 0.10,
+            "target_height": 0.0,
+            "command_name": "twist",
+        },
+    )
 
-    # Suivi de pose interpolée par la phase (STAND<->DOWN<->STAND). Directif et
-    # symétrique : le retour debout est récompensé exactement comme la descente.
-    # Suivi de pose SÉPARÉ tête / jambes pour un relevage séquencé :
-    #   - tête : remonte tôt (hold_end=HOLD_END, rise_end=RISE_HEAD_END)
-    #   - jambes : restent pliées jusqu'à RISE_HEAD_END puis remontent
-    #     (hold_end=RISE_HEAD_END, rise_end=RISE_END)
-    # Descente identique pour les deux (descent_end=DESCENT_END). Poids répartis
-    # ~proportionnellement au nombre de joints (tête 4 / jambes 10) pour garder
-    # l'emphase totale (~6.0 gaussienne, ~2.0 L1).
-    cfg.rewards["phase_pose_track_head"] = RewardTermCfg(
-        func=microduck_mdp.phase_pose_track,
+    # Approach phase: reward mouth tip x-axis pointing downward (perpendicular to ground).
+    # alignment ∈ [-1, 1]: 1 = x-axis perfectly vertical, 0 = horizontal, -1 = pointing up.
+    # Orientation : axe bouche vers le bas (perpendiculaire au sol). Poids monté
+    # 1.0 -> 2.0 -> "orienter correctement" est un objectif explicite.
+    cfg.rewards["mouth_perpendicular_to_ground"] = RewardTermCfg(
+        func=microduck_mdp.mouth_perpendicular_to_ground,
         weight=2.0,
         params={
-            "command_name": "twist", "target_pose": DOWN_HEAD, "std": POSE_STD,
-            "descent_end": DESCENT_END, "hold_end": HOLD_END, "rise_end": RISE_HEAD_END,
-            "asset_cfg": SceneEntityCfg("robot"),
+            "asset_cfg": SceneEntityCfg("robot", site_names=["mouth_tip"]),
+            "command_name": "twist",
         },
     )
-    cfg.rewards["phase_pose_track_legs"] = RewardTermCfg(
-        func=microduck_mdp.phase_pose_track,
+
+    # Return phase — legs. Under mjlab 1.3.0 + canonical BAM the passive jaw
+    # joints are no longer part of the articulation, so joint_pos is the clean
+    # 14-joint layout: 0-4 left leg, 5-8 neck/head, 9-13 right leg. (Was the old
+    # 16-joint layout [0-4, 11-15] with passive_1/passive_2 at 9,10.)
+    _LEG_JOINTS = [0, 1, 2, 3, 4, 9, 10, 11, 12, 13]
+    cfg.rewards["ground_pick_return_pose_legs"] = RewardTermCfg(
+        func=microduck_mdp.ground_pick_return_pose,
         weight=4.0,
         params={
-            "command_name": "twist", "target_pose": DOWN_LEGS, "std": POSE_STD,
-            "descent_end": DESCENT_END, "hold_end": RISE_HEAD_END, "rise_end": RISE_END,
-            "asset_cfg": SceneEntityCfg("robot"),
+            "std": 0.3,
+            "command_name": "twist",
+            "joint_indices": _LEG_JOINTS,
         },
     )
-    cfg.rewards["phase_pose_track_l1_head"] = RewardTermCfg(
-        func=microduck_mdp.phase_pose_track_l1,
-        weight=0.6,
+
+    # Return phase — neck/head (joints 5-8): tight std to prevent backward overshoot
+    # and head-body collision (head geoms have no collision mesh, so self_collisions
+    # can't catch it — the pose reward is the only guard).
+    _NECK_JOINTS = [5, 6, 7, 8]
+    cfg.rewards["ground_pick_return_pose_neck"] = RewardTermCfg(
+        func=microduck_mdp.ground_pick_return_pose,
+        weight=6.0,
         params={
-            "command_name": "twist", "target_pose": DOWN_HEAD,
-            "descent_end": DESCENT_END, "hold_end": HOLD_END, "rise_end": RISE_HEAD_END,
-            "asset_cfg": SceneEntityCfg("robot"),
-        },
-    )
-    cfg.rewards["phase_pose_track_l1_legs"] = RewardTermCfg(
-        func=microduck_mdp.phase_pose_track_l1,
-        weight=1.4,
-        params={
-            "command_name": "twist", "target_pose": DOWN_LEGS,
-            "descent_end": DESCENT_END, "hold_end": RISE_HEAD_END, "rise_end": RISE_END,
-            "asset_cfg": SceneEntityCfg("robot"),
+            "std": 0.15,
+            "command_name": "twist",
+            "joint_indices": _NECK_JOINTS,
         },
     )
 
@@ -270,7 +236,7 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     # get the mouth to the ground is to tip forward and faceplant (feet lift off) —
     # exactly the failure seen in play. Rewarding ground contact forces a proper
     # planted crouch instead. Weight is set above the mouth_ground_proximity gain
-    # (1.0) so lifting a foot to reach lower never pays off. Always-on: the feet
+    # (2.0) so lifting a foot to reach lower never pays off. Always-on: the feet
     # should never leave the ground during either phase.
     cfg.rewards["feet_grounded"] = RewardTermCfg(
         func=microduck_mdp.feet_grounded_reward,
@@ -290,12 +256,8 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     )
 
     # Neck/head smoothness — higher weight because head is heavily used.
-    # Cou faiblement pénalisé : ce geste demande un GROS débattement du cou
-    # (neck_pitch -2.44 <-> +0.35, deux fois par cycle). La valeur lourde (-1.0)
-    # héritée de l'ancien ground_pick empêchait le cou de remonter (tête coincée
-    # en bas au retour).
     cfg.rewards["neck_action_rate_l2"] = RewardTermCfg(
-        func=microduck_mdp.neck_action_rate_l2, weight=-0.3
+        func=microduck_mdp.neck_action_rate_l2, weight=-1.0
     )
 
     # Joint torque penalty — increased to further penalise fast/forceful moves.
@@ -310,21 +272,14 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
         params={"sensor_name": self_collision_cfg.name},
     )
 
-    # Head-on-ground impact penalty: forces > threshold (N) cost weight × (force-threshold)
-    # per step. Discourages slamming the head into the ground when reaching for it
-    # without preventing gentle contact (the mouth_tip site can still kiss the ground).
-    # Poids renforcé (-0.5 -> -2.0) et seuil abaissé (2.0 -> 1.0 N) : la policy
-    # arrivait encore trop fort — pénaliser plus tôt et plus fort les impacts.
-    # Poids VOLONTAIREMENT faible (-0.3) : à -2.0 la pénalité d'impact dominait le
-    # suivi de pose -> la policy CABRAIT la tête en l'air pour esquiver le coût du
-    # contact au sol (le contact posé coûtait ~plusieurs unités/step, alors que
-    # bien suivre la pose ne rapporte que ~1.7/step). Sous-dominant, la tête
-    # descend et repose ; la descente lente + le retrait de mouth_ground_proximity
-    # gardent l'arrivée douce. Reste un garde-fou anti-slam.
+    # No-touch enforcement : on ne VEUT PAS de contact (la bouche doit rester juste
+    # au-dessus). Pénalité forte et seuil bas -> tout contact au sol coûte cher.
+    # C'est ce terme qui, contre mouth_ground_proximity, fixe l'équilibre "au plus
+    # près sans toucher".
     cfg.rewards["head_impact_penalty"] = RewardTermCfg(
         func=microduck_mdp.body_impact_cost,
-        weight=-0.3,
-        params={"sensor_name": head_impact_cfg.name, "threshold": 3.0},
+        weight=-2.0,
+        params={"sensor_name": head_impact_cfg.name, "threshold": 1.0},
     )
 
     # ── Observations (identical 61D layout to walking policy) ──────────────────
@@ -420,12 +375,7 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     command.rel_standing_envs = 0.0
     command.rel_heading_envs  = 0.0
     cfg.commands["twist"] = microduck_mdp.GroundPickPhaseCommandCfg(
-        **{
-            **vars(command),
-            "class_type": microduck_mdp.GroundPickPhaseCommand,
-            "period": GP_PERIOD,
-            "randomize_phase": False,
-        }
+        **{**vars(command), "class_type": microduck_mdp.GroundPickPhaseCommand}
     )
 
     # ── Terminations ──────────────────────────────────────────────────────────
@@ -569,15 +519,15 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     del cfg.curriculum["command_vel"]
 
     # Action-rate curriculum: warm up light so the gross reaching motion can form,
-    # then clamp down HARD pour lisser les mouvements brusques (fin -3.0).
+    # then clamp down HARD (-2.0, heavier than velocity's -1.0) for smoothness.
     cfg.curriculum["action_rate_weight"] = CurriculumTermCfg(
         func=microduck_mdp.reward_weight,
         params={
             "reward_name": "action_rate_l2",
             "weight_stages": [
                 {"step": 0,          "weight": -0.8},
-                {"step": 250 * 24,   "weight": -1.8},
-                {"step": 500 * 24,   "weight": -3.0},
+                {"step": 250 * 24,   "weight": -1.5},
+                {"step": 500 * 24,   "weight": -2.0},
             ],
         },
     )
