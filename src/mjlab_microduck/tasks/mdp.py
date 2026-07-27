@@ -2065,6 +2065,25 @@ def trunk_vertical_accel_penalty(
     return -torch.abs(a_z)
 
 
+def trunk_downward_velocity_penalty(
+    env: ManagerBasedRlEnv,
+    max_down_vel: float = 0.05,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """Penalty on downward trunk velocity beyond ``max_down_vel``.
+
+    Caps descent SPEED, which ``trunk_vertical_accel_penalty`` alone cannot:
+    a fast constant-velocity drop has a_z ≈ 0 the whole way down and pays only
+    one impact spike at the bottom — cheap relative to arriving at the target
+    pose sooner. This term makes every step of a too-fast descent cost reward,
+    so the gentlest descent that stays under the cap is optimal. Zero at rest
+    and for any motion slower than the cap (including all upward motion).
+    """
+    asset = env.scene[asset_cfg.name]
+    vz = torch.nan_to_num(asset.data.root_link_lin_vel_w[:, 2], nan=0.0)
+    return -torch.clamp(-vz - max_down_vel, min=0.0)
+
+
 def upright_while_tall(
     env: ManagerBasedRlEnv,
     height_low: float,

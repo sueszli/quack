@@ -19,9 +19,9 @@ class MicroduckOnPolicyRunner(VelocityOnPolicyRunner):
 
 # ---------------------------------------------------------------------------
 # mjlab 1.3.0 migration — velocity-family-first scope.
-# Only velocity / velocity2 / velstand / velstand_tiptoe / standup are ported and
-# verified under 1.3.0 + canonical BAM. The remaining env cfgs (rollers, pose,
-# ground_pick, sit, sitstand, testbench) are NOT yet migrated — re-enable each
+# Only velocity / velocity2 / velstand / velstand_tiptoe / standup / sit are
+# ported and verified under 1.3.0 + canonical BAM. The remaining env cfgs
+# (rollers, pose, sitstand, testbench) are NOT yet migrated — re-enable each
 # import + registration once it is ported and verified.
 # ---------------------------------------------------------------------------
 from .microduck_velocity_env_cfg import (
@@ -51,6 +51,10 @@ from .microduck_ground_pick_env_cfg import (
 from .microduck_ball_kick_env_cfg import (
     make_microduck_ball_kick_env_cfg,
     MicroduckBallKickRlCfg,
+)
+from .microduck_sit_env_cfg import (
+    make_microduck_sit_env_cfg,
+    MicroduckSitRlCfg,
 )
 
 # Standard velocity task
@@ -144,6 +148,25 @@ register_mjlab_task(
     runner_cls=MicroduckOnPolicyRunner,
 )
 print("✓ StandUp task registered: Mjlab-StandUp-Rough-MicroDuck")
+
+# Sit task — standing → sitting keyframe, gently (companion to StandUp)
+register_mjlab_task(
+    task_id="Mjlab-Sit-Flat-MicroDuck",
+    env_cfg=make_microduck_sit_env_cfg(),
+    play_env_cfg=make_microduck_sit_env_cfg(play=True),
+    rl_cfg=MicroduckSitRlCfg,
+    runner_cls=MicroduckOnPolicyRunner,
+)
+print("✓ Sit task registered: Mjlab-Sit-Flat-MicroDuck")
+
+register_mjlab_task(
+    task_id="Mjlab-Sit-Rough-MicroDuck",
+    env_cfg=make_microduck_sit_env_cfg(rough=True),
+    play_env_cfg=make_microduck_sit_env_cfg(play=True, rough=True),
+    rl_cfg=MicroduckSitRlCfg,
+    runner_cls=MicroduckOnPolicyRunner,
+)
+print("✓ Sit task registered: Mjlab-Sit-Rough-MicroDuck")
 
 # Ground-pick task — crouch, touch the ground with the mouth tip, return to stand
 register_mjlab_task(
