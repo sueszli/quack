@@ -77,10 +77,11 @@ BALL_OFFSET = (0.09, -0.042)
 BALL_POS_NOISE_XY = 0.015
 
 # Target kick speed (m/s). The first trained policy (linear reward capped at
-# 5 m/s) kicked much harder than needed — this tames the kick to a controlled
-# strike. Comfortably within capability: even a crude single-joint scripted
-# swing reached 0.5-0.7 m/s.
-BALL_TARGET_SPEED = 1.0
+# 5 m/s) kicked much harder than needed — this tames the kick to a gentle,
+# controlled tap. NOTE: the kick reward weights below are scaled to keep the
+# at-target payoff ≈ +3/step regardless of this value (weight ≈ 3/target for
+# the capped term) — if you change the target, rescale the weights with it.
+BALL_TARGET_SPEED = 0.25
 
 # Trunk standing height (measured natural equilibrium at HOME — see standup env).
 STAND_Z = 0.115
@@ -199,25 +200,28 @@ def make_microduck_ball_kick_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg
             del cfg.rewards[name]
 
     # ── Rewards: kick objective — TARGET speed, not max speed ────────────────
-    # Two-sided landscape peaking at BALL_TARGET_SPEED:
-    #   • ball_forward_velocity, linear and CAPPED at the target (weight 3.0):
-    #     dense bootstrap gradient from the first touch, saturating at 1 m/s.
-    #   • ball_speed_overshoot_penalty (weight -2.0): each m/s above target
-    #     costs -2/step while it persists. Needed because the cap alone does
+    # Two-sided landscape peaking at BALL_TARGET_SPEED (0.25 m/s — a gentle tap):
+    #   • ball_forward_velocity, linear and CAPPED at the target: dense
+    #     bootstrap gradient from the first touch. Weight 12.0 = 3.0/target so
+    #     the at-target payoff stays ≈ +3/step (with the old weight 3.0 the
+    #     payoff would be 0.75/step — too weak vs the ~7/step standing stack to
+    #     justify the swing's transient pose/upright cost).
+    #   • ball_speed_overshoot_penalty (weight -4.0): each m/s above target
+    #     costs -4/step while it persists. Needed because the cap alone does
     #     NOT tame the kick — a harder kick keeps the ball at the cap for more
     #     steps, so total (per-step × rolling time) reward still grows with
     #     strike speed.
-    # Slopes are asymmetric on purpose (+3/(m/s) below, -2/(m/s) above): the
-    # optimum sits at the target, but erring slightly hard stays much cheaper
-    # than not kicking. At target: +3/step while the ball rolls.
+    # Slopes stay asymmetric (+12/(m/s) below, -4/(m/s) above): the optimum
+    # sits at the target, but erring hard stays much cheaper than not kicking
+    # (net reward only hits 0 at ~1.0 m/s, 4× the target).
     cfg.rewards["ball_forward_velocity"] = RewardTermCfg(
         func=microduck_mdp.ball_forward_velocity,
-        weight=3.0,
+        weight=12.0,
         params={"asset_name": "ball", "max_speed": BALL_TARGET_SPEED},
     )
     cfg.rewards["ball_speed_overshoot"] = RewardTermCfg(
         func=microduck_mdp.ball_speed_overshoot_penalty,
-        weight=-2.0,
+        weight=-4.0,
         params={"asset_name": "ball", "target_speed": BALL_TARGET_SPEED},
     )
 
