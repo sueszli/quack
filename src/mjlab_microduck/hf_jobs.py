@@ -51,6 +51,10 @@ apt-get update -qq
 apt-get install -qq -y --no-install-recommends git curl ca-certificates xz-utils >/dev/null
 curl -LsSf https://astral.sh/uv/install.sh | sh >/dev/null
 export PATH="/root/.local/bin:$PATH"
+# HF Jobs met le cache uv et /work sur des FS différents -> uv ne peut pas
+# hardlink et son fallback corrompt les wheels construits (bam -> "Missing
+# .dist-info directory"). copy = install fiable (le remède que uv suggère).
+export UV_LINK_MODE=copy
 
 mkdir -p /work && cd /work
 echo "[bootstrap] extracting source $SRC_TARBALL"
