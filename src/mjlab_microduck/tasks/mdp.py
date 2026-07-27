@@ -2400,6 +2400,29 @@ def ground_pick_return_pose(
     return return_weight * pose_reward
 
 
+def ground_pick_return_upright(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    std: float = 0.4,
+    command_name: str = "twist",
+) -> torch.Tensor:
+    """Reward trunk verticality, weighted by the RETURN phase (stand-up aid).
+
+    Same return weighting as ``ground_pick_return_pose`` (``max(0, -sin(2π·phase))``)
+    so it only rewards being upright during the stand-up, never fighting the
+    forward lean of the approach. Verticality = ``exp(-tilt²/std²)`` with the same
+    tilt proxy as ``body_upright_gaussian`` (``2*(qx²+qy²) ≈ 1-cos(tilt)``). A broad
+    std (0.4 rad ≈ 23°) gives gradient even from a fairly tilted crouch.
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    quat = asset.data.root_link_quat_w
+    tilt_sq = 2.0 * (quat[:, 1] ** 2 + quat[:, 2] ** 2)  # qx² + qy²
+    upright = torch.exp(-tilt_sq / (std * std))
+    cmd = env.command_manager.get_command(command_name)
+    return_weight = torch.clamp(-cmd[:, 1], min=0.0)
+    return return_weight * upright
+
+
 # ==============================================================================
 # Domain Randomization Events
 # ==============================================================================

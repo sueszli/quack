@@ -219,6 +219,21 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
         },
     )
 
+    # Aide au RELEVER : tronc vertical récompensé UNIQUEMENT pendant la remontée
+    # (pondéré max(0,-sin) comme le retour de pose). Le retour de pose seul ne
+    # garantit pas l'équilibre dynamique en se relevant ; ce terme pousse le tronc
+    # à rester vertical pendant l'extension. Gaté sur le retour -> ne gêne PAS le
+    # penché avant de l'approche (upright always-on reste faible, 0.2).
+    cfg.rewards["return_upright"] = RewardTermCfg(
+        func=microduck_mdp.ground_pick_return_upright,
+        weight=2.0,
+        params={
+            "asset_cfg": SceneEntityCfg("robot"),
+            "std": 0.4,
+            "command_name": "twist",
+        },
+    )
+
     # ── Rewards: stability (kept from velocity env, weights tuned for this task)
 
     # Upright: reduced weight — the robot needs to lean forward during approach.

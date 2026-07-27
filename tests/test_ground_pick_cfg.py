@@ -22,9 +22,10 @@ def test_ground_pick_cfg_task_space_rewards():
     # pieds au sol ET à plat (anti-bascule sur la cheville)
     assert "feet_grounded" in r and r["feet_grounded"].weight == 3.0
     assert "feet_flat" in r and r["feet_flat"].weight == -2.0
-    # retour debout
+    # retour debout + aide au relever (upright gaté sur la remontée)
     assert "ground_pick_return_pose_legs" in r
     assert "ground_pick_return_pose_neck" in r
+    assert "return_upright" in r and r["return_upright"].weight == 2.0
     # plus d'approche par pose interpolée
     assert "phase_pose_track_head" not in r
     assert "phase_pose_track_legs" not in r
