@@ -97,22 +97,22 @@ from mjlab_microduck.tasks.symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
 DOWN_POSE = {
     "left_hip_yaw": -0.0046, "left_hip_roll": 0.0399, "left_hip_pitch": 0.7133,
     "left_knee": 1.4327, "left_ankle": 0.6903,
-    # neck_pitch relevé de la lecture brute (-2.4421 -> -2.25) pour que la bouche
-    # approche le sol sans s'y écraser complètement. head_pitch = lecture brute.
-    "neck_pitch": -2.25, "head_pitch": -0.9112, "head_yaw": 0.023, "head_roll": -0.0399,
+    # neck_pitch relevé de la lecture brute (-2.4421 -> -2.35) : touche le sol mais
+    # moins violemment que la lecture brute. head_pitch = lecture brute.
+    "neck_pitch": -2.35, "head_pitch": -0.9112, "head_yaw": 0.023, "head_roll": -0.0399,
     "right_hip_yaw": -0.0169, "right_hip_roll": 0.1074, "right_hip_pitch": -0.5706,
     "right_knee": -1.491, "right_ankle": -0.7808,
 }
 
 # Timing du cycle (fractions de phase), période 4 s :
 #   descente [0, DESCENT_END) ~0.8s / bas [DESCENT_END, HOLD_END) ~1.2s /
-#   remontée [HOLD_END, RISE_END) ~1.0s / repos [RISE_END, 1) ~1.0s
-# Descente rallongée (arrivée plus douce) et remontée rallongée (le cou a un gros
-# débattement à remonter : neck_pitch -2.44 -> +0.35).
+#   remontée [HOLD_END, RISE_END) ~1.4s / repos [RISE_END, 1) ~0.6s
+# Descente rallongée (arrivée douce) et remontée rallongée à ~1.4s : extension
+# lente/contrôlée du corps -> meilleur équilibre au relever.
 GP_PERIOD    = 4.0
 DESCENT_END  = 0.20
 HOLD_END     = 0.50
-RISE_END     = 0.75
+RISE_END     = 0.85
 POSE_STD     = 0.3
 
 
