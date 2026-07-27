@@ -113,16 +113,24 @@ DOWN_POSE = {
 
 # Timing du cycle (fractions de phase), période 6 s :
 #   descente [0, DESCENT_END) ~0.9s / bas [DESCENT_END, HOLD_END) ~0.9s /
-#   remontée [HOLD_END, RISE_END) ~1.5s / repos [RISE_END, 1) ~2.7s
-# Période allongée (4 -> 6 s) avec un LONG repos debout (~2.7s) : espace les
-# ground-pick pour que le déséquilibre d'un cycle se stabilise avant le suivant,
-# et remontée lente (~1.5s) pour un relever contrôlé.
+#   remontée SÉQUENCÉE / repos [RISE_END, 1) ~2.7s
+# Relevage séquencé (tête d'abord, puis redressement) :
+#   - TÊTE   : remonte [HOLD_END, RISE_HEAD_END)  = 0.30->0.42  (~0.7s)
+#   - JAMBES : restent pliées jusqu'à RISE_HEAD_END puis remontent
+#              [RISE_HEAD_END, RISE_END) = 0.42->0.55  (~0.8s)
+#   -> la tête se relève d'abord (recentre le CoM), puis le corps se redresse.
 # ⚠️ --ground-pick-period au déploiement DOIT valoir 6.0.
-GP_PERIOD    = 6.0
-DESCENT_END  = 0.15
-HOLD_END     = 0.30
-RISE_END     = 0.55
-POSE_STD     = 0.3
+GP_PERIOD     = 6.0
+DESCENT_END   = 0.15
+HOLD_END      = 0.30
+RISE_HEAD_END = 0.42   # fin de remontée TÊTE = début de remontée JAMBES
+RISE_END      = 0.55
+POSE_STD      = 0.3
+
+# Groupes de joints pour le relevage séquencé.
+_HEAD_JOINTS = ("neck_pitch", "head_pitch", "head_yaw", "head_roll")
+DOWN_HEAD = {k: v for k, v in DOWN_POSE.items() if k in _HEAD_JOINTS}
+DOWN_LEGS = {k: v for k, v in DOWN_POSE.items() if k not in _HEAD_JOINTS}
 
 
 def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) -> ManagerBasedRlEnvCfg:
@@ -201,28 +209,46 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
 
     # Suivi de pose interpolée par la phase (STAND<->DOWN<->STAND). Directif et
     # symétrique : le retour debout est récompensé exactement comme la descente.
-    cfg.rewards["phase_pose_track"] = RewardTermCfg(
+    # Suivi de pose SÉPARÉ tête / jambes pour un relevage séquencé :
+    #   - tête : remonte tôt (hold_end=HOLD_END, rise_end=RISE_HEAD_END)
+    #   - jambes : restent pliées jusqu'à RISE_HEAD_END puis remontent
+    #     (hold_end=RISE_HEAD_END, rise_end=RISE_END)
+    # Descente identique pour les deux (descent_end=DESCENT_END). Poids répartis
+    # ~proportionnellement au nombre de joints (tête 4 / jambes 10) pour garder
+    # l'emphase totale (~6.0 gaussienne, ~2.0 L1).
+    cfg.rewards["phase_pose_track_head"] = RewardTermCfg(
         func=microduck_mdp.phase_pose_track,
-        weight=6.0,
+        weight=2.0,
         params={
-            "command_name": "twist",
-            "target_pose": DOWN_POSE,
-            "std": POSE_STD,
-            "descent_end": DESCENT_END,
-            "hold_end": HOLD_END,
-            "rise_end": RISE_END,
+            "command_name": "twist", "target_pose": DOWN_HEAD, "std": POSE_STD,
+            "descent_end": DESCENT_END, "hold_end": HOLD_END, "rise_end": RISE_HEAD_END,
             "asset_cfg": SceneEntityCfg("robot"),
         },
     )
-    cfg.rewards["phase_pose_track_l1"] = RewardTermCfg(
-        func=microduck_mdp.phase_pose_track_l1,
-        weight=2.0,
+    cfg.rewards["phase_pose_track_legs"] = RewardTermCfg(
+        func=microduck_mdp.phase_pose_track,
+        weight=4.0,
         params={
-            "command_name": "twist",
-            "target_pose": DOWN_POSE,
-            "descent_end": DESCENT_END,
-            "hold_end": HOLD_END,
-            "rise_end": RISE_END,
+            "command_name": "twist", "target_pose": DOWN_LEGS, "std": POSE_STD,
+            "descent_end": DESCENT_END, "hold_end": RISE_HEAD_END, "rise_end": RISE_END,
+            "asset_cfg": SceneEntityCfg("robot"),
+        },
+    )
+    cfg.rewards["phase_pose_track_l1_head"] = RewardTermCfg(
+        func=microduck_mdp.phase_pose_track_l1,
+        weight=0.6,
+        params={
+            "command_name": "twist", "target_pose": DOWN_HEAD,
+            "descent_end": DESCENT_END, "hold_end": HOLD_END, "rise_end": RISE_HEAD_END,
+            "asset_cfg": SceneEntityCfg("robot"),
+        },
+    )
+    cfg.rewards["phase_pose_track_l1_legs"] = RewardTermCfg(
+        func=microduck_mdp.phase_pose_track_l1,
+        weight=1.4,
+        params={
+            "command_name": "twist", "target_pose": DOWN_LEGS,
+            "descent_end": DESCENT_END, "hold_end": RISE_HEAD_END, "rise_end": RISE_END,
             "asset_cfg": SceneEntityCfg("robot"),
         },
     )
@@ -543,15 +569,15 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     del cfg.curriculum["command_vel"]
 
     # Action-rate curriculum: warm up light so the gross reaching motion can form,
-    # then clamp down HARD (-2.0, heavier than velocity's -1.0) for smoothness.
+    # then clamp down HARD pour lisser les mouvements brusques (fin -3.0).
     cfg.curriculum["action_rate_weight"] = CurriculumTermCfg(
         func=microduck_mdp.reward_weight,
         params={
             "reward_name": "action_rate_l2",
             "weight_stages": [
                 {"step": 0,          "weight": -0.8},
-                {"step": 250 * 24,   "weight": -1.5},
-                {"step": 500 * 24,   "weight": -2.0},
+                {"step": 250 * 24,   "weight": -1.8},
+                {"step": 500 * 24,   "weight": -3.0},
             ],
         },
     )
