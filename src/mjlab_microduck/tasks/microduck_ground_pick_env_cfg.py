@@ -282,9 +282,15 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     # without preventing gentle contact (the mouth_tip site can still kiss the ground).
     # Poids renforcé (-0.5 -> -2.0) et seuil abaissé (2.0 -> 1.0 N) : la policy
     # arrivait encore trop fort — pénaliser plus tôt et plus fort les impacts.
+    # Poids VOLONTAIREMENT faible (-0.3) : à -2.0 la pénalité d'impact dominait le
+    # suivi de pose -> la policy CABRAIT la tête en l'air pour esquiver le coût du
+    # contact au sol (le contact posé coûtait ~plusieurs unités/step, alors que
+    # bien suivre la pose ne rapporte que ~1.7/step). Sous-dominant, la tête
+    # descend et repose ; la descente lente + le retrait de mouth_ground_proximity
+    # gardent l'arrivée douce. Reste un garde-fou anti-slam.
     cfg.rewards["head_impact_penalty"] = RewardTermCfg(
         func=microduck_mdp.body_impact_cost,
-        weight=-2.0,
+        weight=-0.3,
         params={"sensor_name": head_impact_cfg.name, "threshold": 3.0},
     )
 
