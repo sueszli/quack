@@ -94,14 +94,21 @@ from mjlab_microduck.tasks.symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
 # coupé, bouche posée contre le sol) — convention rad = celle du sim.
 # NB: neck_pitch=-2.44 dépasse la borne sim d'origine (-1.571) → la plage du joint
 # neck_pitch a été élargie à -2.6 dans robot_allcollisions.xml pour l'atteindre.
+# Pose DOWN RÉGÉNÉRÉE (2026-07-27) — la lecture brute posait deux problèmes :
+#   (a) bouche commandée À z=0 (dans le sol) une fois les pieds posés -> la policy
+#       enfonçait la tête (tape fort quel que soit le poids d'impact) ;
+#   (b) jambes ASYMÉTRIQUES (hip_pitch L+0.71/R-0.57, hip_roll même signe) ->
+#       le robot penchait -> impossible de se relever.
+# Corrigée : jambes SYMÉTRIQUES (miroir G/D, magnitudes moyennées) + profondeur à
+# 0.9 pour que la bouche EFFLEURE (~+0.6 cm au-dessus du sol, pieds posés) au lieu
+# d'être enfoncée. Tête centrée (head_yaw/roll = 0). Orientation bouche->sol
+# vérifiée (axe bouche z ≈ -1) et rendu visuel OK.
 DOWN_POSE = {
-    "left_hip_yaw": -0.0046, "left_hip_roll": 0.0399, "left_hip_pitch": 0.7133,
-    "left_knee": 1.4327, "left_ankle": 0.6903,
-    # neck_pitch ~= lecture brute (la hauteur de la bouche dépend surtout du pli
-    # des jambes, pas du neck : -2.35..-2.60 ne bouge la bouche que d'~1 cm).
-    "neck_pitch": -2.40, "head_pitch": -0.9112, "head_yaw": 0.023, "head_roll": -0.0399,
-    "right_hip_yaw": -0.0169, "right_hip_roll": 0.1074, "right_hip_pitch": -0.5706,
-    "right_knee": -1.491, "right_ankle": -0.7808,
+    "left_hip_yaw": 0.0, "left_hip_roll": -0.073, "left_hip_pitch": 0.532,
+    "left_knee": 1.315, "left_ankle": 0.707,
+    "neck_pitch": -2.40, "head_pitch": -0.9112, "head_yaw": 0.0, "head_roll": 0.0,
+    "right_hip_yaw": 0.0, "right_hip_roll": 0.073, "right_hip_pitch": -0.532,
+    "right_knee": -1.315, "right_ankle": -0.707,
 }
 
 # Timing du cycle (fractions de phase), période 6 s :
