@@ -13,9 +13,12 @@ _ROBOT_DIR: Path = Path(os.path.dirname(__file__)) / "microduck"
 MICRODUCK_WALK_XML: Path = _ROBOT_DIR / "robot_walk.xml"
 # Full-collision model, shared by standup / ground-pick / walk-rollers tasks.
 MICRODUCK_ALLCOLLISIONS_XML: Path = _ROBOT_DIR / "robot_allcollisions.xml"
+# 70mm / 15g ball prop for the BallKick task.
+MICRODUCK_BALL_XML: Path = _ROBOT_DIR / "ball.xml"
 
 assert MICRODUCK_WALK_XML.exists(), f"XML not found: {MICRODUCK_WALK_XML}"
 assert MICRODUCK_ALLCOLLISIONS_XML.exists(), f"XML not found: {MICRODUCK_ALLCOLLISIONS_XML}"
+assert MICRODUCK_BALL_XML.exists(), f"XML not found: {MICRODUCK_BALL_XML}"
 
 
 def get_walk_spec() -> mujoco.MjSpec:
@@ -32,6 +35,10 @@ def get_ground_pick_spec() -> mujoco.MjSpec:
 
 def get_walk_rollers_spec() -> mujoco.MjSpec:
     return mujoco.MjSpec.from_file(str(MICRODUCK_ALLCOLLISIONS_XML))
+
+
+def get_ball_spec() -> mujoco.MjSpec:
+    return mujoco.MjSpec.from_file(str(MICRODUCK_BALL_XML))
 
 
 HOME_FRAME = EntityCfg.InitialStateCfg(
@@ -130,6 +137,14 @@ MICRODUCK_GROUND_PICK_ROBOT_CFG = EntityCfg(
         actuators=(actuators,),
         soft_joint_pos_limit_factor=0.9,
     ),
+)
+
+# Free-floating, non-articulated ball prop for the BallKick task. Position is
+# set each episode by the reset_ball_in_front_of_foot event; the init pos here
+# only matters for the pristine pre-first-reset state.
+MICRODUCK_BALL_CFG = EntityCfg(
+    spec_fn=get_ball_spec,
+    init_state=EntityCfg.InitialStateCfg(pos=(0.3, 0.0, 0.035)),
 )
 
 # Roller skate robot: passive wheel joints have no actuators in the XML.

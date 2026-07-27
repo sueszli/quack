@@ -48,6 +48,10 @@ from .microduck_ground_pick_env_cfg import (
     make_microduck_ground_pick_env_cfg,
     MicroduckGroundPickRlCfg,
 )
+from .microduck_ball_kick_env_cfg import (
+    make_microduck_ball_kick_env_cfg,
+    MicroduckBallKickRlCfg,
+)
 
 # Standard velocity task
 register_mjlab_task(
@@ -150,6 +154,17 @@ register_mjlab_task(
     runner_cls=MicroduckOnPolicyRunner,
 )
 print("✓ GroundPick task registered: Mjlab-GroundPick-Flat-MicroDuck")
+
+# BallKick task — kick a 70mm/15g ball forward hard with the right foot from a
+# standing start (flat terrain only — a ball on rough terrain is another task).
+register_mjlab_task(
+    task_id="Mjlab-BallKick-Flat-MicroDuck",
+    env_cfg=make_microduck_ball_kick_env_cfg(),
+    play_env_cfg=make_microduck_ball_kick_env_cfg(play=True),
+    rl_cfg=MicroduckBallKickRlCfg,
+    runner_cls=MicroduckOnPolicyRunner,
+)
+print("✓ BallKick task registered: Mjlab-BallKick-Flat-MicroDuck")
 
 register_mjlab_task(
     task_id="Mjlab-GroundPick-Rough-MicroDuck",
