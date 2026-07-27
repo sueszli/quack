@@ -732,6 +732,32 @@ def descent_speed_reward(
     return torch.clamp(vx, min=0.0, max=cap)
 
 
+def wheel_glide_reward(
+    env: ManagerBasedRlEnv,
+    cap_speed: float = 0.35,
+    wheel_radius: float = 0.0175,
+) -> torch.Tensor:
+    """Récompense le ROULEMENT des roues vers l'avant (glisse), plafonné.
+
+    Contrairement à descent_speed (vitesse de la BASE, qu'on peut atteindre en
+    "courant"/poussant), on récompense la rotation des ROUES passives = vraie
+    glisse par roulement. Indépendant de toute commande (la tâche pente a une
+    commande nulle : la glisse vient de la gravité). Plafonné à ``cap_speed``
+    (m/s de vitesse de roulement) -> AUCUNE incitation à accélérer au-delà ; nul
+    si les roues reculent (remontée). NaN-safe.
+    """
+    asset: Entity = env.scene["robot"]
+    lf, _ = asset.find_joints("passive_LFwheel")
+    lr, _ = asset.find_joints("passive_LRwheel")
+    rf, _ = asset.find_joints("passive_RFwheel")
+    rr, _ = asset.find_joints("passive_RRwheel")
+    vel = asset.data.joint_vel
+    # Les 4 roues tournent en positif pour l'avant (cf. wheel_speed_reward).
+    omega = (vel[:, lf[0]] + vel[:, lr[0]] + vel[:, rf[0]] + vel[:, rr[0]]) / 4.0
+    speed = torch.nan_to_num(omega * wheel_radius, nan=0.0, posinf=0.0, neginf=0.0)
+    return torch.clamp(speed, min=0.0, max=cap_speed)
+
+
 def is_alive(env: ManagerBasedRlEnv) -> torch.Tensor:
     """
     Reward for staying alive (not terminated)

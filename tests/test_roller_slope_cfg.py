@@ -39,17 +39,23 @@ def test_has_heading_hold_reward():
     assert cfg.rewards["heading_hold"].weight > 0.0
 
 
-def test_has_upright_and_pose_rewards():
+def test_balance_rewards_no_fixed_pose():
+    # équilibre libre : upright/alive/glisse présents, mais PAS de pose fixe
+    # imposée (il doit pouvoir bouger son centre de gravité pour tenir la pente).
     cfg = make_microduck_roller_slope_env_cfg()
-    for name in ("upright", "alive", "standing_pose", "feet_flat"):
+    for name in ("upright", "alive", "feet_flat", "wheel_glide"):
         assert name in cfg.rewards
+    assert "standing_pose" not in cfg.rewards
+    assert "standing_pose_l1" not in cfg.rewards
 
 
-def test_has_descent_speed_reward():
-    # récompense de "se laisser glisser" : vitesse de descente, poids positif
+def test_has_wheel_glide_reward_not_base_speed():
+    # "se laisser glisser" = rouler (roues), pas récompenser la vitesse de base
+    # (qu'il atteignait en courant). wheel_glide présent, descent_speed absent.
     cfg = make_microduck_roller_slope_env_cfg()
-    assert "descent_speed" in cfg.rewards
-    assert cfg.rewards["descent_speed"].weight > 0.0
+    assert "wheel_glide" in cfg.rewards
+    assert cfg.rewards["wheel_glide"].weight > 0.0
+    assert "descent_speed" not in cfg.rewards
 
 
 def test_no_roller_skating_rewards_survive():
@@ -80,6 +86,13 @@ def test_obs_nan_policy_sanitize():
     cfg = make_microduck_roller_slope_env_cfg()
     assert cfg.observations["actor"].nan_policy == "sanitize"
     assert cfg.observations["critic"].nan_policy == "sanitize"
+
+
+def test_curriculum_present_and_starts_gentle():
+    # curriculum doux->raide : démarre sur la rampe la plus douce, promotion active
+    cfg = make_microduck_roller_slope_env_cfg()  # play=False (entraînement)
+    assert "terrain_levels" in cfg.curriculum
+    assert cfg.scene.terrain.max_init_terrain_level == 0
 
 
 def test_terrain_tile_fits_geometry():

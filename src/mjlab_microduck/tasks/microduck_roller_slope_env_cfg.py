@@ -9,10 +9,11 @@ de make_microduck_velocity_rollers_env_cfg (DR/obs/reset non touchés ici).
 """
 
 import math
+import os
 
 from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.envs import mdp as base_mdp
-from mjlab.managers import EventTermCfg, RewardTermCfg, TerminationTermCfg
+from mjlab.managers import CurriculumTermCfg, EventTermCfg, RewardTermCfg, TerminationTermCfg
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.rl import RslRlOnPolicyRunnerCfg, RslRlModelCfg
 from mjlab.terrains import TerrainEntityCfg
@@ -36,7 +37,24 @@ SPAWN_YAW          = (0.0, 0.0)   # face à la descente (+x), fixe
 
 # Raideur au PLAY : None = aléatoire (comme à l'entraînement). Mettre une valeur
 # 0..1 pour forcer une pente précise (1.0 = la plus raide ~20°, 0.5 = moyenne).
+# Surchargeable sans éditer le code via la variable d'env SLOPE_PLAY_DIFFICULTY
+# (ex: SLOPE_PLAY_DIFFICULTY=1.0 uv run play ... ; "none"/"random" = aléatoire).
 PLAY_DIFFICULTY    = None
+
+
+def _resolve_play_difficulty():
+    """Difficulté de play : env SLOPE_PLAY_DIFFICULTY sinon la constante."""
+    raw = os.environ.get("SLOPE_PLAY_DIFFICULTY")
+    if raw is None:
+        return PLAY_DIFFICULTY
+    raw = raw.strip().lower()
+    if raw in ("", "none", "random"):
+        return None
+    try:
+        return max(0.0, min(1.0, float(raw)))
+    except ValueError:
+        print(f"[roller_slope] SLOPE_PLAY_DIFFICULTY='{raw}' invalide -> défaut {PLAY_DIFFICULTY}")
+        return PLAY_DIFFICULTY
 
 # Terminaison « tombé dans le vide » : sous le plat de sortie le plus bas
 # (rampe la plus raide et la plus longue), avec marge => ne se déclenche jamais
@@ -66,15 +84,18 @@ def make_microduck_roller_slope_env_cfg(play: bool = False) -> ManagerBasedRlEnv
                 )
             },
         ),
-        max_init_terrain_level=None,  # None -> raideur ALÉATOIRE (niveau tiré sur
-                                      # toutes les rangées) à chaque env, pas de
-                                      # blocage sur la plus douce.
+        max_init_terrain_level=0,  # curriculum : démarrer sur la rampe la plus douce
     )
 
-    # Au play : par défaut aléatoire comme à l'entraînement (PLAY_DIFFICULTY=None).
-    # Mettre une valeur (0..1) pour forcer une raideur précise (1.0 = plus raide).
-    if play and PLAY_DIFFICULTY is not None:
-        cfg.scene.terrain.terrain_generator.difficulty_range = (PLAY_DIFFICULTY, PLAY_DIFFICULTY)
+    # Au play : montrer des pentes variées. difficulté None -> raideurs aléatoires
+    # (niveau tiré sur toutes les rangées) ; une valeur 0..1 force une raideur
+    # précise (1.0 = la plus raide). Pilotable via SLOPE_PLAY_DIFFICULTY.
+    if play:
+        play_difficulty = _resolve_play_difficulty()
+        if play_difficulty is not None:
+            cfg.scene.terrain.terrain_generator.difficulty_range = (play_difficulty, play_difficulty)
+        else:
+            cfg.scene.terrain.max_init_terrain_level = None
 
     # === COMMANDE neutralisée (équilibre pur) ===
     command = cfg.commands["twist"]
@@ -99,7 +120,11 @@ def make_microduck_roller_slope_env_cfg(play: bool = False) -> ManagerBasedRlEnv
     # façon assaini côté obs.
     cfg.events["reset_base"].params["velocity_range"] = {"x": ENTRY_VELOCITY_X}
 
-    # === RÉCOMPENSES : équilibre + posture debout nominale ===
+    # === RÉCOMPENSES : équilibre LIBRE (il place son centre de gravité lui-même) ===
+    # PAS de récompense de pose fixe : on ne lui dicte plus la posture debout du
+    # plat (qui l'empêchait de fléchir/pencher). Il est libre de bouger son CoM
+    # (hanches/genoux, inclinaison) pour tenir la pente. On récompense juste :
+    # rester debout, vivre, glisser, aller droit — et ne pas tomber (terminaisons).
     keep = {"action_rate_l2"}
     for name in list(cfg.rewards.keys()):
         if name not in keep:
@@ -111,18 +136,13 @@ def make_microduck_roller_slope_env_cfg(play: bool = False) -> ManagerBasedRlEnv
         params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)), "std": 0.2},
     )
     cfg.rewards["alive"] = RewardTermCfg(func=microduck_mdp.is_alive, weight=1.0)
-    # posture debout nominale (cible fixe = default_joint_pos, aucun override)
-    cfg.rewards["standing_pose"] = RewardTermCfg(
-        func=microduck_mdp.pose_target_match, weight=3.0, params={"std": 0.4},
-    )
-    cfg.rewards["standing_pose_l1"] = RewardTermCfg(
-        func=microduck_mdp.pose_l1_penalty, weight=1.0,
-    )
-    # Se LAISSER GLISSER : récompense la vitesse de descente (monde +x), plafonnée.
-    # Sans elle, l'optimum est de rester immobile et droit (il "freine"). Avec, il
-    # a intérêt à glisser tant qu'il reste équilibré (compromis naturel).
-    cfg.rewards["descent_speed"] = RewardTermCfg(
-        func=microduck_mdp.descent_speed_reward, weight=3.0, params={"cap": 0.8},
+    # Se LAISSER GLISSER (rouler), PAS accélérer/courir : récompense le ROULEMENT
+    # des roues vers le bas, plafonné à cap_speed. Plafonné => pas d'incitation à
+    # pousser plus vite ; basé sur les roues => "courir" (pousser la base sans
+    # rouler) ne rapporte pas. Sans récompense de glisse, l'optimum serait de
+    # rester immobile ; avec, il se laisse rouler tant qu'il tient l'équilibre.
+    cfg.rewards["wheel_glide"] = RewardTermCfg(
+        func=microduck_mdp.wheel_glide_reward, weight=2.0, params={"cap_speed": 0.35},
     )
     # ALLER DROIT : maintenir le yaw de spawn (= 0 = face à la descente). Corrigeant
     # (le robot peut se rattraper), c'est la bonne façon d'aller tout droit. NB: la
@@ -179,13 +199,15 @@ def make_microduck_roller_slope_env_cfg(play: bool = False) -> ManagerBasedRlEnv
         func=microduck_mdp.reset_action_history, mode="reset",
     )
 
-    # === CURRICULUM : aucun ===
-    # Difficulté aléatoire (via max_init_terrain_level=None) et FIXE par env : pas
-    # de promotion/rétrogradation. Le robot voit d'emblée toute la gamme de pentes
-    # répartie sur les 4096 envs, plutôt qu'une montée progressive qui restait
-    # bloquée sur la plus douce.
+    # === CURRICULUM : raideur doux -> raide ===
+    # Démarre sur la pente la plus douce (2°) et promeut vers plus raide (jusqu'à
+    # 20°) quand le robot a descendu assez loin (terrain_levels_slope, basé sur la
+    # distance parcourue). Viable maintenant que descent_speed le fait AVANCER
+    # (avant il restait immobile -> jamais promu). Il apprend l'équilibre
+    # progressivement au lieu d'être jeté d'emblée sur du 20° (où il pique du nez).
     for name in list(cfg.curriculum.keys()):
         del cfg.curriculum[name]
+    cfg.curriculum["terrain_levels"] = CurriculumTermCfg(func=microduck_mdp.terrain_levels_slope)
 
     return cfg
 
