@@ -76,6 +76,12 @@ BALL_OFFSET = (0.09, -0.042)
 # policy's swing robust to real-world aiming error.
 BALL_POS_NOISE_XY = 0.015
 
+# Target kick speed (m/s). The first trained policy (linear reward capped at
+# 5 m/s) kicked much harder than needed — this tames the kick to a controlled
+# strike. Comfortably within capability: even a crude single-joint scripted
+# swing reached 0.5-0.7 m/s.
+BALL_TARGET_SPEED = 1.0
+
 # Trunk standing height (measured natural equilibrium at HOME — see standup env).
 STAND_Z = 0.115
 
@@ -192,17 +198,27 @@ def make_microduck_ball_kick_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg
         if name in cfg.rewards:
             del cfg.rewards[name]
 
-    # ── Rewards: kick objective ───────────────────────────────────────────────
-    # Ball speed along the robot's heading-at-reset, LINEAR (clamped at 5 m/s).
-    # Dense from the first touch: exploration noise nudging the 15g ball already
-    # pays, and a harder kick pays more every step the ball keeps rolling — no
-    # bootstrap/peak-detection machinery needed. Weight 2.0: a 2 m/s kick earns
-    # ~4/step while rolling, comfortably dominating the transient pose/upright
-    # cost of the swing (~1-2/step for a few tenths of a second).
+    # ── Rewards: kick objective — TARGET speed, not max speed ────────────────
+    # Two-sided landscape peaking at BALL_TARGET_SPEED:
+    #   • ball_forward_velocity, linear and CAPPED at the target (weight 3.0):
+    #     dense bootstrap gradient from the first touch, saturating at 1 m/s.
+    #   • ball_speed_overshoot_penalty (weight -2.0): each m/s above target
+    #     costs -2/step while it persists. Needed because the cap alone does
+    #     NOT tame the kick — a harder kick keeps the ball at the cap for more
+    #     steps, so total (per-step × rolling time) reward still grows with
+    #     strike speed.
+    # Slopes are asymmetric on purpose (+3/(m/s) below, -2/(m/s) above): the
+    # optimum sits at the target, but erring slightly hard stays much cheaper
+    # than not kicking. At target: +3/step while the ball rolls.
     cfg.rewards["ball_forward_velocity"] = RewardTermCfg(
         func=microduck_mdp.ball_forward_velocity,
-        weight=2.0,
-        params={"asset_name": "ball", "max_speed": 5.0},
+        weight=3.0,
+        params={"asset_name": "ball", "max_speed": BALL_TARGET_SPEED},
+    )
+    cfg.rewards["ball_speed_overshoot"] = RewardTermCfg(
+        func=microduck_mdp.ball_speed_overshoot_penalty,
+        weight=-2.0,
+        params={"asset_name": "ball", "target_speed": BALL_TARGET_SPEED},
     )
 
     # Support foot: binary +1 while the LEFT foot touches the ground. Always-on

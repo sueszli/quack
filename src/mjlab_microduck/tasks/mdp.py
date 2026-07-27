@@ -4305,16 +4305,45 @@ def ball_forward_velocity(
 ) -> torch.Tensor:
     """Ball XY velocity along the per-env kick direction, clamped to [0, max].
 
-    Dense and linear-in-speed: a harder kick pays more every step the ball
-    keeps rolling (the integral over the roll is monotone in strike speed), so
-    "kick as hard as possible" needs no explicit peak detection. Backward /
+    Dense and linear-in-speed up to ``max_speed``: every extra bit of forward
+    ball speed pays more every step the ball keeps rolling, so exploration
+    nudges bootstrap the kick with no peak-detection machinery. Backward /
     lateral ball motion earns 0 rather than a penalty — a mis-hit shouldn't
     scare the policy away from contacting the ball at all.
+
+    With ``max_speed`` set to a TARGET speed (rather than a large cap), pair
+    with ``ball_speed_overshoot_penalty``: the reward saturating at the target
+    alone does NOT remove "harder is better" — a harder kick keeps the ball
+    at/above the cap for more steps, so the rolling-time integral still grows
+    with strike speed. The overshoot penalty is what makes the target the
+    actual optimum.
     """
     ball: Entity = env.scene[asset_name]
     vel_xy = ball.data.root_link_lin_vel_w[:, :2]
     fwd = (vel_xy * _ball_kick_dir(env)).sum(dim=1)
     return torch.nan_to_num(fwd, nan=0.0).clamp(0.0, max_speed)
+
+
+def ball_speed_overshoot_penalty(
+    env: ManagerBasedRlEnv,
+    asset_name: str = "ball",
+    target_speed: float = 1.0,
+    max_penalty: float = 5.0,
+) -> torch.Tensor:
+    """Ball forward speed in excess of ``target_speed`` (linear, ≥ 0).
+
+    Companion to ``ball_forward_velocity`` for a target-speed kick: below the
+    target this is 0 (the capped linear reward provides the upward gradient);
+    above it, each m/s of overshoot costs linearly every step it persists.
+    Keep this term's |weight| BELOW the capped reward's weight so the combined
+    landscape peaks at the target with a gentler slope on the overshoot side —
+    erring slightly hard must stay cheaper than not kicking at all.
+    """
+    ball: Entity = env.scene[asset_name]
+    vel_xy = ball.data.root_link_lin_vel_w[:, :2]
+    fwd = (vel_xy * _ball_kick_dir(env)).sum(dim=1)
+    over = torch.nan_to_num(fwd, nan=0.0) - target_speed
+    return over.clamp(0.0, max_penalty)
 
 
 def single_foot_grounded_reward(
