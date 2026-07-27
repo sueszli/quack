@@ -244,6 +244,20 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
         params={"sensor_name": feet_ground_cfg.name},
     )
 
+    # Pieds À PLAT. feet_grounded ne voit que le CONTACT (found par pied) : un pied
+    # qui PIVOTE sur la cheville (bascule sur la tranche/pointe) en gardant un point
+    # de contact passe au travers -> "il se retourne le pied". feet_flat_penalty
+    # projette la gravité dans le repère du site pied : à plat le site Z est
+    # vertical (xy²≈0) ; toute bascule -> xy²>0. Interdit donc le retournement du
+    # pied sur l'axe cheville.
+    cfg.rewards["feet_flat"] = RewardTermCfg(
+        func=microduck_mdp.feet_flat_penalty,
+        weight=-2.0,
+        params={
+            "asset_cfg": SceneEntityCfg("robot", site_names=["left_foot", "right_foot"]),
+        },
+    )
+
     # ── Rewards: regularisation (HEAVIER than velocity — slow careful reaching) ─
     # Deliberately kept heavier than the velocity env: the ground-pick motion is
     # slow and precise, so strong smoothness aids transfer (unlike the dynamic
