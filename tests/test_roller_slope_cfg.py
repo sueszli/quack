@@ -23,13 +23,15 @@ def test_command_is_neutralised():
         assert cmd.ranges.ang_vel_z == (0.0, 0.0)
 
 
-def test_small_entry_push():
-    # petit élan initial vers l'avant (aligné descente) pour s'engager sur la rampe,
-    # bien plus petit que l'ancien 0.6-1.0 qui patinait.
+def test_rolling_entry_no_base_push():
+    # élan donné en ROULEMENT (reset_rolling_entry), pas en poussée de base
+    # (base seule + roues immobiles = à-coup de patinage). Donc reset_base ne
+    # met aucune vitesse de base.
     cfg = make_microduck_roller_slope_env_cfg()
-    vr = cfg.events["reset_base"].params["velocity_range"]
-    lo, hi = vr["x"]
-    assert 0.0 < lo <= hi <= 0.5
+    assert cfg.events["reset_base"].params["velocity_range"] == {}
+    assert "reset_rolling_entry" in cfg.events
+    lo, hi = cfg.events["reset_rolling_entry"].params["speed_range"]
+    assert 0.0 < lo <= hi <= 0.6
 
 
 def test_has_heading_hold_reward():

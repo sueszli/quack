@@ -732,6 +732,44 @@ def descent_speed_reward(
     return torch.clamp(vx, min=0.0, max=cap)
 
 
+def reset_rolling_entry(
+    env: ManagerBasedRlEnv,
+    env_ids: torch.Tensor | None,
+    speed_range: tuple = (0.25, 0.45),
+    wheel_radius: float = 0.0175,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> None:
+    """Départ en ROULEMENT sans glissement (élan aux roues).
+
+    Tire une vitesse d'avance v par env ; met la vitesse LINÉAIRE de base (x
+    monde) = v ET la vitesse de ROTATION des 4 roues passives = v / r, donc
+    ω·r = v => zéro glissement au contact. Évite l'à-coup de l'ancienne poussée
+    base-seule (base qui bouge, roues immobiles = patinage brutal au 1er pas).
+    À exécuter APRÈS reset_base (qui pose la base ; ne plus lui donner de
+    velocity_range).
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    if env_ids is None:
+        env_ids = torch.arange(env.num_envs, device=env.device)
+    n = int(env_ids.shape[0])
+    lo, hi = speed_range
+    v = torch.rand(n, device=env.device) * (hi - lo) + lo  # (n,) vitesse avant
+
+    # Vitesse de base (monde) : uniquement +x.
+    root_vel = torch.zeros(n, 6, device=env.device)
+    root_vel[:, 0] = v
+    asset.write_root_link_velocity_to_sim(root_vel, env_ids=env_ids)
+
+    # Rotation des 4 roues passives = v / r (positif = avant, cf. wheel_speed).
+    wheel_ids = []
+    for name in ("passive_LFwheel", "passive_LRwheel", "passive_RFwheel", "passive_RRwheel"):
+        ids, _ = asset.find_joints(name)
+        wheel_ids.append(ids[0])
+    wheel_ids_t = torch.tensor(wheel_ids, device=env.device)
+    omega = (v / wheel_radius).unsqueeze(1).repeat(1, len(wheel_ids))  # (n, 4)
+    asset.write_joint_velocity_to_sim(omega, joint_ids=wheel_ids_t, env_ids=env_ids)
+
+
 def wheel_glide_reward(
     env: ManagerBasedRlEnv,
     cap_speed: float = 0.35,

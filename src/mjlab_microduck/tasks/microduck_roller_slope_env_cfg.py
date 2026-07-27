@@ -114,11 +114,10 @@ def make_microduck_roller_slope_env_cfg(play: bool = False) -> ManagerBasedRlEnv
     # patinait -> pic de contact -> divergence NaN, et le robot "marchait pour
     # s'arrêter" au lieu de rouler.
     cfg.events["reset_base"].params["pose_range"]["yaw"] = SPAWN_YAW
-    # Petit élan initial vers l'avant (aligné sur la descente +x, yaw=0), pour
-    # l'aider à s'engager sur la rampe. Petit -> peu de patinage (l'ancien 0.6-1.0
-    # patinait et faisait "marcher pour s'arrêter") ; le NaN rare est de toute
-    # façon assaini côté obs.
-    cfg.events["reset_base"].params["velocity_range"] = {"x": ENTRY_VELOCITY_X}
+    # PAS de poussée de base ici (base qui bouge + roues immobiles = à-coup de
+    # patinage au 1er pas). L'élan initial est donné en ROULEMENT cohérent
+    # (base + roues, ω·r = v) par reset_rolling_entry ci-dessous -> départ propre.
+    cfg.events["reset_base"].params["velocity_range"] = {}
 
     # === RÉCOMPENSES : équilibre LIBRE (il place son centre de gravité lui-même) ===
     # PAS de récompense de pose fixe : on ne lui dicte plus la posture debout du
@@ -204,6 +203,11 @@ def make_microduck_roller_slope_env_cfg(play: bool = False) -> ManagerBasedRlEnv
     # === EVENTS ===
     cfg.events["reset_action_history"] = EventTermCfg(
         func=microduck_mdp.reset_action_history, mode="reset",
+    )
+    # Départ en roulement (élan aux roues, sans patinage). APRÈS reset_base.
+    cfg.events["reset_rolling_entry"] = EventTermCfg(
+        func=microduck_mdp.reset_rolling_entry, mode="reset",
+        params={"speed_range": ENTRY_VELOCITY_X},
     )
 
     # === CURRICULUM : raideur doux -> raide ===
