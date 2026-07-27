@@ -20,7 +20,7 @@ def test_ground_pick_cfg_task_space_rewards():
     assert r["head_impact_penalty"].weight == -2.0
     assert r["head_impact_penalty"].params["threshold"] == 1.0
     # pieds au sol ET à plat (anti-bascule sur la cheville)
-    assert "feet_grounded" in r and r["feet_grounded"].weight == 5.0
+    assert "feet_grounded" in r and r["feet_grounded"].weight == 3.0
     assert "feet_flat" in r and r["feet_flat"].weight == -2.0
     # retour debout
     assert "ground_pick_return_pose_legs" in r

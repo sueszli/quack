@@ -232,15 +232,12 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
 
     cfg.rewards["soft_landing"].weight = -1e-5
 
-    # Keep BOTH feet planted throughout the pick. Without this the cheapest way to
-    # get the mouth to the ground is to tip forward / lift a foot — exactly le
-    # "il se retourne un pied" observé au play. Le poids DOIT rester au-dessus de
-    # mouth_ground_proximity (montée à 3.0) sinon lever un pied pour descendre la
-    # bouche "paie" -> monté 3.0 -> 5.0. Always-on : les pieds ne quittent jamais
-    # le sol, dans les deux phases.
+    # Keep BOTH feet in contact throughout the pick (les pieds ne décollent pas).
+    # NB: c'est le CONTACT seulement ; la bascule du pied sur la cheville est gérée
+    # par feet_flat ci-dessous (pas par ce terme).
     cfg.rewards["feet_grounded"] = RewardTermCfg(
         func=microduck_mdp.feet_grounded_reward,
-        weight=5.0,
+        weight=3.0,
         params={"sensor_name": feet_ground_cfg.name},
     )
 
