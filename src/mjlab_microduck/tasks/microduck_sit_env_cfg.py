@@ -21,6 +21,23 @@ Target: sitting keyframe (trunk z ≈ 0.07, knees bent ±60°, ankles 0).
   - Head is commandable (head_pose command + tracking, like standup/velocity)
     instead of pinned to HOME — obs-layout and behavior parity across policies.
 
+2026-07 round 3 (run 2 sat, then flopped onto its BACK and stayed there):
+  - Every "seated" reward was orientation-blind: on its back the robot keeps
+    the leg-pose reward (joint angles unchanged), the height reward (trunk on
+    the ground is inside the z band) and seated_stillness (gated on z+|v|
+    only) — losing just upright_linear×1.0 for perfect passive stability.
+    Fixed: seated_stillness now also tilt-gated (full <25°, zero >60°), and
+    upright_linear 1.0→2.5. Upright-seated now beats on-back by ~4.5/step.
+
+2026-07 round 2 (run sisazwss sat then HOPPED on its butt, ~3.4 Hz):
+  - SIT_Z was the old robot's 0.07; the real butt-on-ground trunk height is
+    0.048 (measured). Resting paid height_l1 forever → hopping toward 0.07
+    farmed the gap, boosted by upright_while_tall whose 0.085 window floor
+    was above the real seated height. Fixed: SIT_Z=0.048 (measured),
+    SIT_UPRIGHT_Z 0.085→0.065, new seated_stillness reward (velocity-Gaussian
+    gated to the seated height band), descent cap -10 from step 0 (crash-sit
+    was net-positive at -5).
+
 Joint layout (14 actuated joints; mjlab 1.3.0 + canonical BAM excludes the
 passive jaw joints from the articulation):
     0-4 : left  leg (hip_yaw, hip_roll, hip_pitch, knee, ankle)
@@ -88,17 +105,28 @@ _NECK_JOINTS = [5, 6, 7, 8]
 
 # Trunk height targets (m). STAND_Z = measured natural standing equilibrium
 # (see standup env — 0.120 was 5 mm above what's mechanically reachable at HOME).
+# SIT_Z = MEASURED resting trunk z with the SIT keyframe held (settle test,
+# 2026-07-27): 0.048. The first training run used the old robot's 0.07 — 22 mm
+# above the physical butt-on-ground height — so a resting robot paid height_l1
+# forever and the policy farmed the gap by hopping on its butt (~3.4 Hz limit
+# cycle around z≈0.09). If the robot/keyframe changes, RE-MEASURE (scratchpad
+# eval_sit_bounce.py phase A) — do not eyeball this constant.
 STAND_Z = 0.115
-SIT_Z   = 0.07
+SIT_Z   = 0.048
 
 # Upright gating window for ``upright_while_tall``: full upright incentive
 # above STAND_UPRIGHT_Z (still tall, must stay vertical), fades to 0 at
 # SIT_UPRIGHT_Z (committed to sit, butt-down orientation is fine).
+# SIT_UPRIGHT_Z must sit BELOW the bounce-reachable band above SIT_Z: the
+# first run's 0.085 window floor was ABOVE the real 0.048 seated height, so
+# hopping into the 0.085–0.10 band farmed this reward on top of the height
+# gap. 0.065 keeps the anti-tip-backward pressure during the tall half of the
+# descent while paying nothing for popping up off the butt.
 STAND_UPRIGHT_Z = 0.10
-SIT_UPRIGHT_Z   = 0.085
+SIT_UPRIGHT_Z   = 0.065
 
 # Descent-speed cap (m/s): descents faster than this pay a per-step penalty.
-# 45 mm of travel at 0.05 m/s ≈ a ~1 s descent — "very gently".
+# 67 mm of travel (STAND_Z → SIT_Z) at 0.05 m/s ≈ a ~1.3 s descent — "very gently".
 MAX_DESCENT_SPEED = 0.05
 
 from mjlab.envs import ManagerBasedRlEnvCfg
@@ -286,9 +314,14 @@ def make_microduck_sit_env_cfg(
     #    is still tall, to block the "tip backward while high" exploit during
     #    the descent (which would otherwise farm height/pose reward via a
     #    controlled fall).
+    # Weight 2.5 (was 1.0): at 1.0, "lie on your back" only lost ~1/step vs
+    # sitting upright (cos(90°)=0 → this term zeroed, everything else — pose,
+    # height, stillness — was orientation-blind) while being passively stable.
+    # Run 2 converged to sit-then-flop-back. With 2.5 here + the tilt gate on
+    # seated_stillness, on-back now trails upright-seated by ~4.5/step.
     cfg.rewards["upright_linear"] = RewardTermCfg(
         func=microduck_mdp.body_upright_linear,
-        weight=1.0,
+        weight=2.5,
         params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))},
     )
     cfg.rewards["upright_while_tall"] = RewardTermCfg(
@@ -298,6 +331,26 @@ def make_microduck_sit_env_cfg(
             "height_low":  SIT_UPRIGHT_Z,
             "height_high": STAND_UPRIGHT_Z,
             "asset_cfg":   SceneEntityCfg("robot", body_names=("trunk_base",)),
+        },
+    )
+
+    # Seated stillness — "sit there QUIETLY, UPRIGHT" as an explicit positive
+    # objective. Gaussian on trunk |v| gated to the seated height band (full
+    # below 0.06, zero above 0.08 → inactive during the descent) AND to
+    # near-vertical trunk tilt (full below 25°, zero above 60° → pays nothing
+    # for lying still on the back/face). Anti-selects both failure modes seen
+    # so far: the run-1 butt-hop limit cycle (motion while seated costs) and
+    # the run-2 flop-onto-back (tilted rest earns no stillness reward at all).
+    cfg.rewards["seated_stillness"] = RewardTermCfg(
+        func=microduck_mdp.seated_stillness,
+        weight=2.0,
+        params={
+            "height_full":    0.06,
+            "height_zero":    0.08,
+            "vel_std":        0.05,
+            "tilt_full_deg":  25.0,
+            "tilt_zero_deg":  60.0,
+            "asset_cfg":      SceneEntityCfg("robot", body_names=("trunk_base",)),
         },
     )
 
@@ -674,17 +727,18 @@ def make_microduck_sit_env_cfg(
         },
     )
 
-    # Descent-speed cap tightening: discover the sit under a light cap, then
-    # make too-fast descents expensive. (Sitting is learned by ~iter 250, so
-    # 500/1000 leave a comfortable discovery window.)
+    # Descent-speed cap tightening. First run's -5 start was too cheap: a
+    # crash-sit (0.11 s free-fall) cost ~-27 total vs ~+40 from arriving seated
+    # early — the crash won and locked in before the later stages could bite.
+    # -10 makes the crash net-negative from step 0 while the height-L1 pressure
+    # (~-0.34/step while standing) still forces the descent to be attempted.
     cfg.curriculum["descent_speed_weight"] = CurriculumTermCfg(
         func=microduck_mdp.reward_weight,
         params={
             "reward_name":   "descent_speed",
             "weight_stages": [
-                {"step": 0,          "weight": -5.0},
-                {"step": 500 * 24,   "weight": -10.0},
-                {"step": 1000 * 24,  "weight": -20.0},
+                {"step": 0,          "weight": -10.0},
+                {"step": 500 * 24,   "weight": -20.0},
             ],
         },
     )

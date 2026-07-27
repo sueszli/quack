@@ -2084,6 +2084,41 @@ def trunk_downward_velocity_penalty(
     return -torch.clamp(-vz - max_down_vel, min=0.0)
 
 
+def seated_stillness(
+    env: ManagerBasedRlEnv,
+    height_full: float = 0.06,
+    height_zero: float = 0.08,
+    vel_std: float = 0.05,
+    tilt_full_deg: float = 25.0,
+    tilt_zero_deg: float = 60.0,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """Reward trunk stillness while seated UPRIGHT: |v| Gaussian, z- and tilt-gated.
+
+    exp(-(|v|/vel_std)²) · smoothstep(z) · smoothstep(tilt). The z gate is full
+    below ``height_full`` and zero above ``height_zero`` (inactive during the
+    descent). The tilt gate is full below ``tilt_full_deg`` and zero above
+    ``tilt_zero_deg`` — WITHOUT it, "lie still on your back" scores as well as
+    "sit still upright" (the trunk on its back is inside the seated z band and
+    perfectly motionless), which is exactly the exploit run 2 converged to.
+    Makes "rest quietly, upright, at the seated height" the only rewarded rest.
+    """
+    asset = env.scene[asset_cfg.name]
+    v = torch.nan_to_num(asset.data.root_link_lin_vel_w, nan=0.0).norm(dim=-1)
+    z = torch.nan_to_num(
+        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
+    )
+    t = torch.clamp((height_zero - z) / max(height_zero - height_full, 1e-6), 0.0, 1.0)
+    z_gate = t * t * (3.0 - 2.0 * t)
+    quat = asset.data.root_link_quat_w
+    cos_tilt = 1.0 - 2.0 * (quat[:, 1] ** 2 + quat[:, 2] ** 2)
+    cos_full = math.cos(math.radians(tilt_full_deg))
+    cos_zero = math.cos(math.radians(tilt_zero_deg))
+    u = torch.clamp((cos_tilt - cos_zero) / max(cos_full - cos_zero, 1e-6), 0.0, 1.0)
+    tilt_gate = u * u * (3.0 - 2.0 * u)
+    return torch.exp(-((v / vel_std) ** 2)) * z_gate * tilt_gate
+
+
 def upright_while_tall(
     env: ManagerBasedRlEnv,
     height_low: float,
