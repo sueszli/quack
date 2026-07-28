@@ -93,6 +93,21 @@ from mjlab_microduck.tasks.microduck_velocity_env_cfg import (
 from mjlab_microduck.tasks.symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
 
 
+# ── Profil de phase SEGMENTÉ (durées indépendantes) ──────────────────────────
+# Au lieu de la pondération sinusoïdale (qui couple descente/palier/remontée),
+# on gate les rewards par un profil à 4 segments : descente et remontée LENTES,
+# palier bas COURT, repos debout long.
+#   descente   [0, DESCENT_END)      ~1.5 s  transition STAND->bas
+#   palier bas [DESCENT_END, HOLD_END) ~0.6 s effleure (court)
+#   remontée   [HOLD_END, RISE_END)   ~1.5 s  transition bas->STAND
+#   repos      [RISE_END, 1)          ~2.4 s  debout
+# ⚠️ --ground-pick-period au déploiement DOIT valoir GP_PERIOD (6.0).
+GP_PERIOD    = 6.0
+DESCENT_END  = 0.25
+HOLD_END     = 0.35
+RISE_END     = 0.60
+
+
 def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) -> ManagerBasedRlEnvCfg:
     """Create Microduck ground pick environment configuration."""
 
@@ -167,13 +182,16 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     # head_impact_penalty (fort) plus bas -> l'équilibre est la bouche juste
     # au-dessus du sol. Poids monté 2.0 -> 3.0 pour tirer plus près.
     cfg.rewards["mouth_ground_proximity"] = RewardTermCfg(
-        func=microduck_mdp.mouth_ground_proximity,
+        func=microduck_mdp.mouth_ground_proximity_phased,
         weight=3.0,
         params={
             "asset_cfg": SceneEntityCfg("robot", site_names=["mouth_tip"]),
             "std": 0.10,
             "target_height": 0.0,
             "command_name": "twist",
+            "descent_end": DESCENT_END,
+            "hold_end": HOLD_END,
+            "rise_end": RISE_END,
         },
     )
 
@@ -182,11 +200,14 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     # Orientation : axe bouche vers le bas (perpendiculaire au sol). Poids monté
     # 1.0 -> 2.0 -> "orienter correctement" est un objectif explicite.
     cfg.rewards["mouth_perpendicular_to_ground"] = RewardTermCfg(
-        func=microduck_mdp.mouth_perpendicular_to_ground,
+        func=microduck_mdp.mouth_perpendicular_phased,
         weight=2.0,
         params={
             "asset_cfg": SceneEntityCfg("robot", site_names=["mouth_tip"]),
             "command_name": "twist",
+            "descent_end": DESCENT_END,
+            "hold_end": HOLD_END,
+            "rise_end": RISE_END,
         },
     )
 
@@ -196,12 +217,14 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     # 16-joint layout [0-4, 11-15] with passive_1/passive_2 at 9,10.)
     _LEG_JOINTS = [0, 1, 2, 3, 4, 9, 10, 11, 12, 13]
     cfg.rewards["ground_pick_return_pose_legs"] = RewardTermCfg(
-        func=microduck_mdp.ground_pick_return_pose,
+        func=microduck_mdp.ground_pick_return_pose_phased,
         weight=4.0,
         params={
             "std": 0.3,
             "command_name": "twist",
             "joint_indices": _LEG_JOINTS,
+            "hold_end": HOLD_END,
+            "rise_end": RISE_END,
         },
     )
 
@@ -210,12 +233,14 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     # can't catch it — the pose reward is the only guard).
     _NECK_JOINTS = [5, 6, 7, 8]
     cfg.rewards["ground_pick_return_pose_neck"] = RewardTermCfg(
-        func=microduck_mdp.ground_pick_return_pose,
+        func=microduck_mdp.ground_pick_return_pose_phased,
         weight=6.0,
         params={
             "std": 0.15,
             "command_name": "twist",
             "joint_indices": _NECK_JOINTS,
+            "hold_end": HOLD_END,
+            "rise_end": RISE_END,
         },
     )
 
@@ -225,12 +250,14 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     # à rester vertical pendant l'extension. Gaté sur le retour -> ne gêne PAS le
     # penché avant de l'approche (upright always-on reste faible, 0.2).
     cfg.rewards["return_upright"] = RewardTermCfg(
-        func=microduck_mdp.ground_pick_return_upright,
+        func=microduck_mdp.ground_pick_return_upright_phased,
         weight=2.0,
         params={
             "asset_cfg": SceneEntityCfg("robot"),
             "std": 0.4,
             "command_name": "twist",
+            "hold_end": HOLD_END,
+            "rise_end": RISE_END,
         },
     )
 
@@ -400,8 +427,11 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     command: UniformVelocityCommandCfg = cfg.commands["twist"]
     command.rel_standing_envs = 0.0
     command.rel_heading_envs  = 0.0
+    # Période = GP_PERIOD (6 s). Le profil segmenté (constantes en tête de fichier)
+    # découple descente/palier/remontée/repos : descente & remontée ~1.5 s
+    # (lentes -> pas de déséquilibre), palier bas ~0.6 s (court), repos ~2.4 s.
     cfg.commands["twist"] = microduck_mdp.GroundPickPhaseCommandCfg(
-        **{**vars(command), "class_type": microduck_mdp.GroundPickPhaseCommand}
+        **{**vars(command), "class_type": microduck_mdp.GroundPickPhaseCommand, "period": GP_PERIOD}
     )
 
     # ── Terminations ──────────────────────────────────────────────────────────

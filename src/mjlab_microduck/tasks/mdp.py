@@ -2423,6 +2423,105 @@ def ground_pick_return_upright(
     return return_weight * upright
 
 
+# --------------------------------------------------------------------------- #
+# Ground-pick : gating de phase SEGMENTÉ (durées descente/palier/remontée/repos #
+# indépendantes, au lieu de la pondération sinusoïdale max(0,±sin)).            #
+#   down-gate  = phase_pose_blend(phase, descent_end, hold_end, rise_end)       #
+#               0 (haut) -> 1 (descente) -> 1 (palier bas) -> 0 (remontée/repos) #
+#   up-gate    = phase_rise_gate(phase, hold_end, rise_end)                      #
+#               0 avant la remontée -> 0..1 (remontée) -> 1 (repos debout)       #
+# --------------------------------------------------------------------------- #
+def phase_rise_gate(
+    phase: torch.Tensor, hold_end: float, rise_end: float
+) -> torch.Tensor:
+    """Gate montante pour le RETOUR : 0 avant hold_end, 0->1 sur [hold_end,
+    rise_end), 1 après (repos debout)."""
+    g = torch.zeros_like(phase)
+    rising = (phase >= hold_end) & (phase < rise_end)
+    g = torch.where(rising, (phase - hold_end) / (rise_end - hold_end), g)
+    g = torch.where(phase >= rise_end, torch.ones_like(phase), g)
+    return g
+
+
+def _gp_phase(env: ManagerBasedRlEnv, command_name: str) -> torch.Tensor:
+    cmd = env.command_manager.get_command(command_name)
+    return (torch.atan2(cmd[:, 1], cmd[:, 0]) / (2 * torch.pi)) % 1.0
+
+
+def mouth_ground_proximity_phased(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot", site_names=["mouth_tip"]),
+    std: float = 0.10,
+    target_height: float = 0.0,
+    command_name: str = "twist",
+    descent_end: float = 0.25,
+    hold_end: float = 0.35,
+    rise_end: float = 0.60,
+) -> torch.Tensor:
+    """mouth_ground_proximity gaté par la down-gate segmentée (descente+palier)."""
+    asset = env.scene[asset_cfg.name]
+    mouth_z = asset.data.site_pos_w[:, asset_cfg.site_ids[0], 2]
+    proximity = torch.exp(-((mouth_z - target_height) / std) ** 2)
+    gate = phase_pose_blend(_gp_phase(env, command_name), descent_end, hold_end, rise_end)
+    return gate * proximity
+
+
+def mouth_perpendicular_phased(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot", site_names=["mouth_tip"]),
+    command_name: str = "twist",
+    descent_end: float = 0.25,
+    hold_end: float = 0.35,
+    rise_end: float = 0.60,
+) -> torch.Tensor:
+    """mouth_perpendicular_to_ground gaté par la down-gate segmentée."""
+    asset = env.scene[asset_cfg.name]
+    q = asset.data.site_quat_w[:, asset_cfg.site_ids[0], :]
+    w, qx, qy, qz = q[:, 0], q[:, 1], q[:, 2], q[:, 3]
+    x_axis_z = 2.0 * (qx * qz - w * qy)
+    alignment = -x_axis_z  # 1 = bouche pointe droit vers le bas
+    gate = phase_pose_blend(_gp_phase(env, command_name), descent_end, hold_end, rise_end)
+    return gate * alignment
+
+
+def ground_pick_return_pose_phased(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    std: float = 0.3,
+    command_name: str = "twist",
+    joint_indices: Optional[list] = None,
+    hold_end: float = 0.35,
+    rise_end: float = 0.60,
+) -> torch.Tensor:
+    """ground_pick_return_pose gaté par la up-gate segmentée (remontée+repos)."""
+    asset = env.scene[asset_cfg.name]
+    joint_pos = asset.data.joint_pos
+    default_pos = asset.data.default_joint_pos
+    if joint_indices is not None:
+        joint_pos = joint_pos[:, joint_indices]
+        default_pos = default_pos[:, joint_indices]
+    pose_reward = torch.exp(-((joint_pos - default_pos) / std) ** 2).mean(dim=-1)
+    gate = phase_rise_gate(_gp_phase(env, command_name), hold_end, rise_end)
+    return gate * pose_reward
+
+
+def ground_pick_return_upright_phased(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    std: float = 0.4,
+    command_name: str = "twist",
+    hold_end: float = 0.35,
+    rise_end: float = 0.60,
+) -> torch.Tensor:
+    """ground_pick_return_upright gaté par la up-gate segmentée."""
+    asset: Entity = env.scene[asset_cfg.name]
+    quat = asset.data.root_link_quat_w
+    tilt_sq = 2.0 * (quat[:, 1] ** 2 + quat[:, 2] ** 2)
+    upright = torch.exp(-tilt_sq / (std * std))
+    gate = phase_rise_gate(_gp_phase(env, command_name), hold_end, rise_end)
+    return gate * upright
+
+
 # ==============================================================================
 # Domain Randomization Events
 # ==============================================================================
