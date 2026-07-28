@@ -97,13 +97,16 @@ from mjlab_microduck.tasks.symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
 # Au lieu de la pondération sinusoïdale (qui couple descente/palier/remontée),
 # on gate les rewards par un profil à 4 segments : descente et remontée LENTES,
 # palier bas COURT, repos debout long.
-#   descente   [0, DESCENT_END)      ~1.5 s  transition STAND->bas
-#   palier bas [DESCENT_END, HOLD_END) ~0.6 s effleure (court)
-#   remontée   [HOLD_END, RISE_END)   ~2.1 s  transition bas->STAND (allongée : il
-#                                             avait du mal à se relever)
-#   repos      [RISE_END, 1)          ~1.8 s  debout
-# ⚠️ --ground-pick-period au déploiement DOIT valoir GP_PERIOD (6.0).
-GP_PERIOD    = 6.0
+# Durées à GP_PERIOD = 4 s (fractions inchangées) :
+#   descente   [0, DESCENT_END)      ~1.0 s  transition STAND->bas
+#   palier bas [DESCENT_END, HOLD_END) ~0.4 s effleure (court)
+#   remontée   [HOLD_END, RISE_END)   ~1.4 s  transition bas->STAND
+#   repos      [RISE_END, 1)          ~1.2 s  debout
+# Repassé 6 -> 4 s : test de l'hypothèse "fenêtre du slot runtime" (le geste
+# marche en sim mais la remontée ne passe pas en réel — la marche reprend et
+# relève le cou). Si à 4 s la remontée passe en réel -> c'était bien ça.
+# ⚠️ --ground-pick-period au déploiement DOIT valoir GP_PERIOD (4.0).
+GP_PERIOD    = 4.0
 DESCENT_END  = 0.25
 HOLD_END     = 0.35
 RISE_END     = 0.70
