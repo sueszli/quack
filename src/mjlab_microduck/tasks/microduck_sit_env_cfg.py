@@ -119,8 +119,9 @@ EPISODE_LENGTH_S = 6.0
 #   knee ±1.35, hip_pitch = HOME ∓ 0.05 lean, ankle 0, hip_roll 0.
 # If the robot or keyframe changes, RE-RUN THE SWEEP — verify tilt, not just z.
 #
-# The standup env's SITTING_JOINT_OVERRIDES (its reset pose) must be updated
-# to match at its next retrain so the sit→stand hand-off stays consistent.
+# The standup env's SITTING_JOINT_OVERRIDES (its reset pose) mirrors this pose
+# (synced 2026-07-28) — keep the two in sync so the sit→stand hand-off stays
+# consistent. Standup needs a retrain to pick it up.
 SITTING_TARGET_OVERRIDES = {
     1:   0.0,      # left  hip_roll   (HOME -0.0873)
     2:  -0.4079,   # left  hip_pitch  (HOME -0.4579; +0.05 = slight fwd lean)

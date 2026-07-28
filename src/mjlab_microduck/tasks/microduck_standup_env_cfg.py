@@ -51,27 +51,35 @@ IMU_ORIENTATION_RANDOMIZATION_ANGLE = 6.0  # match velocity (was 2.0 — pre-aud
 EPISODE_LENGTH_S = 6.0
 
 # ── Sitting source pose (asset.data.joint_pos index → angle in rad) ───────────
-# Must match the *actual end-state* of the sit policy (head at HOME, knees bent
-# ~60°, ankles 0). Neck/head intentionally omitted → reset stays at HOME so the
-# standup policy starts from exactly where the sit policy converges.
+# Must match the *actual end-state* of the sit policy. Mirrors the sit env's
+# SITTING_TARGET_OVERRIDES (microduck_sit_env_cfg.py) — the swept stable
+# equilibrium pose (knee ±1.35 ≈ 77°, hip_pitch ∓0.4079 = slight fwd lean,
+# ankles 0). Keep the two in sync: this reset IS the sit→stand hand-off.
+# Neck/head intentionally omitted → reset stays at HOME so the standup policy
+# starts from exactly where the sit policy converges.
 # Articulation joint indices under mjlab 1.3.0 + canonical BAM. The passive jaw
 # joints are NO LONGER part of the articulation (excluded from qpos), so the
 # layout is the clean 14-joint order: 0-4 left leg, 5-8 neck/head, 9-13 right leg.
 # (Previously passive_1/passive_2 sat at 9,10 and shifted the right leg to 11-15.)
 SITTING_JOINT_OVERRIDES = {
-    1:   0.0,      # left  hip_roll
-    3:   1.0472,   # left  knee
-    4:   0.0,      # left  ankle
-    10:  0.0,      # right hip_roll
-    12: -1.0472,   # right knee
-    13:  0.0,      # right ankle
+    1:   0.0,      # left  hip_roll   (HOME -0.0873)
+    2:  -0.4079,   # left  hip_pitch  (HOME -0.4579; +0.05 = slight fwd lean)
+    3:   1.35,     # left  knee       (HOME -0.0049)
+    4:   0.0,      # left  ankle      (HOME +0.4530)
+    10:  0.0,      # right hip_roll   (HOME +0.0873)
+    11:  0.4079,   # right hip_pitch  (HOME +0.4579)
+    12: -1.35,     # right knee       (HOME +0.0049)
+    13:  0.0,      # right ankle      (HOME -0.4530)
 }
 
 _LEG_JOINTS  = [0, 1, 2, 3, 4, 9, 10, 11, 12, 13]
 _NECK_JOINTS = [5, 6, 7, 8]
 
 # Trunk height targets (m).
-SIT_Z = 0.07
+# SIT_Z matches the sit env's measured seated equilibrium (trunk z at rest in
+# the swept stable pose above). Was 0.07 (old robot); keep in sync with
+# microduck_sit_env_cfg.py.
+SIT_Z = 0.060
 # STAND_Z = empirically-measured trunk z at the natural standing equilibrium
 # (HOME joint pose, vertical trunk). Previously was 0.120 — 5 mm above
 # what's mechanically reachable at HOME — which forced the policy into a
@@ -597,8 +605,10 @@ def make_microduck_standup_env_cfg(
             "sitting_joint_overrides":   SITTING_JOINT_OVERRIDES,
             "sitting_joint_noise_std":   0.12,           # ≈ 7° per joint
             "sitting_tilt_max":          math.radians(10),  # ±10° pitch/roll
-            "sitting_z_min":             0.06,           # widen z range too
-            "sitting_z_max":             0.10,
+            # Seated equilibrium is SIT_Z=0.060 — band is −1cm/+3cm around it
+            # (same spread as when equilibrium was 0.07 with 0.06–0.10).
+            "sitting_z_min":             0.05,
+            "sitting_z_max":             0.09,
             # Standing init: trunk just above the measured equilibrium (STAND_Z=0.115).
             "standing_z_min":            0.11,
             "standing_z_max":            0.12,
