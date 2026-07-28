@@ -4,8 +4,9 @@ Episodic policy that gently descends from the standing pose to the sitting
 keyframe and rests there. Companion to the standup env — together they form a
 clean sit↔stand pair, each policy doing one direction.
 
-Reset:  standing (trunk z ≈ 0.115, home joints).
-Target: sitting keyframe (trunk z ≈ 0.07, knees bent ±60°, ankles 0).
+Reset:  standing (trunk z ≈ 0.115, home joints); 35% start already seated.
+Target: sitting keyframe (trunk z ≈ 0.060, knees ±1.35, hip_pitch slightly
+        forward of HOME, ankles 0) — stability-verified, see the keyframe block.
 
 2026-07 rewrite (previous robot sat BRUTALLY):
   - The old gentleness signal was |a_z| alone at -0.02. A 0.3 m/s drop arrested
@@ -20,6 +21,26 @@ Target: sitting keyframe (trunk z ≈ 0.07, knees bent ±60°, ankles 0).
     ~31 task mass made identical regulariser weights ~3× weaker).
   - Head is commandable (head_pose command + tracking, like standup/velocity)
     instead of pinned to HOME — obs-layout and behavior parity across policies.
+
+2026-07 round 5 — THE ACTUAL ROOT CAUSE of the whole run-1/2/3 chain:
+  - The SIT keyframe (knee ±1.0472, hip_pitch at HOME) is NOT a statically
+    stable sit on this robot: held perfectly, it tips to ~88° within 1 s.
+    Every run was asked to balance on an unstable pose, so training converged
+    to the nearest STABLE state instead — hop (run 1), back-flop (run 2),
+    head-plank (run 3). The round-1 "measured SIT_Z=0.048" was the trunk
+    height of the FALLEN state (settle test recorded z but not tilt).
+  - Fixed by stability-sweeping the keyframe (knee × hip_pitch grid, noisy
+    resets): knee ±1.35 + hip_pitch HOME∓0.05 settles at 3-5° tilt, z=0.060,
+    95-100% robust. SIT_Z=0.060; stillness/upright gates re-centered.
+
+2026-07 round 4 (run 3 did a head-plank — head on floor, feet flat, shaking):
+  - Discovery failure, not preference: seated-upright (~11/step) crushes the
+    plank (~6/step) but the sit's final backward rock over the heels never
+    survived exploration, so the plank — a fully-controlled forward descent
+    with zero drop — became the terminal attractor. Fixed with the standup
+    recipe: seated_composite multiplicative goal score (additive partial sums
+    were plank-farmable), 35% already-seated resets (value bootstrap for the
+    goal state), and a head↔ground contact penalty (anti-plank pressure).
 
 2026-07 round 3 (run 2 sat, then flopped onto its BACK and stayed there):
   - Every "seated" reward was orientation-blind: on its back the robot keeps
@@ -88,16 +109,28 @@ EPISODE_LENGTH_S = 6.0
 # No intermediate waypoints — the policy is free to discover its own descent
 # path. Anything else than "land gently in this exact pose" pays a cost via
 # pose error + descent-speed cap + |a_z| penalty + smoothness regularisers.
-# Must match the standup env's SITTING_JOINT_OVERRIDES (its reset pose) so the
-# sit policy's end-state is exactly where the standup policy starts.
+#
+# STABILITY-VERIFIED 2026-07-27 (scratchpad sweep_sit_pose2.py): the old
+# keyframe (knee ±1.0472, hip_pitch at HOME) is NOT a statically stable sit on
+# this robot — held perfectly, it tips to ~88° within 1 s (this single fact
+# drove the whole run-1/2/3 exploit chain: hop, back-flop, head-plank were the
+# only stable states available). The pose below settles at 3-5° tilt for
+# 95-100% of noisy resets (±8° init tilt, 0.10 rad joint noise, full DR):
+#   knee ±1.35, hip_pitch = HOME ∓ 0.05 lean, ankle 0, hip_roll 0.
+# If the robot or keyframe changes, RE-RUN THE SWEEP — verify tilt, not just z.
+#
+# The standup env's SITTING_JOINT_OVERRIDES (its reset pose) must be updated
+# to match at its next retrain so the sit→stand hand-off stays consistent.
 SITTING_TARGET_OVERRIDES = {
-    1:   0.0,      # left  hip_roll  (HOME -0.0873)
-    3:   1.0472,   # left  knee      (HOME 0)
-    4:   0.0,      # left  ankle     (HOME +0.5236)
+    1:   0.0,      # left  hip_roll   (HOME -0.0873)
+    2:  -0.4079,   # left  hip_pitch  (HOME -0.4579; +0.05 = slight fwd lean)
+    3:   1.35,     # left  knee       (HOME -0.0049)
+    4:   0.0,      # left  ankle      (HOME +0.4530)
     # neck/head intentionally omitted → steered by the head_pose command.
-    10:  0.0,      # right hip_roll  (HOME +0.0873)
-    12: -1.0472,   # right knee      (HOME 0)
-    13:  0.0,      # right ankle     (HOME -0.5236)
+    10:  0.0,      # right hip_roll   (HOME +0.0873)
+    11:  0.4079,   # right hip_pitch  (HOME +0.4579)
+    12: -1.35,     # right knee       (HOME +0.0049)
+    13:  0.0,      # right ankle      (HOME -0.4530)
 }
 
 _LEG_JOINTS  = [0, 1, 2, 3, 4, 9, 10, 11, 12, 13]
@@ -105,28 +138,24 @@ _NECK_JOINTS = [5, 6, 7, 8]
 
 # Trunk height targets (m). STAND_Z = measured natural standing equilibrium
 # (see standup env — 0.120 was 5 mm above what's mechanically reachable at HOME).
-# SIT_Z = MEASURED resting trunk z with the SIT keyframe held (settle test,
-# 2026-07-27): 0.048. The first training run used the old robot's 0.07 — 22 mm
-# above the physical butt-on-ground height — so a resting robot paid height_l1
-# forever and the policy farmed the gap by hopping on its butt (~3.4 Hz limit
-# cycle around z≈0.09). If the robot/keyframe changes, RE-MEASURE (scratchpad
-# eval_sit_bounce.py phase A) — do not eyeball this constant.
+# SIT_Z = measured resting trunk z of the stability-verified SIT keyframe
+# WHILE UPRIGHT (tilt < 15°): 0.060. Beware the measurement trap that cost
+# runs 1-3: a settle test that records only z will happily report the height
+# of a FALLEN robot (0.048 here, trunk at 88° with perfect sit-pose legs) —
+# always check tilt alongside z when measuring pose heights.
 STAND_Z = 0.115
-SIT_Z   = 0.048
+SIT_Z   = 0.060
 
 # Upright gating window for ``upright_while_tall``: full upright incentive
 # above STAND_UPRIGHT_Z (still tall, must stay vertical), fades to 0 at
-# SIT_UPRIGHT_Z (committed to sit, butt-down orientation is fine).
-# SIT_UPRIGHT_Z must sit BELOW the bounce-reachable band above SIT_Z: the
-# first run's 0.085 window floor was ABOVE the real 0.048 seated height, so
-# hopping into the 0.085–0.10 band farmed this reward on top of the height
-# gap. 0.065 keeps the anti-tip-backward pressure during the tall half of the
-# descent while paying nothing for popping up off the butt.
+# SIT_UPRIGHT_Z (committed to sit — below this the seated rewards take over).
+# Keep the floor BELOW any bounce-reachable band but ABOVE the seated rest
+# (0.060) so neither hovering at the gate edge nor seated rest farms it.
 STAND_UPRIGHT_Z = 0.10
-SIT_UPRIGHT_Z   = 0.065
+SIT_UPRIGHT_Z   = 0.075
 
 # Descent-speed cap (m/s): descents faster than this pay a per-step penalty.
-# 67 mm of travel (STAND_Z → SIT_Z) at 0.05 m/s ≈ a ~1.3 s descent — "very gently".
+# 55 mm of travel (STAND_Z → SIT_Z) at 0.05 m/s ≈ a ~1.1 s descent — "very gently".
 MAX_DESCENT_SPEED = 0.05
 
 from mjlab.envs import ManagerBasedRlEnvCfg
@@ -188,6 +217,17 @@ def make_microduck_sit_env_cfg(
         num_slots=1,
     )
 
+    # Head-assembly ↔ ground contact (anti-plank): run 3 rested its HEAD on the
+    # floor as a forward tripod. Any head-ground contact is wrong in this task.
+    head_ground_cfg = ContactSensorCfg(
+        name="head_ground_contact",
+        primary=ContactMatch(mode="subtree", pattern="neck", entity="robot"),
+        secondary=ContactMatch(mode="body", pattern="terrain"),
+        fields=("found",),
+        reduce="none",
+        num_slots=1,
+    )
+
     foot_frictions_geom_names = ("left_foot_collision", "right_foot_collision")
 
     # ── Base config ───────────────────────────────────────────────────────────
@@ -196,7 +236,7 @@ def make_microduck_sit_env_cfg(
     # Standup robot variant: full collision meshes — needed so the body can
     # physically rest on the ground during the seated phase.
     cfg.scene.entities = {"robot": MICRODUCK_STANDUP_ROBOT_CFG}
-    cfg.scene.sensors  = (feet_ground_cfg, self_collision_cfg)
+    cfg.scene.sensors  = (feet_ground_cfg, self_collision_cfg, head_ground_cfg)
     cfg.viewer.body_name = "trunk_base"
 
     cfg.episode_length_s = EPISODE_LENGTH_S
@@ -345,8 +385,8 @@ def make_microduck_sit_env_cfg(
         func=microduck_mdp.seated_stillness,
         weight=2.0,
         params={
-            "height_full":    0.06,
-            "height_zero":    0.08,
+            "height_full":    0.07,   # seated rest (0.060) well inside
+            "height_zero":    0.085,
             "vel_std":        0.05,
             "tilt_full_deg":  25.0,
             "tilt_zero_deg":  60.0,
@@ -376,6 +416,33 @@ def make_microduck_sit_env_cfg(
         func=mdp.self_collision_cost,
         weight=-1.0,
         params={"sensor_name": self_collision_cfg.name},
+    )
+
+    # Anti-plank: resting the head on the ground is never part of sitting.
+    cfg.rewards["head_ground_contact"] = RewardTermCfg(
+        func=mdp.self_collision_cost,
+        weight=-1.0,
+        params={"sensor_name": head_ground_cfg.name},
+    )
+
+    # Multiplicative goal score — height × upright × pose Gaussians. Breaks the
+    # partial-sum compromises the additive stack keeps finding (run 3's plank
+    # collected height + partial pose + partial upright while never actually
+    # sitting): a deficiency in ANY factor collapses the whole term, so only
+    # the true "butt down, trunk vertical, legs in SIT pose" state pays. Broad
+    # stds keep gradient alive far from the goal (standup's proven recipe).
+    cfg.rewards["seated_composite"] = RewardTermCfg(
+        func=microduck_mdp.standing_composite_score,
+        weight=3.0,
+        params={
+            "target_height":    SIT_Z,
+            "height_std":       0.03,
+            "upright_std":      0.40,   # ≈ 23° effective — plank (~70°+) scores ~0
+            "pose_std":         0.40,
+            "joint_indices":    _LEG_JOINTS,
+            "target_overrides": SITTING_TARGET_OVERRIDES,
+            "asset_cfg":        SceneEntityCfg("robot", body_names=("trunk_base",)),
+        },
     )
 
     # Drop the base "upright" Gaussian — replaced by the two-layer upright above.
@@ -515,8 +582,34 @@ def make_microduck_sit_env_cfg(
     cfg.events["foot_friction"].params["asset_cfg"].geom_names = foot_frictions_geom_names
     cfg.events["foot_friction"].params["ranges"] = (0.7, 1.3)  # match velocity
 
-    # Always start standing, just above the measured equilibrium (STAND_Z=0.115).
+    # Base reset: standing, just above the measured equilibrium (STAND_Z=0.115).
     cfg.events["reset_base"].params["pose_range"]["z"] = (0.11, 0.12)
+
+    # Reset-state mix: 35% of episodes start ALREADY SEATED (SIT keyframe with
+    # joint/tilt noise), 65% standing. Discovery bootstrap — run 3 parked in a
+    # forward head-plank because the seated jackpot was never experienced: the
+    # sit's final backward rock over the heels never survived exploration, so
+    # the value function had nothing to climb toward. Seated starts hand the
+    # policy the goal state's value directly (standup's reverse-curriculum
+    # trick), and double as stillness practice; descent still trains on the
+    # standing-start majority.
+    cfg.events["set_ground_state"] = EventTermCfg(
+        func=microduck_mdp.set_random_ground_state,
+        mode="reset",
+        params={
+            "face_down_prob":          0.0,
+            "face_up_prob":            0.0,
+            "sitting_prob":            0.35,
+            "standing_prob":           0.65,
+            "sitting_joint_overrides": SITTING_TARGET_OVERRIDES,
+            "sitting_joint_noise_std": 0.10,           # ≈ 6° per joint
+            "sitting_tilt_max":        math.radians(8),
+            "sitting_z_min":           0.06,            # settles to the 0.060 rest
+            "sitting_z_max":           0.075,
+            "standing_z_min":          0.11,
+            "standing_z_max":          0.12,
+        },
+    )
 
     # MuJoCo physics robustness for the sit task. The standup XML has full
     # collisions on every body, and the sit pose puts trunk + folded legs +
