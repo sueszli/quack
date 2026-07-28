@@ -2546,6 +2546,62 @@ def neck_vel_descent_penalty(
     return gate * cost
 
 
+def sample_mouth_payload(
+    env: ManagerBasedRlEnv,
+    env_ids: torch.Tensor,
+    min_kg: float = 0.01,
+    max_kg: float = 0.04,
+) -> None:
+    """Event de reset : tire une masse d'objet 'tenu dans la bouche' par env (kg),
+    stockée sur env._mouth_payload_kg. Utilisée par apply_mouth_payload_force."""
+    buf = getattr(env, "_mouth_payload_kg", None)
+    if buf is None:
+        buf = torch.zeros(env.num_envs, device=env.device)
+        env._mouth_payload_kg = buf
+    if env_ids is None:
+        env_ids = torch.arange(env.num_envs, device=env.device)
+    buf[env_ids] = torch.rand(len(env_ids), device=env.device) * (max_kg - min_kg) + min_kg
+
+
+def apply_mouth_payload_force(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg(
+        "robot", body_names=["jaw_soft"], site_names=["mouth_tip"]
+    ),
+    command_name: str = "twist",
+    hold_end: float = 0.35,
+    ramp: float = 0.05,
+    gravity: float = 9.81,
+) -> torch.Tensor:
+    """Hook par-step (utilisé comme reward de poids 0) : applique le POIDS de
+    l'objet tenu dans la bouche comme force externe verticale au mouth_tip, gaté
+    sur la remontée (phase >= hold_end, rampe rapide au moment du 'grab').
+
+    Émule une masse ponctuelle au bout de la bouche pendant le relever : la force
+    m·g est appliquée au CoM du corps + le couple (p_mouth - p_com) × F, ce qui
+    équivaut à l'appliquer au mouth_tip (bon bras de levier pour le cou). Retourne
+    0 (ce n'est pas une vraie récompense — juste le hook d'application)."""
+    asset: Entity = env.scene[asset_cfg.name]
+    payload = getattr(env, "_mouth_payload_kg", None)
+    if payload is None:
+        return torch.zeros(env.num_envs, device=env.device)
+    phase = _gp_phase(env, command_name)
+    gate = ((phase - hold_end) / ramp).clamp(0.0, 1.0)  # 0 avant grab -> 1 après
+    fz = -(gate * payload) * gravity                     # (N,) force verticale (bas)
+
+    bid = int(asset_cfg.body_ids[0])
+    sid = int(asset_cfg.site_ids[0])
+    p_mouth = asset.data.site_pos_w[:, sid, :]           # (N,3)
+    p_com = asset.data.body_com_pos_w[:, bid, :]         # (N,3)
+    F = torch.zeros((env.num_envs, 3), device=env.device, dtype=p_mouth.dtype)
+    F[:, 2] = fz
+    tau = torch.cross(p_mouth - p_com, F, dim=-1)        # applique F au mouth_tip
+    asset.write_external_wrench_to_sim(
+        forces=F.unsqueeze(1), torques=tau.unsqueeze(1), body_ids=[bid],
+    )
+    return torch.zeros(env.num_envs, device=env.device)
+
+
 # ==============================================================================
 # Domain Randomization Events
 # ==============================================================================

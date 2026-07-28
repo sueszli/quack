@@ -31,6 +31,16 @@ def test_ground_pick_cfg_task_space_rewards():
     assert "phase_pose_track_legs" not in r
 
 
+def test_ground_pick_mouth_payload_wired():
+    cfg = make_microduck_ground_pick_env_cfg()
+    # hook d'application (poids 0) + event de tirage du payload
+    assert "mouth_payload_force" in cfg.rewards
+    assert cfg.rewards["mouth_payload_force"].weight == 0.0
+    assert "sample_mouth_payload" in cfg.events
+    assert cfg.events["sample_mouth_payload"].params["min_kg"] == 0.01
+    assert cfg.events["sample_mouth_payload"].params["max_kg"] == 0.04
+
+
 def test_ground_pick_cfg_command_is_phase():
     cfg = make_microduck_ground_pick_env_cfg()
     cmd = cfg.commands["twist"]

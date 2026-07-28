@@ -277,6 +277,22 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
         },
     )
 
+    # Poids aléatoire "dans la bouche" au relever (objet soulevé, 10-40 g/épisode).
+    # Reward de poids 0 : sert de hook par-step qui applique le POIDS de l'objet
+    # comme force externe au mouth_tip, gaté sur la remontée (phase >= HOLD_END).
+    # Le payload lui-même est tiré au reset par l'event sample_mouth_payload.
+    cfg.rewards["mouth_payload_force"] = RewardTermCfg(
+        func=microduck_mdp.apply_mouth_payload_force,
+        weight=0.0,
+        params={
+            "asset_cfg": SceneEntityCfg(
+                "robot", body_names=["jaw_soft"], site_names=["mouth_tip"]
+            ),
+            "command_name": "twist",
+            "hold_end": HOLD_END,
+        },
+    )
+
     # ── Rewards: stability (kept from velocity env, weights tuned for this task)
 
     # Upright: reduced weight — the robot needs to lean forward during approach.
@@ -468,6 +484,14 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     cfg.events["reset_action_history"] = EventTermCfg(
         func=microduck_mdp.reset_action_history,
         mode="reset",
+    )
+
+    # Poids aléatoire "dans la bouche" : tiré par épisode (10-40 g), appliqué au
+    # relever par le hook mouth_payload_force. Imagine que le robot soulève un objet.
+    cfg.events["sample_mouth_payload"] = EventTermCfg(
+        func=microduck_mdp.sample_mouth_payload,
+        mode="reset",
+        params={"min_kg": 0.01, "max_kg": 0.04},
     )
     cfg.events["foot_friction"].params["asset_cfg"].geom_names = foot_frictions_geom_names
     cfg.events["foot_friction"].params["ranges"] = (0.7, 1.3)  # match velocity
