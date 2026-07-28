@@ -59,7 +59,7 @@ KD_RANDOMIZATION_RANGE           = (0.9, 1.1)
 JOINT_FRICTION_RANDOMIZATION_RANGE = (0.9, 1.1)
 ARMATURE_RANDOMIZATION_RANGE     = (0.9, 1.1)
 VELOCITY_PUSH_INTERVAL_S         = (3.0, 6.0)
-VELOCITY_PUSH_RANGE              = (-0.3, 0.3)  # softer than velocity's ±0.5 — a hard push mid-deep-crouch destabilizes this slow reaching task
+VELOCITY_PUSH_RANGE              = (-0.15, 0.15)  # geste quasi-statique -> pushes doux (±0.3 le faisait tomber même droit)
 IMU_ORIENTATION_RANDOMIZATION_ANGLE = 6.0       # match velocity (was 1.0)
 ENCODER_BIAS_RANGE               = (-0.015, 0.015)
 
@@ -458,7 +458,10 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     cfg.events["reset_base"].params["pose_range"]["z"] = (0.12, 0.13)
 
     if ENABLE_VELOCITY_PUSHES:
-        interval = (0.5, 1.0) if play else VELOCITY_PUSH_INTERVAL_S
+        # Play : intervalle espacé (2-4 s) pour juger le geste sur un comportement
+        # réaliste, pas sous mitraille (0.5-1 s était un stress-test agressif qui
+        # faisait "tomber même droit").
+        interval = (2.0, 4.0) if play else VELOCITY_PUSH_INTERVAL_S
         cfg.events["push_robot"] = EventTermCfg(
             func=mdp.push_by_setting_velocity,
             mode="interval",
