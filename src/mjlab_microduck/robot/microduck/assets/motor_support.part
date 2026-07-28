@@ -1,14 +1,13 @@
 {
     "configuration": "default",
     "documentId": "804927696f06d877f3f1803e",
-    "documentMicroversion": "9306fb07735e782de209a230",
-    "documentVersion": "f0b9dc2ed2b65290c37daecc",
+    "documentMicroversion": "4d50e73431a73ee3fd088a63",
     "elementId": "cceb83ef371fcd79b077022f",
     "fullConfiguration": "default",
-    "id": "MobF4a7RpIgDM+5J9",
+    "id": "M5y2lEokqUzNhieFD",
     "isStandardContent": false,
-    "name": "motor_support <1>",
-    "partId": "RbFD",
+    "name": "motor_support <2>",
+    "partId": "RYGD",
     "suppressed": false,
     "type": "Part"
 }

@@ -2,12 +2,12 @@
     "configuration": "default",
     "documentId": "804927696f06d877f3f1803e",
     "documentMicroversion": "4d50e73431a73ee3fd088a63",
-    "elementId": "cceb83ef371fcd79b077022f",
+    "elementId": "451317b8e3aacc7f88e8f8ed",
     "fullConfiguration": "default",
-    "id": "M/rAeuKSeRbB6zGHy",
+    "id": "MCzyiRc5ESe5zlNkJ",
     "isStandardContent": false,
-    "name": "face_part <1>",
-    "partId": "RQBD",
+    "name": "upper_leg_left <1>",
+    "partId": "R+DD",
     "suppressed": false,
     "type": "Part"
 }
