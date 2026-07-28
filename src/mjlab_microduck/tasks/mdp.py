@@ -2522,6 +2522,30 @@ def ground_pick_return_upright_phased(
     return gate * upright
 
 
+def neck_vel_descent_penalty(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    command_name: str = "twist",
+    joint_indices: Optional[list] = None,
+    hold_end: float = 0.35,
+) -> torch.Tensor:
+    """Pénalise la vitesse des joints du cou pendant la DESCENTE+palier (freine le
+    piqué de la tête).
+
+    Coût = mean(joint_vel²) sur les joints donnés, gaté à 1 pour phase < hold_end
+    (descente + palier bas) et 0 ensuite (remontée + repos) -> ne gêne PAS le
+    relever du cou. Retourne un coût positif ; à utiliser avec un poids négatif.
+    """
+    asset = env.scene[asset_cfg.name]
+    vel = asset.data.joint_vel
+    if joint_indices is not None:
+        vel = vel[:, joint_indices]
+    cost = (vel ** 2).mean(dim=-1)
+    phase = _gp_phase(env, command_name)
+    gate = (phase < hold_end).to(vel.dtype)  # descente + palier bas uniquement
+    return gate * cost
+
+
 # ==============================================================================
 # Domain Randomization Events
 # ==============================================================================

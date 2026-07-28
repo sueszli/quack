@@ -261,6 +261,19 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
         },
     )
 
+    # Anti-piqué : pénalise la vitesse du cou pendant la descente+palier
+    # (gate=0 à la remontée -> ne bride PAS le relever). Freine le plongeon de
+    # la tête sans l'empêcher de revenir.
+    cfg.rewards["neck_vel_descent"] = RewardTermCfg(
+        func=microduck_mdp.neck_vel_descent_penalty,
+        weight=-0.1,
+        params={
+            "command_name": "twist",
+            "joint_indices": _NECK_JOINTS,
+            "hold_end": HOLD_END,
+        },
+    )
+
     # ── Rewards: stability (kept from velocity env, weights tuned for this task)
 
     # Upright: reduced weight — the robot needs to lean forward during approach.
