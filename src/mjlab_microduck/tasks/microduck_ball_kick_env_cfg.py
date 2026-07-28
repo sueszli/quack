@@ -1,9 +1,11 @@
-"""Microduck BallKick task — kick a ball forward, hard, with the right foot.
+"""Microduck BallKick task — kick a ball forward with one foot (KICK_FOOT flag).
 
 Episodic policy: the robot starts STANDING (HOME pose + noise) with a 70mm /
-15g ball sitting just in front of its RIGHT foot. The goal is to kick the ball
-forward (robot's heading at reset) as hard as possible while keeping balance
-and staying robust to external pushes, then settle back into a clean stand.
+15g ball sitting just in front of its kicking foot (KICK_FOOT below — train a
+right-footed and a left-footed policy as two separate runs). The goal is to
+kick the ball forward (robot's heading at reset) at BALL_TARGET_SPEED while
+keeping balance and staying robust to external pushes, then settle back into
+a clean stand.
 
 Key design decisions:
   - The policy is BLIND to the ball (no ball obs in the actor): the real robot
@@ -32,7 +34,14 @@ at the same relative strength.
 import math
 from copy import deepcopy
 
-# Symmetry — must stay OFF: the kick task is inherently asymmetric (right foot).
+# ── Kicking foot: "right" or "left" ───────────────────────────────────────────
+# Flips the ball spawn side and the support-foot (anti-hop) sensor. Everything
+# else is left/right symmetric (HOME pose has mirrored signs). Train the two
+# policies as separate runs — wandb experiment/run name follows this flag.
+KICK_FOOT = "right"
+assert KICK_FOOT in ("right", "left")
+
+# Symmetry — must stay OFF: the kick task is inherently one-footed.
 ENABLE_SYMMETRY = False
 
 # ── Domain randomisation (matched to velocity2 / standup) ─────────────────────
@@ -66,12 +75,14 @@ EPISODE_LENGTH_S = 5.0
 
 # 70mm-diameter / 15g ball (see ball.xml).
 BALL_RADIUS = 0.035
-# Nominal ball-center offset in the robot's yaw frame. Measured at HOME: right
-# foot center (0, -0.042), toe tip x≈0.034. With radius 0.035 and ±0.015 noise
+# Nominal ball-center offset in the robot's yaw frame. Measured at HOME: foot
+# centers at (0, ±0.042), toe tip x≈0.034. With radius 0.035 and ±0.015 noise
 # the ball's rear surface is at worst x=0.040 → always ≥6mm clear of the toe.
 # (0.08 ± 0.02 allowed spawn-penetration with the toe: the solver ejected the
 # ball at reset — free "kick" reward with no kick.)
-BALL_OFFSET = (0.09, -0.042)
+# The lateral sign follows the kicking foot (right = -y, left = +y).
+BALL_OFFSET_X     = 0.09
+BALL_OFFSET_ABS_Y = 0.042
 # Uniform ± placement noise per axis. This is the DR that makes the BLIND
 # policy's swing robust to real-world aiming error.
 BALL_POS_NOISE_XY = 0.015
@@ -81,7 +92,7 @@ BALL_POS_NOISE_XY = 0.015
 # controlled tap. NOTE: the kick reward weights below are scaled to keep the
 # at-target payoff ≈ +3/step regardless of this value (weight ≈ 3/target for
 # the capped term) — if you change the target, rescale the weights with it.
-BALL_TARGET_SPEED = 0.25
+BALL_TARGET_SPEED = 1.0
 
 # Trunk standing height (measured natural equilibrium at HOME — see standup env).
 STAND_Z = 0.115
@@ -118,8 +129,18 @@ from mjlab_microduck.tasks.microduck_velocity_env_cfg import HEAD_BODY_NAMES
 from mjlab_microduck.tasks.symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
 
 
-def make_microduck_ball_kick_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
-    """Create the Microduck BallKick environment configuration."""
+def make_microduck_ball_kick_env_cfg(
+    play: bool = False,
+    kick_foot: str | None = None,
+) -> ManagerBasedRlEnvCfg:
+    """Create the Microduck BallKick environment configuration.
+
+    ``kick_foot`` overrides the module-level KICK_FOOT flag (used by tests);
+    normal training just sets the flag at the top of this file.
+    """
+    kick_foot = kick_foot or KICK_FOOT
+    assert kick_foot in ("right", "left")
+    support_foot = "left" if kick_foot == "right" else "right"
 
     feet_ground_cfg = ContactSensorCfg(
         name="feet_ground_contact",
@@ -135,12 +156,12 @@ def make_microduck_ball_kick_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg
         track_air_time=True,
     )
 
-    # Support-foot sensor: the LEFT foot must stay planted through the kick.
-    left_foot_ground_cfg = ContactSensorCfg(
-        name="left_foot_ground_contact",
+    # Support-foot sensor: the non-kicking foot must stay planted through the kick.
+    support_foot_ground_cfg = ContactSensorCfg(
+        name="support_foot_ground_contact",
         primary=ContactMatch(
             mode="geom",
-            pattern=r"^left_foot_collision$",
+            pattern=rf"^{support_foot}_foot_collision$",
             entity="robot",
         ),
         secondary=ContactMatch(mode="body", pattern="terrain"),
@@ -171,7 +192,7 @@ def make_microduck_ball_kick_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg
         "robot": MICRODUCK_STANDUP_ROBOT_CFG,
         "ball":  MICRODUCK_BALL_CFG,
     }
-    cfg.scene.sensors = (feet_ground_cfg, left_foot_ground_cfg, self_collision_cfg)
+    cfg.scene.sensors = (feet_ground_cfg, support_foot_ground_cfg, self_collision_cfg)
     cfg.viewer.body_name = "trunk_base"
 
     cfg.episode_length_s = EPISODE_LENGTH_S
@@ -225,14 +246,14 @@ def make_microduck_ball_kick_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg
         params={"asset_name": "ball", "target_speed": BALL_TARGET_SPEED},
     )
 
-    # Support foot: binary +1 while the LEFT foot touches the ground. Always-on
-    # anti-hop — swinging the right leg is free, lifting the left foot costs
-    # this every step. Also suppresses walking/dribbling exploits (any gait
-    # loses this reward half the time).
+    # Support foot: binary +1 while the non-kicking foot touches the ground.
+    # Always-on anti-hop — swinging the kicking leg is free, lifting the
+    # support foot costs this every step. Also suppresses walking/dribbling
+    # exploits (any gait loses this reward half the time).
     cfg.rewards["support_foot_grounded"] = RewardTermCfg(
         func=microduck_mdp.single_foot_grounded_reward,
         weight=2.0,
-        params={"sensor_name": left_foot_ground_cfg.name},
+        params={"sensor_name": support_foot_ground_cfg.name},
     )
 
     # ── Rewards: stand cleanly before/after the kick ──────────────────────────
@@ -430,11 +451,12 @@ def make_microduck_ball_kick_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg
     # Ball placement — MUST come after set_ground_state (events run in dict
     # insertion order; the ball position derives from the final robot pose).
     # Also stores the per-env kick direction (robot heading at reset).
+    ball_offset_y = -BALL_OFFSET_ABS_Y if kick_foot == "right" else BALL_OFFSET_ABS_Y
     cfg.events["reset_ball"] = EventTermCfg(
         func=microduck_mdp.reset_ball_in_front_of_foot,
         mode="reset",
         params={
-            "offset":      BALL_OFFSET,
+            "offset":      (BALL_OFFSET_X, ball_offset_y),
             "noise_xy":    BALL_POS_NOISE_XY,
             "ball_radius": BALL_RADIUS,
             "asset_name":  "ball",
@@ -631,8 +653,8 @@ MicroduckBallKickRlCfg = RslRlOnPolicyRunnerCfg(
         symmetry_cfg=SYMMETRY_CFG if ENABLE_SYMMETRY else None,
     ),
     wandb_project="mjlab_microduck",
-    experiment_name="ball_kick",
-    run_name="ball_kick",
+    experiment_name=f"ball_kick_{KICK_FOOT}",
+    run_name=f"ball_kick_{KICK_FOOT}",
     save_interval=250,
     num_steps_per_env=24,
     max_iterations=10_000,
