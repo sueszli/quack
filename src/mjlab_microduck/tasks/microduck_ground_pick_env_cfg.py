@@ -99,13 +99,14 @@ from mjlab_microduck.tasks.symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
 # palier bas COURT, repos debout long.
 #   descente   [0, DESCENT_END)      ~1.5 s  transition STAND->bas
 #   palier bas [DESCENT_END, HOLD_END) ~0.6 s effleure (court)
-#   remontée   [HOLD_END, RISE_END)   ~1.5 s  transition bas->STAND
-#   repos      [RISE_END, 1)          ~2.4 s  debout
+#   remontée   [HOLD_END, RISE_END)   ~2.1 s  transition bas->STAND (allongée : il
+#                                             avait du mal à se relever)
+#   repos      [RISE_END, 1)          ~1.8 s  debout
 # ⚠️ --ground-pick-period au déploiement DOIT valoir GP_PERIOD (6.0).
 GP_PERIOD    = 6.0
 DESCENT_END  = 0.25
 HOLD_END     = 0.35
-RISE_END     = 0.60
+RISE_END     = 0.70
 
 
 def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) -> ManagerBasedRlEnvCfg:
@@ -218,7 +219,7 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     _LEG_JOINTS = [0, 1, 2, 3, 4, 9, 10, 11, 12, 13]
     cfg.rewards["ground_pick_return_pose_legs"] = RewardTermCfg(
         func=microduck_mdp.ground_pick_return_pose_phased,
-        weight=4.0,
+        weight=6.0,  # 4->6 : renforce l'extension des jambes au relever
         params={
             "std": 0.3,
             "command_name": "twist",
@@ -251,7 +252,7 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     # penché avant de l'approche (upright always-on reste faible, 0.2).
     cfg.rewards["return_upright"] = RewardTermCfg(
         func=microduck_mdp.ground_pick_return_upright_phased,
-        weight=2.0,
+        weight=4.0,  # 2->4 : aide plus fort l'équilibre du tronc au relever
         params={
             "asset_cfg": SceneEntityCfg("robot"),
             "std": 0.4,
