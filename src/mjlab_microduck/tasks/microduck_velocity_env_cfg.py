@@ -35,14 +35,14 @@ USE_PROJECTED_GRAVITY = True  # If True, use projected gravity instead of raw ac
 # Conservative ranges proven to be stable - can increase gradually if needed
 COM_RANDOMIZATION_RANGE = 0.003  # ±3mm initial, ramped to ±8mm via curriculum
 # Head CoM randomization: applied per-episode to every body of the head assembly
-# (neck → bottom_head_shell → bearing_roll). Same non-accumulating mechanism as
+# (neck → jaw_soft → bearing_roll). Same non-accumulating mechanism as
 # the trunk CoM randomization above.
 HEAD_COM_RANDOMIZATION_RANGE = 0.003  # ±3mm initial, ramped via curriculum
 HEAD_BODY_NAMES = (
     "neck",
     "neck_pitch",
     "yaw_roll_motion",
-    "bottom_head_shell",
+    "jaw_soft",  # head-roll body; was "bottom_head_shell" avant le ré-export 2026-07
     "bearing_roll",
 )
 MASS_INERTIA_RANDOMIZATION_RANGE = (0.95, 1.05)  # ±5% applied to BOTH mass and inertia together.
