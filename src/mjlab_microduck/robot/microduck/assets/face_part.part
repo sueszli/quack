@@ -1,14 +1,13 @@
 {
     "configuration": "default",
     "documentId": "804927696f06d877f3f1803e",
-    "documentMicroversion": "8ecc7eae881f17530e7d80f0",
-    "documentVersion": "011c23c46c3f4780789bc002",
+    "documentMicroversion": "fc8237658b0c3e9ada6f813b",
     "elementId": "cceb83ef371fcd79b077022f",
     "fullConfiguration": "default",
     "id": "M/rAeuKSeRbB6zGHy",
     "isStandardContent": false,
     "name": "face_part <1>",
-    "partId": "RUBD",
+    "partId": "RQBD",
     "suppressed": false,
     "type": "Part"
 }
