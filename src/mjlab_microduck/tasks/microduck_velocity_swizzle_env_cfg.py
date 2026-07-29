@@ -68,7 +68,12 @@ def make_microduck_velocity_swizzle_env_cfg(play: bool = False) -> ManagerBasedR
     # target, and add heading_tracking (starts at 0). A curriculum then swaps the two:
     #   phase 1 (straight): heading_hold dominant, heading_tracking off
     #   phase 2 (follow):   heading_hold -> 0, heading_tracking -> up
-    cfg.commands["twist"].ranges.ang_vel_z = (-1.0, 1.0)
+    # cmd[2] = heading error clip. Reduced ±1.0 -> ±0.5: bounds the OBSERVED heading
+    # error, so the turn-correction rate is gentler (a ±1.0-trained policy turned too
+    # violently — had to run --max-angular-vel 0.3 to tame it). It can still reach any
+    # heading (the error just saturates at 0.5), so it turns fully but smoothly, and
+    # the heading_tracking weight stays 3.0 so it still follows direction well.
+    cfg.commands["twist"].ranges.ang_vel_z = (-0.5, 0.5)
 
     cfg.rewards["heading_tracking"] = RewardTermCfg(
         func=microduck_mdp.heading_tracking_reward,
