@@ -3853,6 +3853,14 @@ class UniformPoseCommand(CommandTerm):
         r = torch.empty(n, device=self.device)
         for i, (lo, hi) in enumerate(self.cfg.ranges):
             self._command[env_ids, i] = r.uniform_(lo, hi)
+        # Explicit zero-command bucket. Uniform sampling essentially never
+        # produces the all-zero command, so the deployment idle case ("hold the
+        # nominal pose") would otherwise be absent from training (velocity2
+        # body-control run-1 lesson: the policy only stood still when a command
+        # was present).
+        if self.cfg.zero_command_prob > 0.0:
+            zero_mask = torch.rand(n, device=self.device) < self.cfg.zero_command_prob
+            self._command[env_ids[zero_mask]] = 0.0
 
 
 @dataclass(kw_only=True)
@@ -3860,6 +3868,8 @@ class UniformPoseCommandCfg(CommandTermCfg):
     """Per-dim uniform ranges; builds a UniformPoseCommand."""
     # Tuple of (lo, hi) per dim. Length defines the command dim.
     ranges: tuple[tuple[float, float], ...] = ()
+    # Probability that a resample yields the exact all-zero command.
+    zero_command_prob: float = 0.0
 
     def build(self, env: ManagerBasedRlEnv) -> "UniformPoseCommand":
         return UniformPoseCommand(self, env)

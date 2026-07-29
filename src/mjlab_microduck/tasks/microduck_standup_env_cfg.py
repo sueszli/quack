@@ -10,6 +10,12 @@ Reward design (mirror of sit env): a single fixed target is rewarded from
 t=0 to end of episode; gentleness is enforced via |a_z| only; smoothness is
 enforced by the usual sim2real regularisers. No trajectory waypoints, no
 episode-progress gating — the policy is free to discover its own rise path.
+
+Body control (reintroduced 2026-07-29): once standing, the policy tracks a
+commanded trunk delta [z, roll, pitch] from the nominal stand (the real
+body_pose command in the previously zero-padded 6D obs slot). Kicks in at
+iter 2500 via the body-control curricula at the bottom of this file, after
+the ground_state_mix recovery curriculum has finished ramping.
 """
 
 import math
@@ -87,6 +93,31 @@ SIT_Z = 0.060
 # via the velocity policy holding the robot still at zero command: 115 mm.
 STAND_Z = 0.115
 
+# ── Body pose command (reintroduced 2026-07-29) ───────────────────────────────
+# Master toggle. OFF restores the previous env exactly: no body_pose command,
+# zero-padded body_command obs slot (obs stays 61D either way), no tracking
+# reward, no body-control curricula (including the conflict-relax stages on
+# height_stand_sharp / upright_sharp / standing_composite).
+ENABLE_BODY_CONTROL = True
+# 6D command slot [x, y, z, roll, pitch, yaw] for obs parity with velocity/
+# velstand, but only z/roll/pitch are tracked (axis_weights below) — the same
+# 3 axes as the original standup body control and the runtime interface.
+# x/y/yaw stay at a tiny "alive" range forever: the policy learns to ignore
+# them (they're reward-uncorrelated noise) instead of leaving dead weights.
+# z range is ASYMMETRIC: STAND_Z is the natural equilibrium at HOME, so there
+# is plenty of crouch below it but only ~1 cm of leg extension above it.
+# Angles capped at ±15°: velocity2 body-control run 1 showed ±20° trains
+# twitchy/overdriven tilting.
+BODY_CMD_MAX_Z_DOWN  = 0.025             # m, crouch below STAND_Z
+BODY_CMD_MAX_Z_UP    = 0.010             # m, extend above STAND_Z
+BODY_CMD_MAX_ANGLE   = math.radians(15)  # rad, trunk pitch/roll
+BODY_CMD_ALIVE_XY    = 0.005             # m, permanent x/y noise range
+BODY_CMD_ALIVE_ANGLE = 0.05              # rad, stage-0 / permanent-yaw range
+# Exact-zero command probability at resample: keeps the deployment idle case
+# ("stand at nominal, no command") trained (velocity2 run-1 lesson — uniform
+# sampling never produces the all-zero command).
+BODY_CMD_ZERO_PROB   = 0.3
+
 from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.envs.mdp import dr
 from mjlab.envs.mdp.actions import JointPositionActionCfg
@@ -113,6 +144,7 @@ from mjlab_microduck.tasks.microduck_velocity_env_cfg import (
     MICRODUCK_ROUGH_TERRAINS_CFG,
     HEAD_BODY_NAMES,
     HEAD_POSE_CMD_RESAMPLE_S,
+    BODY_POSE_CMD_RESAMPLE_S,
 )
 from mjlab_microduck.tasks.symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
 
@@ -391,6 +423,30 @@ def make_microduck_standup_env_cfg(
         },
     )
 
+    # Body pose tracking — z/roll/pitch only (axis_weights), the runtime
+    # body-control axes. Locomotion variant (not body_pose_tracking_6d) so the
+    # unused x/y axes wouldn't reference the spawn origin, which the robot
+    # leaves during prone flips. Weight starts at 0; body_pose_tracking_weight
+    # ramps it in from iter 2500 (after ground_state_mix finishes) so recovery
+    # discovery is untouched. While prone/rising the reward is ≈0 on all
+    # tracked axes, so before the robot stands it is just another standing
+    # attractor — unlike motion penalties, it can't tax flip/rise attempts.
+    # Tight stds on purpose (standup phase-2 lesson): at 1 cm z error with
+    # z_std=0.01 the axis reward drops to 0.37 (real gradient); 0.02 → 0.78.
+    if ENABLE_BODY_CONTROL:
+        cfg.rewards["body_pose_tracking"] = RewardTermCfg(
+            func=microduck_mdp.body_pose_tracking_locomotion,
+            weight=0.0,
+            params={
+                "command_name": "body_pose",
+                "nominal_height": STAND_Z,
+                "z_std": 0.01,
+                "angle_std": math.radians(5),
+                "axis_weights": (0.0, 0.0, 1.0, 1.0, 1.0, 0.0),
+                "vel_gate_command_name": None,
+            },
+        )
+
     # ── Sim2real regularisers — MATCHED to velocity2 (2026-07) ───────────────
     # velocity2's exact set and absolute weights:
     #   • action_rate_l2: -0.1 at stage 0, ramped -0.1 → -1.0 by iter 1500
@@ -523,16 +579,41 @@ def make_microduck_standup_env_cfg(
         ),
     )
 
-    # Command obs slots. head_command is now the real head_pose command (was
-    # zero-padding); body_command stays zero-padded (body control not used here).
+    # ── Body pose command (6D delta from nominal standing) ───────────────────
+    # [x, y, z, roll, pitch, yaw]. Only z/roll/pitch are tracked (see
+    # body_pose_tracking below); x/y/yaw are permanent alive-range noise.
+    # Ranges start tiny; the body_pose_range curriculum widens z/roll/pitch
+    # once the recovery skills exist (ground_state_mix final at 2500).
+    if ENABLE_BODY_CONTROL:
+        cfg.commands["body_pose"] = microduck_mdp.UniformPoseCommandCfg(
+            resampling_time_range=BODY_POSE_CMD_RESAMPLE_S,
+            zero_command_prob=BODY_CMD_ZERO_PROB,
+            ranges=(
+                (-BODY_CMD_ALIVE_XY, BODY_CMD_ALIVE_XY),        # x (m)
+                (-BODY_CMD_ALIVE_XY, BODY_CMD_ALIVE_XY),        # y (m)
+                (-0.005, 0.005),                                # z (m)
+                (-BODY_CMD_ALIVE_ANGLE, BODY_CMD_ALIVE_ANGLE),  # roll
+                (-BODY_CMD_ALIVE_ANGLE, BODY_CMD_ALIVE_ANGLE),  # pitch
+                (-BODY_CMD_ALIVE_ANGLE, BODY_CMD_ALIVE_ANGLE),  # yaw
+            ),
+        )
+
+    # Command obs slots. head_command is the real head_pose command; the
+    # body_command slot carries the real body_pose command when body control is
+    # enabled, and zero padding otherwise (obs shape identical either way).
     # Layout parity with velocity/velstand: [twist(3), head_pose(4), body_pose(6)].
     for group in ("actor", "critic"):
         cfg.observations[group].terms["head_command"] = ObservationTermCfg(
             func=mdp.generated_commands, params={"command_name": "head_pose"},
         )
-        cfg.observations[group].terms["body_command"] = ObservationTermCfg(
-            func=microduck_mdp.zero_command_padding, params={"dim": 6},
-        )
+        if ENABLE_BODY_CONTROL:
+            cfg.observations[group].terms["body_command"] = ObservationTermCfg(
+                func=mdp.generated_commands, params={"command_name": "body_pose"},
+            )
+        else:
+            cfg.observations[group].terms["body_command"] = ObservationTermCfg(
+                func=microduck_mdp.zero_command_padding, params={"dim": 6},
+            )
 
     # ── Command: tiny noise around zero (kept for obs-shape parity) ──────────
     command = cfg.commands["twist"]
@@ -862,6 +943,114 @@ def make_microduck_standup_env_cfg(
             "weight_stages": [
                 {"step": 0,          "weight": 0.0},
                 {"step": 3000 * 24,  "weight": -1e-3},
+            ],
+        },
+    )
+
+    # ── Body-control curricula ────────────────────────────────────────────────
+    # Everything below is body-control only — NOTE the early return; add any
+    # unrelated cfg above this line.
+    if not ENABLE_BODY_CONTROL:
+        return cfg
+
+    # Tracking weight ramps in at 2500 — exactly when ground_state_mix reaches
+    # its final (hardest) mix, so the recovery-discovery phase trains without
+    # any body-command pressure. Final weight 4.0: at full command the fixed-
+    # stand terms oppose tracking by ~2/step AFTER the relax stages below, and
+    # tracking's marginal gain is ~0.65/step per unit weight → 4.0 wins with
+    # margin. (Without the relax stages the opposition is ~4.3/step and even
+    # the old design's weight 5 loses — the phase-2 lesson.)
+    cfg.curriculum["body_pose_tracking_weight"] = CurriculumTermCfg(
+        func=microduck_mdp.reward_weight,
+        params={
+            "reward_name":   "body_pose_tracking",
+            "weight_stages": [
+                {"step": 0,          "weight": 0.0},
+                {"step": 2500 * 24,  "weight": 1.5},
+                {"step": 3000 * 24,  "weight": 3.0},
+                {"step": 4000 * 24,  "weight": 4.0},
+            ],
+        },
+    )
+
+    # Command range widening, synced to the weight ramp. x/y/yaw stay at their
+    # alive ranges (untracked); only z/roll/pitch widen. z asymmetric — see the
+    # BODY_CMD constants block.
+    _alive_xy  = (-BODY_CMD_ALIVE_XY, BODY_CMD_ALIVE_XY)
+    _alive_ang = (-BODY_CMD_ALIVE_ANGLE, BODY_CMD_ALIVE_ANGLE)
+    cfg.curriculum["body_pose_range"] = CurriculumTermCfg(
+        func=microduck_mdp.pose_command_range_curriculum,
+        params={
+            "command_name": "body_pose",
+            "range_stages": [
+                # ranges = (x, y, z, roll, pitch, yaw)
+                {"step": 0, "ranges": (
+                    _alive_xy, _alive_xy, (-0.005, 0.005),
+                    _alive_ang, _alive_ang, _alive_ang,
+                )},
+                {"step": 2500 * 24, "ranges": (
+                    _alive_xy, _alive_xy, (-0.010, 0.005),
+                    (-math.radians(8), math.radians(8)),
+                    (-math.radians(8), math.radians(8)),
+                    _alive_ang,
+                )},
+                {"step": 3000 * 24, "ranges": (
+                    _alive_xy, _alive_xy, (-0.018, 0.008),
+                    (-math.radians(12), math.radians(12)),
+                    (-math.radians(12), math.radians(12)),
+                    _alive_ang,
+                )},
+                {"step": 4000 * 24, "ranges": (
+                    _alive_xy, _alive_xy,
+                    (-BODY_CMD_MAX_Z_DOWN, BODY_CMD_MAX_Z_UP),
+                    (-BODY_CMD_MAX_ANGLE, BODY_CMD_MAX_ANGLE),
+                    (-BODY_CMD_MAX_ANGLE, BODY_CMD_MAX_ANGLE),
+                    _alive_ang,
+                )},
+            ],
+        },
+    )
+
+    # Conflict relax — the standup phase-2 lesson applied to THIS reward set:
+    # the sharp fixed-stand attractors directly out-bid commanded deviations
+    # (at Δz=−2cm/15° tilt: height_stand_sharp −0.83, upright_sharp −0.79,
+    # standing_composite −1.9 per step). Their bootstrap/polish job is done by
+    # 3000; body_pose_tracking at cmd=0 (30% of resamples) takes over the
+    # "sharp peak at nominal stand" role with even tighter stds. The broad
+    # bootstrap layers (height_stand, upright_linear, height_stand_l1,
+    # pose_stand_*) are left untouched — they're what recovery leans on, and
+    # their opposition at full command is mild (~0.9/step total). Standing-
+    # attractor mass is roughly conserved: 6.25 before → 2.2 + tracking 4.0.
+    cfg.curriculum["height_stand_sharp_weight"] = CurriculumTermCfg(
+        func=microduck_mdp.reward_weight,
+        params={
+            "reward_name":   "height_stand_sharp",
+            "weight_stages": [
+                {"step": 0,          "weight": 1.0},
+                {"step": 3000 * 24,  "weight": 0.5},
+                {"step": 4000 * 24,  "weight": 0.2},
+            ],
+        },
+    )
+    cfg.curriculum["upright_sharp_weight"] = CurriculumTermCfg(
+        func=microduck_mdp.reward_weight,
+        params={
+            "reward_name":   "upright_sharp",
+            "weight_stages": [
+                {"step": 0,          "weight": 1.5},
+                {"step": 3000 * 24,  "weight": 1.0},
+                {"step": 4000 * 24,  "weight": 0.5},
+            ],
+        },
+    )
+    cfg.curriculum["standing_composite_weight"] = CurriculumTermCfg(
+        func=microduck_mdp.reward_weight,
+        params={
+            "reward_name":   "standing_composite",
+            "weight_stages": [
+                {"step": 0,          "weight": 3.75},
+                {"step": 3000 * 24,  "weight": 2.5},
+                {"step": 4000 * 24,  "weight": 1.5},
             ],
         },
     )
