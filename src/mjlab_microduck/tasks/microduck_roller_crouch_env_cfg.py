@@ -120,7 +120,7 @@ def make_microduck_roller_crouch_env_cfg(play: bool = False) -> ManagerBasedRlEn
         name="feet_ground_contact",
         primary=ContactMatch(
             mode="subtree",
-            pattern=r"^(roller_blade|roller_blade_2)$",
+            pattern=r"^(ankle_l_v1|ankle_r_v1)$",
             entity="robot",
         ),
         secondary=ContactMatch(mode="body", pattern="terrain"),

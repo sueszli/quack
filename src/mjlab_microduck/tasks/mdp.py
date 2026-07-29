@@ -762,7 +762,7 @@ def reset_rolling_entry(
 
     # Rotation des 4 roues passives = v / r (positif = avant, cf. wheel_speed).
     wheel_ids = []
-    for name in ("passive_LFwheel", "passive_LRwheel", "passive_RFwheel", "passive_RRwheel"):
+    for name in ("passive_LF_?wheel", "passive_LR_?wheel", "passive_RF_?wheel", "passive_RR_?wheel"):
         ids, _ = asset.find_joints(name)
         wheel_ids.append(ids[0])
     wheel_ids_t = torch.tensor(wheel_ids, device=env.device)
@@ -785,10 +785,10 @@ def wheel_glide_reward(
     si les roues reculent (remontée). NaN-safe.
     """
     asset: Entity = env.scene["robot"]
-    lf, _ = asset.find_joints("passive_LFwheel")
-    lr, _ = asset.find_joints("passive_LRwheel")
-    rf, _ = asset.find_joints("passive_RFwheel")
-    rr, _ = asset.find_joints("passive_RRwheel")
+    lf, _ = asset.find_joints("passive_LF_?wheel")
+    lr, _ = asset.find_joints("passive_LR_?wheel")
+    rf, _ = asset.find_joints("passive_RF_?wheel")
+    rr, _ = asset.find_joints("passive_RR_?wheel")
     vel = asset.data.joint_vel
     # Les 4 roues tournent en positif pour l'avant (cf. wheel_speed_reward).
     omega = (vel[:, lf[0]] + vel[:, lr[0]] + vel[:, rf[0]] + vel[:, rr[0]]) / 4.0
@@ -1161,8 +1161,8 @@ def feet_flat_penalty(
     blade is asked to stay flat (so its wheels keep gripping). Without this gate
     the penalty punishes the recovery-foot lift a stride needs — it is minimised
     by keeping BOTH blades flat on the ground, i.e. the swizzle. Assumes the site
-    order (left, right) matches the sensor slot order (roller_blade,
-    roller_blade_2) — both left-first in this model.
+    order (left, right) matches the sensor slot order (ankle_l_v1,
+    ankle_r_v1) — both left-first in this model.
 
     Bug note: must normalize gravity PER ENV with dim=-1. Using torch.norm()
     without dim computes a scalar over all envs × 3 dims, making the vector
@@ -1366,10 +1366,10 @@ def wheel_speed_reward(
     cmd_x = env.command_manager.get_command(command_name)[:, 0]  # (B,)
 
     asset: Entity = env.scene["robot"]
-    lf_ids, _ = asset.find_joints("passive_LFwheel")
-    lr_ids, _ = asset.find_joints("passive_LRwheel")
-    rf_ids, _ = asset.find_joints("passive_RFwheel")
-    rr_ids, _ = asset.find_joints("passive_RRwheel")
+    lf_ids, _ = asset.find_joints("passive_LF_?wheel")
+    lr_ids, _ = asset.find_joints("passive_LR_?wheel")
+    rf_ids, _ = asset.find_joints("passive_RF_?wheel")
+    rr_ids, _ = asset.find_joints("passive_RR_?wheel")
 
     vel = asset.data.joint_vel
     # All 4 wheels spin positive for forward motion (verified by test_wheel_direction.py)

@@ -121,13 +121,15 @@ def make_microduck_velocity_rollers_env_cfg(
         r".*passive_.*": 999.0,
     }
 
-    # NEW roller model body names: the blades (subtrees include rims + wheels).
-    # The old pattern (roller_foot1|roller_foot2) matches nothing in this model.
+    # 2026-07 model: the roller_blade bodies were merged into the ankles (blade
+    # mesh is now a visual geom on ankle_{l,r}_v1); the tires hang directly off
+    # the ankles. Each ankle subtree's only collision geoms are its two tires,
+    # so this keeps the old per-foot semantics: 2 slots, left first.
     feet_ground_cfg = ContactSensorCfg(
         name="feet_ground_contact",
         primary=ContactMatch(
             mode="subtree",
-            pattern=r"^(roller_blade|roller_blade_2)$",
+            pattern=r"^(ankle_l_v1|ankle_r_v1)$",
             entity="robot",
         ),
         secondary=ContactMatch(mode="body", pattern="terrain"),
