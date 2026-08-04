@@ -68,6 +68,10 @@ from .microduck_roller_standup_env_cfg import (
     make_microduck_roller_standup_env_cfg,
     MicroduckRollerStandUpRlCfg,
 )
+from .microduck_spin_env_cfg import (
+    make_microduck_spin_env_cfg,
+    MicroduckSpinRlCfg,
+)
 
 # Standard velocity task
 register_mjlab_task(
@@ -227,3 +231,13 @@ register_mjlab_task(
     runner_cls=MicroduckOnPolicyRunner,
 )
 print("✓ RollerStandUp task registered: Mjlab-RollerStandUp-Flat-MicroDuck")
+
+# Spin task — rotation rapide sur place, sur rollers (slot ground-pick).
+register_mjlab_task(
+    task_id="Mjlab-Spin-Flat-MicroDuck",
+    env_cfg=make_microduck_spin_env_cfg(),
+    play_env_cfg=make_microduck_spin_env_cfg(play=True),
+    rl_cfg=MicroduckSpinRlCfg,
+    runner_cls=MicroduckOnPolicyRunner,
+)
+print("✓ Spin task registered: Mjlab-Spin-Flat-MicroDuck")
