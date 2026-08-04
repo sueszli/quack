@@ -4495,3 +4495,56 @@ def randomize_dof_field_scaled(
     scales = torch.rand(num_envs, num_dofs, device=env.device) * (hi - lo) + lo
     mf[env_ids[:, None], dof_indices] *= scales
     return torch.tensor(float(hi))
+
+
+# --------------------------------------------------------------------------- #
+# Tâche SPIN — rotation rapide sur place sur rollers                            #
+# --------------------------------------------------------------------------- #
+# Enveloppe de phase : la commande du slot bouton porte une phase, qui pilote
+# une VITESSE DE LACET cible en trapèze (et non une pose comme le crouch).
+#   [0, accel_end)        0.5 s   0 -> rate_max    (lancement)
+#   [accel_end, hold_end) 1.6 s   rate_max         (régime)
+#   [hold_end, brake_end) 0.5 s   rate_max -> 0    (freinage)
+#   [brake_end, 1.0)      1.4 s   0                (repos debout)
+# Aire sous l'enveloppe sur un cycle de 4 s = 12.6 rad ~ 2 tours.
+SPIN_PERIOD = 4.0
+SPIN_RATE_MAX = 6.0
+SPIN_ACCEL_END = 0.125
+SPIN_HOLD_END = 0.525
+SPIN_BRAKE_END = 0.650
+
+
+def spin_rate_by_phase(
+    phase: torch.Tensor,
+    rate_max: float = SPIN_RATE_MAX,
+    accel_end: float = SPIN_ACCEL_END,
+    hold_end: float = SPIN_HOLD_END,
+    brake_end: float = SPIN_BRAKE_END,
+) -> torch.Tensor:
+    """Vitesse de lacet cible (rad/s, positive = anti-horaire) le long de la phase."""
+    w = torch.zeros_like(phase)
+    accel = phase < accel_end
+    w = torch.where(accel, rate_max * phase / accel_end, w)
+    hold = (phase >= accel_end) & (phase < hold_end)
+    w = torch.where(hold, torch.full_like(phase, rate_max), w)
+    brake = (phase >= hold_end) & (phase < brake_end)
+    w = torch.where(
+        brake, rate_max * (1.0 - (phase - hold_end) / (brake_end - hold_end)), w
+    )
+    return w
+
+
+def spin_gate_by_phase(
+    phase: torch.Tensor,
+    rate_max: float = SPIN_RATE_MAX,
+    accel_end: float = SPIN_ACCEL_END,
+    hold_end: float = SPIN_HOLD_END,
+    brake_end: float = SPIN_BRAKE_END,
+) -> torch.Tensor:
+    """Porte de shaping dans [0,1] = enveloppe normalisée.
+
+    Vaut 0 sur tout le segment de repos : les amorces (ciseau des jambes,
+    différentiel des roues) ne s'appliquent que pendant lancement + régime, donc
+    le robot revient en station neutre avant de rendre la main à la policy roller.
+    """
+    return spin_rate_by_phase(phase, rate_max, accel_end, hold_end, brake_end) / rate_max
