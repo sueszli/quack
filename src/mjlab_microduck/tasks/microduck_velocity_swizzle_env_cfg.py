@@ -17,8 +17,9 @@ roller recipe NATURALLY converges to a swizzle, so we reuse the stride env whole
 import dataclasses
 
 from mjlab.envs import ManagerBasedRlEnvCfg
-from mjlab.managers import CurriculumTermCfg, RewardTermCfg
+from mjlab.managers import CurriculumTermCfg, ObservationTermCfg, RewardTermCfg
 from mjlab.managers.scene_entity_config import SceneEntityCfg
+from mjlab.tasks.velocity import mdp
 
 from mjlab_microduck.tasks import mdp as microduck_mdp
 from mjlab_microduck.tasks.microduck_velocity_rollers_env_cfg import (
@@ -102,6 +103,86 @@ def make_microduck_velocity_swizzle_env_cfg(play: bool = False) -> ManagerBasedR
                 {"step": 1000 * 24,  "weight": 0.0},   # straight-only until here
                 {"step": 1750 * 24,  "weight": 1.5},
                 {"step": 2500 * 24,  "weight": 3.0},
+            ],
+        },
+    )
+
+    # --- Head-pose control (Y button): the policy produces the head pose ---------
+    # Head-pose command (4D deltas from HOME: [neck_pitch, head_pitch, head_yaw,
+    # head_roll]). Ported from the velocity env; ranges start small (widened by the
+    # curriculum below). Resample every 2-5 s.
+    cfg.commands["head_pose"] = microduck_mdp.UniformPoseCommandCfg(
+        resampling_time_range=(2.0, 5.0),
+        ranges=(
+            (-0.05, 0.05),    # neck_pitch
+            (-0.05, 0.05),    # head_pitch
+            (-0.07, 0.07),    # head_yaw
+            (-0.015, 0.015),  # head_roll (tighter — small mechanical range)
+        ),
+    )
+
+    # Feed the REAL head command into the obs (replaces zero_command_padding) on
+    # both groups. body_command stays zero-padded (no body-pose control here).
+    for group in ("actor", "critic"):
+        cfg.observations[group].terms["head_command"] = ObservationTermCfg(
+            func=mdp.generated_commands,
+            params={"command_name": "head_pose"},
+        )
+
+    # Reward the head tracking its command. Weight 0 here — ramped in LATE by the
+    # curriculum so it doesn't disturb the swizzle before it's solid.
+    cfg.rewards["head_pose_tracking"] = RewardTermCfg(
+        func=microduck_mdp.head_pose_tracking,
+        weight=0.0,
+        params={"command_name": "head_pose", "std": 0.5},
+    )
+
+    # Reconcile the two HOME-pullers that would fight head_pose_tracking:
+    #  1) neck_joint_pos_l2 pulls the neck/head joints to HOME -> remove it.
+    if "neck_joint_pos_l2" in cfg.rewards:
+        del cfg.rewards["neck_joint_pos_l2"]
+    #  2) Remove the pose reward entirely - it tries to match non-existent neck/head joints
+    #     and blocks head control. Replace it with a scoped version using leg-only patterns.
+    if "pose" in cfg.rewards:
+        original_pose_weight = cfg.rewards["pose"].weight
+        del cfg.rewards["pose"]
+
+    # Re-add pose reward scoped to leg joints only (excludes neck, head, passive wheels).
+    cfg.rewards["pose"] = RewardTermCfg(
+        func=microduck_mdp.pose_l1_penalty,  # Use microduck's simpler pose reward
+        weight=original_pose_weight,
+        params={"asset_cfg": SceneEntityCfg(
+            "robot", joint_names=(r"^(?!passive_|.*neck.*|.*head.*).*",)
+        )}
+    )
+
+    # head_pose_tracking ramps 0 -> 4.0, staying 0 until ~1500 it. (swizzle solid),
+    # so head control is added on top of a stable swizzle.
+    cfg.curriculum["head_pose_tracking_weight"] = CurriculumTermCfg(
+        func=microduck_mdp.reward_weight,
+        params={
+            "reward_name": "head_pose_tracking",
+            "weight_stages": [
+                {"step": 0,          "weight": 0.0},   # must match initial weight
+                {"step": 1500 * 24,  "weight": 0.0},   # head off while swizzle solidifies
+                {"step": 2250 * 24,  "weight": 2.0},
+                {"step": 3000 * 24,  "weight": 4.0},
+            ],
+        },
+    )
+    # Head-command range widens over the SAME window (tiny until 1500, full by 3000),
+    # so the commanded head barely moves early and reaches full range once the policy
+    # can handle it.
+    cfg.curriculum["head_pose_range"] = CurriculumTermCfg(
+        func=microduck_mdp.pose_command_range_curriculum,
+        params={
+            "command_name": "head_pose",
+            "range_stages": [
+                # step,               ((neck_pitch), (head_pitch), (head_yaw),  (head_roll))
+                {"step": 0,          "ranges": ((-0.05, 0.05), (-0.05, 0.05), (-0.07, 0.07), (-0.015, 0.015))},
+                {"step": 1500 * 24,  "ranges": ((-0.05, 0.05), (-0.05, 0.05), (-0.07, 0.07), (-0.015, 0.015))},
+                {"step": 2250 * 24,  "ranges": ((-0.55, 0.55), (-0.55, 0.55), (-0.70, 0.70), (-0.15, 0.15))},
+                {"step": 3000 * 24,  "ranges": ((-1.10, 1.10), (-1.10, 1.10), (-1.40, 1.40), (-0.31, 0.31))},
             ],
         },
     )
