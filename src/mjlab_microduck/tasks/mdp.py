@@ -1237,15 +1237,20 @@ def hip_pitch_knee_vel_l2(
 def neck_joint_pos_l2(
     env: ManagerBasedRlEnv,
     asset_cfg: SceneEntityCfg = _NECK_JOINT_CFG,
+    pattern: str = r".*(neck|head).*",
 ) -> torch.Tensor:
     """Penalize neck/head joint position deviation from default (L2 squared).
 
     Uses find_joints() every call to avoid stale cached indices when the same
     SceneEntityCfg singleton is reused across robots with different joint layouts
     (e.g. walk robot vs rollers robot where passive wheels shift neck indices).
+
+    ``pattern`` sélectionne les joints comptés (défaut : toute la nuque + la tête).
+    La tâche spin passe un motif qui EXCLUT `head_yaw`, pour laisser la tête servir
+    de volant d'inertie au lancement de la rotation.
     """
     asset: Entity = env.scene[asset_cfg.name]
-    joint_ids, _ = asset.find_joints(r".*(neck|head).*")
+    joint_ids, _ = asset.find_joints(pattern)
     error = asset.data.joint_pos[:, joint_ids] - asset.data.default_joint_pos[:, joint_ids]
     return torch.sum(torch.square(error), dim=1)
 
@@ -4705,3 +4710,37 @@ def spin_grounded(
     grounded = (n_contact >= 2).float()
     gate = _spin_gate(env, command_name, rate_max, accel_end, hold_end, brake_end)
     return grounded * gate
+
+
+def leg_antisymmetry(
+    env: ManagerBasedRlEnv,
+    command_name: str = "twist",
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    joint_bases: tuple = ("hip_pitch", "knee"),
+    rate_max: float = SPIN_RATE_MAX,
+    accel_end: float = SPIN_ACCEL_END,
+    hold_end: float = SPIN_HOLD_END,
+    brake_end: float = SPIN_BRAKE_END,
+) -> torch.Tensor:
+    """Amorce le CISEAU des jambes (une avant / une arrière) pendant le spin.
+
+    Le robot a des conventions de signe MIROIR gauche/droite : une pose
+    symétrique satisfait q_G + q_D ≈ 0 (cf. `leg_symmetry_reward`), donc le
+    ciseau satisfait q_G ≈ q_D. On retourne `gate(φ) · (−mean|q_G − q_D|)` — à
+    utiliser avec un poids POSITIF, décroissant par curriculum : l'amorce
+    s'efface pour laisser la policy affiner son propre geste.
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    left, right = [], []
+    for base in joint_bases:
+        li, _ = asset.find_joints([f"left_{base}"])
+        ri, _ = asset.find_joints([f"right_{base}"])
+        left.append(li[0])
+        right.append(ri[0])
+    lids = torch.tensor(left, device=env.device)
+    rids = torch.tensor(right, device=env.device)
+
+    q = asset.data.joint_pos
+    scissor = -torch.abs(q[:, lids] - q[:, rids]).mean(dim=-1)
+    gate = _spin_gate(env, command_name, rate_max, accel_end, hold_end, brake_end)
+    return gate * scissor

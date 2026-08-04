@@ -262,3 +262,72 @@ def test_spin_grounded_rewards_both_blades_down_and_is_gated():
     # deux lames au sol en régime -> porte 1.0 ; une seule ou zéro -> 0 ;
     # deux lames au sol mais en repos -> porte 0.
     assert torch.allclose(r, torch.tensor([1.0, 0.0, 0.0, 0.0]), atol=1e-6)
+
+
+# ── leg_antisymmetry ─────────────────────────────────────────────────────────
+_LEG_IDS = {
+    "left_hip_pitch": 0,
+    "left_knee": 1,
+    "right_hip_pitch": 2,
+    "right_knee": 3,
+}
+
+
+def _leg_env(pos_rows, phases):
+    pos = torch.tensor(pos_rows, dtype=torch.float32)
+    entity = _FakeEntity(_FakeData(joint_pos=pos), joint_ids=_LEG_IDS)
+    return _FakeEnv(entity, cmd=_phase_cmd(phases))
+
+
+def test_leg_antisymmetry_prefers_scissor_over_mirror():
+    # convention miroir : q_G = -q_D est une pose SYMÉTRIQUE (mauvais ici),
+    # q_G = q_D est le CISEAU (bon ici). Valeur = -mean|q_G - q_D|, donc <= 0.
+    env = _leg_env(
+        [
+            [0.4, 0.3, 0.4, 0.3],    # ciseau parfait : q_G == q_D -> 0.0
+            [0.4, 0.3, -0.4, -0.3],  # miroir : écart 0.8 et 0.6 -> -0.7
+        ],
+        [0.30, 0.30],
+    )
+    r = mdp.leg_antisymmetry(env)
+    assert torch.allclose(r, torch.tensor([0.0, -0.7]), atol=1e-6)
+    assert r[0] > r[1]
+
+
+def test_leg_antisymmetry_is_gated_off_during_rest():
+    # en repos la porte est nulle : rien ne pousse au ciseau, station neutre libre.
+    env = _leg_env([[0.4, 0.3, -0.4, -0.3]], [0.80])
+    r = mdp.leg_antisymmetry(env)
+    assert torch.allclose(r, torch.zeros(1), atol=1e-6)
+
+
+# ── neck_joint_pos_l2 : paramètre pattern ────────────────────────────────────
+_NECK_IDS = {
+    "neck_pitch": 0,
+    "head_pitch": 1,
+    "head_roll": 2,
+    "head_yaw": 3,
+}
+
+
+def test_neck_joint_pos_l2_pattern_can_exclude_head_yaw():
+    class _NeckData(_FakeData):
+        def __init__(self, joint_pos, default_joint_pos):
+            super().__init__(joint_pos=joint_pos)
+            self.default_joint_pos = default_joint_pos
+
+    pos = torch.tensor([[0.0, 0.0, 0.0, 1.0]])  # seul head_yaw dévie, de 1 rad
+    default = torch.zeros(1, 4)
+    entity = _FakeEntity(_NeckData(pos, default), joint_ids=_NECK_IDS)
+    env = _FakeEnv(entity)
+
+    # motif par défaut : head_yaw compté -> coût 1.0
+    assert torch.allclose(
+        mdp.neck_joint_pos_l2(env), torch.tensor([1.0]), atol=1e-6
+    )
+    # motif du spin : head_yaw exclu -> coût 0.0 (tête libre en lacet)
+    assert torch.allclose(
+        mdp.neck_joint_pos_l2(env, pattern=r"^(neck_pitch|head_pitch|head_roll)$"),
+        torch.tensor([0.0]),
+        atol=1e-6,
+    )
