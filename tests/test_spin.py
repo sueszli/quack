@@ -190,3 +190,75 @@ def test_spin_stay_in_place_is_squared_planar_speed():
     c = mdp.spin_stay_in_place(env)
     # 0.3^2 + 0.4^2 = 0.25 ; la composante z est ignorée
     assert torch.allclose(c, torch.tensor([0.0, 0.25]), atol=1e-6)
+
+
+# ── spin_wheel_differential ──────────────────────────────────────────────────
+_WHEEL_IDS = {
+    "passive_LF_wheel": 0,
+    "passive_LR_wheel": 1,
+    "passive_RF_wheel": 2,
+    "passive_RR_wheel": 3,
+}
+
+
+def _wheel_env(vel_rows, phases):
+    vel = torch.tensor(vel_rows, dtype=torch.float32)
+    entity = _FakeEntity(_FakeData(joint_vel=vel), joint_ids=_WHEEL_IDS)
+    return _FakeEnv(entity, cmd=_phase_cmd(phases))
+
+
+def test_wheel_differential_rewards_counter_rolling_wheels():
+    # anti-horaire : roues GAUCHE négatives (patin part en arrière), DROITE
+    # positives -> omega_D - omega_G > 0 -> récompensé.
+    env = _wheel_env(
+        [
+            [-10.0, -10.0, 10.0, 10.0],  # bon différentiel
+            [10.0, 10.0, 10.0, 10.0],    # tout droit : différentiel nul
+            [10.0, 10.0, -10.0, -10.0],  # différentiel inversé (horaire)
+        ],
+        [0.30, 0.30, 0.30],
+    )
+    r = mdp.spin_wheel_differential(env, omega_scale=20.0)
+    assert r[0] > 0.5
+    assert torch.allclose(r[1], torch.tensor(0.0), atol=1e-6)
+    assert torch.allclose(r[2], torch.tensor(0.0), atol=1e-6)
+
+
+def test_wheel_differential_is_gated_off_during_rest():
+    # même bon différentiel, mais en phase de repos -> porte nulle -> pas payé.
+    env = _wheel_env([[-10.0, -10.0, 10.0, 10.0]], [0.80])
+    r = mdp.spin_wheel_differential(env, omega_scale=20.0)
+    assert torch.allclose(r, torch.zeros(1), atol=1e-6)
+
+
+def test_wheel_differential_saturates():
+    # tanh : au-delà de omega_scale la reward sature, pas de course à la vitesse.
+    env = _wheel_env(
+        [[-10.0, -10.0, 10.0, 10.0], [-100.0, -100.0, 100.0, 100.0]], [0.30, 0.30]
+    )
+    r = mdp.spin_wheel_differential(env, omega_scale=20.0)
+    assert r[1] > r[0]
+    assert r[1] <= 1.0
+
+
+def test_wheel_differential_from_values_is_pure():
+    diff = torch.tensor([20.0, 0.0, -20.0])
+    gate = torch.ones(3)
+    r = mdp.spin_wheel_differential_from_values(diff, gate, omega_scale=20.0)
+    expected = torch.tensor([math.tanh(1.0), 0.0, 0.0])
+    assert torch.allclose(r, expected, atol=1e-6)
+
+
+# ── spin_grounded ────────────────────────────────────────────────────────────
+def test_spin_grounded_rewards_both_blades_down_and_is_gated():
+    contact = torch.tensor([[0.2, 0.3], [0.2, 0.0], [0.0, 0.0], [0.2, 0.3]])
+    entity = _FakeEntity(_FakeData())
+    env = _FakeEnv(
+        entity,
+        cmd=_phase_cmd([0.30, 0.30, 0.30, 0.80]),
+        sensors={"feet_ground_contact": _FakeSensor(contact)},
+    )
+    r = mdp.spin_grounded(env, sensor_name="feet_ground_contact")
+    # deux lames au sol en régime -> porte 1.0 ; une seule ou zéro -> 0 ;
+    # deux lames au sol mais en repos -> porte 0.
+    assert torch.allclose(r, torch.tensor([1.0, 0.0, 0.0, 0.0]), atol=1e-6)

@@ -4637,3 +4637,71 @@ def spin_stay_in_place(
     asset: Entity = env.scene[asset_cfg.name]
     v_xy = asset.data.root_link_lin_vel_b[:, :2]
     return torch.sum(torch.square(v_xy), dim=1)
+
+
+# Demi-voie mesurée sur le modèle rollers (pose HOME, sites left_foot/right_foot) :
+# 0.0499 m, contre 0.03 m estimé au spec -> différentiel attendu à 6 rad/s =
+# 2*6*0.0499/0.0175 = 34.2 rad/s, soit +71% par rapport à 20.0 (> seuil de 30%).
+SPIN_WHEEL_OMEGA_SCALE = 34.0  # rad/s ; recalibré sur la demi-voie mesurée
+
+
+def spin_wheel_differential_from_values(
+    diff: torch.Tensor, gate: torch.Tensor, omega_scale: float
+) -> torch.Tensor:
+    """Fonction pure : tanh du différentiel de roues, portée par gate, clampée ≥ 0."""
+    return gate * torch.tanh(torch.clamp(diff, min=0.0) / omega_scale)
+
+
+def spin_wheel_differential(
+    env: ManagerBasedRlEnv,
+    command_name: str = "twist",
+    omega_scale: float = SPIN_WHEEL_OMEGA_SCALE,
+    rate_max: float = SPIN_RATE_MAX,
+    accel_end: float = SPIN_ACCEL_END,
+    hold_end: float = SPIN_HOLD_END,
+    brake_end: float = SPIN_BRAKE_END,
+) -> torch.Tensor:
+    """Récompense la rotation EN ROULEMENT (et non en patinage).
+
+    Pour un spin anti-horaire, le patin gauche recule et le droit avance ; les 4
+    roues tournant positif en marche avant, cela donne ω_D − ω_G > 0. Le tanh
+    sature à `omega_scale` pour éviter la course à la vitesse de roue.
+    """
+    asset: Entity = env.scene["robot"]
+    lf_ids, _ = asset.find_joints("passive_LF_?wheel")
+    lr_ids, _ = asset.find_joints("passive_LR_?wheel")
+    rf_ids, _ = asset.find_joints("passive_RF_?wheel")
+    rr_ids, _ = asset.find_joints("passive_RR_?wheel")
+
+    vel = asset.data.joint_vel
+    omega_left = (vel[:, lf_ids[0]] + vel[:, lr_ids[0]]) / 2.0
+    omega_right = (vel[:, rf_ids[0]] + vel[:, rr_ids[0]]) / 2.0
+    gate = _spin_gate(env, command_name, rate_max, accel_end, hold_end, brake_end)
+    return spin_wheel_differential_from_values(
+        omega_right - omega_left, gate, omega_scale
+    )
+
+
+def spin_grounded(
+    env: ManagerBasedRlEnv,
+    sensor_name: str,
+    command_name: str = "twist",
+    rate_max: float = SPIN_RATE_MAX,
+    accel_end: float = SPIN_ACCEL_END,
+    hold_end: float = SPIN_HOLD_END,
+    brake_end: float = SPIN_BRAKE_END,
+) -> torch.Tensor:
+    """Les deux lames au sol pendant le spin — empêche « je saute et je vrille ».
+
+    Variante de `grounded_reward` du swizzle, qui n'est pas réutilisable ici :
+    elle se pondère par cmd_x, qui vaut cos(2πφ) sur la commande de phase.
+    """
+    from mjlab.sensor import ContactSensor
+
+    sensor: ContactSensor = env.scene[sensor_name]
+    contact_time = sensor.data.current_contact_time  # (num_envs, num_feet)
+    assert contact_time is not None
+    n_contact = torch.sum((contact_time > 0.0).float(), dim=1)
+    grounded = (n_contact >= 2).float()
+    gate = _spin_gate(env, command_name, rate_max, accel_end, hold_end, brake_end)
+    return grounded * gate
