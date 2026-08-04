@@ -280,9 +280,14 @@ def make_microduck_roller_standup_env_cfg(play: bool = False) -> ManagerBasedRlE
             "sitting_prob":   0.00,
             "standing_prob":  0.50,
             "sitting_joint_overrides": None,
-            # Repos au sol : mesuré à 0.075 (ventre) / 0.048 (dos), identique aux
-            # deux modèles — c'est la coque du tronc qui touche, pas les pieds.
-            "prone_z_min":    0.05,
+            # Les deux poses de départ (ventre/dos) partagent une SEULE plage de z,
+            # or leurs contacts n'ont rien de commun : le ventre ne décolle du sol
+            # qu'à partir de 0.0752, le dos repose à 0.0475. Un plancher unique ne
+            # peut donc pas être idéal pour les deux. On choisit 0.076 pour éliminer
+            # toute interpénétration côté ventre (mesuré : à 0.05, +25 mm dans le
+            # sol), au prix d'un dos qui démarre 28–42 mm au-dessus de son repos —
+            # un artefact bien plus doux qu'un pushout de contact.
+            "prone_z_min":    0.076,
             "prone_z_max":    0.09,
             # Debout sur roues : ROLLER_STAND_Z = 0.138 (contre 0.11–0.12 sans roues).
             "standing_z_min": 0.134,

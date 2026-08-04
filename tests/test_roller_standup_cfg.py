@@ -235,9 +235,14 @@ def test_starts_from_ground_states():
 def test_ground_state_heights_are_roller_specific():
     cfg = make_microduck_roller_standup_env_cfg()
     params = cfg.events["set_ground_state"].params
-    # Repos au sol : géométrie identique aux deux modèles (c'est la coque du
-    # tronc qui touche, pas les pieds) → plages du standup réutilisées.
-    assert (params["prone_z_min"], params["prone_z_max"]) == (0.05, 0.09)
+    # Ventre et dos partagent une seule plage de z, mais leurs contacts diffèrent :
+    # le ventre ne décolle du sol qu'à partir de 0.0752, le dos repose à 0.0475.
+    # prone_z_min = 0.076 pour éliminer toute interpénétration côté ventre.
+    assert (params["prone_z_min"], params["prone_z_max"]) == (0.076, 0.09)
+    # Sous 0.0752 (contact mesuré, pose HOME), le départ ventre commence DANS le
+    # sol — un pushout de contact que la policy paierait via gentle_rise /
+    # joint_torque_rate_l2. prone_z_min doit rester au-dessus.
+    assert params["prone_z_min"] >= 0.0752
     # Debout : hauteur ROLLER (+23 mm vs le modèle sans roues, qui est à 0.11–0.12).
     assert params["standing_z_min"] == 0.134
     assert params["standing_z_max"] == 0.144
