@@ -311,10 +311,13 @@ def test_wheel_friction_curriculum_is_decreasing():
         assert stage["ranges"][0] == stage["ranges"][1]
 
 
-def test_wheel_friction_event_starts_at_stage_zero():
-    # Le curriculum n'est évalué qu'à partir du premier pas : sans ça les tout
-    # premiers resets utiliseraient la valeur (0, 0) héritée de l'env roller,
-    # soit des roues LIBRES pendant le bootstrap — exactement l'inverse du but.
+def test_wheel_friction_event_default_matches_stage_zero():
+    # Le curriculum manager tourne AVANT les événements de reset à chaque reset
+    # (y compris le tout premier), et wheel_friction_curriculum défaut lui-même
+    # sur le palier 0 : cette valeur par défaut de l'événement n'est donc jamais
+    # lue en pratique. On vérifie juste qu'elle reste cohérente avec le palier 0
+    # du curriculum — redondance défensive utile si le curriculum disparaît un
+    # jour en laissant l'événement en place.
     cfg = make_microduck_roller_standup_env_cfg()
     stage0 = cfg.curriculum["wheel_friction"].params["ranges_stages"][0]["ranges"]
     assert cfg.events["randomize_wheel_friction"].params["ranges"] == stage0

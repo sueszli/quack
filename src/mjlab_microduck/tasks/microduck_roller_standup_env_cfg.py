@@ -355,10 +355,12 @@ def make_microduck_roller_standup_env_cfg(play: bool = False) -> ManagerBasedRlE
             ],
         },
     )
-    # La valeur de DÉPART de l'événement doit matcher le palier 0 : le curriculum
-    # n'est évalué qu'à partir du premier pas, sinon les tout premiers resets
-    # utiliseraient le (0, 0) hérité de l'env roller — des roues LIBRES pendant
-    # le bootstrap, soit exactement l'inverse du but.
+    # Redondance défensive : le curriculum manager tourne AVANT les événements de
+    # reset à chaque reset (y compris le tout premier), et wheel_friction_curriculum
+    # défaut lui-même sur le palier 0 — donc cette ligne n'est jamais nécessaire en
+    # pratique. Elle garde juste la valeur PAR DÉFAUT de l'événement cohérente avec
+    # le palier 0 du curriculum, au cas où quelqu'un retire le curriculum plus tard
+    # en laissant l'événement en place.
     cfg.events["randomize_wheel_friction"].params["ranges"] = _WHEEL_FRICTION_STAGE0
 
     # ── action_rate : la rampe du standup, pas celle du roller ───────────────
