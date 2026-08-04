@@ -215,3 +215,73 @@ def test_trunk_asset_cfgs_are_distinct_objects():
     )
     seen = [id(cfg.rewards[n].params["asset_cfg"]) for n in names]
     assert len(set(seen)) == len(seen), "asset_cfg partagé entre plusieurs termes"
+
+
+def test_starts_from_ground_states():
+    # Ventre + dos + debout. Pas de bucket "assis" : il n'existait dans standup
+    # que pour le hand-off depuis la policy sit, dont il n'y a pas d'équivalent
+    # roller — et ses sitting_joint_overrides sont des indices du modèle SANS roues.
+    cfg = make_microduck_roller_standup_env_cfg()
+    assert "set_ground_state" in cfg.events
+    params = cfg.events["set_ground_state"].params
+    assert params["sitting_prob"] == 0.0
+    assert params["sitting_joint_overrides"] is None
+    assert params["face_down_prob"] > 0.0
+    assert params["standing_prob"] > 0.0
+    # face_up (le dos) démarre à 0 : introduit tard par le curriculum.
+    assert params["face_up_prob"] == 0.0
+
+
+def test_ground_state_heights_are_roller_specific():
+    cfg = make_microduck_roller_standup_env_cfg()
+    params = cfg.events["set_ground_state"].params
+    # Repos au sol : géométrie identique aux deux modèles (c'est la coque du
+    # tronc qui touche, pas les pieds) → plages du standup réutilisées.
+    assert (params["prone_z_min"], params["prone_z_max"]) == (0.05, 0.09)
+    # Debout : hauteur ROLLER (+23 mm vs le modèle sans roues, qui est à 0.11–0.12).
+    assert params["standing_z_min"] == 0.134
+    assert params["standing_z_max"] == 0.144
+    assert params["standing_z_min"] < 0.138 < params["standing_z_max"]
+
+
+def test_ground_state_event_runs_after_base_reset():
+    # set_ground_state écrase la pose posée par reset_base / reset_robot_joints :
+    # l'ordre des événements suit l'ordre d'insertion, il doit donc venir APRÈS.
+    cfg = make_microduck_roller_standup_env_cfg()
+    order = list(cfg.events.keys())
+    assert order.index("set_ground_state") > order.index("reset_base")
+    assert order.index("set_ground_state") > order.index("reset_robot_joints")
+
+
+def test_no_fall_termination():
+    # Le robot DÉMARRE tombé : une terminaison sur inclinaison tuerait l'épisode
+    # au premier pas. nan_state (hérité) reste, lui.
+    cfg = make_microduck_roller_standup_env_cfg()
+    assert "fell_over" not in cfg.terminations
+    assert "nan_state" in cfg.terminations
+
+
+def test_ground_state_curriculum_ramps_easy_to_hard():
+    cfg = make_microduck_roller_standup_env_cfg()
+    assert "ground_state_mix" in cfg.curriculum
+    stages = cfg.curriculum["ground_state_mix"].params["param_stages"]
+    assert cfg.curriculum["ground_state_mix"].params["event_name"] == "set_ground_state"
+    # Les steps sont croissants et démarrent à 0.
+    steps = [s["step"] for s in stages]
+    assert steps[0] == 0 and steps == sorted(steps) and len(set(steps)) == len(steps)
+    # Le dos (face_up) est introduit tard puis croît de façon monotone.
+    face_up = [s["params"]["face_up_prob"] for s in stages]
+    assert face_up[0] == 0.0
+    assert face_up == sorted(face_up)
+    assert face_up[-1] >= 0.35
+    # Chaque palier est une distribution valide, et le "déjà debout" ne disparaît
+    # jamais (sinon la policy se relève puis retombe faute d'apprendre à tenir).
+    for stage in stages:
+        p = stage["params"]
+        total = (
+            p["standing_prob"] + p["sitting_prob"]
+            + p["face_down_prob"] + p["face_up_prob"]
+        )
+        assert abs(total - 1.0) < 1e-9
+        assert p["sitting_prob"] == 0.0
+        assert p["standing_prob"] > 0.0

@@ -262,6 +262,69 @@ def make_microduck_roller_standup_env_cfg(play: bool = False) -> ManagerBasedRlE
         weight=-2e-3,
     )
 
+    # ── Départ AU SOL : à plat ventre / à plat dos / déjà debout ─────────────
+    # Ajouté en DERNIER dans cfg.events : l'ordre d'exécution suit l'ordre
+    # d'insertion, et ce terme doit écraser la pose posée par reset_base /
+    # reset_robot_joints.
+    # Le bucket « déjà debout » n'est pas décoratif : sans lui la policy apprend
+    # à monter mais pas à TENIR, et elle retombe juste après s'être relevée.
+    # Pas de bucket « assis » → aucun sitting_joint_overrides à remapper (ceux du
+    # standup sont des indices du modèle SANS roues).
+    # Les probabilités ci-dessous = palier 0 du curriculum ground_state_mix.
+    cfg.events["set_ground_state"] = EventTermCfg(
+        func=microduck_mdp.set_random_ground_state,
+        mode="reset",
+        params={
+            "face_down_prob": 0.50,   # ventre (+90° de pitch)
+            "face_up_prob":   0.00,   # dos — le plus dur, introduit tard
+            "sitting_prob":   0.00,
+            "standing_prob":  0.50,
+            "sitting_joint_overrides": None,
+            # Repos au sol : mesuré à 0.075 (ventre) / 0.048 (dos), identique aux
+            # deux modèles — c'est la coque du tronc qui touche, pas les pieds.
+            "prone_z_min":    0.05,
+            "prone_z_max":    0.09,
+            # Debout sur roues : ROLLER_STAND_Z = 0.138 (contre 0.11–0.12 sans roues).
+            "standing_z_min": 0.134,
+            "standing_z_max": 0.144,
+            # Bruit de pitch/roll au départ. Attention : dans
+            # set_random_ground_state le bucket « debout » réutilise le quaternion
+            # du bucket « assis », donc ce bruit s'applique AUSSI aux départs
+            # debout — c'est voulu (pas de sur-apprentissage du parfaitement droit).
+            "sitting_tilt_max": math.radians(10),
+        },
+    )
+
+    # Le robot DÉMARRE tombé → la terminaison sur inclinaison n'a aucun sens ici
+    # (elle tuerait l'épisode au premier pas). nan_state, hérité, reste.
+    cfg.terminations.pop("fell_over", None)
+
+    # Curriculum des poses de départ, easy → hard. Avec un mélange plat dès le
+    # départ, la policy optimise la majorité facile et laisse le dos sous-entraîné
+    # (leçon du standup : il gelait en « ne rien faire » sur cette pose). On
+    # introduit donc debout+ventre d'abord, le dos tard, et on biaise vers les
+    # poses dures à la fin pour qu'elles reçoivent le plus d'entraînement.
+    cfg.curriculum["ground_state_mix"] = CurriculumTermCfg(
+        func=microduck_mdp.event_param_curriculum,
+        params={
+            "event_name": "set_ground_state",
+            "param_stages": [
+                {"step": 0, "params": {
+                    "standing_prob": 0.50, "sitting_prob": 0.00,
+                    "face_down_prob": 0.50, "face_up_prob": 0.00}},
+                {"step": 600 * NUM_STEPS_PER_ENV, "params": {
+                    "standing_prob": 0.35, "sitting_prob": 0.00,
+                    "face_down_prob": 0.45, "face_up_prob": 0.20}},
+                {"step": 1500 * NUM_STEPS_PER_ENV, "params": {
+                    "standing_prob": 0.25, "sitting_prob": 0.00,
+                    "face_down_prob": 0.40, "face_up_prob": 0.35}},
+                {"step": 2500 * NUM_STEPS_PER_ENV, "params": {
+                    "standing_prob": 0.20, "sitting_prob": 0.00,
+                    "face_down_prob": 0.40, "face_up_prob": 0.40}},
+            ],
+        },
+    )
+
     return cfg
 
 
