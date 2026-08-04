@@ -134,6 +134,134 @@ def make_microduck_roller_standup_env_cfg(play: bool = False) -> ManagerBasedRlE
     for grp in ("actor", "critic"):
         cfg.observations[grp].nan_policy = "sanitize"
 
+    # ── Récompenses de relevé — transplant du standup, remappé ───────────────
+    # Les poids viennent des itérations documentées dans
+    # microduck_standup_env_cfg.py : ne les retoucher qu'avec une raison. Seuls
+    # les indices de joints et les deux hauteurs changent ici.
+    # NB : un SceneEntityCfg NEUF par terme — mjlab les résout et les mute en
+    # place, un objet partagé donne des indices périmés.
+
+    # Pose cible = HOME (target_overrides=None), JAMBES seulement : le cou et la
+    # tête sont tenus par neck_joint_pos_l2 (hérité), qui résout par NOM.
+    cfg.rewards["pose_stand_legs"] = RewardTermCfg(
+        func=microduck_mdp.pose_target_match,
+        weight=8.0,
+        params={
+            "std": 0.5,
+            "joint_indices": _LEG_JOINTS,
+            "target_overrides": None,
+        },
+    )
+    # Bootstrap L1 : gradient constant même loin de HOME (la gaussienne sature).
+    cfg.rewards["pose_stand_l1"] = RewardTermCfg(
+        func=microduck_mdp.pose_l1_penalty,
+        weight=5.0,
+        params={
+            "joint_indices": _LEG_JOINTS,
+            "target_overrides": None,
+        },
+    )
+
+    # Hauteur en trois couches : gaussienne large (tire depuis le sol),
+    # gaussienne étroite (force les derniers cm, là où la large est saturée),
+    # et L1 fort qui rend « rester par terre » net NÉGATIF — sans lui, la policy
+    # se contente de l'optimum paresseux « immobile au sol ».
+    cfg.rewards["height_stand"] = RewardTermCfg(
+        func=microduck_mdp.height_target_gaussian,
+        weight=4.0,
+        params={
+            "std": 0.04,
+            "target_height": ROLLER_STAND_Z,
+            "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
+        },
+    )
+    cfg.rewards["height_stand_sharp"] = RewardTermCfg(
+        func=microduck_mdp.height_target_gaussian,
+        weight=4.0,
+        params={
+            "std": 0.015,
+            "target_height": ROLLER_STAND_Z,
+            "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
+        },
+    )
+    cfg.rewards["height_stand_l1"] = RewardTermCfg(
+        func=microduck_mdp.height_l1_penalty,
+        weight=30.0,
+        params={
+            "target_height": ROLLER_STAND_Z,
+            "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
+        },
+    )
+
+    # Paye le MOUVEMENT de montée, pas seulement la destination : sans ça,
+    # « rester assis en collectant la pose partielle » domine. La coupure est
+    # 10 mm AU-DESSUS de la cible, sinon la policy se gare à l'altitude de
+    # coupure et ne finit pas la montée.
+    cfg.rewards["com_upward_velocity"] = RewardTermCfg(
+        func=microduck_mdp.com_upward_velocity,
+        weight=3.0,
+        params={
+            "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
+            "max_height": ROLLER_STAND_Z + 0.010,
+        },
+    )
+    # Montée douce : pénalise |a_z|. Compatible avec com_upward_velocity — une
+    # vitesse verticale constante collecte l'une ET a a_z = 0 → les deux
+    # pressions sélectionnent ensemble une montée lisse à vitesse constante.
+    cfg.rewards["gentle_rise"] = RewardTermCfg(
+        func=microduck_mdp.trunk_vertical_accel_penalty,
+        weight=-0.02,
+        params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))},
+    )
+
+    # Tronc vertical en deux couches : cos(tilt) a un fort gradient quand on est
+    # couché mais s'essouffle près de la verticale ; la gaussienne serrée gatée
+    # en hauteur prend le relais et tue le penché-arrière (mode d'échec du
+    # standup : basculer en arrière en tendant les jambes).
+    cfg.rewards["upright_linear"] = RewardTermCfg(
+        func=microduck_mdp.body_upright_linear,
+        weight=6.0,
+        params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))},
+    )
+    cfg.rewards["upright_sharp"] = RewardTermCfg(
+        func=microduck_mdp.upright_gaussian_at_height,
+        weight=6.0,
+        params={
+            "std": 0.3,
+            "height_low": ROLLER_PRONE_Z,
+            "height_high": ROLLER_STAND_Z,
+            "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
+        },
+    )
+
+    # Score MULTIPLICATIF hauteur × verticalité × pose : comme les facteurs se
+    # multiplient, être bon sur 2 critères sur 3 ne rapporte rien → casse les
+    # compromis « penché à la bonne hauteur » que les récompenses additives
+    # laissent passer. Stds volontairement LARGES pour rester visible pendant la
+    # montée (des stds serrées donnaient un score ~5e-5, donc zéro gradient).
+    cfg.rewards["standing_composite"] = RewardTermCfg(
+        func=microduck_mdp.standing_composite_score,
+        weight=15.0,
+        params={
+            "target_height": ROLLER_STAND_Z,
+            "height_std": 0.04,
+            "upright_std": 0.40,
+            "pose_std": 0.40,
+            "joint_indices": _LEG_JOINTS,
+            "target_overrides": None,
+            "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
+        },
+    )
+
+    # Anti-jitter : pénalise la VARIATION de couple, pas son amplitude ni la
+    # rotation du tronc → amortit la tremblote sans bloquer le retournement.
+    # Le standup l'a identifié comme le seul amortisseur qui ne tue pas le
+    # relevé depuis le dos.
+    cfg.rewards["joint_torque_rate_l2"] = RewardTermCfg(
+        func=microduck_mdp.joint_torque_rate_l2,
+        weight=-2e-3,
+    )
+
     return cfg
 
 

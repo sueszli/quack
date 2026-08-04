@@ -115,3 +115,103 @@ def test_task_is_registered():
     import mjlab_microduck.tasks  # noqa: F401  (l'import déclenche l'enregistrement)
 
     assert "Mjlab-RollerStandUp-Flat-MicroDuck" in list_tasks()
+
+
+def test_joint_indices_match_actual_roller_model():
+    """Verrou : les roues passives sont intercalées dans l'ordre des joints.
+
+    Réutiliser les indices du standup ([0-4, 9-13]) donnerait des récompenses
+    qui pointent sur des roues. Ce test compile le vrai MjSpec du robot rollers
+    et vérifie les noms aux indices utilisés. Pur CPU, pas de sim.
+    """
+    import mujoco
+
+    from mjlab_microduck.robot.microduck_constants import get_walk_rollers_spec
+    from mjlab_microduck.tasks.microduck_roller_standup_env_cfg import (
+        _LEG_JOINTS,
+        _NECK_JOINTS,
+        _WHEEL_JOINTS,
+    )
+
+    model = get_walk_rollers_spec().compile()
+    articulated = [
+        mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_JOINT, j)
+        for j in range(model.njnt)
+        if model.jnt_type[j] != mujoco.mjtJoint.mjJNT_FREE
+    ]
+
+    assert [articulated[i] for i in _LEG_JOINTS] == [
+        "left_hip_yaw", "left_hip_roll", "left_hip_pitch", "left_knee", "left_ankle",
+        "right_hip_yaw", "right_hip_roll", "right_hip_pitch", "right_knee", "right_ankle",
+    ]
+    assert [articulated[i] for i in _NECK_JOINTS] == [
+        "neck_pitch", "head_pitch", "head_yaw", "head_roll",
+    ]
+    assert [articulated[i] for i in _WHEEL_JOINTS] == [
+        "passive_LF_wheel", "passive_LR_wheel", "passive_RF_wheel", "passive_RR_wheel",
+    ]
+    # Aucun recouvrement, et les trois listes couvrent tous les joints.
+    assert len(set(_LEG_JOINTS) | set(_NECK_JOINTS) | set(_WHEEL_JOINTS)) == len(articulated)
+
+
+def test_recovery_rewards_present_with_expected_weights():
+    cfg = make_microduck_roller_standup_env_cfg()
+    expected = {
+        "pose_stand_legs":      8.0,
+        "pose_stand_l1":        5.0,
+        "height_stand":         4.0,
+        "height_stand_sharp":   4.0,
+        "height_stand_l1":     30.0,
+        "com_upward_velocity":  3.0,
+        "gentle_rise":         -0.02,
+        "upright_linear":       6.0,
+        "upright_sharp":        6.0,
+        "standing_composite":  15.0,
+        "joint_torque_rate_l2": -2e-3,
+    }
+    for name, weight in expected.items():
+        assert name in cfg.rewards, f"récompense de relevé manquante : {name}"
+        assert cfg.rewards[name].weight == weight, f"poids inattendu sur {name}"
+
+
+def test_recovery_rewards_use_roller_heights_not_walker_heights():
+    from mjlab_microduck.tasks.microduck_roller_standup_env_cfg import (
+        ROLLER_PRONE_Z,
+        ROLLER_STAND_Z,
+    )
+
+    cfg = make_microduck_roller_standup_env_cfg()
+    assert ROLLER_STAND_Z == 0.138  # PAS le 0.115 du modèle sans roues
+    for name in ("height_stand", "height_stand_sharp", "height_stand_l1"):
+        assert cfg.rewards[name].params["target_height"] == ROLLER_STAND_Z
+    assert cfg.rewards["standing_composite"].params["target_height"] == ROLLER_STAND_Z
+    # com_upward_velocity se coupe juste AU-DESSUS de la cible (10 mm de marge),
+    # sinon la policy se gare à l'altitude de coupure sans finir la montée.
+    assert cfg.rewards["com_upward_velocity"].params["max_height"] == ROLLER_STAND_Z + 0.010
+    # upright_sharp est gatée entre le repos au sol et la station debout.
+    assert cfg.rewards["upright_sharp"].params["height_low"] == ROLLER_PRONE_Z
+    assert cfg.rewards["upright_sharp"].params["height_high"] == ROLLER_STAND_Z
+
+
+def test_pose_rewards_target_legs_only_at_roller_indices():
+    from mjlab_microduck.tasks.microduck_roller_standup_env_cfg import _LEG_JOINTS
+
+    cfg = make_microduck_roller_standup_env_cfg()
+    for name in ("pose_stand_legs", "pose_stand_l1", "standing_composite"):
+        assert cfg.rewards[name].params["joint_indices"] == _LEG_JOINTS
+        # target_overrides=None → la cible est HOME (default_joint_pos).
+        assert cfg.rewards[name].params["target_overrides"] is None
+
+
+def test_trunk_asset_cfgs_are_distinct_objects():
+    """mjlab résout et MUTE les SceneEntityCfg en place : un objet partagé entre
+    plusieurs termes provoque des indices périmés. Chaque terme doit avoir le sien.
+    """
+    cfg = make_microduck_roller_standup_env_cfg()
+    names = (
+        "height_stand", "height_stand_sharp", "height_stand_l1",
+        "com_upward_velocity", "gentle_rise", "upright_linear",
+        "upright_sharp", "standing_composite",
+    )
+    seen = [id(cfg.rewards[n].params["asset_cfg"]) for n in names]
+    assert len(set(seen)) == len(seen), "asset_cfg partagé entre plusieurs termes"
