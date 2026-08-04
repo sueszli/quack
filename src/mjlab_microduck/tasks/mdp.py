@@ -4548,3 +4548,92 @@ def spin_gate_by_phase(
     le robot revient en station neutre avant de rendre la main à la policy roller.
     """
     return spin_rate_by_phase(phase, rate_max, accel_end, hold_end, brake_end) / rate_max
+
+
+def spin_phase_from_command(cmd: torch.Tensor) -> torch.Tensor:
+    """Récupère la phase [0,1) depuis la commande [cos(2πφ), sin(2πφ), 0] du slot."""
+    return (torch.atan2(cmd[:, 1], cmd[:, 0]) / (2 * torch.pi)) % 1.0
+
+
+def _spin_target_rate(
+    env: ManagerBasedRlEnv,
+    command_name: str,
+    rate_max: float,
+    accel_end: float,
+    hold_end: float,
+    brake_end: float,
+) -> torch.Tensor:
+    phase = spin_phase_from_command(env.command_manager.get_command(command_name))
+    return spin_rate_by_phase(phase, rate_max, accel_end, hold_end, brake_end)
+
+
+def _spin_gate(
+    env: ManagerBasedRlEnv,
+    command_name: str,
+    rate_max: float,
+    accel_end: float,
+    hold_end: float,
+    brake_end: float,
+) -> torch.Tensor:
+    phase = spin_phase_from_command(env.command_manager.get_command(command_name))
+    return spin_gate_by_phase(phase, rate_max, accel_end, hold_end, brake_end)
+
+
+def spin_rate_reward_from_values(
+    omega_z: torch.Tensor, omega_target: torch.Tensor, std: float
+) -> torch.Tensor:
+    """Gaussienne sur l'erreur de vitesse de lacet (fonction pure, testable)."""
+    return torch.exp(-(((omega_z - omega_target) / std) ** 2))
+
+
+def spin_rate_track(
+    env: ManagerBasedRlEnv,
+    command_name: str = "twist",
+    std: float = 1.5,
+    rate_max: float = SPIN_RATE_MAX,
+    accel_end: float = SPIN_ACCEL_END,
+    hold_end: float = SPIN_HOLD_END,
+    brake_end: float = SPIN_BRAKE_END,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """Objectif principal du spin : suivre la vitesse de lacet cible ω*(φ).
+
+    ω_z est pris en repère corps (c'est ce que voit le gyro de l'IMU, donc ce que
+    la policy observe). Une rotation dans le mauvais sens est plus punie que
+    l'immobilité, la gaussienne étant centrée sur une cible positive.
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    omega_z = asset.data.root_link_ang_vel_b[:, 2]
+    target = _spin_target_rate(env, command_name, rate_max, accel_end, hold_end, brake_end)
+    return spin_rate_reward_from_values(omega_z, target, std)
+
+
+def spin_rate_l1(
+    env: ManagerBasedRlEnv,
+    command_name: str = "twist",
+    rate_max: float = SPIN_RATE_MAX,
+    accel_end: float = SPIN_ACCEL_END,
+    hold_end: float = SPIN_HOLD_END,
+    brake_end: float = SPIN_BRAKE_END,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """Bootstrap L1 : gradient constant vers la cible même quand la gaussienne
+    de `spin_rate_track` sature loin de la cible. À utiliser avec un poids
+    POSITIF (la valeur retournée est déjà négative)."""
+    asset: Entity = env.scene[asset_cfg.name]
+    omega_z = asset.data.root_link_ang_vel_b[:, 2]
+    target = _spin_target_rate(env, command_name, rate_max, accel_end, hold_end, brake_end)
+    return -torch.abs(omega_z - target)
+
+
+def spin_stay_in_place(
+    env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG
+) -> torch.Tensor:
+    """Coût ‖v_xy‖² du tronc : tourner SUR PLACE, et tuer l'élan d'entrée.
+
+    Pas d'état de référence (contrairement à une dérive mesurée depuis le reset),
+    donc reste valide sur les 5 cycles d'un épisode. À utiliser avec un poids
+    NÉGATIF."""
+    asset: Entity = env.scene[asset_cfg.name]
+    v_xy = asset.data.root_link_lin_vel_b[:, :2]
+    return torch.sum(torch.square(v_xy), dim=1)
