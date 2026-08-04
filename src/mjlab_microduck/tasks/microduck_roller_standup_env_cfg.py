@@ -325,6 +325,79 @@ def make_microduck_roller_standup_env_cfg(play: bool = False) -> ManagerBasedRlE
         },
     )
 
+    # ── Friction de roulement INVERSÉE : freinées → libres ───────────────────
+    # C'est la seule pièce vraiment nouvelle de cet env, et le cœur de la
+    # difficulté : les roues roulent, donc il n'y a AUCUNE adhérence
+    # longitudinale pour pousser sur le sol. L'env roller fait MONTER cette
+    # friction (0 → 0.0015) ; ici on la fait DESCENDRE, pour bootstrapper le
+    # geste sur un problème facile (roues quasi bloquées ≈ des pieds) avant
+    # d'imposer la physique réelle du roulement.
+    #
+    # DIAGNOSTIC à surveiller : si Episode_Reward/standing_composite s'écroule à
+    # un palier, le geste « pieds adhérents » ne transfère pas aux roues libres
+    # → il faudra guider une technique de patineur (appui genou intermédiaire,
+    # un patin à la fois). C'est un résultat exploitable, pas un échec.
+    #
+    # ATTENTION sim2real : seuls les checkpoints d'APRÈS le dernier palier
+    # (iter 4000+) sont candidats au déploiement. Avant, la policy s'appuie sur
+    # une friction de roulement qui n'existe pas sur le vrai robot.
+    _WHEEL_FRICTION_STAGE0 = (0.0500, 0.0500)
+    cfg.curriculum["wheel_friction"] = CurriculumTermCfg(
+        func=microduck_mdp.wheel_friction_curriculum,
+        params={
+            "event_name": "randomize_wheel_friction",
+            "ranges_stages": [
+                {"step": 0,                        "ranges": _WHEEL_FRICTION_STAGE0},
+                {"step": 1000 * NUM_STEPS_PER_ENV, "ranges": (0.0200, 0.0200)},
+                {"step": 2000 * NUM_STEPS_PER_ENV, "ranges": (0.0080, 0.0080)},
+                {"step": 3000 * NUM_STEPS_PER_ENV, "ranges": (0.0030, 0.0030)},
+                {"step": 4000 * NUM_STEPS_PER_ENV, "ranges": (0.0015, 0.0015)},
+            ],
+        },
+    )
+    # La valeur de DÉPART de l'événement doit matcher le palier 0 : le curriculum
+    # n'est évalué qu'à partir du premier pas, sinon les tout premiers resets
+    # utiliseraient le (0, 0) hérité de l'env roller — des roues LIBRES pendant
+    # le bootstrap, soit exactement l'inverse du but.
+    cfg.events["randomize_wheel_friction"].params["ranges"] = _WHEEL_FRICTION_STAGE0
+
+    # ── action_rate : la rampe du standup, pas celle du roller ───────────────
+    # L'env roller monte à -2.0 pour un gait calme. C'est un bloqueur de
+    # mouvement : il ralentit l'action rapide dont le relevé depuis le dos a
+    # besoin (le standup documente qu'un action_rate trop fort tuait cette
+    # récupération). La douceur est portée ici par joint_torque_rate_l2.
+    cfg.rewards["action_rate_l2"].weight = -0.6
+    cfg.curriculum["action_rate_weight"] = CurriculumTermCfg(
+        func=microduck_mdp.reward_weight,
+        params={
+            "reward_name": "action_rate_l2",
+            "weight_stages": [
+                {"step": 0,                       "weight": -0.4},
+                {"step": 250 * NUM_STEPS_PER_ENV, "weight": -0.8},
+                {"step": 500 * NUM_STEPS_PER_ENV, "weight": -1.0},
+            ],
+        },
+    )
+
+    # ── Poussées rampées ────────────────────────────────────────────────────
+    # push_robot est hérité de l'env roller (±0.2 m/s, toutes les 3–6 s) mais
+    # sans curriculum. Une bourrade dès le pas 0 parasite le bootstrap du
+    # relevé : on la fait monter comme le standup.
+    cfg.curriculum["push_magnitude"] = CurriculumTermCfg(
+        func=microduck_mdp.push_curriculum,
+        params={
+            "event_name": "push_robot",
+            "push_stages": [
+                {"step": 0, "velocity_range": {
+                    "x": (0.0, 0.0), "y": (0.0, 0.0)}},
+                {"step": 500 * NUM_STEPS_PER_ENV, "velocity_range": {
+                    "x": (-0.08, 0.08), "y": (-0.08, 0.08)}},
+                {"step": 1000 * NUM_STEPS_PER_ENV, "velocity_range": {
+                    "x": (-0.2, 0.2), "y": (-0.2, 0.2)}},
+            ],
+        },
+    )
+
     return cfg
 
 

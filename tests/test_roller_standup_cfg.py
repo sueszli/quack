@@ -285,3 +285,78 @@ def test_ground_state_curriculum_ramps_easy_to_hard():
         assert abs(total - 1.0) < 1e-9
         assert p["sitting_prob"] == 0.0
         assert p["standing_prob"] > 0.0
+
+
+def test_wheel_friction_curriculum_is_decreasing():
+    """La pièce nouvelle : roues FREINÉES → LIBRES.
+
+    Les roues roulent, donc il n'y a aucune adhérence longitudinale pour pousser
+    sur le sol. On bootstrappe avec des roulements quasi bloqués (le relevé se
+    fait comme avec des pieds) puis on rampe vers la vraie valeur. L'env roller,
+    lui, fait MONTER cette friction (0 → 0.0015) : le sens est bien inversé ici.
+    """
+    cfg = make_microduck_roller_standup_env_cfg()
+    stages = cfg.curriculum["wheel_friction"].params["ranges_stages"]
+    assert cfg.curriculum["wheel_friction"].params["event_name"] == "randomize_wheel_friction"
+
+    steps = [s["step"] for s in stages]
+    assert steps[0] == 0 and steps == sorted(steps) and len(set(steps)) == len(steps)
+
+    lows = [s["ranges"][0] for s in stages]
+    assert lows == sorted(lows, reverse=True), "la friction doit DÉCROÎTRE"
+    assert lows[0] >= 0.02, "départ franchement freiné pour bootstrapper le geste"
+    # Arrivée sur la vraie valeur du roulement (celle de l'env roller).
+    assert stages[-1]["ranges"] == (0.0015, 0.0015)
+    for stage in stages:
+        assert stage["ranges"][0] == stage["ranges"][1]
+
+
+def test_wheel_friction_event_starts_at_stage_zero():
+    # Le curriculum n'est évalué qu'à partir du premier pas : sans ça les tout
+    # premiers resets utiliseraient la valeur (0, 0) héritée de l'env roller,
+    # soit des roues LIBRES pendant le bootstrap — exactement l'inverse du but.
+    cfg = make_microduck_roller_standup_env_cfg()
+    stage0 = cfg.curriculum["wheel_friction"].params["ranges_stages"][0]["ranges"]
+    assert cfg.events["randomize_wheel_friction"].params["ranges"] == stage0
+
+
+def test_action_rate_ramp_is_the_standup_one_not_the_roller_one():
+    # L'env roller monte à -2.0 (gait calme) : c'est un bloqueur de mouvement,
+    # il ralentit l'action rapide dont le relevé depuis le dos a besoin. On
+    # reprend la rampe du standup, qui plafonne à -1.0.
+    cfg = make_microduck_roller_standup_env_cfg()
+    weights = [
+        s["weight"] for s in cfg.curriculum["action_rate_weight"].params["weight_stages"]
+    ]
+    assert weights == [-0.4, -0.8, -1.0]
+    assert cfg.rewards["action_rate_l2"].weight == -0.6
+
+
+def test_push_curriculum_ramps_from_zero():
+    # Poussées héritées (±0.2 m/s), mais rampées : une bourrade dès le pas 0
+    # parasite le bootstrap du relevé.
+    cfg = make_microduck_roller_standup_env_cfg()
+    assert "push_robot" in cfg.events
+    stages = cfg.curriculum["push_magnitude"].params["push_stages"]
+    assert cfg.curriculum["push_magnitude"].params["event_name"] == "push_robot"
+    assert stages[0]["velocity_range"]["x"] == (0.0, 0.0)
+    assert stages[-1]["velocity_range"]["x"] == (-0.2, 0.2)
+    highs = [s["velocity_range"]["x"][1] for s in stages]
+    assert highs == sorted(highs), "la poussée doit CROÎTRE"
+
+
+def test_inherited_dr_curricula_survive():
+    # La DR héritée de l'env roller ne doit pas avoir été perdue en chemin.
+    cfg = make_microduck_roller_standup_env_cfg()
+    for name in ("com_range", "head_com_range"):
+        assert name in cfg.curriculum, f"curriculum de DR perdu : {name}"
+    for name in (
+        "randomize_com",
+        "randomize_head_com",
+        "randomize_armature",
+        "randomize_joint_friction",
+        "randomize_mass_inertia",
+        "randomize_wheel_friction",
+        "encoder_bias",
+    ):
+        assert name in cfg.events, f"événement de DR perdu : {name}"
