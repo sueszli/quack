@@ -141,19 +141,19 @@ def make_microduck_velocity_swizzle_env_cfg(play: bool = False) -> ManagerBasedR
     #  1) neck_joint_pos_l2 pulls the neck/head joints to HOME -> remove it.
     if "neck_joint_pos_l2" in cfg.rewards:
         del cfg.rewards["neck_joint_pos_l2"]
-    #  2) Remove the pose reward entirely - it tries to match non-existent neck/head joints
-    #     and blocks head control. Replace it with a scoped version using leg-only patterns.
-    if "pose" in cfg.rewards:
-        original_pose_weight = cfg.rewards["pose"].weight
-        del cfg.rewards["pose"]
-
-    # Re-add pose reward scoped to leg joints only (excludes neck, head, passive wheels).
-    cfg.rewards["pose"] = RewardTermCfg(
-        func=microduck_mdp.pose_l1_penalty,  # Use microduck's simpler pose reward
-        weight=original_pose_weight,
-        params={"asset_cfg": SceneEntityCfg(
-            "robot", joint_names=(r"^(?!passive_|.*neck.*|.*head.*).*",)
-        )}
+    #  2) the pose reward includes neck/head -> scope it to LEG joints only.
+    # Remove neck/head/passive patterns from std dicts to match scoped asset_cfg.
+    for std_key in ["std_standing", "std_walking", "std_running"]:
+        if std_key in cfg.rewards["pose"].params:
+            std_dict = cfg.rewards["pose"].params[std_key]
+            # Keep only leg joint patterns (filter out neck, head, passive)
+            cfg.rewards["pose"].params[std_key] = {
+                k: v for k, v in std_dict.items()
+                if "neck" not in k and "head" not in k and "passive" not in k
+            }
+    # Scope asset_cfg to LEG joints only (excludes neck, head, passive wheels)
+    cfg.rewards["pose"].params["asset_cfg"] = SceneEntityCfg(
+        "robot", joint_names=(r"^(?!passive_|.*neck.*|.*head.*).*",)
     )
 
     # head_pose_tracking ramps 0 -> 4.0, staying 0 until ~1500 it. (swizzle solid),
