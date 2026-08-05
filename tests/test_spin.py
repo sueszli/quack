@@ -35,15 +35,38 @@ def test_spin_rate_brake_ramp_is_decreasing():
     assert torch.allclose(mid, torch.tensor([3.0]), atol=1e-6)
 
 
-def test_spin_rate_integral_is_two_turns():
-    # LE test qui protège la cible du spec : l'aire sous l'enveloppe sur un cycle
-    # de 4 s doit valoir ~4*pi rad = 2 tours. Enveloppe exacte = 12.6 rad,
-    # 4*pi = 12.566 -> tolérance 1 %.
+def test_spin_rate_integral_matches_trapezoid_shape_at_rate_max_6():
+    # Ce test protège la FORME du trapèze (2.1 * rate_max rad par cycle), pas la
+    # cible réellement expédiée : à rate_max=6.0 (hypothétique, cf. _ENV ci-dessus)
+    # ça vaut ~4*pi rad = 2 tours. Enveloppe exacte = 12.6 rad, 4*pi = 12.566 ->
+    # tolérance 1 %. La cible EN VIGUEUR est couverte par le test suivant.
     n = 100_000
     phase = (torch.arange(n, dtype=torch.float64) + 0.5) / n
     w = mdp.spin_rate_by_phase(phase, **_ENV)
     integral = float(w.mean()) * 4.0
     assert abs(integral - 4 * math.pi) / (4 * math.pi) < 0.01
+
+
+def test_spin_rate_max_integrates_to_2_1_times_itself_per_cycle():
+    # LE test qui protège la cible EXPÉDIÉE (mdp.SPIN_RATE_MAX), par opposition au
+    # test ci-dessus qui ne teste que la forme à rate_max=6.0. L'aire sous
+    # l'enveloppe sur un cycle vaut 2.1 * rate_max rad, quel que soit rate_max
+    # (0.25 + 1.6 + 0.25 = 2.1, cf. le commentaire au-dessus des constantes dans
+    # mdp.py). Avec le réglage actuel (SPIN_RATE_MAX = 3.0) ça donne 6.3 rad,
+    # soit ~1 tour -- pas 2. Ce test échoue bruyamment si quelqu'un change la
+    # cible sans réfléchir au nombre de tours que ça implique.
+    n = 100_000
+    phase = (torch.arange(n, dtype=torch.float64) + 0.5) / n
+    w = mdp.spin_rate_by_phase(
+        phase,
+        rate_max=mdp.SPIN_RATE_MAX,
+        accel_end=mdp.SPIN_ACCEL_END,
+        hold_end=mdp.SPIN_HOLD_END,
+        brake_end=mdp.SPIN_BRAKE_END,
+    )
+    integral = float(w.mean()) * mdp.SPIN_PERIOD
+    expected = 2.1 * mdp.SPIN_RATE_MAX
+    assert abs(integral - expected) / expected < 0.01
 
 
 def test_spin_gate_is_normalized_rate():
@@ -141,15 +164,17 @@ def test_spin_rate_reward_peaks_on_exact_match():
 
 
 def test_spin_rate_track_uses_yaw_and_phase():
-    # phase 0.30 = plein régime -> cible 6 rad/s. Un robot qui tourne à 6 rad/s
-    # doit toucher 1.0 ; un robot immobile doit être largement en dessous.
-    ang = torch.tensor([[0.0, 0.0, 6.0], [0.0, 0.0, 0.0]])
+    # phase 0.30 = plein régime -> cible SPIN_RATE_MAX (3.0 rad/s, défaut appelé
+    # ici implicitement). Un robot qui tourne à la cible doit toucher 1.0 ; un
+    # robot immobile doit être largement en dessous (exp(-(3/1.5)^2) = 0.018 au
+    # réglage courant : std=1.5 reste bien calibré à cette cible, cf. mdp.py).
+    ang = torch.tensor([[0.0, 0.0, mdp.SPIN_RATE_MAX], [0.0, 0.0, 0.0]])
     env = _FakeEnv(
         _FakeEntity(_FakeData(ang_vel_b=ang)), cmd=_phase_cmd([0.30, 0.30])
     )
     r = mdp.spin_rate_track(env, std=1.5)
     assert r[0] > 0.99
-    assert r[1] < 0.01
+    assert r[1] < 0.05
 
 
 def test_spin_rate_track_wants_stillness_during_rest():
@@ -164,8 +189,9 @@ def test_spin_rate_track_wants_stillness_during_rest():
 
 
 def test_spin_rate_track_penalizes_wrong_direction():
-    # tourner à -6 rad/s (horaire) quand on demande +6 doit être pire qu'immobile
-    ang = torch.tensor([[0.0, 0.0, -6.0], [0.0, 0.0, 0.0]])
+    # tourner à -SPIN_RATE_MAX (horaire) quand on demande +SPIN_RATE_MAX doit
+    # être pire qu'immobile.
+    ang = torch.tensor([[0.0, 0.0, -mdp.SPIN_RATE_MAX], [0.0, 0.0, 0.0]])
     env = _FakeEnv(
         _FakeEntity(_FakeData(ang_vel_b=ang)), cmd=_phase_cmd([0.30, 0.30])
     )
@@ -175,12 +201,14 @@ def test_spin_rate_track_penalizes_wrong_direction():
 
 # ── spin_rate_l1 ─────────────────────────────────────────────────────────────
 def test_spin_rate_l1_is_negative_absolute_error():
-    ang = torch.tensor([[0.0, 0.0, 6.0], [0.0, 0.0, 2.0]])
+    # phase 0.30 = plein régime -> cible SPIN_RATE_MAX (3.0 rad/s, défaut).
+    ang = torch.tensor([[0.0, 0.0, mdp.SPIN_RATE_MAX], [0.0, 0.0, 1.0]])
     env = _FakeEnv(
         _FakeEntity(_FakeData(ang_vel_b=ang)), cmd=_phase_cmd([0.30, 0.30])
     )
     r = mdp.spin_rate_l1(env)
-    assert torch.allclose(r, torch.tensor([0.0, -4.0]), atol=1e-5)
+    expected = torch.tensor([0.0, -(mdp.SPIN_RATE_MAX - 1.0)])
+    assert torch.allclose(r, expected, atol=1e-5)
 
 
 # ── spin_stay_in_place ───────────────────────────────────────────────────────

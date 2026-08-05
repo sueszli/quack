@@ -73,8 +73,8 @@ def test_leg_antisymmetry_shaping_decays():
 
 def test_actor_observation_keeps_the_61d_slot_layout():
     # condition pour que l'ONNX charge dans le slot du runtime. L'égalité exacte
-    # des dimensions avec le crouch est vérifiée en Task 6 Step 1 (il faut
-    # construire l'env pour compter les dims ; ici on vérifie la structure).
+    # des dimensions avec le crouch est vérifiée par test_obs_parity_with_roller_crouch
+    # ci-dessous ; ici on vérifie la structure.
     cfg = make_microduck_spin_env_cfg()
     terms = cfg.observations["actor"].terms
     assert "base_lin_vel" not in terms
@@ -83,3 +83,19 @@ def test_actor_observation_keeps_the_61d_slot_layout():
         assert padded in terms
     assert terms["head_command"].params["dim"] == 4
     assert terms["body_command"].params["dim"] == 6
+
+
+def test_obs_parity_with_roller_crouch():
+    # Parité de layout obligatoire : sinon l'ONNX exporté ne charge pas dans le
+    # slot du runtime. Contrairement au test de structure ci-dessus, celui-ci
+    # compare l'ordre EXACT des termes, groupe par groupe.
+    from mjlab_microduck.tasks.microduck_roller_crouch_env_cfg import (
+        make_microduck_roller_crouch_env_cfg,
+    )
+
+    spin = make_microduck_spin_env_cfg()
+    crouch = make_microduck_roller_crouch_env_cfg()
+    for grp in ("actor", "critic"):
+        assert list(spin.observations[grp].terms.keys()) == list(
+            crouch.observations[grp].terms.keys()
+        ), f"layout d'observation divergent sur le groupe {grp}"
