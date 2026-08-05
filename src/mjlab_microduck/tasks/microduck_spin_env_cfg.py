@@ -150,10 +150,18 @@ def make_microduck_spin_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     # calibrage à 500 it. le tronc translatait à ~0.35 m/s (~ω·demi-voie), signature
     # d'un pivot sur un seul patin plutôt qu'un spin centré sur le corps — c'est le
     # seul terme qui distingue un spin centré d'un pivot excentré.
+    # Atténué pendant la rampe de lancement [0, ACCEL_END) : c'est le moment où le
+    # robot doit pousser au sol pour s'injecter du moment angulaire, et où l'élan
+    # d'entrée (jusqu'à 0.3 m/s) doit être CONVERTI en rotation — le facturer plein
+    # tarif là s'opposerait au lancement. Plein tarif sur régime/freinage/repos.
     cfg.rewards["spin_stay_in_place"] = RewardTermCfg(
         func=microduck_mdp.spin_stay_in_place,
         weight=-3.0,
-        params={},
+        params={
+            "command_name": "twist",
+            "launch_scale": microduck_mdp.SPIN_LAUNCH_DRIFT_SCALE,
+            "accel_end": microduck_mdp.SPIN_ACCEL_END,
+        },
     )
     # Amorce 1 : tourner EN ROULEMENT (patins en sens opposés), pas en patinage.
     cfg.rewards["spin_wheel_differential"] = RewardTermCfg(

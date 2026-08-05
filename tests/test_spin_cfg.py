@@ -30,6 +30,15 @@ def test_cfg_has_the_spin_rewards():
     assert cfg.rewards["spin_rate_track"].weight == 6.0
     # sur-place est un COÛT
     assert cfg.rewards["spin_stay_in_place"].weight < 0.0
+
+
+def test_stay_in_place_is_attenuated_during_the_launch_ramp():
+    # Renforcé à -3.0, ce terme s'opposerait à l'injection de moment angulaire s'il
+    # était plein tarif pendant la rampe de lancement : il doit y être atténué.
+    cfg = make_microduck_spin_env_cfg()
+    params = cfg.rewards["spin_stay_in_place"].params
+    assert 0.0 < params["launch_scale"] < 1.0
+    assert params["accel_end"] == microduck_mdp.SPIN_ACCEL_END
     # cible positive = anti-horaire (le sens est porté par l'enveloppe)
     assert microduck_mdp.SPIN_RATE_MAX > 0.0
 

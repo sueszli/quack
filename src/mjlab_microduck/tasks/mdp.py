@@ -4632,17 +4632,44 @@ def spin_rate_l1(
     return -torch.abs(omega_z - target)
 
 
+SPIN_LAUNCH_DRIFT_SCALE = 0.2  # atténuation du coût de dérive pendant le lancement
+
+
 def spin_stay_in_place(
-    env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG
+    env: ManagerBasedRlEnv,
+    command_name: str = "twist",
+    launch_scale: float = SPIN_LAUNCH_DRIFT_SCALE,
+    accel_end: float = SPIN_ACCEL_END,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
 ) -> torch.Tensor:
     """Coût ‖v_xy‖² du tronc : tourner SUR PLACE, et tuer l'élan d'entrée.
 
     Pas d'état de référence (contrairement à une dérive mesurée depuis le reset),
     donc reste valide sur les 5 cycles d'un épisode. À utiliser avec un poids
-    NÉGATIF."""
+    NÉGATIF.
+
+    ATTÉNUÉ PENDANT LE LANCEMENT : sur `[0, accel_end)` le robot doit pousser au
+    sol pour s'injecter du moment angulaire, et l'état d'entrée lui donne jusqu'à
+    0.3 m/s qu'il est censé CONVERTIR en rotation. Facturer la translation à plein
+    tarif à cet instant s'oppose donc directement à l'objectif. Le coût est
+    multiplié par `launch_scale` sur ce seul segment, et vaut plein tarif ensuite
+    (régime, freinage, repos) où « sur place » est le vrai critère.
+
+    Contrairement aux autres amorces du spin, ce terme n'est PAS éteint par
+    `spin_gate_by_phase` : pendant le repos on veut justement qu'il reste plein,
+    puisque c'est là que le robot doit être immobile.
+    """
     asset: Entity = env.scene[asset_cfg.name]
     v_xy = asset.data.root_link_lin_vel_b[:, :2]
-    return torch.sum(torch.square(v_xy), dim=1)
+    cost = torch.sum(torch.square(v_xy), dim=1)
+
+    phase = spin_phase_from_command(env.command_manager.get_command(command_name))
+    scale = torch.where(
+        phase < accel_end,
+        torch.full_like(cost, launch_scale),
+        torch.ones_like(cost),
+    )
+    return cost * scale
 
 
 # Demi-voie mesurée sur le modèle rollers (pose HOME, sites left_foot/right_foot) :

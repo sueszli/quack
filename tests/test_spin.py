@@ -213,11 +213,37 @@ def test_spin_rate_l1_is_negative_absolute_error():
 
 # ── spin_stay_in_place ───────────────────────────────────────────────────────
 def test_spin_stay_in_place_is_squared_planar_speed():
+    # phase 0.30 = plein régime -> coût plein tarif
     lin = torch.tensor([[0.0, 0.0, 0.0], [0.3, 0.4, 9.0]])
-    env = _FakeEnv(_FakeEntity(_FakeData(lin_vel_b=lin)))
+    env = _FakeEnv(
+        _FakeEntity(_FakeData(lin_vel_b=lin)), cmd=_phase_cmd([0.30, 0.30])
+    )
     c = mdp.spin_stay_in_place(env)
     # 0.3^2 + 0.4^2 = 0.25 ; la composante z est ignorée
     assert torch.allclose(c, torch.tensor([0.0, 0.25]), atol=1e-6)
+
+
+def test_spin_stay_in_place_is_attenuated_during_the_launch_ramp():
+    # Même vitesse, deux phases : dans la rampe de lancement (0.05 < accel_end) le
+    # coût est multiplié par launch_scale, en régime (0.30) il est plein tarif.
+    # C'est ce qui empêche ce terme de s'opposer à l'injection de moment angulaire.
+    lin = torch.tensor([[0.3, 0.4, 0.0], [0.3, 0.4, 0.0]])
+    env = _FakeEnv(
+        _FakeEntity(_FakeData(lin_vel_b=lin)), cmd=_phase_cmd([0.05, 0.30])
+    )
+    c = mdp.spin_stay_in_place(env, launch_scale=0.2, accel_end=0.125)
+    # 0.25 * 0.2 = 0.05
+    assert torch.allclose(c, torch.tensor([0.05, 0.25]), atol=1e-6)
+    assert c[0] < c[1]
+
+
+def test_spin_stay_in_place_is_full_price_during_rest():
+    # Pendant le repos on veut le robot IMMOBILE : ce terme ne doit PAS être éteint,
+    # contrairement aux amorces (spin_wheel_differential, spin_grounded, ciseau).
+    lin = torch.tensor([[0.3, 0.4, 0.0]])
+    env = _FakeEnv(_FakeEntity(_FakeData(lin_vel_b=lin)), cmd=_phase_cmd([0.80]))
+    c = mdp.spin_stay_in_place(env)
+    assert torch.allclose(c, torch.tensor([0.25]), atol=1e-6)
 
 
 # ── spin_wheel_differential ──────────────────────────────────────────────────
