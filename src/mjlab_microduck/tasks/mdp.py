@@ -4511,9 +4511,10 @@ def randomize_dof_field_scaled(
 #   [accel_end, hold_end) 1.6 s   rate_max         (régime)
 #   [hold_end, brake_end) 0.5 s   rate_max -> 0    (freinage)
 #   [brake_end, 1.0)      1.4 s   0                (repos debout)
-# Aire sous l'enveloppe sur un cycle de 4 s = 12.6 rad ~ 2 tours.
+# Aire sous l'enveloppe sur un cycle = 2.1 * SPIN_RATE_MAX rad. À 3.0 rad/s :
+# 2.1 * 3.0 = 6.3 rad ~ 1 tour (et non ~2, comme avec l'ancienne cible 6.0).
 SPIN_PERIOD = 4.0
-SPIN_RATE_MAX = 6.0
+SPIN_RATE_MAX = 3.0
 SPIN_ACCEL_END = 0.125
 SPIN_HOLD_END = 0.525
 SPIN_BRAKE_END = 0.650
@@ -4645,9 +4646,14 @@ def spin_stay_in_place(
 
 
 # Demi-voie mesurée sur le modèle rollers (pose HOME, sites left_foot/right_foot) :
-# 0.0499 m, contre 0.03 m estimé au spec -> différentiel attendu à 6 rad/s =
-# 2*6*0.0499/0.0175 = 34.2 rad/s, soit +71% par rapport à 20.0 (> seuil de 30%).
-SPIN_WHEEL_OMEGA_SCALE = 34.0  # rad/s ; recalibré sur la demi-voie mesurée
+# 0.0499 m, contre 0.03 m estimé au spec. Conséquence mécanique de SPIN_RATE_MAX
+# (A1) : différentiel attendu = 2*SPIN_RATE_MAX*demi_voie/r, r = 0.0175 m.
+# À l'ancienne cible 6.0 rad/s : 2*6.0*0.0499/0.0175 = 34.2 rad/s (retenu comme
+# 34.0, soit +71% par rapport aux 20.0 estimés au spec -> seuil de 30% dépassé).
+# À la nouvelle cible 3.0 rad/s : 2*3.0*0.0499/0.0175 = 17.1 rad/s. Laisser 34.0
+# ici plafonnerait le terme à tanh(17.1/34) = 0.47 de son propre maximum, ce qui
+# affaiblirait exactement le shaping qu'on veut renforcer (cf. spin_stay_in_place).
+SPIN_WHEEL_OMEGA_SCALE = 17.0  # rad/s ; recalibré sur la demi-voie mesurée et SPIN_RATE_MAX = 3.0
 
 
 def spin_wheel_differential_from_values(

@@ -1,7 +1,7 @@
 """Microduck SPIN task — rotation rapide sur place, sur rollers.
 
 Geste cyclique déclenché au bouton A via le slot --ground-pick du runtime :
-~2 tours anti-horaire à ~6 rad/s puis arrêt propre debout.
+~1 tour anti-horaire à ~3 rad/s puis arrêt propre debout.
 
 Hybride :
   - physique / robot roller  ← microduck_velocity_rollers_env_cfg.py
@@ -146,10 +146,13 @@ def make_microduck_spin_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
         weight=0.5,
         params={"command_name": "twist", **_ENVELOPE},
     )
-    # Tourner SUR PLACE, et tuer l'élan d'entrée.
+    # Tourner SUR PLACE, et tuer l'élan d'entrée. Renforcé -1.0 -> -3.0 : au run de
+    # calibrage à 500 it. le tronc translatait à ~0.35 m/s (~ω·demi-voie), signature
+    # d'un pivot sur un seul patin plutôt qu'un spin centré sur le corps — c'est le
+    # seul terme qui distingue un spin centré d'un pivot excentré.
     cfg.rewards["spin_stay_in_place"] = RewardTermCfg(
         func=microduck_mdp.spin_stay_in_place,
-        weight=-1.0,
+        weight=-3.0,
         params={},
     )
     # Amorce 1 : tourner EN ROULEMENT (patins en sens opposés), pas en patinage.
