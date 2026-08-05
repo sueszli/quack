@@ -30,6 +30,7 @@ la bascule automatique sur la magnitude de la commande de vitesse
 """
 
 import math
+import os
 
 from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.managers import (
@@ -58,6 +59,37 @@ ROLLER_PRONE_Z = 0.075
 
 EPISODE_LENGTH_S  = 6.0   # monter + stabiliser, comme standup
 NUM_STEPS_PER_ENV = 24
+
+# ── Override de play : forcer la proportion de départs SUR LE DOS ─────────────
+# Au play, l'env est reconstruit à neuf : common_step_counter repart à 0, donc le
+# curriculum ground_state_mix applique son palier 0, où face_up_prob = 0. On ne
+# voit donc JAMAIS de départ sur le dos au play — or c'est le cas le plus dur,
+# celui qu'on veut inspecter à l'œil. Cette variable le force.
+#   STANDUP_PLAY_FACE_UP=1.0  -> 100 % de départs sur le dos
+#   STANDUP_PLAY_FACE_UP=0.4  -> le mélange du dernier palier du curriculum
+#   non définie / "none" / "random" -> comportement par défaut (palier 0)
+# N'a d'effet QUE sur play=True. Même motif que SLOPE_PLAY_DIFFICULTY dans
+# roller_slope.
+PLAY_FACE_UP = None
+# Rapport ventre:debout du DERNIER palier du curriculum (0.40 / 0.20 = 2:1). Le
+# reste (1 - face_up) est réparti dans ce rapport, si bien que 0.4 reproduit
+# exactement le mélange de fin d'entraînement.
+_PLAY_FACE_DOWN_SHARE = 2.0 / 3.0
+
+
+def _resolve_play_face_up():
+    """Proportion de départs sur le dos au play : env STANDUP_PLAY_FACE_UP sinon la constante."""
+    raw = os.environ.get("STANDUP_PLAY_FACE_UP")
+    if raw is None:
+        return PLAY_FACE_UP
+    raw = raw.strip().lower()
+    if raw in ("", "none", "random"):
+        return None
+    try:
+        return max(0.0, min(1.0, float(raw)))
+    except ValueError:
+        print(f"[roller_standup] STANDUP_PLAY_FACE_UP='{raw}' invalide -> défaut {PLAY_FACE_UP}")
+        return PLAY_FACE_UP
 
 # ── Indices de joints — les roues passives sont INTERCALÉES ───────────────────
 # Ordre réel du modèle rollers (18 joints après le free-joint), vérifié dans
@@ -329,6 +361,23 @@ def make_microduck_roller_standup_env_cfg(play: bool = False) -> ManagerBasedRlE
             ],
         },
     )
+
+    # Override de play : forcer les départs sur le dos pour pouvoir les inspecter.
+    # On écrit les probabilités dans l'événement ET on retire le curriculum : sans
+    # ça, event_param_curriculum (qui tourne AVANT les événements de reset) les
+    # réécrirait avec son palier 0 dès le premier reset. Uniquement en play, donc
+    # l'entraînement et son curriculum easy → hard sont intouchés.
+    if play:
+        play_face_up = _resolve_play_face_up()
+        if play_face_up is not None:
+            remainder = 1.0 - play_face_up
+            cfg.events["set_ground_state"].params.update({
+                "face_up_prob":    play_face_up,
+                "face_down_prob":  remainder * _PLAY_FACE_DOWN_SHARE,
+                "standing_prob":   remainder * (1.0 - _PLAY_FACE_DOWN_SHARE),
+                "sitting_prob":    0.00,
+            })
+            del cfg.curriculum["ground_state_mix"]
 
     # ── Friction de roulement INVERSÉE : freinées → libres ───────────────────
     # C'est la seule pièce vraiment nouvelle de cet env, et le cœur de la

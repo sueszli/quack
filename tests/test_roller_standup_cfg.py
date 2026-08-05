@@ -1,3 +1,5 @@
+import pytest
+
 from mjlab_microduck.tasks.microduck_roller_standup_env_cfg import (
     EPISODE_LENGTH_S,
     make_microduck_roller_standup_env_cfg,
@@ -368,3 +370,72 @@ def test_inherited_dr_curricula_survive():
         "encoder_bias",
     ):
         assert name in cfg.events, f"événement de DR perdu : {name}"
+
+
+# ── Override de play : forcer les départs sur le dos ──────────────────────────
+# Sans override, un play ne montre JAMAIS de départ sur le dos : l'env de play est
+# reconstruit à neuf, donc common_step_counter repart à 0 et le curriculum applique
+# son palier 0, où face_up_prob = 0. Or c'est justement le cas le plus dur, celui
+# qu'on veut inspecter à l'œil. STANDUP_PLAY_FACE_UP force le mélange, sur le
+# modèle de SLOPE_PLAY_DIFFICULTY dans roller_slope.
+
+
+def test_play_face_up_override_forces_back_starts(monkeypatch):
+    monkeypatch.setenv("STANDUP_PLAY_FACE_UP", "1.0")
+    cfg = make_microduck_roller_standup_env_cfg(play=True)
+    params = cfg.events["set_ground_state"].params
+    assert params["face_up_prob"] == 1.0
+    assert params["face_down_prob"] == 0.0
+    assert params["standing_prob"] == 0.0
+    # Sans ça, le curriculum réécrirait les probabilités dès le premier reset
+    # (event_param_curriculum tourne AVANT les événements de reset).
+    assert "ground_state_mix" not in cfg.curriculum
+
+
+def test_play_face_up_override_splits_remainder_like_final_stage(monkeypatch):
+    # 0.4 doit reproduire le DERNIER palier du curriculum (0.40 ventre / 0.20
+    # debout / 0.40 dos) : le reste est réparti dans le rapport 2:1 de ce palier.
+    monkeypatch.setenv("STANDUP_PLAY_FACE_UP", "0.4")
+    params = make_microduck_roller_standup_env_cfg(play=True).events["set_ground_state"].params
+    assert params["face_up_prob"] == pytest.approx(0.40)
+    assert params["face_down_prob"] == pytest.approx(0.40)
+    assert params["standing_prob"] == pytest.approx(0.20)
+    total = params["face_up_prob"] + params["face_down_prob"] + params["standing_prob"]
+    assert total == pytest.approx(1.0)
+
+
+def test_play_face_up_override_is_clamped(monkeypatch):
+    monkeypatch.setenv("STANDUP_PLAY_FACE_UP", "3.0")
+    params = make_microduck_roller_standup_env_cfg(play=True).events["set_ground_state"].params
+    assert params["face_up_prob"] == 1.0
+
+
+def test_play_face_up_override_ignored_during_training(monkeypatch):
+    # Garde-fou : la variable ne doit JAMAIS toucher l'entraînement, sinon on
+    # casserait le curriculum easy->hard sans s'en apercevoir.
+    monkeypatch.setenv("STANDUP_PLAY_FACE_UP", "1.0")
+    cfg = make_microduck_roller_standup_env_cfg(play=False)
+    assert cfg.events["set_ground_state"].params["face_up_prob"] == 0.00
+    assert "ground_state_mix" in cfg.curriculum
+
+
+def test_play_without_override_keeps_curriculum_mix(monkeypatch):
+    # Comportement par défaut inchangé : palier 0, pas de départ sur le dos.
+    monkeypatch.delenv("STANDUP_PLAY_FACE_UP", raising=False)
+    cfg = make_microduck_roller_standup_env_cfg(play=True)
+    assert cfg.events["set_ground_state"].params["face_up_prob"] == 0.00
+    assert "ground_state_mix" in cfg.curriculum
+
+
+def test_play_face_up_override_invalid_value_falls_back(monkeypatch):
+    monkeypatch.setenv("STANDUP_PLAY_FACE_UP", "pouet")
+    cfg = make_microduck_roller_standup_env_cfg(play=True)
+    assert cfg.events["set_ground_state"].params["face_up_prob"] == 0.00
+    assert "ground_state_mix" in cfg.curriculum
+
+
+def test_play_face_up_override_none_keyword_disables(monkeypatch):
+    monkeypatch.setenv("STANDUP_PLAY_FACE_UP", "none")
+    cfg = make_microduck_roller_standup_env_cfg(play=True)
+    assert cfg.events["set_ground_state"].params["face_up_prob"] == 0.00
+    assert "ground_state_mix" in cfg.curriculum
