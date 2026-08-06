@@ -173,7 +173,9 @@ def test_recovery_rewards_present_with_expected_weights():
         "upright_sharp":        6.0,
         "standing_composite":  15.0,
         # -2e-3 ne contribuait que -0.0002/pas face à +41.6 de tâche : nul.
-        "joint_torque_rate_l2": -2.0,
+        # -2.0 a mesuré -0.255/pas (run d8rnko6p) — pas le gel, mais on redescend
+        # à -0.2 pour dégager le budget d'amortissement pendant qu'on isole.
+        "joint_torque_rate_l2": -0.2,
     }
     for name, weight in expected.items():
         assert name in cfg.rewards, f"récompense de relevé manquante : {name}"
@@ -474,31 +476,49 @@ def test_already_negative_penalties_use_positive_weights():
         assert cfg.rewards[name].weight < 0, f"{name} attend un poids négatif"
 
 
-def test_head_impact_is_penalised():
-    """Taper la tête au sol était entièrement GRATUIT.
+def test_no_ungated_head_impact_penalty():
+    """PAS de pénalité d'impact tête non gatée — elle gelait la policy.
 
-    Aucun terme d'impact n'existait (spec v1 : « on garde le jeu minimal »), donc
-    la policy utilisait la tête comme point d'appui. On reprend le capteur et le
-    poids de velstand, seul env de la famille qui les avait.
+    Essayée à -1.0 (valeurs de velstand) : la policy a convergé vers rester
+    couchée, inerte. Mesuré sur le run d8rnko6p : head_impact_penalty -1.01/pas,
+    le plus gros terme négatif, pendant que standing_composite s'effondrait de
+    +14.3 à +3.3.
+
+    L'erreur de raisonnement était de croire qu'une pénalité « ciblée » ne bride
+    pas le mouvement. Faux ici : pour se relever du dos, ce robot PIVOTE sur sa
+    tête et ses épaules. La tête est le point d'appui du retournement, pas un
+    dégât collatéral — la pénaliser, c'est pénaliser le seul mécanisme disponible.
+
+    Si le slam revient une fois le signe de gentle_rise corrigé, la reprise doit
+    être une pénalité GATÉE EN HAUTEUR (comme upright_sharp l'est), qui épargne la
+    phase de retournement au sol. Pas celle-ci.
     """
     cfg = make_microduck_roller_standup_env_cfg()
-    assert "head_impact_contact" in [s.name for s in cfg.scene.sensors]
-    assert "head_impact_penalty" in cfg.rewards
-    term = cfg.rewards["head_impact_penalty"]
-    # body_impact_cost renvoie clamp(force - seuil, min=0) → magnitude POSITIVE,
-    # donc poids négatif (mêmes valeurs que velstand).
-    assert term.weight == -1.0
-    assert term.params["threshold"] == 2.0
-    assert term.params["sensor_name"] == "head_impact_contact"
+    assert "head_impact_penalty" not in cfg.rewards
+    assert "head_impact_contact" not in [s.name for s in cfg.scene.sensors]
 
 
-def test_inherited_sensors_survive_head_impact_addition():
-    # Le capteur d'impact tête s'AJOUTE : les capteurs hérités de l'env roller
-    # sont utilisés par des récompenses gardées (self_collisions) et par les obs.
+def test_inherited_sensors_intact():
+    # Les capteurs hérités de l'env roller sont utilisés par des récompenses
+    # gardées (self_collisions) et par les observations.
     cfg = make_microduck_roller_standup_env_cfg()
     names = [s.name for s in cfg.scene.sensors]
     assert "feet_ground_contact" in names
     assert "self_collision" in names
+
+
+def test_lazy_prone_optimum_is_documented_risk():
+    """Le gel vient d'un optimum paresseux : couché, jambes à HOME, ça paye.
+
+    pose_stand_legs restait à +7.72 sur 8 alors que le robot était allongé — les
+    jambes sont à HOME en position couchée, donc la récompense de pose est encaissée
+    quasi gratuitement. C'est le contrepoids qui rend « ne rien faire » viable dès
+    qu'on ajoute un coût au mouvement. height_stand_l1 (poids +30) est le terme
+    censé rendre « rester au sol » net négatif : il doit rester fort.
+    """
+    cfg = make_microduck_roller_standup_env_cfg()
+    assert cfg.rewards["height_stand_l1"].weight >= 30.0
+    assert cfg.rewards["com_upward_velocity"].weight > 0.0
 
 
 def test_damping_terms_are_not_numerically_negligible():

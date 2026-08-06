@@ -40,7 +40,6 @@ from mjlab.managers import (
 )
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.rl import RslRlModelCfg, RslRlOnPolicyRunnerCfg
-from mjlab.sensor import ContactMatch, ContactSensorCfg
 
 from mjlab_microduck.tasks import mdp as microduck_mdp
 from mjlab_microduck.tasks.microduck_velocity_rollers_env_cfg import (
@@ -312,40 +311,39 @@ def make_microduck_roller_standup_env_cfg(play: bool = False) -> ManagerBasedRlE
     # aucune raison d'être doux. Mesuré sur le run vweolw91 à l'itération 7500.
     #
     # Recalibrage : la valeur brute de |Δτ|² vaut ~0.1 à convergence, donc
-    # contribution ≈ 0.1 × |poids|. À -2.0 on obtient ~-0.2/pas, soit ~1/3 de
-    # l'amortissement d'action_rate_l2 (-0.64/pas) — un ajout net au budget
-    # d'amortissement sans le doubler. Si c'est encore violent, monter CE terme
-    # (formule ci-dessus) plutôt que body_ang_vel ou action_rate, qui sont des
-    # bloqueurs de mouvement et gelaient le relevé depuis le dos.
+    # contribution ≈ 0.1 × |poids|. Mesuré à -0.255/pas avec un poids -2.0 (run
+    # d8rnko6p) — donc PAS la cause du gel, mais on redescend à -0.2 pour dégager
+    # le budget d'amortissement le temps d'isoler l'effet du seul bug de signe.
+    # Si c'est encore violent, monter CE terme (formule ci-dessus) plutôt que
+    # body_ang_vel ou action_rate, qui sont des bloqueurs de mouvement et gelaient
+    # le relevé depuis le dos.
     cfg.rewards["joint_torque_rate_l2"] = RewardTermCfg(
         func=microduck_mdp.joint_torque_rate_l2,
-        weight=-2.0,
+        weight=-0.2,
     )
 
-    # Impact de la TÊTE au sol — c'était entièrement gratuit, donc la policy s'en
-    # servait comme point d'appui (symptôme observé sur le robot ET en simu).
-    # Aucun terme d'impact n'existait : la spec v1 les avait écartés (« on garde le
-    # jeu minimal »), à tort. On reprend le capteur, le seuil et le poids de
-    # velstand, seul env de la famille qui les avait. Le sous-arbre du corps `neck`
-    # couvre toute la tête (neck_pitch, yaw_roll_motion, jaw_soft).
-    # Pénalité CIBLÉE : elle ne bride que les impacts, pas le mouvement, donc peu de
-    # risque de geler le retournement — contrairement à un amortisseur global.
-    # body_impact_cost renvoie clamp(force - seuil, min=0), une magnitude POSITIVE
-    # → poids négatif (convention inverse de gentle_rise ci-dessus).
-    head_impact_cfg = ContactSensorCfg(
-        name="head_impact_contact",
-        primary=ContactMatch(mode="subtree", pattern="neck", entity="robot"),
-        secondary=ContactMatch(mode="body", pattern="terrain"),
-        fields=("force",),
-        reduce="netforce",
-        num_slots=1,
-    )
-    cfg.scene.sensors = (*cfg.scene.sensors, head_impact_cfg)
-    cfg.rewards["head_impact_penalty"] = RewardTermCfg(
-        func=microduck_mdp.body_impact_cost,
-        weight=-1.0,
-        params={"sensor_name": head_impact_cfg.name, "threshold": 2.0},
-    )
+    # PAS de pénalité d'impact tête. Essayée avec les valeurs de velstand
+    # (body_impact_cost, sous-arbre `neck`, poids -1.0, seuil 2.0) : la policy a
+    # convergé vers rester couchée, INERTE. Mesuré (run d8rnko6p) :
+    # head_impact_penalty -1.01/pas, le plus gros terme négatif du tableau, pendant
+    # que standing_composite s'effondrait de +14.3 à +3.3.
+    #
+    # L'erreur de raisonnement était de croire qu'une pénalité « ciblée » ne bride
+    # pas le mouvement. Faux ici : pour se relever du dos, ce robot PIVOTE sur sa
+    # tête et ses épaules. La tête est le point d'appui du retournement, pas un
+    # dégât collatéral — la pénaliser bloque le seul mécanisme disponible, et le
+    # dos était déjà le cas qui échouait.
+    #
+    # Hypothèse en cours de test : taper la tête était un SYMPTÔME de la violence
+    # (le bug de signe de gentle_rise payait la brutalité, et une montée brutale
+    # finit sur la tête), pas un défaut séparé. Si le slam revient une fois le signe
+    # corrigé, la reprise doit être une pénalité GATÉE EN HAUTEUR — comme
+    # upright_sharp l'est — pour épargner la phase de retournement au sol.
+    #
+    # ⚠️ Attention à l'optimum paresseux qui rend ce gel possible : pose_stand_legs
+    # restait à +7.72 sur 8 alors que le robot était allongé (jambes à HOME en
+    # position couchée → récompense encaissée quasi gratuitement). C'est
+    # height_stand_l1 (poids +30) qui doit rendre « rester au sol » net négatif.
 
     # ── Départ AU SOL : à plat ventre / à plat dos / déjà debout ─────────────
     # Ajouté en DERNIER dans cfg.events : l'ordre d'exécution suit l'ordre
