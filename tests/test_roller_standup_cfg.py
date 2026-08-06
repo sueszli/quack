@@ -165,11 +165,15 @@ def test_recovery_rewards_present_with_expected_weights():
         "height_stand_sharp":   4.0,
         "height_stand_l1":     30.0,
         "com_upward_velocity":  3.0,
-        "gentle_rise":         -0.02,
+        # gentle_rise : poids POSITIF. trunk_vertical_accel_penalty renvoie déjà
+        # -|a_z|, donc un poids négatif en faisait une RÉCOMPENSE de la violence
+        # (bug mesuré : Episode_Reward/gentle_rise loggée à +0.0118).
+        "gentle_rise":         +0.02,
         "upright_linear":       6.0,
         "upright_sharp":        6.0,
         "standing_composite":  15.0,
-        "joint_torque_rate_l2": -2e-3,
+        # -2e-3 ne contribuait que -0.0002/pas face à +41.6 de tâche : nul.
+        "joint_torque_rate_l2": -2.0,
     }
     for name, weight in expected.items():
         assert name in cfg.rewards, f"récompense de relevé manquante : {name}"
@@ -439,3 +443,77 @@ def test_play_face_up_override_none_keyword_disables(monkeypatch):
     cfg = make_microduck_roller_standup_env_cfg(play=True)
     assert cfg.events["set_ground_state"].params["face_up_prob"] == 0.00
     assert "ground_state_mix" in cfg.curriculum
+
+
+# ── Anti-violence : corrections après test sur le robot ───────────────────────
+# Symptômes observés (checkpoint 4000+, EN SIMU AUSSI donc pas du sim2real) :
+# mouvements très brusques, la tête tape le sol, échec du relevé depuis le dos
+# sur le vrai robot. Diagnostic mesuré dans wandb (run vweolw91, iter 7500).
+
+
+def test_already_negative_penalties_use_positive_weights():
+    """Verrou sur la classe de bug qui rendait la policy violente.
+
+    mdp.py mélange DEUX conventions de signe : certaines fonctions de pénalité
+    renvoient une magnitude positive (à multiplier par un poids négatif), d'autres
+    renvoient déjà une valeur négative (à multiplier par un poids POSITIF).
+    trunk_vertical_accel_penalty renvoie -|a_z| : avec le poids -0.02 hérité du
+    standup, le double négatif RÉCOMPENSAIT l'accélération verticale — mesuré à
+    Episode_Reward/gentle_rise = +0.0118, seul terme de pénalité loggé positif.
+    """
+    cfg = make_microduck_roller_standup_env_cfg()
+    # Ces trois termes appellent des fonctions qui renvoient déjà du négatif
+    # (height_l1_penalty, pose_l1_penalty, trunk_vertical_accel_penalty).
+    for name in ("height_stand_l1", "pose_stand_l1", "gentle_rise"):
+        assert cfg.rewards[name].weight > 0, (
+            f"{name} appelle une fonction qui renvoie déjà du négatif : "
+            f"un poids négatif en ferait une récompense"
+        )
+    # Et ces termes renvoient une magnitude positive → poids négatif.
+    for name in ("joint_torques_l2", "joint_torque_rate_l2", "action_rate_l2"):
+        assert cfg.rewards[name].weight < 0, f"{name} attend un poids négatif"
+
+
+def test_head_impact_is_penalised():
+    """Taper la tête au sol était entièrement GRATUIT.
+
+    Aucun terme d'impact n'existait (spec v1 : « on garde le jeu minimal »), donc
+    la policy utilisait la tête comme point d'appui. On reprend le capteur et le
+    poids de velstand, seul env de la famille qui les avait.
+    """
+    cfg = make_microduck_roller_standup_env_cfg()
+    assert "head_impact_contact" in [s.name for s in cfg.scene.sensors]
+    assert "head_impact_penalty" in cfg.rewards
+    term = cfg.rewards["head_impact_penalty"]
+    # body_impact_cost renvoie clamp(force - seuil, min=0) → magnitude POSITIVE,
+    # donc poids négatif (mêmes valeurs que velstand).
+    assert term.weight == -1.0
+    assert term.params["threshold"] == 2.0
+    assert term.params["sensor_name"] == "head_impact_contact"
+
+
+def test_inherited_sensors_survive_head_impact_addition():
+    # Le capteur d'impact tête s'AJOUTE : les capteurs hérités de l'env roller
+    # sont utilisés par des récompenses gardées (self_collisions) et par les obs.
+    cfg = make_microduck_roller_standup_env_cfg()
+    names = [s.name for s in cfg.scene.sensors]
+    assert "feet_ground_contact" in names
+    assert "self_collision" in names
+
+
+def test_damping_terms_are_not_numerically_negligible():
+    """Les amortisseurs dédiés ne pesaient littéralement rien.
+
+    Mesuré à convergence : joint_torque_rate_l2 -0.0002/pas et joint_torques_l2
+    -0.0001/pas, face à ~+41.6 de récompense de tâche (rapport ~35:1 pour tous
+    les amortisseurs réunis). joint_torque_rate_l2 est le levier SÛR à remonter :
+    il pénalise la VARIATION de couple, pas le mouvement, donc il n'agit pas comme
+    bloqueur de mouvement — le standup documente que body_ang_vel et action_rate,
+    eux, gelaient le relevé depuis le dos.
+    """
+    cfg = make_microduck_roller_standup_env_cfg()
+    assert abs(cfg.rewards["joint_torque_rate_l2"].weight) >= 0.1
+    # Les bloqueurs de mouvement restent à leurs valeurs « se relève de partout ».
+    assert cfg.rewards["body_ang_vel"].weight == -0.05
+    weights = [s["weight"] for s in cfg.curriculum["action_rate_weight"].params["weight_stages"]]
+    assert min(weights) >= -1.0, "action_rate au-delà de -1.0 gelait le relevé (standup)"

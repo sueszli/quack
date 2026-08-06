@@ -40,6 +40,7 @@ from mjlab.managers import (
 )
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.rl import RslRlModelCfg, RslRlOnPolicyRunnerCfg
+from mjlab.sensor import ContactMatch, ContactSensorCfg
 
 from mjlab_microduck.tasks import mdp as microduck_mdp
 from mjlab_microduck.tasks.microduck_velocity_rollers_env_cfg import (
@@ -240,9 +241,24 @@ def make_microduck_roller_standup_env_cfg(play: bool = False) -> ManagerBasedRlE
     # Montée douce : pénalise |a_z|. Compatible avec com_upward_velocity — une
     # vitesse verticale constante collecte l'une ET a a_z = 0 → les deux
     # pressions sélectionnent ensemble une montée lisse à vitesse constante.
+    #
+    # ⚠️ POIDS POSITIF, et ce n'est pas une faute de frappe. mdp.py mélange deux
+    # conventions de signe : trunk_vertical_accel_penalty renvoie déjà -|a_z|
+    # (mdp.py:2171), comme height_l1_penalty et pose_l1_penalty — qui sont d'ailleurs
+    # employées ici avec des poids +30 et +5. Le -0.02 hérité du standup formait donc
+    # un double négatif et RÉCOMPENSAIT l'accélération verticale : mesuré à
+    # Episode_Reward/gentle_rise = +0.0118 (seul terme de pénalité loggé positif) sur
+    # le run vweolw91. C'est la cause du « très violent », et elle explique aussi les
+    # tentatives d'amortissement infructueuses documentées dans le standup, qui
+    # combattaient un terme poussant activement dans l'autre sens.
+    #
+    # On garde la magnitude 0.02 (celle voulue à l'origine) DÉLIBÉRÉMENT petite :
+    # |a_z| est forcément élevé pendant un retournement depuis le dos, donc un gros
+    # poids ici serait un bloqueur de mouvement. L'amortissement réel est porté par
+    # joint_torque_rate_l2, qui pénalise la VARIATION de couple et pas le mouvement.
     cfg.rewards["gentle_rise"] = RewardTermCfg(
         func=microduck_mdp.trunk_vertical_accel_penalty,
-        weight=-0.02,
+        weight=+0.02,
         params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))},
     )
 
@@ -288,10 +304,47 @@ def make_microduck_roller_standup_env_cfg(play: bool = False) -> ManagerBasedRlE
     # Anti-jitter : pénalise la VARIATION de couple, pas son amplitude ni la
     # rotation du tronc → amortit la tremblote sans bloquer le retournement.
     # Le standup l'a identifié comme le seul amortisseur qui ne tue pas le
-    # relevé depuis le dos.
+    # relevé depuis le dos, donc c'est LE levier sûr à remonter.
+    #
+    # -2e-3 (valeur héritée du standup) ne contribuait que -0.0002/pas face à
+    # ~+41.6 de récompense de tâche saturée à 95-99 % — soit rien du tout. Tous
+    # amortisseurs confondus le rapport était de ~35:1 en faveur de la tâche, donc
+    # aucune raison d'être doux. Mesuré sur le run vweolw91 à l'itération 7500.
+    #
+    # Recalibrage : la valeur brute de |Δτ|² vaut ~0.1 à convergence, donc
+    # contribution ≈ 0.1 × |poids|. À -2.0 on obtient ~-0.2/pas, soit ~1/3 de
+    # l'amortissement d'action_rate_l2 (-0.64/pas) — un ajout net au budget
+    # d'amortissement sans le doubler. Si c'est encore violent, monter CE terme
+    # (formule ci-dessus) plutôt que body_ang_vel ou action_rate, qui sont des
+    # bloqueurs de mouvement et gelaient le relevé depuis le dos.
     cfg.rewards["joint_torque_rate_l2"] = RewardTermCfg(
         func=microduck_mdp.joint_torque_rate_l2,
-        weight=-2e-3,
+        weight=-2.0,
+    )
+
+    # Impact de la TÊTE au sol — c'était entièrement gratuit, donc la policy s'en
+    # servait comme point d'appui (symptôme observé sur le robot ET en simu).
+    # Aucun terme d'impact n'existait : la spec v1 les avait écartés (« on garde le
+    # jeu minimal »), à tort. On reprend le capteur, le seuil et le poids de
+    # velstand, seul env de la famille qui les avait. Le sous-arbre du corps `neck`
+    # couvre toute la tête (neck_pitch, yaw_roll_motion, jaw_soft).
+    # Pénalité CIBLÉE : elle ne bride que les impacts, pas le mouvement, donc peu de
+    # risque de geler le retournement — contrairement à un amortisseur global.
+    # body_impact_cost renvoie clamp(force - seuil, min=0), une magnitude POSITIVE
+    # → poids négatif (convention inverse de gentle_rise ci-dessus).
+    head_impact_cfg = ContactSensorCfg(
+        name="head_impact_contact",
+        primary=ContactMatch(mode="subtree", pattern="neck", entity="robot"),
+        secondary=ContactMatch(mode="body", pattern="terrain"),
+        fields=("force",),
+        reduce="netforce",
+        num_slots=1,
+    )
+    cfg.scene.sensors = (*cfg.scene.sensors, head_impact_cfg)
+    cfg.rewards["head_impact_penalty"] = RewardTermCfg(
+        func=microduck_mdp.body_impact_cost,
+        weight=-1.0,
+        params={"sensor_name": head_impact_cfg.name, "threshold": 2.0},
     )
 
     # ── Départ AU SOL : à plat ventre / à plat dos / déjà debout ─────────────
