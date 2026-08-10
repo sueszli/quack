@@ -76,6 +76,7 @@ from .microduck_shoot_env_cfg import (
     make_microduck_shoot_env_cfg,
     MicroduckShootRlCfg,
 )
+from .backlash import make_backlash_variant
 
 # Standard velocity task
 register_mjlab_task(
@@ -265,3 +266,37 @@ register_mjlab_task(
     runner_cls=MicroduckOnPolicyRunner,
 )
 print("✓ RollerSlope task registered: Mjlab-RollerSlope-Flat-MicroDuck")
+
+# Backlash variants — ±1° serial gear play per servo + encoder-through-backlash
+# actuator feedback and joint obs (see tasks/backlash.py). Each family keeps its
+# base task's collision model: Velocity/Velocity2 → robot_walk_backlash.xml,
+# VelStand/StandUp → robot_allcollisions_backlash.xml. Obs/action dims are
+# unchanged vs the base tasks.
+from mjlab_microduck.robot.microduck_constants import (
+    MICRODUCK_BACKLASH_ROBOT_CFG,
+    MICRODUCK_WALK_BACKLASH_ROBOT_CFG,
+)
+
+_BACKLASH_FAMILIES = (
+    ("Velocity", make_microduck_velocity_env_cfg, MicroduckRlCfg,
+     MICRODUCK_WALK_BACKLASH_ROBOT_CFG),
+    ("Velocity2", make_microduck_velocity2_env_cfg, MicroduckVelocity2RlCfg,
+     MICRODUCK_WALK_BACKLASH_ROBOT_CFG),
+    ("VelStand", make_microduck_velstand_env_cfg, MicroduckVelStandRlCfg,
+     MICRODUCK_BACKLASH_ROBOT_CFG),
+    ("StandUp", make_microduck_standup_env_cfg, MicroduckStandUpRlCfg,
+     MICRODUCK_BACKLASH_ROBOT_CFG),
+)
+for _task, _make_cfg, _rl_cfg, _robot_cfg in _BACKLASH_FAMILIES:
+    for _rough, _terrain in ((False, "Flat"), (True, "Rough")):
+        _task_id = f"Mjlab-{_task}-{_terrain}-Backlash-MicroDuck"
+        register_mjlab_task(
+            task_id=_task_id,
+            env_cfg=make_backlash_variant(_make_cfg(rough=_rough), _robot_cfg),
+            play_env_cfg=make_backlash_variant(
+                _make_cfg(play=True, rough=_rough), _robot_cfg
+            ),
+            rl_cfg=_rl_cfg,
+            runner_cls=MicroduckOnPolicyRunner,
+        )
+        print(f"✓ Backlash task registered: {_task_id}")

@@ -5628,3 +5628,91 @@ def ball_vel_in_base(
     rot = matrix_from_quat(robot.data.root_link_quat_w)
     vel = ball.data.root_link_lin_vel_w
     return torch.bmm(rot.transpose(1, 2), vel.unsqueeze(-1)).squeeze(-1)
+
+
+# =============================================================================
+# Backlash model — encoder-through-backlash joint observations
+# =============================================================================
+# The backlash model (robot_allcollisions_backlash.xml) puts an unactuated
+# ``passive_<joint>_backlash`` hinge in series with each servo joint. The link
+# angle is qpos[servo] + qpos[backlash], and the real encoder sits on the
+# OUTPUT side of the play — it reads the sum. These obs replace joint_pos_rel /
+# joint_vel_rel in backlash tasks (see tasks/backlash.py) so the policy sees
+# exactly what the runtime will feed it. The asset_cfg regex is expected to
+# select only the servo joints (the usual ``^(?!passive_).*``).
+
+
+def _backlash_encoder_ids(
+    env: "ManagerBasedRlEnv",
+    asset: Entity,
+    asset_cfg: SceneEntityCfg,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """(main_ids, backlash_ids, mask) — cached per (entity, joint selection).
+
+    mask is 1.0 where a matching passive_<name>_backlash joint exists, so the
+    same obs functions run unchanged on models without backlash joints.
+    """
+    key = (asset_cfg.name, str(asset_cfg.joint_ids))
+    cache = env.__dict__.setdefault("_backlash_encoder_cache", {})
+    hit = cache.get(key)
+    if hit is not None:
+        return hit
+
+    names = asset.joint_names
+    jnt_ids = asset_cfg.joint_ids
+    if isinstance(jnt_ids, slice):
+        main_ids = list(range(len(names)))[jnt_ids]
+    else:
+        main_ids = [int(i) for i in jnt_ids]
+    name_to_id = {n: i for i, n in enumerate(names)}
+    bl_ids, mask = [], []
+    for i in main_ids:
+        bl = name_to_id.get(f"passive_{names[i]}_backlash")
+        bl_ids.append(0 if bl is None else bl)
+        mask.append(0.0 if bl is None else 1.0)
+
+    device = asset.data.joint_pos.device
+    out = (
+        torch.tensor(main_ids, dtype=torch.long, device=device),
+        torch.tensor(bl_ids, dtype=torch.long, device=device),
+        torch.tensor(mask, dtype=torch.float32, device=device),
+    )
+    cache[key] = out
+    return out
+
+
+def joint_pos_rel_backlash(
+    env: "ManagerBasedRlEnv",
+    biased: bool = False,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """joint_pos_rel where the encoder reads through the backlash hinge.
+
+    Returns (qpos[servo] + qpos[backlash]) - default[servo]. With biased=True
+    the per-env encoder-calibration bias is applied to the servo reading (one
+    encoder per servo → one bias per joint; the backlash summand stays raw).
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    main_ids, bl_ids, mask = _backlash_encoder_ids(env, asset, asset_cfg)
+    joint_pos = asset.data.joint_pos_biased if biased else asset.data.joint_pos
+    pos = joint_pos[:, main_ids] + asset.data.joint_pos[:, bl_ids] * mask
+    default_joint_pos = asset.data.default_joint_pos
+    assert default_joint_pos is not None
+    return pos - default_joint_pos[:, main_ids]
+
+
+def joint_vel_rel_backlash(
+    env: "ManagerBasedRlEnv",
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """joint_vel_rel where the encoder reads through the backlash hinge.
+
+    The firmware derives present_velocity from encoder positions, so it also
+    sees the backlash motion: qvel[servo] + qvel[backlash].
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    main_ids, bl_ids, mask = _backlash_encoder_ids(env, asset, asset_cfg)
+    vel = asset.data.joint_vel[:, main_ids] + asset.data.joint_vel[:, bl_ids] * mask
+    default_joint_vel = asset.data.default_joint_vel
+    assert default_joint_vel is not None
+    return vel - default_joint_vel[:, main_ids]
