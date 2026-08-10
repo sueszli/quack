@@ -2521,6 +2521,292 @@ def upright_while_tall(
     return upright * smooth
 
 
+def phase_pose_blend(
+    phase: torch.Tensor,
+    descent_end: float,
+    hold_end: float,
+    rise_end: float,
+) -> torch.Tensor:
+    """Blend 0..1 le long de la phase [0,1) — 0 = pose STAND, 1 = pose DOWN.
+
+    [0, descent_end)       : 0 -> 1  (se baisser)
+    [descent_end, hold_end): 1       (bas)
+    [hold_end, rise_end)   : 1 -> 0  (se lever)
+    [rise_end, 1.0)        : 0       (haut / repos)
+    """
+    b = torch.zeros_like(phase)
+    descend = phase < descent_end
+    b = torch.where(descend, phase / descent_end, b)
+    low = (phase >= descent_end) & (phase < hold_end)
+    b = torch.where(low, torch.ones_like(phase), b)
+    rise = (phase >= hold_end) & (phase < rise_end)
+    b = torch.where(rise, 1.0 - (phase - hold_end) / (rise_end - hold_end), b)
+    return b
+
+
+def kick_pose_target(
+    phase: torch.Tensor,
+    stand: torch.Tensor,
+    back: torch.Tensor,
+    forward: torch.Tensor,
+    windup_end: float,
+    kick_end: float,
+    return_end: float,
+) -> torch.Tensor:
+    """Cible articulaire interpolée d'un geste de shoot à 4 keyframes.
+
+    phase (B,) ∈ [0,1). stand/back/forward (k,) ou (1,k). Retour (B,k).
+
+    [0, windup_end)        STAND   -> BACK     (armement)
+    [windup_end, kick_end) BACK    -> FORWARD  (frappe sèche)
+    [kick_end, return_end) FORWARD -> STAND    (retour)
+    [return_end, 1.0)      STAND             (repos)
+    """
+    p = phase.unsqueeze(-1)  # (B,1)
+
+    def interp(a, b, s):
+        return a + s * (b - a)
+
+    s1 = (p / windup_end).clamp(0.0, 1.0)
+    s2 = ((p - windup_end) / (kick_end - windup_end)).clamp(0.0, 1.0)
+    s3 = ((p - kick_end) / (return_end - kick_end)).clamp(0.0, 1.0)
+
+    seg1 = interp(stand, back, s1)
+    seg2 = interp(back, forward, s2)
+    seg3 = interp(forward, stand, s3)  # à s3=1 (phase>=return_end) => STAND
+
+    out = seg1
+    out = torch.where(p >= windup_end, seg2, out)
+    out = torch.where(p >= kick_end, seg3, out)
+    return out
+
+
+def _kick_pose_error(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg,
+    command_name: str,
+    stand_pose: dict,
+    back_pose: dict,
+    forward_pose: dict,
+    windup_end: float,
+    kick_end: float,
+    return_end: float,
+    joint_names: Optional[list] = None,
+):
+    """(cur, target) pour le geste de shoot, joints résolus PAR NOM.
+
+    Les 3 poses partagent les mêmes clés (14 joints). L'ordre des noms est
+    donné par `stand_pose` (ou par `joint_names` si fourni — un sous-ensemble
+    des clés, ex. jambe droite + cou d'un côté, jambe gauche de l'autre, pour
+    appliquer des std différents au geste vs à la jambe d'appui).
+    """
+    if not stand_pose:
+        raise ValueError("_kick_pose_error requires a non-empty stand_pose dict")
+    asset: Entity = env.scene[asset_cfg.name]
+    names = list(joint_names) if joint_names is not None else list(stand_pose.keys())
+    ids = [int(asset.find_joints([n])[0][0]) for n in names]
+
+    def vec(d):
+        return torch.tensor([d[n] for n in names], device=env.device,
+                            dtype=asset.data.joint_pos.dtype)
+
+    stand_v, back_v, fwd_v = vec(stand_pose), vec(back_pose), vec(forward_pose)
+
+    cmd = env.command_manager.get_command(command_name)
+    phase = (torch.atan2(cmd[:, 1], cmd[:, 0]) / (2 * torch.pi)) % 1.0  # (B,)
+    target = kick_pose_target(phase, stand_v, back_v, fwd_v,
+                              windup_end, kick_end, return_end)          # (B,k)
+    cur = asset.data.joint_pos[:, ids]                                   # (B,k)
+    return cur, target
+
+
+def kick_pose_track(
+    env: ManagerBasedRlEnv,
+    command_name: str = "twist",
+    stand_pose: Optional[dict] = None,
+    back_pose: Optional[dict] = None,
+    forward_pose: Optional[dict] = None,
+    std: float = 0.4,
+    windup_end: float = 0.35,
+    kick_end: float = 0.45,
+    return_end: float = 0.75,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    joint_names: Optional[list] = None,
+) -> torch.Tensor:
+    """Gaussienne sur la pose articulaire vs cible interpolée du shoot.
+
+    Reward directif et symétrique : chaque phase impose la config articulaire
+    exacte. Résolution PAR NOM. `joint_names` restreint l'évaluation à un
+    sous-ensemble (ex. jambe droite + cou tracés serré, jambe gauche d'appui
+    tracée lâche pour la laisser équilibrer).
+    """
+    cur, target = _kick_pose_error(
+        env, asset_cfg, command_name, stand_pose or {}, back_pose or {},
+        forward_pose or {}, windup_end, kick_end, return_end, joint_names,
+    )
+    return torch.exp(-((cur - target) / std) ** 2).mean(dim=-1)
+
+
+def kick_pose_track_l1(
+    env: ManagerBasedRlEnv,
+    command_name: str = "twist",
+    stand_pose: Optional[dict] = None,
+    back_pose: Optional[dict] = None,
+    forward_pose: Optional[dict] = None,
+    windup_end: float = 0.35,
+    kick_end: float = 0.45,
+    return_end: float = 0.75,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    joint_names: Optional[list] = None,
+) -> torch.Tensor:
+    """Bootstrap L1 vers la cible interpolée (gradient constant, pénalité<=0)."""
+    cur, target = _kick_pose_error(
+        env, asset_cfg, command_name, stand_pose or {}, back_pose or {},
+        forward_pose or {}, windup_end, kick_end, return_end, joint_names,
+    )
+    return -(cur - target).abs().mean(dim=-1)
+
+
+def kick_engagement(
+    phase: torch.Tensor,
+    windup_end: float,
+    return_end: float,
+) -> torch.Tensor:
+    """Gate d'engagement du geste ∈ [0,1] (pur) — pour pondérer les rewards
+    d'équilibre unipède qui ne doivent s'appliquer que hors du repos STAND.
+
+    [0, windup_end)        : 0 -> 1  (montée pendant l'armement)
+    [windup_end, return_end): 1       (phase de frappe = appui unipède attendu)
+    [return_end, 1.0)      : 0        (repos STAND, appui bipède, CoM centré OK)
+    """
+    g = torch.zeros_like(phase)
+    ramp = phase < windup_end
+    g = torch.where(ramp, phase / windup_end, g)
+    hold = (phase >= windup_end) & (phase < return_end)
+    g = torch.where(hold, torch.ones_like(phase), g)
+    return g
+
+
+def com_over_support_foot(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg,
+    command_name: str = "twist",
+    std: float = 0.04,
+    windup_end: float = 0.35,
+    return_end: float = 0.75,
+) -> torch.Tensor:
+    """Reward gaussien : projection horizontale du CoM proche du pied d'appui,
+    gaté sur la phase de frappe (kick_engagement).
+
+    Apprend le transfert latéral du poids sur le pied d'appui (support). Sans
+    ça, un geste à un pied issu de poses relevées en appui bipède garde le CoM
+    centré entre les deux pieds → bascule et chute dès que l'autre pied se lève.
+    Au repos STAND le gate est 0 (appui bipède, CoM centré autorisé).
+
+    `asset_cfg` doit cibler le site du pied d'appui (ex. site_names=["left_foot"]).
+    `std` en mètres (rayon de tolérance CoM↔pied, ~taille du pied).
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    com_xy = asset.data.root_com_pos_w[:, :2]
+    foot_id = asset_cfg.site_ids[0]
+    foot_xy = asset.data.site_pos_w[:, foot_id, :2]
+    dist2 = ((com_xy - foot_xy) ** 2).sum(dim=-1)
+    reward = torch.exp(-dist2 / (std ** 2))
+
+    cmd = env.command_manager.get_command(command_name)
+    phase = (torch.atan2(cmd[:, 1], cmd[:, 0]) / (2 * torch.pi)) % 1.0
+    gate = kick_engagement(phase, windup_end, return_end)
+    return gate * reward
+
+
+def _phase_pose_error(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg,
+    command_name: str,
+    target_pose: dict,
+    descent_end: float,
+    hold_end: float,
+    rise_end: float,
+    source_pose: Optional[dict] = None,
+):
+    """(cur, target) pour la pose interpolée par la phase, résolue PAR NOM.
+
+    Cible = source + blend(phase)·(target_pose - source), source = STAND
+    (`source_pose` si fourni, sinon le DEFAULT/HOME du modèle). blend ∈ [0,1]
+    (0 = STAND, 1 = target_pose) via `phase_pose_blend`.
+    """
+    if not target_pose:
+        raise ValueError("_phase_pose_error requires a non-empty target_pose dict")
+
+    asset: Entity = env.scene[asset_cfg.name]
+    cmd = env.command_manager.get_command(command_name)
+    phase = (torch.atan2(cmd[:, 1], cmd[:, 0]) / (2 * torch.pi)) % 1.0  # (B,)
+    blend = phase_pose_blend(phase, descent_end, hold_end, rise_end)     # (B,)
+
+    names = list(target_pose.keys())
+    ids = [int(asset.find_joints([n])[0][0]) for n in names]
+    default = asset.data.default_joint_pos[:, ids]                       # (B,k)
+
+    source = default.clone()
+    if source_pose:
+        for j, n in enumerate(names):
+            if n in source_pose:
+                source[:, j] = source_pose[n]
+    target_vec = torch.tensor(
+        [target_pose[n] for n in names], device=env.device, dtype=default.dtype
+    ).unsqueeze(0)                                                       # (1,k)
+
+    target = source + blend.unsqueeze(-1) * (target_vec - source)        # (B,k)
+    cur = asset.data.joint_pos[:, ids]                                   # (B,k)
+    return cur, target
+
+
+def phase_pose_track(
+    env: ManagerBasedRlEnv,
+    command_name: str = "twist",
+    target_pose: Optional[dict] = None,
+    source_pose: Optional[dict] = None,
+    std: float = 0.3,
+    descent_end: float = 0.15,
+    hold_end: float = 0.50,
+    rise_end: float = 0.65,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """Gaussienne sur la pose articulaire vs cible interpolée STAND<->DOWN.
+
+    Reward directif : indique la config articulaire exacte à chaque phase. Se
+    relever (cible → STAND) est récompensé exactement comme se baisser (cible →
+    DOWN) — symétrique par construction. Résolution PAR NOM.
+    """
+    cur, target = _phase_pose_error(
+        env, asset_cfg, command_name, target_pose or {},
+        descent_end, hold_end, rise_end, source_pose,
+    )
+    return torch.exp(-((cur - target) / std) ** 2).mean(dim=-1)
+
+
+def phase_pose_track_l1(
+    env: ManagerBasedRlEnv,
+    command_name: str = "twist",
+    target_pose: Optional[dict] = None,
+    source_pose: Optional[dict] = None,
+    descent_end: float = 0.15,
+    hold_end: float = 0.50,
+    rise_end: float = 0.65,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """Bootstrap L1 vers la cible interpolée (pénalité négative).
+
+    Gradient constant partout — donne une direction vers la cible même quand la
+    gaussienne ci-dessus a saturé à ~0 loin de la cible.
+    """
+    cur, target = _phase_pose_error(
+        env, asset_cfg, command_name, target_pose or {},
+        descent_end, hold_end, rise_end, source_pose,
+    )
+    return -(cur - target).abs().mean(dim=-1)
+
+
 def phase_pose_match(
     env: ManagerBasedRlEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
@@ -2595,6 +2881,208 @@ def ground_pick_return_pose(
     return_weight = torch.clamp(-cmd[:, 1], min=0.0)
 
     return return_weight * pose_reward
+
+
+def ground_pick_return_upright(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    std: float = 0.4,
+    command_name: str = "twist",
+) -> torch.Tensor:
+    """Reward trunk verticality, weighted by the RETURN phase (stand-up aid).
+
+    Same return weighting as ``ground_pick_return_pose`` (``max(0, -sin(2π·phase))``)
+    so it only rewards being upright during the stand-up, never fighting the
+    forward lean of the approach. Verticality = ``exp(-tilt²/std²)`` with the same
+    tilt proxy as ``body_upright_gaussian`` (``2*(qx²+qy²) ≈ 1-cos(tilt)``). A broad
+    std (0.4 rad ≈ 23°) gives gradient even from a fairly tilted crouch.
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    quat = asset.data.root_link_quat_w
+    tilt_sq = 2.0 * (quat[:, 1] ** 2 + quat[:, 2] ** 2)  # qx² + qy²
+    upright = torch.exp(-tilt_sq / (std * std))
+    cmd = env.command_manager.get_command(command_name)
+    return_weight = torch.clamp(-cmd[:, 1], min=0.0)
+    return return_weight * upright
+
+
+# --------------------------------------------------------------------------- #
+# Ground-pick : gating de phase SEGMENTÉ (durées descente/palier/remontée/repos #
+# indépendantes, au lieu de la pondération sinusoïdale max(0,±sin)).            #
+#   down-gate  = phase_pose_blend(phase, descent_end, hold_end, rise_end)       #
+#               0 (haut) -> 1 (descente) -> 1 (palier bas) -> 0 (remontée/repos) #
+#   up-gate    = phase_rise_gate(phase, hold_end, rise_end)                      #
+#               0 avant la remontée -> 0..1 (remontée) -> 1 (repos debout)       #
+# --------------------------------------------------------------------------- #
+def phase_rise_gate(
+    phase: torch.Tensor, hold_end: float, rise_end: float
+) -> torch.Tensor:
+    """Gate montante pour le RETOUR : 0 avant hold_end, 0->1 sur [hold_end,
+    rise_end), 1 après (repos debout)."""
+    g = torch.zeros_like(phase)
+    rising = (phase >= hold_end) & (phase < rise_end)
+    g = torch.where(rising, (phase - hold_end) / (rise_end - hold_end), g)
+    g = torch.where(phase >= rise_end, torch.ones_like(phase), g)
+    return g
+
+
+def _gp_phase(env: ManagerBasedRlEnv, command_name: str) -> torch.Tensor:
+    cmd = env.command_manager.get_command(command_name)
+    return (torch.atan2(cmd[:, 1], cmd[:, 0]) / (2 * torch.pi)) % 1.0
+
+
+def mouth_ground_proximity_phased(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot", site_names=["mouth_tip"]),
+    std: float = 0.10,
+    target_height: float = 0.0,
+    command_name: str = "twist",
+    descent_end: float = 0.25,
+    hold_end: float = 0.35,
+    rise_end: float = 0.60,
+) -> torch.Tensor:
+    """mouth_ground_proximity gaté par la down-gate segmentée (descente+palier)."""
+    asset = env.scene[asset_cfg.name]
+    mouth_z = asset.data.site_pos_w[:, asset_cfg.site_ids[0], 2]
+    proximity = torch.exp(-((mouth_z - target_height) / std) ** 2)
+    gate = phase_pose_blend(_gp_phase(env, command_name), descent_end, hold_end, rise_end)
+    return gate * proximity
+
+
+def mouth_perpendicular_phased(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot", site_names=["mouth_tip"]),
+    command_name: str = "twist",
+    descent_end: float = 0.25,
+    hold_end: float = 0.35,
+    rise_end: float = 0.60,
+) -> torch.Tensor:
+    """mouth_perpendicular_to_ground gaté par la down-gate segmentée."""
+    asset = env.scene[asset_cfg.name]
+    q = asset.data.site_quat_w[:, asset_cfg.site_ids[0], :]
+    w, qx, qy, qz = q[:, 0], q[:, 1], q[:, 2], q[:, 3]
+    x_axis_z = 2.0 * (qx * qz - w * qy)
+    alignment = -x_axis_z  # 1 = bouche pointe droit vers le bas
+    gate = phase_pose_blend(_gp_phase(env, command_name), descent_end, hold_end, rise_end)
+    return gate * alignment
+
+
+def ground_pick_return_pose_phased(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    std: float = 0.3,
+    command_name: str = "twist",
+    joint_indices: Optional[list] = None,
+    hold_end: float = 0.35,
+    rise_end: float = 0.60,
+) -> torch.Tensor:
+    """ground_pick_return_pose gaté par la up-gate segmentée (remontée+repos)."""
+    asset = env.scene[asset_cfg.name]
+    joint_pos = asset.data.joint_pos
+    default_pos = asset.data.default_joint_pos
+    if joint_indices is not None:
+        joint_pos = joint_pos[:, joint_indices]
+        default_pos = default_pos[:, joint_indices]
+    pose_reward = torch.exp(-((joint_pos - default_pos) / std) ** 2).mean(dim=-1)
+    gate = phase_rise_gate(_gp_phase(env, command_name), hold_end, rise_end)
+    return gate * pose_reward
+
+
+def ground_pick_return_upright_phased(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    std: float = 0.4,
+    command_name: str = "twist",
+    hold_end: float = 0.35,
+    rise_end: float = 0.60,
+) -> torch.Tensor:
+    """ground_pick_return_upright gaté par la up-gate segmentée."""
+    asset: Entity = env.scene[asset_cfg.name]
+    quat = asset.data.root_link_quat_w
+    tilt_sq = 2.0 * (quat[:, 1] ** 2 + quat[:, 2] ** 2)
+    upright = torch.exp(-tilt_sq / (std * std))
+    gate = phase_rise_gate(_gp_phase(env, command_name), hold_end, rise_end)
+    return gate * upright
+
+
+def neck_vel_descent_penalty(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    command_name: str = "twist",
+    joint_indices: Optional[list] = None,
+    hold_end: float = 0.35,
+) -> torch.Tensor:
+    """Pénalise la vitesse des joints du cou pendant la DESCENTE+palier (freine le
+    piqué de la tête).
+
+    Coût = mean(joint_vel²) sur les joints donnés, gaté à 1 pour phase < hold_end
+    (descente + palier bas) et 0 ensuite (remontée + repos) -> ne gêne PAS le
+    relever du cou. Retourne un coût positif ; à utiliser avec un poids négatif.
+    """
+    asset = env.scene[asset_cfg.name]
+    vel = asset.data.joint_vel
+    if joint_indices is not None:
+        vel = vel[:, joint_indices]
+    cost = (vel ** 2).mean(dim=-1)
+    phase = _gp_phase(env, command_name)
+    gate = (phase < hold_end).to(vel.dtype)  # descente + palier bas uniquement
+    return gate * cost
+
+
+def sample_mouth_payload(
+    env: ManagerBasedRlEnv,
+    env_ids: torch.Tensor,
+    min_kg: float = 0.01,
+    max_kg: float = 0.04,
+) -> None:
+    """Event de reset : tire une masse d'objet 'tenu dans la bouche' par env (kg),
+    stockée sur env._mouth_payload_kg. Utilisée par apply_mouth_payload_force."""
+    buf = getattr(env, "_mouth_payload_kg", None)
+    if buf is None:
+        buf = torch.zeros(env.num_envs, device=env.device)
+        env._mouth_payload_kg = buf
+    if env_ids is None:
+        env_ids = torch.arange(env.num_envs, device=env.device)
+    buf[env_ids] = torch.rand(len(env_ids), device=env.device) * (max_kg - min_kg) + min_kg
+
+
+def apply_mouth_payload_force(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg(
+        "robot", body_names=["jaw_soft"], site_names=["mouth_tip"]
+    ),
+    command_name: str = "twist",
+    hold_end: float = 0.35,
+    ramp: float = 0.05,
+    gravity: float = 9.81,
+) -> torch.Tensor:
+    """Hook par-step (utilisé comme reward de poids 0) : applique le POIDS de
+    l'objet tenu dans la bouche comme force externe verticale au mouth_tip, gaté
+    sur la remontée (phase >= hold_end, rampe rapide au moment du 'grab').
+
+    Émule une masse ponctuelle au bout de la bouche pendant le relever : la force
+    m·g est appliquée au CoM du corps + le couple (p_mouth - p_com) × F, ce qui
+    équivaut à l'appliquer au mouth_tip (bon bras de levier pour le cou). Retourne
+    0 (ce n'est pas une vraie récompense — juste le hook d'application)."""
+    asset: Entity = env.scene[asset_cfg.name]
+    payload = getattr(env, "_mouth_payload_kg", None)
+    if payload is None:
+        return torch.zeros(env.num_envs, device=env.device)
+    phase = _gp_phase(env, command_name)
+    gate = ((phase - hold_end) / ramp).clamp(0.0, 1.0)  # 0 avant grab -> 1 après
+    fz = -(gate * payload) * gravity                     # (N,) force verticale (bas)
+
+    bid = int(asset_cfg.body_ids[0])
+    sid = int(asset_cfg.site_ids[0])
+    p_mouth = asset.data.site_pos_w[:, sid, :]           # (N,3)
+    p_com = asset.data.body_com_pos_w[:, bid, :]         # (N,3)
+    F = torch.zeros((env.num_envs, 3), device=env.device, dtype=p_mouth.dtype)
+    F[:, 2] = fz
+    tau = torch.cross(p_mouth - p_com, F, dim=-1)        # applique F au mouth_tip
+    asset.write_external_wrench_to_sim(
+        forces=F.unsqueeze(1), torques=tau.unsqueeze(1), body_ids=[bid],
+    )
+    return torch.zeros(env.num_envs, device=env.device)
 
 
 # ==============================================================================
