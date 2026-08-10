@@ -15,7 +15,7 @@ MICRODUCK_XML = "src/mjlab_microduck/robot/microduck/scene.xml"
 # MICRODUCK_XML = "src/mjlab_microduck/robot/microduck/scene_ramps.xml"
 # MICRODUCK_XML = "src/mjlab_microduck/robot/microduck/scene_floor_objects.xml"
 # MICRODUCK_XML = "src/mjlab_microduck/robot/microduck/scene_robot_walk.xml"
-MICRODUCK_ROLLERS_XML = "src/mjlab_microduck/robot/microduck/scene_roller.xml"
+MICRODUCK_ROLLERS_XML = "src/mjlab_microduck/robot/microduck/scene_rollers.xml"
 
 # Body pose command constants (must match training constants)
 BODY_CMD_MAX_Z = 0.03              # ±30 mm
@@ -52,7 +52,7 @@ class PolicyInference:
                  delay_min_lag=0, delay_max_lag=0,
                  standing_onnx_path=None, switch_threshold=0.05,
                  use_projected_gravity=False, ground_pick_onnx_path=None, ground_pick_period=4.0,
-                 sit_onnx_path=None, new_cmd_obs=False):
+                 sit_onnx_path=None, new_cmd_obs=False, slope_onnx_path=None):
         self.model = model
         self.data = data
         self.action_scale = action_scale
@@ -116,6 +116,15 @@ class PolicyInference:
             self.sit_session = ort.InferenceSession(sit_onnx_path)
             sit_input_shape = self.sit_session.get_inputs()[0].shape
             print(f"Sit policy input shape: {sit_input_shape}")
+
+        # Load slope policy (passive descent, runs with zero twist command)
+        self.slope_session = None
+        self.slope_mode = False
+        if slope_onnx_path:
+            print(f"\nLoading slope policy from: {slope_onnx_path}")
+            self.slope_session = ort.InferenceSession(slope_onnx_path)
+            sl_input_shape = self.slope_session.get_inputs()[0].shape
+            print(f"Slope policy input shape: {sl_input_shape}")
 
         # Validate at least one policy loaded
         if not self.walking_session and not self.standing_session:
@@ -256,6 +265,9 @@ class PolicyInference:
                 self.body_cmd[1] / BODY_CMD_MAX_ANGLE,
                 self.body_cmd[2] / BODY_CMD_MAX_ANGLE,
             ], dtype=np.float32)
+        elif self.current_policy == "slope":
+            # Passive descent: zero command (like standing coast)
+            self.command = np.zeros(3, dtype=np.float32)
         # ground_pick: command is set directly by update_ground_pick_phase
 
     def _update_policy_session(self):
@@ -266,6 +278,8 @@ class PolicyInference:
             return  # Don't switch during ground pick
         if self.sit_mode:
             return  # Don't switch while sitting
+        if self.slope_mode:
+            return  # Don't switch during slope mode
 
         magnitude = float(np.linalg.norm(self.vel_cmd))
         new_policy = "standing" if magnitude <= self.switch_threshold else "walking"
@@ -296,6 +310,28 @@ class PolicyInference:
             self._print_body_cmd()
         else:
             print("Body pose mode: OFF")
+
+    def toggle_slope_mode(self):
+        """Toggle slope policy mode on/off (passive descent, zero twist command)."""
+        if self.slope_session is None:
+            print("Slope unavailable: no --slope policy loaded")
+            return
+        self.slope_mode = not self.slope_mode
+        if self.slope_mode:
+            self.ort_session = self.slope_session
+            self.current_policy = "slope"
+            self.set_vel_cmd(0.0, 0.0, 0.0)  # passive descent: zero command
+            print("Slope mode: ON (passive descent)")
+        else:
+            self.vel_cmd = np.zeros(3, dtype=np.float32)
+            if self.walking_session:
+                self.current_policy = "walking"
+                self.ort_session = self.walking_session
+            else:
+                self.current_policy = "standing"
+                self.ort_session = self.standing_session
+            self._update_command()
+            print("Slope mode: OFF")
 
     def _print_body_cmd(self):
         if self.new_cmd_obs:
@@ -511,6 +547,7 @@ def main():
     parser.add_argument("--standing", "-s", type=str, default=None, help="Path to standing policy ONNX file")
     parser.add_argument("--ground-pick", type=str, default=None, help="Path to ground pick policy ONNX file (press G to activate)")
     parser.add_argument("--sit", type=str, default=None, help="Path to sitting policy ONNX file (press Y to sit, Y again to stand back up)")
+    parser.add_argument("--slope", type=str, default=None, help="Path to slope policy ONNX file (press Y to toggle)")
     parser.add_argument("--lin-vel-x", type=float, default=0.0, help="Initial linear velocity X command (m/s)")
     parser.add_argument("--lin-vel-y", type=float, default=0.0, help="Initial linear velocity Y command (m/s)")
     parser.add_argument("--ang-vel-z", type=float, default=0.0, help="Initial angular velocity Z command (rad/s)")
@@ -616,6 +653,7 @@ def main():
         ground_pick_period=args.ground_pick_period,
         sit_onnx_path=args.sit,
         new_cmd_obs=args.new_cmd_obs,
+        slope_onnx_path=args.slope,
     )
     policy.set_vel_cmd(args.lin_vel_x, args.lin_vel_y, args.ang_vel_z)
 
@@ -690,6 +728,8 @@ def main():
         print(f"Ground pick policy: loaded  (press G)")
     if policy.sit_session:
         print(f"Sit policy: loaded  (press Y to toggle)")
+    if policy.slope_session:
+        print(f"Slope policy: loaded  (press Y to toggle, passive descent)")
     print(f"Active policy: {policy.current_policy}")
     print("Close viewer window to exit")
     print()
@@ -812,7 +852,11 @@ def main():
             elif key == GLFW_KEY_G:
                 policy.trigger_ground_pick()
             elif key == GLFW_KEY_Y:
-                policy.toggle_sit()
+                # Y toggles whichever aux policy is loaded (--sit or --slope).
+                if policy.sit_session is not None:
+                    policy.toggle_sit()
+                else:
+                    policy.toggle_slope_mode()
             elif key == GLFW_KEY_H:
                 policy.toggle_head_mode()
             elif key == GLFW_KEY_B:
@@ -867,7 +911,7 @@ def main():
     print("  SPACE:            coast (zero all commands)")
     print("  T:                toggle policy inference on/off (paused = motors hold last target)")
     print("  G:                trigger ground pick (requires --ground-pick)")
-    print("  Y:                toggle sit / stand back up (requires --sit)")
+    print("  Y:                toggle sit (with --sit) or slope mode (with --slope)")
     print(f"  P:                random push (trunk vel = {PUSH_MAX:.1f} m/s in random direction)")
     print("  [ Body pose mode — press B to toggle ]")
     print(f"  UP/DOWN arrow:    Δz ±10mm  (max ±{BODY_CMD_MAX_Z*1000:.0f}mm)")

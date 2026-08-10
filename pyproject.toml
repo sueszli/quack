@@ -55,6 +55,11 @@ override-dependencies = [
     # Keep onnx on a version with prebuilt wheels (1.17.0 has no py3.13 wheel and
     # fails to build from source). Pulling in bam otherwise nudges it downward.
     "onnx>=1.20.1",
+    # bam depends on the PyPI stub `zmq==0.0.0`, whose prebuilt wheel is invalid
+    # (missing .dist-info) -> `uv sync` fails on a FRESH install (e.g. HF Jobs
+    # remote build), even though a warm local cache tolerated it. We only use
+    # bam.mjlab (no zmq/erob messaging), so drop zmq via an always-false marker.
+    "zmq ; python_version < '3.0'",
 ]
 
 [tool.uv.sources]

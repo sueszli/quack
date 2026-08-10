@@ -15,10 +15,13 @@ MICRODUCK_WALK_XML: Path = _ROBOT_DIR / "robot_walk.xml"
 MICRODUCK_ALLCOLLISIONS_XML: Path = _ROBOT_DIR / "robot_allcollisions.xml"
 # 70mm / 15g ball prop for the BallKick task.
 MICRODUCK_BALL_XML: Path = _ROBOT_DIR / "ball.xml"
+# Roller-skate model: 14 actuated joints + passive wheel hinges (passive_*wheel).
+MICRODUCK_ALLCOLLISIONS_ROLLERS_XML: Path = _ROBOT_DIR / "robot_allcollisions_rollers.xml"
 
 assert MICRODUCK_WALK_XML.exists(), f"XML not found: {MICRODUCK_WALK_XML}"
 assert MICRODUCK_ALLCOLLISIONS_XML.exists(), f"XML not found: {MICRODUCK_ALLCOLLISIONS_XML}"
 assert MICRODUCK_BALL_XML.exists(), f"XML not found: {MICRODUCK_BALL_XML}"
+assert MICRODUCK_ALLCOLLISIONS_ROLLERS_XML.exists(), f"XML not found: {MICRODUCK_ALLCOLLISIONS_ROLLERS_XML}"
 
 
 def get_walk_spec() -> mujoco.MjSpec:
@@ -34,7 +37,9 @@ def get_ground_pick_spec() -> mujoco.MjSpec:
 
 
 def get_walk_rollers_spec() -> mujoco.MjSpec:
-    return mujoco.MjSpec.from_file(str(MICRODUCK_ALLCOLLISIONS_XML))
+    # NOTE: was loading robot_allcollisions.xml (no wheels) — the roller env
+    # silently ran on the wheel-less standup model.
+    return mujoco.MjSpec.from_file(str(MICRODUCK_ALLCOLLISIONS_ROLLERS_XML))
 
 
 def get_ball_spec() -> mujoco.MjSpec:
@@ -147,21 +152,17 @@ MICRODUCK_BALL_CFG = EntityCfg(
     init_state=EntityCfg.InitialStateCfg(pos=(0.3, 0.0, 0.035)),
 )
 
-# Roller skate robot: passive wheel joints have no actuators in the XML.
-# Use a separate actuator config that explicitly excludes passive joints so
-# the action space stays 14-dimensional (same as the walk robot).
-roller_actuators = XmlActuatorCfg(
-    target_names_expr=(r"^(?!passive_).*",),
-    delay_min_lag=0,
-    delay_max_lag=3,
-)
-
+# Roller skate robot: the 4 passive wheel joints (passive_*wheel) have no XML
+# actuators; the BAM cfg's target regex already excludes them, so the action
+# space stays 14-dimensional. Uses the SAME canonical BAM actuator as every
+# other variant (was a plain XmlActuatorCfg PD — an actuator-physics mismatch
+# vs the rest of the family, and joint-friction DR was impossible).
 MICRODUCK_WALK_ROLLERS_ROBOT_CFG = EntityCfg(
     spec_fn=get_walk_rollers_spec,
     init_state=HOME_FRAME,
     collisions=(),  # roller wheel collision geoms have no explicit names; XML defaults apply
     articulation=EntityArticulationInfoCfg(
-        actuators=(roller_actuators,),
+        actuators=(actuators,),
         soft_joint_pos_limit_factor=0.9,
     ),
 )
