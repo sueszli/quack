@@ -108,8 +108,8 @@ ENABLE_BODY_CONTROL = True
 # is plenty of crouch below it but only ~1 cm of leg extension above it.
 # Angles capped at ±15°: velocity2 body-control run 1 showed ±20° trains
 # twitchy/overdriven tilting.
-BODY_CMD_MAX_Z_DOWN  = 0.025             # m, crouch below STAND_Z
-BODY_CMD_MAX_Z_UP    = 0.010             # m, extend above STAND_Z
+BODY_CMD_MAX_Z_DOWN  = 0.04             # m, crouch below STAND_Z
+BODY_CMD_MAX_Z_UP    = 0.030             # m, extend above STAND_Z
 BODY_CMD_MAX_ANGLE   = math.radians(15)  # rad, trunk pitch/roll
 BODY_CMD_ALIVE_XY    = 0.005             # m, permanent x/y noise range
 BODY_CMD_ALIVE_ANGLE = 0.05              # rad, stage-0 / permanent-yaw range

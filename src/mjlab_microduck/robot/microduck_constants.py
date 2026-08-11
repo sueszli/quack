@@ -3,7 +3,10 @@ from pathlib import Path
 
 import mujoco
 from mjlab.actuator import XmlActuatorCfg
-from mjlab_microduck.actuator import FrictionDRBamActuatorCfg
+from mjlab_microduck.actuator import (
+    BacklashEncoderBamActuatorCfg,
+    FrictionDRBamActuatorCfg,
+)
 from mjlab.entity import EntityArticulationInfoCfg, EntityCfg
 from mjlab.utils.spec_config import CollisionCfg
 
@@ -17,11 +20,18 @@ MICRODUCK_ALLCOLLISIONS_XML: Path = _ROBOT_DIR / "robot_allcollisions.xml"
 MICRODUCK_BALL_XML: Path = _ROBOT_DIR / "ball.xml"
 # Roller-skate model: 14 actuated joints + passive wheel hinges (passive_*wheel).
 MICRODUCK_ALLCOLLISIONS_ROLLERS_XML: Path = _ROBOT_DIR / "robot_allcollisions_rollers.xml"
+# Backlash models: every servo joint gets an unactuated passive_<joint>_backlash
+# hinge in series (±1° play, 2° total). Exported via
+# config_mjcf_{allcollisions,walk}_backlash.json (add_backlash.py post-processor).
+MICRODUCK_ALLCOLLISIONS_BACKLASH_XML: Path = _ROBOT_DIR / "robot_allcollisions_backlash.xml"
+MICRODUCK_WALK_BACKLASH_XML: Path = _ROBOT_DIR / "robot_walk_backlash.xml"
 
 assert MICRODUCK_WALK_XML.exists(), f"XML not found: {MICRODUCK_WALK_XML}"
 assert MICRODUCK_ALLCOLLISIONS_XML.exists(), f"XML not found: {MICRODUCK_ALLCOLLISIONS_XML}"
 assert MICRODUCK_BALL_XML.exists(), f"XML not found: {MICRODUCK_BALL_XML}"
 assert MICRODUCK_ALLCOLLISIONS_ROLLERS_XML.exists(), f"XML not found: {MICRODUCK_ALLCOLLISIONS_ROLLERS_XML}"
+assert MICRODUCK_ALLCOLLISIONS_BACKLASH_XML.exists(), f"XML not found: {MICRODUCK_ALLCOLLISIONS_BACKLASH_XML}"
+assert MICRODUCK_WALK_BACKLASH_XML.exists(), f"XML not found: {MICRODUCK_WALK_BACKLASH_XML}"
 
 
 def get_walk_spec() -> mujoco.MjSpec:
@@ -44,6 +54,14 @@ def get_walk_rollers_spec() -> mujoco.MjSpec:
 
 def get_ball_spec() -> mujoco.MjSpec:
     return mujoco.MjSpec.from_file(str(MICRODUCK_BALL_XML))
+
+
+def get_backlash_spec() -> mujoco.MjSpec:
+    return mujoco.MjSpec.from_file(str(MICRODUCK_ALLCOLLISIONS_BACKLASH_XML))
+
+
+def get_walk_backlash_spec() -> mujoco.MjSpec:
+    return mujoco.MjSpec.from_file(str(MICRODUCK_WALK_BACKLASH_XML))
 
 
 HOME_FRAME = EntityCfg.InitialStateCfg(
@@ -93,7 +111,7 @@ FULL_COLLISION = CollisionCfg(
 #   - vin_drop_gain_range: load-dependent voltage sag V_drop = gain * sum(|tau|)
 #   - vin_min: hard floor on the effective voltage after sag
 # kp_fw kept at 200 (microduck's preserved firmware stiffness; microban uses 125).
-actuators = FrictionDRBamActuatorCfg(
+_BAM_ACTUATOR_KWARGS = dict(
     motor_name="xl330",
     model="m6",
     target_names_expr=(r"^(?!passive_).*",),
@@ -106,6 +124,13 @@ actuators = FrictionDRBamActuatorCfg(
     delay_min_lag=3,
     delay_max_lag=6,
 )
+actuators = FrictionDRBamActuatorCfg(**_BAM_ACTUATOR_KWARGS)
+
+# Same BAM actuator, but the firmware position loop reads the encoder THROUGH
+# the passive_<joint>_backlash hinges (the real encoder is on the output side
+# of the gear play). Only for the backlash model; the target regex already
+# excludes the passive_* backlash joints from actuation.
+backlash_actuators = BacklashEncoderBamActuatorCfg(**_BAM_ACTUATOR_KWARGS)
 
 # -- BAM M4 actuator
 # actuators = DelayedActuatorCfg(
@@ -113,6 +138,17 @@ actuators = FrictionDRBamActuatorCfg(
     # delay_max_lag=3,
     # base_cfg=make_bam_m4_actuator_cfg(),
 # )
+
+# HOME frame for the backlash model. HOME_FRAME's unanchored patterns
+# (e.g. r".*left_hip_roll.*") would also match passive_left_hip_roll_backlash
+# and try to initialize it at -0.0873 rad — outside its ±1° range. Pattern
+# matching is first-match-wins in declaration order, so the anchored backlash
+# rule placed FIRST pins every backlash joint at 0 and the servo joints fall
+# through to the normal HOME values.
+BACKLASH_HOME_FRAME = EntityCfg.InitialStateCfg(
+    joint_pos={r".*_backlash$": 0.0, **HOME_FRAME.joint_pos},
+    joint_vel={".*": 0.0},
+)
 
 MICRODUCK_WALK_ROBOT_CFG = EntityCfg(
     spec_fn=get_walk_spec,
@@ -140,6 +176,33 @@ MICRODUCK_GROUND_PICK_ROBOT_CFG = EntityCfg(
     collisions=(FULL_COLLISION,),
     articulation=EntityArticulationInfoCfg(
         actuators=(actuators,),
+        soft_joint_pos_limit_factor=0.9,
+    ),
+)
+
+# Backlash robots: base model + ±1° serial backlash hinge per servo.
+# Encoder reads through the backlash (BacklashEncoderBamActuator feedback +
+# joint_pos/vel_rel_backlash observations — see tasks/backlash.py).
+# Allcollisions variant → VelStand/StandUp backlash tasks (mirrors
+# MICRODUCK_STANDUP_ROBOT_CFG); walk variant → Velocity/Velocity2 backlash
+# tasks (mirrors MICRODUCK_WALK_ROBOT_CFG, keeps backlash-vs-base comparisons
+# unconfounded by the collision model).
+MICRODUCK_BACKLASH_ROBOT_CFG = EntityCfg(
+    spec_fn=get_backlash_spec,
+    init_state=BACKLASH_HOME_FRAME,
+    collisions=(FULL_COLLISION,),
+    articulation=EntityArticulationInfoCfg(
+        actuators=(backlash_actuators,),
+        soft_joint_pos_limit_factor=0.9,
+    ),
+)
+
+MICRODUCK_WALK_BACKLASH_ROBOT_CFG = EntityCfg(
+    spec_fn=get_walk_backlash_spec,
+    init_state=BACKLASH_HOME_FRAME,
+    collisions=(FULL_COLLISION,),
+    articulation=EntityArticulationInfoCfg(
+        actuators=(backlash_actuators,),
         soft_joint_pos_limit_factor=0.9,
     ),
 )

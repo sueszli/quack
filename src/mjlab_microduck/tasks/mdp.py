@@ -122,6 +122,38 @@ _DEFAULT_ASSET_CFG = SceneEntityCfg("robot")
 _NECK_JOINT_PATTERNS = [r".*neck_pitch.*", r".*head_pitch.*", r".*head_yaw.*", r".*head_roll.*"]
 
 
+def _servo_joint_ids(env: "ManagerBasedRlEnv", asset: Entity) -> list:
+    """Entity-local indices of the servo (non-``passive_``) joints, cached.
+
+    All joint-index-based reward/event params in this module (``joint_indices``,
+    ``target_overrides``, qpos-column math) are written against the canonical
+    14-servo layout. On models with extra unactuated joints — backlash hinges,
+    roller wheels, the jaw linkage, all named ``passive_*`` — the entity joint
+    array is wider and interleaved, so raw indices would select the wrong
+    joints. Index through this list to recover the servo-only view; on plain
+    models it is the identity.
+    """
+    cache = env.__dict__.setdefault("_servo_joint_ids_cache", {})
+    key = id(asset)
+    ids = cache.get(key)
+    if ids is None:
+        ids, _ = asset.find_joints(r"^(?!passive_).*")
+        cache[key] = ids
+    return ids
+
+
+def _servo_joint_pos(env: "ManagerBasedRlEnv", asset: Entity) -> torch.Tensor:
+    return asset.data.joint_pos[:, _servo_joint_ids(env, asset)]
+
+
+def _servo_joint_vel(env: "ManagerBasedRlEnv", asset: Entity) -> torch.Tensor:
+    return asset.data.joint_vel[:, _servo_joint_ids(env, asset)]
+
+
+def _servo_default_joint_pos(env: "ManagerBasedRlEnv", asset: Entity) -> torch.Tensor:
+    return asset.data.default_joint_pos[:, _servo_joint_ids(env, asset)]
+
+
 def reset_with_forward_velocity(
     env: ManagerBasedRlEnv,
     env_ids: torch.Tensor,
@@ -808,11 +840,11 @@ def standing_composite_score(
     tilt_sq = 2.0 * (qx * qx + qy * qy)
     upright_score = torch.exp(-tilt_sq / (upright_std * upright_std))
 
-    target = asset.data.default_joint_pos.clone()
+    target = _servo_default_joint_pos(env, asset).clone()
     if target_overrides:
         for idx, val in target_overrides.items():
             target[:, idx] = val
-    joint_pos = asset.data.joint_pos[:, joint_indices]
+    joint_pos = _servo_joint_pos(env, asset)[:, joint_indices]
     target = target[:, joint_indices]
     pose_err_sq = ((joint_pos - target) ** 2).mean(dim=-1)
     pose_score = torch.exp(-pose_err_sq / (pose_std * pose_std))
@@ -852,11 +884,11 @@ def standing_success_bonus(
     upright = 1.0 - 2.0 * (qx * qx + qy * qy)
     upright_ok = upright >= upright_threshold
 
-    target = asset.data.default_joint_pos.clone()
+    target = _servo_default_joint_pos(env, asset).clone()
     if target_overrides:
         for idx, val in target_overrides.items():
             target[:, idx] = val
-    joint_pos = asset.data.joint_pos[:, joint_indices]
+    joint_pos = _servo_joint_pos(env, asset)[:, joint_indices]
     target = target[:, joint_indices]
     pose_err = (joint_pos - target).abs().max(dim=-1).values  # tightest joint
     pose_ok = pose_err <= pose_tol
@@ -2028,8 +2060,8 @@ def pose_target_match(
             to ``asset.data.default_joint_pos`` (the home/standing pose).
     """
     asset = env.scene[asset_cfg.name]
-    joint_pos = asset.data.joint_pos
-    target = asset.data.default_joint_pos.clone()
+    joint_pos = _servo_joint_pos(env, asset)
+    target = _servo_default_joint_pos(env, asset).clone()
     if target_overrides:
         for idx, val in target_overrides.items():
             target[:, idx] = val
@@ -2070,9 +2102,9 @@ def interpolated_pose_target_match(
             which the target moves from source to target.
     """
     asset = env.scene[asset_cfg.name]
-    joint_pos = asset.data.joint_pos
-    source = asset.data.default_joint_pos.clone()
-    target = asset.data.default_joint_pos.clone()
+    joint_pos = _servo_joint_pos(env, asset)
+    source = _servo_default_joint_pos(env, asset).clone()
+    target = _servo_default_joint_pos(env, asset).clone()
     if source_overrides:
         for idx, val in source_overrides.items():
             source[:, idx] = val
@@ -2109,9 +2141,9 @@ def interpolated_pose_l1_penalty(
     no gradient to discover the target direction.
     """
     asset = env.scene[asset_cfg.name]
-    joint_pos = asset.data.joint_pos
-    source = asset.data.default_joint_pos.clone()
-    target = asset.data.default_joint_pos.clone()
+    joint_pos = _servo_joint_pos(env, asset)
+    source = _servo_default_joint_pos(env, asset).clone()
+    target = _servo_default_joint_pos(env, asset).clone()
     if source_overrides:
         for idx, val in source_overrides.items():
             source[:, idx] = val
@@ -2227,7 +2259,7 @@ def _multistage_target_pose(
     Returns a (num_envs, num_joints) tensor of target joint angles.
     """
     asset = env.scene[asset_cfg.name]
-    default = asset.data.default_joint_pos
+    default = _servo_default_joint_pos(env, asset)
 
     def build_pose(overrides):
         pose = default.clone()
@@ -2293,7 +2325,7 @@ def multistage_pose_target_match(
     """
     asset = env.scene[asset_cfg.name]
     target = _multistage_target_pose(env, asset_cfg, waypoints)
-    joint_pos = asset.data.joint_pos
+    joint_pos = _servo_joint_pos(env, asset)
     if joint_indices is not None:
         joint_pos = joint_pos[:, joint_indices]
         target = target[:, joint_indices]
@@ -2309,7 +2341,7 @@ def multistage_pose_l1_penalty(
     """L1 companion to multistage_pose_target_match."""
     asset = env.scene[asset_cfg.name]
     target = _multistage_target_pose(env, asset_cfg, waypoints)
-    joint_pos = asset.data.joint_pos
+    joint_pos = _servo_joint_pos(env, asset)
     if joint_indices is not None:
         joint_pos = joint_pos[:, joint_indices]
         target = target[:, joint_indices]
@@ -2359,11 +2391,11 @@ def pose_target_match(
     from t=0 to the end of the episode.
     """
     asset = env.scene[asset_cfg.name]
-    target = asset.data.default_joint_pos.clone()
+    target = _servo_default_joint_pos(env, asset).clone()
     if target_overrides:
         for idx, val in target_overrides.items():
             target[:, idx] = val
-    joint_pos = asset.data.joint_pos
+    joint_pos = _servo_joint_pos(env, asset)
     if joint_indices is not None:
         joint_pos = joint_pos[:, joint_indices]
         target = target[:, joint_indices]
@@ -2378,11 +2410,11 @@ def pose_l1_penalty(
 ) -> torch.Tensor:
     """L1 companion to ``pose_target_match`` (constant gradient toward target)."""
     asset = env.scene[asset_cfg.name]
-    target = asset.data.default_joint_pos.clone()
+    target = _servo_default_joint_pos(env, asset).clone()
     if target_overrides:
         for idx, val in target_overrides.items():
             target[:, idx] = val
-    joint_pos = asset.data.joint_pos
+    joint_pos = _servo_joint_pos(env, asset)
     if joint_indices is not None:
         joint_pos = joint_pos[:, joint_indices]
         target = target[:, joint_indices]
@@ -2836,8 +2868,8 @@ def phase_pose_match(
         phase: "approach" or "return".
     """
     asset = env.scene[asset_cfg.name]
-    joint_pos = asset.data.joint_pos
-    target = asset.data.default_joint_pos.clone()
+    joint_pos = _servo_joint_pos(env, asset)
+    target = _servo_default_joint_pos(env, asset).clone()
     if target_overrides:
         for idx, val in target_overrides.items():
             target[:, idx] = val
@@ -2872,8 +2904,8 @@ def ground_pick_return_pose(
             to leg joints vs neck/head joints (call this reward twice).
     """
     asset = env.scene[asset_cfg.name]
-    joint_pos  = asset.data.joint_pos        # (num_envs, n_joints)
-    default_pos = asset.data.default_joint_pos
+    joint_pos  = _servo_joint_pos(env, asset)        # (num_envs, n_servo_joints)
+    default_pos = _servo_default_joint_pos(env, asset)
 
     if joint_indices is not None:
         joint_pos   = joint_pos[:, joint_indices]
@@ -2983,8 +3015,8 @@ def ground_pick_return_pose_phased(
 ) -> torch.Tensor:
     """ground_pick_return_pose gaté par la up-gate segmentée (remontée+repos)."""
     asset = env.scene[asset_cfg.name]
-    joint_pos = asset.data.joint_pos
-    default_pos = asset.data.default_joint_pos
+    joint_pos = _servo_joint_pos(env, asset)
+    default_pos = _servo_default_joint_pos(env, asset)
     if joint_indices is not None:
         joint_pos = joint_pos[:, joint_indices]
         default_pos = default_pos[:, joint_indices]
@@ -3025,7 +3057,7 @@ def neck_vel_descent_penalty(
     relever du cou. Retourne un coût positif ; à utiliser avec un poids négatif.
     """
     asset = env.scene[asset_cfg.name]
-    vel = asset.data.joint_vel
+    vel = _servo_joint_vel(env, asset)
     if joint_indices is not None:
         vel = vel[:, joint_indices]
     cost = (vel ** 2).mean(dim=-1)
@@ -4238,12 +4270,17 @@ def set_random_ground_state(
     env.sim.data.qvel[env_ids, :6]  = 0.0
 
     # Sitting-bucket joint overrides (e.g. knee/ankle bent to keyframe).
+    # Override keys are SERVO indices (14-joint layout); translate to entity
+    # joint indices so models with interleaved passive_* joints (backlash)
+    # write the intended joints. qpos column = 7 + entity joint index
+    # (robot free joint first, all hinges 1-dof).
+    asset: Entity = env.scene[asset_cfg.name]
+    servo_ids = _servo_joint_ids(env, asset)
     if sitting_joint_overrides:
         sit_env_ids = env_ids[is_sit]
         if len(sit_env_ids) > 0:
             for jnt_idx, angle in sitting_joint_overrides.items():
-                # qpos layout: [x, y, z, qw, qx, qy, qz, joint_0, joint_1, ...]
-                env.sim.data.qpos[sit_env_ids, 7 + jnt_idx] = angle
+                env.sim.data.qpos[sit_env_ids, 7 + servo_ids[jnt_idx]] = angle
 
     # Joint noise for sitting envs: Gaussian noise on every actuated joint
     # so the policy sees a distribution of plausible "sit" starts rather than
@@ -4253,10 +4290,12 @@ def set_random_ground_state(
     if sitting_joint_noise_std > 0.0:
         sit_env_ids = env_ids[is_sit]
         if len(sit_env_ids) > 0:
+            # Servo joints only: passive_* joints (backlash hinges) have tiny
+            # ranges and must stay at 0 on reset.
             n_sit = len(sit_env_ids)
-            n_joints = env.sim.data.qpos.shape[1] - 7
-            noise = torch.randn(n_sit, n_joints, device=env.device) * sitting_joint_noise_std
-            env.sim.data.qpos[sit_env_ids, 7:] += noise
+            cols = torch.tensor([7 + j for j in servo_ids], device=env.device, dtype=torch.long)
+            noise = torch.randn(n_sit, len(cols), device=env.device) * sitting_joint_noise_std
+            env.sim.data.qpos[sit_env_ids.unsqueeze(1).long(), cols.unsqueeze(0)] += noise
 
 
 # Deep-crouch anchor pose (velstand run-5): the "stuck" mid-recovery basin —
@@ -4303,13 +4342,17 @@ def set_random_crouch_state(
 
     lam = torch.rand(num, device=env.device) * (depth_max - depth_min) + depth_min
 
-    # Joints: lerp HOME → anchor on the leg pitch chain, uniform noise on all.
+    # Joints: lerp HOME → anchor on the leg pitch chain, uniform noise on the
+    # servo joints only (passive_* backlash hinges have ±1° ranges — noise
+    # there would spawn them pinned outside their limits).
     joints = asset.data.default_joint_pos[env_ids].clone()
     for name, anchor in _CROUCH_ANCHOR_BY_NAME.items():
         ids, _ = asset.find_joints(f"^{name}$")
         j = ids[0]
         joints[:, j] = joints[:, j] + lam * (anchor - joints[:, j])
-    joints += (torch.rand_like(joints) * 2 - 1) * joint_noise
+    noise_mask = torch.zeros(joints.shape[1], device=joints.device)
+    noise_mask[_servo_joint_ids(env, asset)] = 1.0
+    joints += (torch.rand_like(joints) * 2 - 1) * joint_noise * noise_mask
 
     # Base orientation: forward pitch scaled with depth (the stuck basin is a
     # forward crouch from both fall directions), random yaw, small roll noise.
@@ -5910,3 +5953,91 @@ def leg_antisymmetry(
     scissor = -torch.abs(q[:, lids] - q[:, rids]).mean(dim=-1)
     gate = _spin_gate(env, command_name, rate_max, accel_end, hold_end, brake_end)
     return gate * scissor
+
+
+# =============================================================================
+# Backlash model — encoder-through-backlash joint observations
+# =============================================================================
+# The backlash model (robot_allcollisions_backlash.xml) puts an unactuated
+# ``passive_<joint>_backlash`` hinge in series with each servo joint. The link
+# angle is qpos[servo] + qpos[backlash], and the real encoder sits on the
+# OUTPUT side of the play — it reads the sum. These obs replace joint_pos_rel /
+# joint_vel_rel in backlash tasks (see tasks/backlash.py) so the policy sees
+# exactly what the runtime will feed it. The asset_cfg regex is expected to
+# select only the servo joints (the usual ``^(?!passive_).*``).
+
+
+def _backlash_encoder_ids(
+    env: "ManagerBasedRlEnv",
+    asset: Entity,
+    asset_cfg: SceneEntityCfg,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """(main_ids, backlash_ids, mask) — cached per (entity, joint selection).
+
+    mask is 1.0 where a matching passive_<name>_backlash joint exists, so the
+    same obs functions run unchanged on models without backlash joints.
+    """
+    key = (asset_cfg.name, str(asset_cfg.joint_ids))
+    cache = env.__dict__.setdefault("_backlash_encoder_cache", {})
+    hit = cache.get(key)
+    if hit is not None:
+        return hit
+
+    names = asset.joint_names
+    jnt_ids = asset_cfg.joint_ids
+    if isinstance(jnt_ids, slice):
+        main_ids = list(range(len(names)))[jnt_ids]
+    else:
+        main_ids = [int(i) for i in jnt_ids]
+    name_to_id = {n: i for i, n in enumerate(names)}
+    bl_ids, mask = [], []
+    for i in main_ids:
+        bl = name_to_id.get(f"passive_{names[i]}_backlash")
+        bl_ids.append(0 if bl is None else bl)
+        mask.append(0.0 if bl is None else 1.0)
+
+    device = asset.data.joint_pos.device
+    out = (
+        torch.tensor(main_ids, dtype=torch.long, device=device),
+        torch.tensor(bl_ids, dtype=torch.long, device=device),
+        torch.tensor(mask, dtype=torch.float32, device=device),
+    )
+    cache[key] = out
+    return out
+
+
+def joint_pos_rel_backlash(
+    env: "ManagerBasedRlEnv",
+    biased: bool = False,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """joint_pos_rel where the encoder reads through the backlash hinge.
+
+    Returns (qpos[servo] + qpos[backlash]) - default[servo]. With biased=True
+    the per-env encoder-calibration bias is applied to the servo reading (one
+    encoder per servo → one bias per joint; the backlash summand stays raw).
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    main_ids, bl_ids, mask = _backlash_encoder_ids(env, asset, asset_cfg)
+    joint_pos = asset.data.joint_pos_biased if biased else asset.data.joint_pos
+    pos = joint_pos[:, main_ids] + asset.data.joint_pos[:, bl_ids] * mask
+    default_joint_pos = asset.data.default_joint_pos
+    assert default_joint_pos is not None
+    return pos - default_joint_pos[:, main_ids]
+
+
+def joint_vel_rel_backlash(
+    env: "ManagerBasedRlEnv",
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """joint_vel_rel where the encoder reads through the backlash hinge.
+
+    The firmware derives present_velocity from encoder positions, so it also
+    sees the backlash motion: qvel[servo] + qvel[backlash].
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    main_ids, bl_ids, mask = _backlash_encoder_ids(env, asset, asset_cfg)
+    vel = asset.data.joint_vel[:, main_ids] + asset.data.joint_vel[:, bl_ids] * mask
+    default_joint_vel = asset.data.default_joint_vel
+    assert default_joint_vel is not None
+    return vel - default_joint_vel[:, main_ids]
