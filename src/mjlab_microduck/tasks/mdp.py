@@ -6042,3 +6042,383 @@ def joint_vel_rel_backlash(
     default_joint_vel = asset.data.default_joint_vel
     assert default_joint_vel is not None
     return vel - default_joint_vel[:, main_ids]
+
+
+# ==============================================================================
+# Roulade (forward roll) task — episodic dynamic maneuver
+# ==============================================================================
+#
+# Third attempt at the roulade. What the first two taught us:
+#   • origin/roulade (phase-clock + time-windowed reward stages): plateaued
+#     face-down at ~90° — time windows are keyframes-in-time, campable local
+#     optima (the sit/standup lesson exactly). Also integrated -ω_y as forward
+#     progress, which by this codebase's own convention (face-down = +90° pitch
+#     = rotation about +y, see set_random_ground_state) is the WRONG SIGN — the
+#     progress reward paid for backward rotation.
+#   • origin/roulade later commits (keyframe imitation): same waypoint-camping
+#     family, dropped per feedback-episodic-pose-landing.
+#
+# This design uses the proven episodic recipe instead:
+#   • ONE dense progress signal: paid INCREMENTS of the max-so-far cumulative
+#     forward rotation (potential-based — a camping policy earns zero/step, a
+#     full roll earns exactly 2π worth no matter the path or speed).
+#   • Landing rewards (composite product, upright, height, rise velocity) are
+#     gated on ROLL COMPLETION (max rotation ≥ threshold) — state-based gates,
+#     not clock-based. "Do nothing" earns nothing; standing at spawn earns
+#     nothing; only rolling opens the standing-attractor annuity.
+#   • Reverse curriculum via mid-roll spawns (the face-up partial-roll trick
+#     that fixed back-recovery): a slice of episodes starts pitched 50°–185°
+#     into the roll, tucked, optionally with forward angular momentum, and the
+#     rotation accumulator is initialized to the spawn angle so the progress
+#     accounting stays consistent.
+#
+# Per-env state on the env object (created lazily, reset by
+# reset_roulade_state):
+#   env._roulade_accum — signed integral of forward pitch rate (rad)
+#   env._roulade_max   — max(accum) so far this episode (progress frontier)
+#   env._roulade_paid  — frontier already paid out by roulade_progress
+
+# Forward-roll sign: face-down is +90° pitch = rotation about body +y
+# (set_random_ground_state convention), so forward roll = POSITIVE body-frame
+# ω_y. Verified empirically (see claude_experiments smoke test): a positive
+# qvel about +y pitches the robot nose-down/forward and drives accum upward.
+_ROULADE_FWD_SIGN = 1.0
+
+
+def _roulade_state(env: ManagerBasedRlEnv) -> tuple:
+    if not hasattr(env, "_roulade_accum"):
+        z = torch.zeros(env.num_envs, device=env.device)
+        env._roulade_accum = z.clone()
+        env._roulade_max = z.clone()
+        env._roulade_paid = z.clone()
+        env._roulade_last_update_step = -1
+    return env._roulade_accum, env._roulade_max, env._roulade_paid
+
+
+def _update_roulade_accum(env: ManagerBasedRlEnv, asset: Entity) -> None:
+    """Integrate forward pitch rate into the per-env rotation accumulator.
+
+    Step-guarded so that multiple reward terms reading the accumulator in the
+    same control step don't double-integrate. The frontier (max) only moves
+    forward; backward rocking (wind-up) neither pays nor un-pays.
+    """
+    _roulade_state(env)
+    step = int(env.common_step_counter)
+    if step != env._roulade_last_update_step:
+        omega_fwd = _ROULADE_FWD_SIGN * asset.data.root_link_ang_vel_b[:, 1]
+        env._roulade_accum = env._roulade_accum + torch.nan_to_num(omega_fwd, nan=0.0) * env.step_dt
+        env._roulade_max = torch.maximum(env._roulade_max, env._roulade_accum)
+        env._roulade_last_update_step = step
+
+
+def _roulade_completion_gate(
+    env: ManagerBasedRlEnv,
+    gate_lo: float,
+    gate_hi: float,
+) -> torch.Tensor:
+    """Smoothstep on the progress frontier: 0 below gate_lo rad, 1 above gate_hi.
+
+    State-based replacement for the old phase-clock landing window — it can
+    only be opened by actually rotating, so pre-roll standing collects nothing.
+    """
+    _, max_accum, _ = _roulade_state(env)
+    t = torch.clamp((max_accum - gate_lo) / max(gate_hi - gate_lo, 1e-6), 0.0, 1.0)
+    return t * t * (3.0 - 2.0 * t)
+
+
+def reset_roulade_state(
+    env: ManagerBasedRlEnv,
+    env_ids: torch.Tensor,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    standing_prob: float = 0.5,
+    midroll_prob: float = 0.5,
+    standing_z_min: float = 0.11,
+    standing_z_max: float = 0.12,
+    standing_tilt_max: float = 0.0,
+    forward_vel_range: tuple = (0.0, 0.0),
+    midroll_pitch_min: float = math.radians(50.0),
+    midroll_pitch_max: float = math.radians(185.0),
+    midroll_z_min: float = 0.05,
+    midroll_z_max: float = 0.10,
+    midroll_omega_range: tuple = (0.0, 0.0),
+    tuck_overrides: Optional[dict] = None,
+    tuck_factor_range: tuple = (0.3, 1.0),
+    joint_noise_std: float = 0.0,
+):
+    """Reset to a standing start or a mid-roll state (reverse curriculum).
+
+    Standing bucket: upright (±standing_tilt_max pitch/roll noise), random yaw,
+    HOME joints (left from reset_robot_joints), z in [standing_z_min, _max].
+    ``forward_vel_range`` is the élan hook: a per-env forward base velocity
+    (body x, mapped to world through the spawn yaw) sampled uniformly — 0 for
+    a standstill roll, widen it later to train rolls out of a walk.
+
+    Mid-roll bucket: pitched ``midroll_pitch_min..max`` into the roll (90° =
+    on the head, 180° = on the back), random yaw, legs lerped HOME→tuck by a
+    per-env factor in ``tuck_factor_range``, z in [midroll_z_min, _max],
+    optional forward angular momentum from ``midroll_omega_range``. The
+    rotation accumulator is initialized to the spawn pitch so progress
+    accounting (and the completion gates) stay consistent: a 170° spawn only
+    gets paid for the remaining ~190°.
+    """
+    if env_ids is None or len(env_ids) == 0:
+        return
+    env_ids = env_ids.to(env.device, dtype=torch.long)
+    num = len(env_ids)
+    asset: Entity = env.scene[asset_cfg.name]
+    accum, max_accum, paid = _roulade_state(env)
+
+    total = standing_prob + midroll_prob
+    is_mid = torch.rand(num, device=env.device) < (midroll_prob / max(total, 1e-6))
+
+    yaw = torch.rand(num, device=env.device) * 2 * np.pi - np.pi
+    cy = torch.cos(yaw * 0.5)
+    sy = torch.sin(yaw * 0.5)
+
+    # Pitch per bucket: small noise for standing, mid-roll angle otherwise.
+    pitch = (torch.rand(num, device=env.device) * 2 - 1) * standing_tilt_max
+    mid_pitch = (
+        torch.rand(num, device=env.device) * (midroll_pitch_max - midroll_pitch_min)
+        + midroll_pitch_min
+    )
+    pitch = torch.where(is_mid, mid_pitch, pitch)
+    roll = (torch.rand(num, device=env.device) * 2 - 1) * max(standing_tilt_max, math.radians(5.0))
+
+    cp = torch.cos(pitch * 0.5); sp = torch.sin(pitch * 0.5)
+    cr = torch.cos(roll * 0.5); sr = torch.sin(roll * 0.5)
+    # ZYX intrinsic Euler → quaternion (yaw * pitch * roll), as in
+    # set_random_ground_state.
+    qw = cr * cp * cy + sr * sp * sy
+    qx = sr * cp * cy - cr * sp * sy
+    qy = cr * sp * cy + sr * cp * sy
+    qz = cr * cp * sy - sr * sp * cy
+    quat = torch.stack([qw, qx, qy, qz], dim=1)
+
+    z_stand = torch.rand(num, device=env.device) * (standing_z_max - standing_z_min) + standing_z_min
+    z_mid = torch.rand(num, device=env.device) * (midroll_z_max - midroll_z_min) + midroll_z_min
+    new_z = torch.where(is_mid, z_mid, z_stand)
+
+    env.sim.data.qpos[env_ids, 2] = new_z
+    env.sim.data.qpos[env_ids, 3:7] = quat
+    env.sim.data.qvel[env_ids, :6] = 0.0
+
+    servo_ids = _servo_joint_ids(env, asset)
+
+    # Mid-roll joints: lerp HOME → tuck on the overridden joints, noise on all
+    # servo joints (passive_* backlash hinges must stay at 0).
+    mid_env_ids = env_ids[is_mid]
+    if len(mid_env_ids) > 0 and tuck_overrides:
+        u = (
+            torch.rand(len(mid_env_ids), device=env.device)
+            * (tuck_factor_range[1] - tuck_factor_range[0])
+            + tuck_factor_range[0]
+        )
+        for jnt_idx, angle in tuck_overrides.items():
+            col = 7 + servo_ids[jnt_idx]
+            home = env.sim.data.qpos[mid_env_ids, col]
+            env.sim.data.qpos[mid_env_ids, col] = home + u * (angle - home)
+    if len(mid_env_ids) > 0 and joint_noise_std > 0.0:
+        cols = torch.tensor([7 + j for j in servo_ids], device=env.device, dtype=torch.long)
+        noise = torch.randn(len(mid_env_ids), len(cols), device=env.device) * joint_noise_std
+        env.sim.data.qpos[mid_env_ids.unsqueeze(1), cols.unsqueeze(0)] += noise
+
+    # Mid-roll forward angular momentum: rotation about body +y. MuJoCo free
+    # joint qvel[3:6] is the angular velocity in the BODY frame, so [0, ω, 0]
+    # is the forward-roll axis regardless of spawn yaw (verified in the smoke
+    # test — a yawed spawn still rolls straight ahead in its own frame).
+    if len(mid_env_ids) > 0 and midroll_omega_range[1] > 0.0:
+        omega = (
+            torch.rand(len(mid_env_ids), device=env.device)
+            * (midroll_omega_range[1] - midroll_omega_range[0])
+            + midroll_omega_range[0]
+        )
+        env.sim.data.qvel[mid_env_ids, 4] = _ROULADE_FWD_SIGN * omega
+
+    # Élan hook: forward base velocity for STANDING spawns, body x → world xy
+    # through the spawn yaw. (0, 0) = standstill start, disabled.
+    stand_env_ids = env_ids[~is_mid]
+    if len(stand_env_ids) > 0 and forward_vel_range[1] > 0.0:
+        vx = (
+            torch.rand(len(stand_env_ids), device=env.device)
+            * (forward_vel_range[1] - forward_vel_range[0])
+            + forward_vel_range[0]
+        )
+        yaw_s = yaw[~is_mid]
+        env.sim.data.qvel[stand_env_ids, 0] = vx * torch.cos(yaw_s)
+        env.sim.data.qvel[stand_env_ids, 1] = vx * torch.sin(yaw_s)
+
+    # Progress accounting: standing starts at 0, mid-roll at the spawn pitch.
+    spawn_angle = torch.where(is_mid, mid_pitch, torch.zeros_like(mid_pitch))
+    accum[env_ids] = spawn_angle
+    max_accum[env_ids] = spawn_angle
+    paid[env_ids] = spawn_angle
+
+
+def roulade_progress(
+    env: ManagerBasedRlEnv,
+    target_angle: float = 2 * math.pi,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """Pay increments of the progress frontier, up to one full roll.
+
+    reward = Δ(min(max_accum, target)) / (step_dt · target) — i.e. normalized
+    forward rotation RATE while at the frontier, zero otherwise. Total payout
+    per episode is exactly (target − spawn_angle)/target · weight · step_dt⁻¹…
+    integrated: a full roll pays the same total no matter how fast or slow, so
+    there is nothing to farm by camping face-down (0/step), rocking below the
+    frontier (0/step), or spinning past 2π (clamped).
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    _update_roulade_accum(env, asset)
+    _, max_accum, paid = _roulade_state(env)
+    new_paid = torch.clamp(max_accum, max=target_angle)
+    delta = torch.clamp(new_paid - torch.clamp(paid, max=target_angle), min=0.0)
+    env._roulade_paid = torch.maximum(paid, new_paid)
+    return delta / (env.step_dt * target_angle)
+
+
+def roulade_head_pivot(
+    env: ManagerBasedRlEnv,
+    sensor_name: str = "head_ground_contact",
+    angle_lo: float = math.radians(30.0),
+    angle_hi: float = math.radians(240.0),
+    rate_norm: float = 2.0,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """Reward head-ground contact while rotating forward mid-roll.
+
+    contact × window(accum ∈ [angle_lo, angle_hi]) × clamp(ω_fwd/rate_norm, 0, 1).
+    The rate factor is the anti-camping guard: a face-planted robot resting its
+    head on the floor has ω_fwd ≈ 0 and earns nothing — the term only pays for
+    pivoting OVER the head, which is the physical mechanism we want (flat head
+    top as the rolling surface).
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    _update_roulade_accum(env, asset)
+    accum, _, _ = _roulade_state(env)
+
+    if sensor_name not in env.scene.sensors:
+        return torch.zeros(env.num_envs, device=env.device)
+    found = env.scene.sensors[sensor_name].data.found
+    contact = (found.view(found.shape[0], -1) > 0).any(dim=-1).float()
+
+    in_window = ((accum > angle_lo) & (accum < angle_hi)).float()
+    omega_fwd = _ROULADE_FWD_SIGN * asset.data.root_link_ang_vel_b[:, 1]
+    rate = torch.clamp(torch.nan_to_num(omega_fwd, nan=0.0) / rate_norm, 0.0, 1.0)
+    return contact * in_window * rate
+
+
+def roulade_landing_composite(
+    env: ManagerBasedRlEnv,
+    target_height: float,
+    height_std: float,
+    upright_std: float,
+    pose_std: float,
+    joint_indices: list,
+    gate_lo: float = math.radians(260.0),
+    gate_hi: float = math.radians(330.0),
+    target_overrides: Optional[dict] = None,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """standing_composite_score × completion gate.
+
+    The big annuity: once the roll is (nearly) complete, every step spent
+    standing at HOME pose pays — finishing on the feet and staying there
+    dominates every partial outcome. Zero before gate_lo of rotation, so the
+    standing spawn cannot farm it by doing nothing.
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    _update_roulade_accum(env, asset)
+    score = standing_composite_score(
+        env,
+        target_height=target_height,
+        height_std=height_std,
+        upright_std=upright_std,
+        pose_std=pose_std,
+        joint_indices=joint_indices,
+        target_overrides=target_overrides,
+        asset_cfg=asset_cfg,
+    )
+    return score * _roulade_completion_gate(env, gate_lo, gate_hi)
+
+
+def roulade_upright_after_roll(
+    env: ManagerBasedRlEnv,
+    gate_lo: float = math.radians(260.0),
+    gate_hi: float = math.radians(330.0),
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """Linear cos(tilt) × completion gate — bootstrap pull toward vertical.
+
+    Gradient from ANY orientation (the composite is near-zero far from the
+    goal), but only after the roll: before gate_lo it is exactly zero, so it
+    cannot oppose the flip the way the old always-on upright term did.
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    _update_roulade_accum(env, asset)
+    quat = asset.data.root_link_quat_w
+    upright = 1.0 - 2.0 * (quat[:, 1].pow(2) + quat[:, 2].pow(2))
+    return torch.clamp(upright, min=0.0) * _roulade_completion_gate(env, gate_lo, gate_hi)
+
+
+def roulade_height_after_roll(
+    env: ManagerBasedRlEnv,
+    target_height: float,
+    std: float = 0.04,
+    gate_lo: float = math.radians(260.0),
+    gate_hi: float = math.radians(330.0),
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """Broad height Gaussian × completion gate — pull up to standing height."""
+    asset: Entity = env.scene[asset_cfg.name]
+    _update_roulade_accum(env, asset)
+    z = torch.nan_to_num(
+        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
+    )
+    g = torch.exp(-((z - target_height) / std) ** 2)
+    return g * _roulade_completion_gate(env, gate_lo, gate_hi)
+
+
+def roulade_rise_velocity(
+    env: ManagerBasedRlEnv,
+    max_height: float = 0.125,
+    gate_lo: float = math.radians(180.0),
+    gate_hi: float = math.radians(260.0),
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """com_upward_velocity × late-roll gate — bootstrap the exit rise.
+
+    The second half of a roulade (supine → sitting-up → standing) is the
+    face-up recovery problem, and the standup env proved end-state rewards
+    alone have zero gradient at zero motion there: pay for rising vz directly.
+    Gated to open from ~180° (on the back) so pre-roll bobbing earns nothing,
+    and gated off above max_height so it can't be farmed by hopping.
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    _update_roulade_accum(env, asset)
+    z = torch.nan_to_num(
+        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
+    )
+    vz = torch.nan_to_num(asset.data.root_link_lin_vel_w[:, 2], nan=0.0)
+    reward = torch.clamp(vz, min=0.0) * (z < max_height).float()
+    return reward * _roulade_completion_gate(env, gate_lo, gate_hi)
+
+
+def roulade_sagittal_penalty(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """Rotation out of the sagittal plane: body-frame ω_x² + ω_z² (positive;
+    use a negative weight). ω_y is the roll axis and stays free."""
+    asset: Entity = env.scene[asset_cfg.name]
+    omega_b = asset.data.root_link_ang_vel_b
+    return torch.nan_to_num(omega_b[:, 0].pow(2) + omega_b[:, 2].pow(2), nan=0.0)
+
+
+def roulade_lateral_velocity_penalty(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """Body-frame lateral (y) linear velocity² — keeps the roll straight."""
+    asset: Entity = env.scene[asset_cfg.name]
+    return torch.nan_to_num(asset.data.root_link_lin_vel_b[:, 1].pow(2), nan=0.0)

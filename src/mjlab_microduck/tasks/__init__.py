@@ -84,6 +84,10 @@ from .microduck_spin_env_cfg import (
     make_microduck_spin_env_cfg,
     MicroduckSpinRlCfg,
 )
+from .microduck_roulade_env_cfg import (
+    make_microduck_roulade_env_cfg,
+    MicroduckRouladeRlCfg,
+)
 from .backlash import make_backlash_variant
 
 # Standard velocity task
@@ -294,6 +298,16 @@ register_mjlab_task(
     runner_cls=MicroduckOnPolicyRunner,
 )
 print("✓ Spin task registered: Mjlab-Spin-Flat-MicroDuck")
+
+# Roulade — forward roll over the flat head top, land back on the feet.
+register_mjlab_task(
+    task_id="Mjlab-Roulade-Flat-MicroDuck",
+    env_cfg=make_microduck_roulade_env_cfg(),
+    play_env_cfg=make_microduck_roulade_env_cfg(play=True),
+    rl_cfg=MicroduckRouladeRlCfg,
+    runner_cls=MicroduckOnPolicyRunner,
+)
+print("✓ Roulade task registered: Mjlab-Roulade-Flat-MicroDuck")
 
 # Backlash variants — ±1° serial gear play per servo + encoder-through-backlash
 # actuator feedback and joint obs (see tasks/backlash.py). Each family keeps its
