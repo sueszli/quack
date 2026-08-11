@@ -26,6 +26,8 @@ Everything else (rewards, DR events, curricula) carries over untouched — the
 already excludes them.
 """
 
+from copy import deepcopy
+
 from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 
@@ -68,5 +70,23 @@ def make_backlash_variant(
         dof_limits.params["asset_cfg"] = SceneEntityCfg(
             "robot", joint_names=_SERVO_JOINTS_ONLY
         )
+
+    # The pose (variable_posture) reward resolves its std dicts against the
+    # selected joint names and ERRORS on ambiguous matches — on the backlash
+    # model "passive_left_hip_yaw_backlash" matches both ".*hip_yaw.*" and the
+    # roller envs' ".*passive_.*" std entry. Prepend a backlash exclusion to
+    # the selection; existing lookaheads (velocity's passive/neck/head
+    # exclusion) compose fine, and envs that keep wheels selected still get
+    # them.
+    pose = cfg.rewards.get("pose")
+    if pose is not None and "asset_cfg" in pose.params:
+        # Deepcopy first — base templates share SceneEntityCfg objects across
+        # make() calls; mutating in place would leak into the base tasks.
+        ac = deepcopy(pose.params["asset_cfg"])
+        ac.joint_names = tuple(
+            p if "_backlash" in p else r"^(?!passive_.*_backlash)" + p.lstrip("^")
+            for p in ac.joint_names
+        )
+        pose.params["asset_cfg"] = ac
 
     return cfg

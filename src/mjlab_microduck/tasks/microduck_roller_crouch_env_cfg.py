@@ -260,7 +260,7 @@ def make_microduck_roller_crouch_env_cfg(play: bool = False) -> ManagerBasedRlEn
             func=dr.dof_frictionloss,
             mode="reset",
             params={
-                "asset_cfg": SceneEntityCfg("robot", joint_names=(r"^passive_.*",)),
+                "asset_cfg": SceneEntityCfg("robot", joint_names=(r"^passive_.*wheel",)),
                 "operation": "abs",
                 "ranges": (0.000, 0.000),
             },
@@ -365,7 +365,7 @@ def make_microduck_roller_crouch_env_cfg(play: bool = False) -> ManagerBasedRlEn
     else:
         cfg.events.pop("encoder_bias", None)
 
-    wheel_cfg = SceneEntityCfg("robot", joint_names=(r"^passive_.*",))
+    wheel_cfg = SceneEntityCfg("robot", joint_names=(r"^passive_.*wheel",))
     cfg.observations["critic"].terms["wheel_vel"] = ObservationTermCfg(
         func=mdp.joint_vel_rel, scale=1.0, params={"asset_cfg": wheel_cfg},
     )

@@ -389,7 +389,7 @@ def make_microduck_velocity_rollers_env_cfg(
             func=dr.dof_frictionloss,
             mode="reset",
             params={
-                "asset_cfg": SceneEntityCfg("robot", joint_names=(r"^passive_.*",)),
+                "asset_cfg": SceneEntityCfg("robot", joint_names=(r"^passive_.*wheel",)),
                 "operation": "abs",
                 "ranges": (0.000, 0.000),  # ramped up by wheel_friction_curriculum
             },
@@ -520,7 +520,7 @@ def make_microduck_velocity_rollers_env_cfg(
         cfg.events.pop("encoder_bias", None)
 
     # Privileged wheel speeds for the critic (4 wheels in the new model).
-    wheel_cfg = SceneEntityCfg("robot", joint_names=(r"^passive_.*",))
+    wheel_cfg = SceneEntityCfg("robot", joint_names=(r"^passive_.*wheel",))
     cfg.observations["critic"].terms["wheel_vel"] = ObservationTermCfg(
         func=mdp.joint_vel_rel,
         scale=1.0,

@@ -1405,11 +1405,10 @@ def neck_joint_vel_l2(
     """
     asset: Entity = env.scene[asset_cfg.name]
 
-    # Get neck joint indices (neck_pitch, head_pitch, head_yaw, head_roll)
+    # Get neck joint indices (neck_pitch, head_pitch, head_yaw, head_roll).
+    # Servo view: passive_* joints (backlash, wheels) don't shift the indices.
     neck_joint_indices = list(range(5, 9))
-
-    # Get joint velocities for neck joints
-    joint_vel = asset.data.joint_vel[:, asset_cfg.joint_ids]
+    joint_vel = _servo_joint_vel(env, asset)
     neck_joint_vel = joint_vel[:, neck_joint_indices]
 
     # Return L2 squared norm of neck joint velocities
@@ -1432,18 +1431,17 @@ def leg_joint_vel_l2(
     """
     asset: Entity = env.scene[asset_cfg.name]
 
-    # Get leg joint indices (left hip-ankle: 0-4, right hip-ankle: 9-13)
+    # Get leg joint indices (left hip-ankle: 0-4, right hip-ankle: 9-13).
+    # Servo view: passive_* joints (backlash, wheels) don't shift the indices.
     leg_joint_indices = list(range(0, 5)) + list(range(9, 14))
-
-    # Get joint velocities for leg joints
-    joint_vel = asset.data.joint_vel[:, asset_cfg.joint_ids]
+    joint_vel = _servo_joint_vel(env, asset)
     leg_joint_vel = joint_vel[:, leg_joint_indices]
 
     # Return L2 squared norm of leg joint velocities
     return torch.sum(torch.square(leg_joint_vel), dim=1)
 
-_NECK_JOINT_CFG = SceneEntityCfg("robot", joint_names=(r".*(neck|head).*",))
-_HIP_PITCH_KNEE_CFG = SceneEntityCfg("robot", joint_names=(r".*(hip_pitch|knee).*",))
+_NECK_JOINT_CFG = SceneEntityCfg("robot", joint_names=(r"^(?!passive_).*(neck|head).*",))
+_HIP_PITCH_KNEE_CFG = SceneEntityCfg("robot", joint_names=(r"^(?!passive_).*(hip_pitch|knee).*",))
 _ROLLER_FEET_SITE_CFG = SceneEntityCfg("robot", site_names=("left_foot", "right_foot"))
 
 
@@ -1555,6 +1553,9 @@ def neck_joint_pos_l2(
     de volant d'inertie au lancement de la rotation.
     """
     asset: Entity = env.scene[asset_cfg.name]
+    # Exclude passive_* joints (backlash hinges also contain "neck"/"head").
+    if not pattern.startswith(r"^(?!passive_)"):
+        pattern = r"^(?!passive_)" + pattern.lstrip("^")
     joint_ids, _ = asset.find_joints(pattern)
     error = asset.data.joint_pos[:, joint_ids] - asset.data.default_joint_pos[:, joint_ids]
     return torch.sum(torch.square(error), dim=1)

@@ -25,6 +25,7 @@ MICRODUCK_ALLCOLLISIONS_ROLLERS_XML: Path = _ROBOT_DIR / "robot_allcollisions_ro
 # config_mjcf_{allcollisions,walk}_backlash.json (add_backlash.py post-processor).
 MICRODUCK_ALLCOLLISIONS_BACKLASH_XML: Path = _ROBOT_DIR / "robot_allcollisions_backlash.xml"
 MICRODUCK_WALK_BACKLASH_XML: Path = _ROBOT_DIR / "robot_walk_backlash.xml"
+MICRODUCK_ALLCOLLISIONS_ROLLERS_BACKLASH_XML: Path = _ROBOT_DIR / "robot_allcollisions_rollers_backlash.xml"
 
 assert MICRODUCK_WALK_XML.exists(), f"XML not found: {MICRODUCK_WALK_XML}"
 assert MICRODUCK_ALLCOLLISIONS_XML.exists(), f"XML not found: {MICRODUCK_ALLCOLLISIONS_XML}"
@@ -32,6 +33,7 @@ assert MICRODUCK_BALL_XML.exists(), f"XML not found: {MICRODUCK_BALL_XML}"
 assert MICRODUCK_ALLCOLLISIONS_ROLLERS_XML.exists(), f"XML not found: {MICRODUCK_ALLCOLLISIONS_ROLLERS_XML}"
 assert MICRODUCK_ALLCOLLISIONS_BACKLASH_XML.exists(), f"XML not found: {MICRODUCK_ALLCOLLISIONS_BACKLASH_XML}"
 assert MICRODUCK_WALK_BACKLASH_XML.exists(), f"XML not found: {MICRODUCK_WALK_BACKLASH_XML}"
+assert MICRODUCK_ALLCOLLISIONS_ROLLERS_BACKLASH_XML.exists(), f"XML not found: {MICRODUCK_ALLCOLLISIONS_ROLLERS_BACKLASH_XML}"
 
 
 def get_walk_spec() -> mujoco.MjSpec:
@@ -62,6 +64,10 @@ def get_backlash_spec() -> mujoco.MjSpec:
 
 def get_walk_backlash_spec() -> mujoco.MjSpec:
     return mujoco.MjSpec.from_file(str(MICRODUCK_WALK_BACKLASH_XML))
+
+
+def get_rollers_backlash_spec() -> mujoco.MjSpec:
+    return mujoco.MjSpec.from_file(str(MICRODUCK_ALLCOLLISIONS_ROLLERS_BACKLASH_XML))
 
 
 HOME_FRAME = EntityCfg.InitialStateCfg(
@@ -201,6 +207,19 @@ MICRODUCK_WALK_BACKLASH_ROBOT_CFG = EntityCfg(
     spec_fn=get_walk_backlash_spec,
     init_state=BACKLASH_HOME_FRAME,
     collisions=(FULL_COLLISION,),
+    articulation=EntityArticulationInfoCfg(
+        actuators=(backlash_actuators,),
+        soft_joint_pos_limit_factor=0.9,
+    ),
+)
+
+# Roller-skate backlash robot: wheels stay free (passive_*wheel untouched by
+# add_backlash.py). collisions=() mirrors MICRODUCK_WALK_ROLLERS_ROBOT_CFG —
+# roller wheel collision geoms have no explicit names; XML defaults apply.
+MICRODUCK_ROLLERS_BACKLASH_ROBOT_CFG = EntityCfg(
+    spec_fn=get_rollers_backlash_spec,
+    init_state=BACKLASH_HOME_FRAME,
+    collisions=(),
     articulation=EntityArticulationInfoCfg(
         actuators=(backlash_actuators,),
         soft_joint_pos_limit_factor=0.9,
