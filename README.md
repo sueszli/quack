@@ -3,7 +3,11 @@
 
 RL training environments for the [microduck](https://github.com/apirrone/microduck), built on [mjlab](https://github.com/mujocolab/mjlab) (MuJoCo Warp). Policies are trained here, exported to ONNX, and deployed with [microduck_runtime](https://github.com/apirrone/microduck_runtime).
 
-https://github.com/user-attachments/assets/e9a0d4de-8a3d-4e44-b490-e873728cf2bf
+
+
+https://github.com/user-attachments/assets/50c3d537-8db2-4005-9d9c-3472faeec4d0
+
+
 
 ## Training
 
