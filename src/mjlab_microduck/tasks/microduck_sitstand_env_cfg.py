@@ -125,7 +125,19 @@ SIT_Z   = 0.060
 STAND_UPRIGHT_Z = 0.10
 SIT_UPRIGHT_Z   = 0.075
 
-# Vertical-speed caps (m/s). 55 mm of travel at 0.05 m/s ≈ a ~1.1 s descent.
+# Target-ramp duration (s): the command term slews an internal target blend
+# STAND↔SIT over this time, and the posture rewards track the MOVING target.
+# THE anti-crash mechanism (run-1 failure: near-instant transitions). With a
+# binary target, arriving early pays the full goal jackpot (~7/step) for
+# every step saved, while the linear speed caps integrate to a bounded
+# excess-distance cost (~50 total for an instant drop) — crashing won ~7×.
+# With the ramp, being AHEAD of the setpoint zeroes the height/composite
+# stack for the ramp remainder, so tracking the slow setpoint is the argmax.
+# 55 mm over 2 s ≈ 0.028 m/s, comfortably under both caps below.
+POSTURE_RAMP_S = 2.0
+
+# Vertical-speed caps (m/s) — now BACKSTOPS for overshoot/bounce around the
+# slewed target (see POSTURE_RAMP_S), not the primary gentleness mechanism.
 # The rise cap is looser (rising against gravity needs some momentum to get
 # over the heels) and is introduced by curriculum only after the rise motion
 # has been discovered — see the rise_speed_weight curriculum.
@@ -313,6 +325,7 @@ def make_microduck_sitstand_env_cfg(
         params={
             "command_name": "twist",
             "max_height":   0.125,
+            "max_vz":       MAX_RISE_SPEED,  # explosive launch can't out-earn a gentle rise
         },
     )
 
@@ -533,7 +546,10 @@ def make_microduck_sitstand_env_cfg(
     # ── Command: sit/stand posture flag in the twist slot ────────────────────
     # cmd = [sit_flag, 0, 0]; dwell-time resampling flips the posture mid-
     # episode. "Stand" is the all-zero command (deployment idle parity). The
-    # runtime drives this by writing 0/1 into the vx slot of the command buffer.
+    # runtime drives this by writing 0/1 into the vx slot of the command
+    # buffer. Internally the term slews a target blend over POSTURE_RAMP_S
+    # that the posture rewards track (see the constant's comment); the OBS
+    # stays the raw binary flag.
     command = cfg.commands["twist"]
     command.rel_standing_envs = 0.0
     command.rel_heading_envs  = 0.0
@@ -542,7 +558,13 @@ def make_microduck_sitstand_env_cfg(
     command.resampling_time_range = POSTURE_DWELL_S
     command.debug_vis = False
     cfg.commands["twist"] = microduck_mdp.SitStandCommandCfg(
-        **{**vars(command), "sit_prob": SIT_PROB}
+        **{
+            **vars(command),
+            "sit_prob": SIT_PROB,
+            "ramp_s":   POSTURE_RAMP_S,
+            "sit_z":    SIT_Z,
+            "stand_z":  STAND_Z,
+        }
     )
 
     # ── Terminations ──────────────────────────────────────────────────────────
