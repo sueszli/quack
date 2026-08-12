@@ -332,9 +332,15 @@ def make_microduck_sit_env_cfg(
     #  - ``gentle_descent``: |a_z| penalty — punishes the impact spike and any
     #    residual bounce/jerk. -0.05 (2.5× the old -0.02, on a task stack half
     #    the old size → effectively ~5× stronger than the brutal-sitting run).
+    # ⚠️ POSITIVE weights: both functions ALREADY return negative values
+    # (-clamp, -|a_z|), like the *_l1_penalty helpers below. The previous
+    # negative weights double-negated into REWARDS for fast/violent descent
+    # (found via the sitstand run 7ev90yd9 wandb: Episode_Reward/descent_speed
+    # +4.6 — and very plausibly a driver of this env's own run-1 butt-hop).
+    # After any reward change, check Episode_Reward/<penalty> stays ≤ 0.
     cfg.rewards["descent_speed"] = RewardTermCfg(
         func=microduck_mdp.trunk_downward_velocity_penalty,
-        weight=-5.0,
+        weight=5.0,
         params={
             "max_down_vel": MAX_DESCENT_SPEED,
             "asset_cfg":    SceneEntityCfg("robot", body_names=("trunk_base",)),
@@ -342,7 +348,7 @@ def make_microduck_sit_env_cfg(
     )
     cfg.rewards["gentle_descent"] = RewardTermCfg(
         func=microduck_mdp.trunk_vertical_accel_penalty,
-        weight=-0.05,
+        weight=0.05,
         params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))},
     )
 
@@ -826,13 +832,15 @@ def make_microduck_sit_env_cfg(
     # early — the crash won and locked in before the later stages could bite.
     # -10 makes the crash net-negative from step 0 while the height-L1 pressure
     # (~-0.34/step while standing) still forces the descent to be attempted.
+    # POSITIVE weights — descent_speed's function is self-negating (see the
+    # sign-convention warning at the reward definition).
     cfg.curriculum["descent_speed_weight"] = CurriculumTermCfg(
         func=microduck_mdp.reward_weight,
         params={
             "reward_name":   "descent_speed",
             "weight_stages": [
-                {"step": 0,          "weight": -10.0},
-                {"step": 500 * 24,   "weight": -20.0},
+                {"step": 0,          "weight": 10.0},
+                {"step": 500 * 24,   "weight": 20.0},
             ],
         },
     )

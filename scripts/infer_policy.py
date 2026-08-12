@@ -52,7 +52,8 @@ class PolicyInference:
                  delay_min_lag=0, delay_max_lag=0,
                  standing_onnx_path=None, switch_threshold=0.05,
                  use_projected_gravity=False, ground_pick_onnx_path=None, ground_pick_period=4.0,
-                 sit_onnx_path=None, new_cmd_obs=False, slope_onnx_path=None):
+                 sit_onnx_path=None, new_cmd_obs=False, slope_onnx_path=None,
+                 sitstand_onnx_path=None):
         self.model = model
         self.data = data
         self.action_scale = action_scale
@@ -108,14 +109,33 @@ class PolicyInference:
             gp_input_shape = self.ground_pick_session.get_inputs()[0].shape
             print(f"Ground pick policy input shape: {gp_input_shape}")
 
-        # Load sit policy
+        # Load sit policy. Two flavours share the Y key and self.sit_session:
+        #  - --sit (is_sitstand=False): the OLD one-way sit policy. Sits
+        #    unconditionally on a zero twist command; standing back up is done
+        #    by switching back to the standing/walking session.
+        #  - --sitstand (is_sitstand=True): the commanded sit↔stand policy.
+        #    twist[0] is a posture flag (0=stand, 1=sit); the SAME policy sits,
+        #    holds, and stands back up — Y just flips the flag.
         self.sit_session = None
         self.sit_mode = False
+        self.is_sitstand = False
+        if sit_onnx_path and sitstand_onnx_path:
+            raise ValueError("Provide only one of --sit / --sitstand")
         if sit_onnx_path:
             print(f"\nLoading sit policy from: {sit_onnx_path}")
             self.sit_session = ort.InferenceSession(sit_onnx_path)
             sit_input_shape = self.sit_session.get_inputs()[0].shape
             print(f"Sit policy input shape: {sit_input_shape}")
+        elif sitstand_onnx_path:
+            if not self.new_cmd_obs:
+                raise ValueError(
+                    "--sitstand policies use the unified 13D command obs (61D); run with --new-cmd-obs"
+                )
+            print(f"\nLoading sitstand policy from: {sitstand_onnx_path}")
+            self.sit_session = ort.InferenceSession(sitstand_onnx_path)
+            self.is_sitstand = True
+            ss_input_shape = self.sit_session.get_inputs()[0].shape
+            print(f"Sitstand policy input shape: {ss_input_shape}")
 
         # Load slope policy (passive descent, runs with zero twist command)
         self.slope_session = None
@@ -126,17 +146,22 @@ class PolicyInference:
             sl_input_shape = self.slope_session.get_inputs()[0].shape
             print(f"Slope policy input shape: {sl_input_shape}")
 
-        # Validate at least one policy loaded
-        if not self.walking_session and not self.standing_session:
-            raise ValueError("At least one of --walking or --standing must be provided")
+        # Validate at least one policy loaded. A sitstand policy can run alone
+        # (it holds the stand at flag=0), unlike the old one-way sit policy.
+        if not self.walking_session and not self.standing_session and not self.is_sitstand:
+            raise ValueError("At least one of --walking, --standing or --sitstand must be provided")
 
         # Determine initial active session and policy
         if self.walking_session:
             self.current_policy = "walking"
             self.ort_session = self.walking_session
-        else:
+        elif self.standing_session:
             self.current_policy = "standing"
             self.ort_session = self.standing_session
+        else:
+            # sitstand-only: start standing (posture flag 0).
+            self.current_policy = "sit"
+            self.ort_session = self.sit_session
 
         # Get input/output names from active session
         self.input_name = self.ort_session.get_inputs()[0].name
@@ -246,7 +271,13 @@ class PolicyInference:
             # twist slot (or phase encoding for ground_pick — overwritten there)
             if self.current_policy == "walking":
                 cmd[0:3] = self.vel_cmd
-            # else standing/ground_pick: leave twist 0 (ground_pick writes phase later)
+            elif self.current_policy == "sit" and self.is_sitstand:
+                # Sitstand posture flag: 1 = sit, 0 = stand. NOT zeros — the
+                # all-zero twist is the STAND command for this policy, which is
+                # why feeding it the old sit-policy zero command did nothing.
+                cmd[0] = 1.0 if self.sit_mode else 0.0
+            # else standing/old-sit/ground_pick: leave twist 0 (ground_pick
+            # writes its phase encoding later)
             cmd[3:7]  = self.head_offset
             cmd[7:13] = self.body_cmd  # [x, y, z, roll, pitch, yaw]
             self.command = cmd
@@ -480,10 +511,18 @@ class PolicyInference:
         self.command[2] = 0.0
 
     def toggle_sit(self):
-        """Toggle the sitting policy on/off (Y key). Falls back to standing
-        (or walking if no standing policy is loaded) when untoggled."""
+        """Toggle sitting on/off (Y key).
+
+        Old one-way sit policy (--sit): Y off switches back to the standing/
+        walking session, which does the standing back up.
+        Sitstand policy (--sitstand): Y just flips the posture flag — the SAME
+        policy sits, holds the sit, and stands back up gently (trained response
+        to a flag flip is a ~2 s glide). The session stays active after
+        standing (it holds the stand); a velocity command switches back to
+        walking/standing as usual.
+        """
         if self.sit_session is None:
-            print("Sit unavailable: no --sit policy loaded")
+            print("Sit unavailable: no --sit/--sitstand policy loaded")
             return
         if self.ground_pick_mode:
             print("Cannot sit during ground pick")
@@ -493,7 +532,12 @@ class PolicyInference:
             self.vel_cmd = np.zeros(3, dtype=np.float32)
             self.current_policy = "sit"
             self.ort_session = self.sit_session
-            print("Sit: ON")
+            print("Sit: ON" + (" (sitstand flag=1; Y again to stand up)" if self.is_sitstand else ""))
+        elif self.is_sitstand:
+            # Stay on the sitstand session — it stands up itself (flag → 0).
+            # Do NOT swap to the standing policy here: it would take over
+            # mid-rise from a seated state it wasn't trained on.
+            print("Sit: OFF → sitstand policy standing up (flag=0)")
         else:
             if self.standing_session:
                 self.current_policy = "standing"
@@ -546,7 +590,8 @@ def main():
     parser.add_argument("--walking", type=str, default=None, help="Path to walking policy ONNX file")
     parser.add_argument("--standing", "-s", type=str, default=None, help="Path to standing policy ONNX file")
     parser.add_argument("--ground-pick", type=str, default=None, help="Path to ground pick policy ONNX file (press G to activate)")
-    parser.add_argument("--sit", type=str, default=None, help="Path to sitting policy ONNX file (press Y to sit, Y again to stand back up)")
+    parser.add_argument("--sit", type=str, default=None, help="Path to OLD one-way sitting policy ONNX file (press Y to sit, Y again switches back to standing/walking policy)")
+    parser.add_argument("--sitstand", type=str, default=None, help="Path to sitstand policy ONNX (commanded sit<->stand; press Y to sit, Y again the SAME policy stands back up). Requires --new-cmd-obs. Can run standalone.")
     parser.add_argument("--slope", type=str, default=None, help="Path to slope policy ONNX file (press Y to toggle)")
     parser.add_argument("--lin-vel-x", type=float, default=0.0, help="Initial linear velocity X command (m/s)")
     parser.add_argument("--lin-vel-y", type=float, default=0.0, help="Initial linear velocity Y command (m/s)")
@@ -577,8 +622,10 @@ def main():
                              "compliant PU sole. e.g. --foot-solref 0.04")
     args = parser.parse_args()
 
-    if not args.walking and not args.standing:
-        parser.error("At least one of --walking or --standing must be provided")
+    if not args.walking and not args.standing and not args.sitstand:
+        parser.error("At least one of --walking, --standing or --sitstand must be provided")
+    if args.sitstand and not args.new_cmd_obs:
+        parser.error("--sitstand policies use the unified 13D command obs (61D); add --new-cmd-obs")
 
     # Parse delay arguments
     delay_min_lag = 0
@@ -654,6 +701,7 @@ def main():
         sit_onnx_path=args.sit,
         new_cmd_obs=args.new_cmd_obs,
         slope_onnx_path=args.slope,
+        sitstand_onnx_path=args.sitstand,
     )
     policy.set_vel_cmd(args.lin_vel_x, args.lin_vel_y, args.ang_vel_z)
 
@@ -727,7 +775,8 @@ def main():
     if policy.ground_pick_session:
         print(f"Ground pick policy: loaded  (press G)")
     if policy.sit_session:
-        print(f"Sit policy: loaded  (press Y to toggle)")
+        kind = "Sitstand" if policy.is_sitstand else "Sit"
+        print(f"{kind} policy: loaded  (press Y to toggle)")
     if policy.slope_session:
         print(f"Slope policy: loaded  (press Y to toggle, passive descent)")
     print(f"Active policy: {policy.current_policy}")

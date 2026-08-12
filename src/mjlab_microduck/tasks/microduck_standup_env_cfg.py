@@ -341,9 +341,15 @@ def make_microduck_standup_env_cfg(
     # (impacts + push-off are |a_z| spikes). The 2026-07-24 attempt to double
     # it to -0.01 contributed to the face-up freeze; -0.005 is the ceiling
     # unless it gets a height/tilt gate like arrival_damping.
+    # ⚠️ POSITIVE weight: trunk_vertical_accel_penalty ALREADY returns -|a_z|.
+    # The previous -0.005 double-negated into a (small) reward for vertical
+    # shocks — the same sign bug roller_standup found and fixed in its
+    # gentle_rise, confirmed again on the sitstand run 7ev90yd9 (its
+    # Episode_Reward/gentle_motion logged POSITIVE). Keep magnitude small:
+    # |a_z| is unavoidable during prone flips, a big weight is a motion-blocker.
     cfg.rewards["gentle_rise"] = RewardTermCfg(
         func=microduck_mdp.trunk_vertical_accel_penalty,
-        weight=-0.005,
+        weight=0.005,
         params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))},
     )
 

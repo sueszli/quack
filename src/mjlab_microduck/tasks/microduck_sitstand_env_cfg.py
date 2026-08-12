@@ -340,9 +340,18 @@ def make_microduck_sitstand_env_cfg(
     #    exploratory attempts net-negative and the skill is never found. The
     #    sit-keyframe start is easy (no prone flips), so 750 is late enough.
     #  - ``gentle_motion``: |a_z| shock penalty, both directions, always on.
+    #
+    # ⚠️ POSITIVE weights, deliberately: these three functions ALREADY return
+    # negative values (-clamp(...), -|a_z|), same convention as the *_l1_penalty
+    # helpers (used with +1/+6 here). Run 7ev90yd9 (2026-08-12) had them at
+    # negative weights — the double negative made them REWARDS for violence
+    # (wandb: Episode_Reward/descent_speed +4.6, rise_speed +2.1, gentle_motion
+    # +0.57, the three biggest positive terms) and trained a butt-hopping,
+    # crash-sitting policy. Same bug class roller_standup found in gentle_rise.
+    # After any reward change, check wandb Episode_Reward/<penalty> stays ≤ 0.
     cfg.rewards["descent_speed"] = RewardTermCfg(
         func=microduck_mdp.trunk_downward_velocity_penalty,
-        weight=-10.0,
+        weight=10.0,
         params={
             "max_down_vel": MAX_DESCENT_SPEED,
             "asset_cfg":    SceneEntityCfg("robot", body_names=("trunk_base",)),
@@ -358,7 +367,7 @@ def make_microduck_sitstand_env_cfg(
     )
     cfg.rewards["gentle_motion"] = RewardTermCfg(
         func=microduck_mdp.trunk_vertical_accel_penalty,
-        weight=-0.05,
+        weight=0.05,
         params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))},
     )
 
@@ -818,15 +827,17 @@ def make_microduck_sitstand_env_cfg(
         },
     )
 
-    # Descent-speed cap tightening (sit env's proven schedule): discover the
-    # sit under -10 (crash-sit already net-negative), then tighten to -20.
+    # Descent-speed cap tightening: discover the sit under magnitude 10
+    # (crash-sit already net-negative), then tighten to 20. POSITIVE weights —
+    # the function is self-negating (see the sign-convention warning at the
+    # reward definitions).
     cfg.curriculum["descent_speed_weight"] = CurriculumTermCfg(
         func=microduck_mdp.reward_weight,
         params={
             "reward_name":   "descent_speed",
             "weight_stages": [
-                {"step": 0,          "weight": -10.0},
-                {"step": 500 * 24,   "weight": -20.0},
+                {"step": 0,          "weight": 10.0},
+                {"step": 500 * 24,   "weight": 20.0},
             ],
         },
     )
@@ -843,8 +854,8 @@ def make_microduck_sitstand_env_cfg(
             "reward_name":   "rise_speed",
             "weight_stages": [
                 {"step": 0,          "weight": 0.0},
-                {"step": 750 * 24,   "weight": -5.0},
-                {"step": 1250 * 24,  "weight": -10.0},
+                {"step": 750 * 24,   "weight": 5.0},
+                {"step": 1250 * 24,  "weight": 10.0},
             ],
         },
     )
