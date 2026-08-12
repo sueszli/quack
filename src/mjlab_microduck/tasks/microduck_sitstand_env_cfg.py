@@ -413,6 +413,12 @@ def make_microduck_sitstand_env_cfg(
     # Multiplicative goal score vs the COMMANDED target — kills partial-sum
     # farming in both postures (plank, flop, lean, park-1cm-short). Broad stds
     # keep gradient visible far from the goal (standup's proven calibration).
+    # head_std adds the neck/head-at-command factor: the first sign-fixed run
+    # rested with the head DANGLING to the floor (trunk/legs/z all on target →
+    # full composite, only the 0.75 tracking term lost, and the hanging head
+    # adds passive stability). With the head factor, the goal state itself
+    # requires the head up at its commanded pose; transient head assist
+    # mid-transition stays free (composite ≈0 there anyway).
     cfg.rewards["posture_composite"] = RewardTermCfg(
         func=microduck_mdp.posture_composite,
         weight=3.0,
@@ -425,6 +431,7 @@ def make_microduck_sitstand_env_cfg(
             "height_std":    0.03,
             "upright_std":   0.40,   # ≈ 23° effective — plank (~70°+) scores ~0
             "pose_std":      0.40,
+            "head_std":      0.40,   # head fully dropped (~1.2 rad) → factor ~0.01
         },
     )
 
@@ -844,18 +851,22 @@ def make_microduck_sitstand_env_cfg(
 
     # Rise-speed cap — introduced only AFTER the rise motion exists (the
     # standup attempt-tax lesson: any motion-tax during discovery makes
-    # exploratory attempts net-negative and the skill is never found). The
-    # sit-keyframe rise is easy (learned ~iter 250 in the standup env), so
-    # 750 leaves a wide margin. If the rise degrades when this kicks in,
-    # soften the final stage — do NOT move the introduction earlier.
+    # exploratory attempts net-negative and the skill is never found).
+    # Pushed 750/1250 → 1500/2500: the rise needs a brief dynamic burst to
+    # rock over the heels (vz > 0.08 for a few steps), and the first
+    # sign-fixed run stalled in a head-down forward fold — a half-finished
+    # rise — consistent with the cap taxing the final weight shift while it
+    # was still being consolidated. Sit-direction gentleness doesn't depend
+    # on this cap (descent_speed covers it), so late is cheap. If the rise
+    # degrades when this kicks in, soften the final stage — never earlier.
     cfg.curriculum["rise_speed_weight"] = CurriculumTermCfg(
         func=microduck_mdp.reward_weight,
         params={
             "reward_name":   "rise_speed",
             "weight_stages": [
                 {"step": 0,          "weight": 0.0},
-                {"step": 750 * 24,   "weight": 5.0},
-                {"step": 1250 * 24,  "weight": 10.0},
+                {"step": 1500 * 24,  "weight": 5.0},
+                {"step": 2500 * 24,  "weight": 10.0},
             ],
         },
     )

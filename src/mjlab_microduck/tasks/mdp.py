@@ -6280,14 +6280,26 @@ def posture_composite(
     height_std: float = 0.03,
     upright_std: float = 0.40,
     pose_std: float = 0.40,
+    head_std: float | None = None,
+    head_command_name: str = "head_pose",
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
 ) -> torch.Tensor:
-    """Multiplicative goal score vs the commanded posture (height·upright·pose).
+    """Multiplicative goal score vs the commanded posture (height·upright·pose
+    [·head]).
 
     The posture-conditioned version of ``standing_composite_score``: a
     deficiency in any factor collapses the whole term, so partial-sum
     compromises (plank, flop, lean) never pay. Both rest states demand an
     upright trunk, so the upright factor is posture-independent.
+
+    ``head_std`` (optional): adds a fourth factor on the neck/head joints vs
+    the ``head_pose`` command (same error convention as head_pose_tracking).
+    Without it the goal state is head-blind: the trained policy rested with
+    the head dangling to the floor — trunk upright, legs in pose, z on target
+    all held while the head hung, costing only the light tracking term. With
+    the factor, "arrived" REQUIRES the head at its commanded pose, so head
+    assist stays free mid-transition (composite is ≈0 there anyway) but must
+    be retracted to collect the goal reward.
     """
     asset = env.scene[asset_cfg.name]
     _, target = _posture_targets(env, asset, command_name, sit_overrides)
@@ -6303,7 +6315,19 @@ def posture_composite(
     pose_err_sq = ((joint_pos - target[:, joint_indices]) ** 2).mean(dim=-1)
     pose_score = torch.exp(-pose_err_sq / (pose_std * pose_std))
 
-    return height_score * upright_score * pose_score
+    score = height_score * upright_score * pose_score
+
+    if head_std is not None:
+        if not hasattr(env, "_head_pose_neck_ids"):
+            ids, _ = asset.find_joints_by_actuator_names(_NECK_JOINT_PATTERNS)
+            env._head_pose_neck_ids = torch.tensor(ids, device=env.device, dtype=torch.long)
+        neck_ids = env._head_pose_neck_ids
+        head_cmd = env.command_manager.get_command(head_command_name)
+        actual = asset.data.joint_pos[:, neck_ids] - asset.data.default_joint_pos[:, neck_ids]
+        head_err_sq = ((actual - head_cmd) ** 2).mean(dim=-1)
+        score = score * torch.exp(-head_err_sq / (head_std * head_std))
+
+    return score
 
 
 def posture_stillness(
