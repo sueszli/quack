@@ -39,10 +39,11 @@ angular-velocity, large-impact event; taxing attempts prevents discovery
 import math
 from copy import deepcopy
 
-# Symmetry — the roll is sagittal / left-right symmetric and would benefit,
-# BUT the shared mirror table (symmetry.py) is still the old 51-dim layout and
-# no current 61-dim env uses it. OFF until the table is migrated to 61 dims.
-ENABLE_SYMMETRY = False
+# Symmetry — the roll is sagittal / left-right symmetric; the mirror loss
+# directly fights the sideways-collapse failure seen in run 2. Enabled after
+# migrating symmetry.py to the 61-dim layout (2026-08-13, includes the
+# "policy" → "actor" output-key fix; roulade is the first env to use it).
+ENABLE_SYMMETRY = True
 
 # ── Domain randomisation (matched to standup/velocity2 for sim2real parity) ───
 ENABLE_COM_RANDOMIZATION             = True
@@ -67,9 +68,9 @@ KP_RANDOMIZATION_RANGE              = (0.85, 1.15)  # unused (kp DR off)
 KD_RANDOMIZATION_RANGE              = (0.9, 1.1)    # unused (kd DR off)
 IMU_ORIENTATION_RANDOMIZATION_ANGLE = 6.0
 
-# Episode: the roll itself takes ~1–2 s; the rest is landing/settle time that
-# the completion-gated standing annuity converts into "finish early and hold".
-EPISODE_LENGTH_S = 4.0
+# Episode: a CONTROLLED roll takes ~2 s + rise ~1.5 s + settle. Run-3: 4 → 5 s
+# (4 s left no room for the rise after a paced roll).
+EPISODE_LENGTH_S = 5.0
 
 # Empirically-measured standing trunk height (standup lesson: don't guess).
 STAND_Z = 0.115
@@ -82,9 +83,14 @@ STAND_Z = 0.115
 ROULADE_FORWARD_VEL_RANGE = (0.0, 0.0)
 
 # ── Mid-roll spawn (reverse curriculum) ───────────────────────────────────────
-# 90° = balanced on the head, 180° = on the back, >260° opens the landing gate.
+# 90° = balanced on the head, 180° = on the back, 270° = supine, ~340° = seated
+# leaning back, >260° opens the landing gate. Run-3 change: MAX widened
+# 185° → 340° — run-2 wandb showed the second half of the roll (supine →
+# seated → rise) was never spawned and never learned; spawns past ~300° open
+# the landing gate at birth, giving dense on-policy data on the crouch→stand
+# last mile (the velstand run-5 crouch-basin lesson).
 MIDROLL_PITCH_MIN   = math.radians(50.0)
-MIDROLL_PITCH_MAX   = math.radians(185.0)
+MIDROLL_PITCH_MAX   = math.radians(340.0)
 MIDROLL_OMEGA_RANGE = (0.0, 3.0)   # rad/s forward momentum at spawn
 # Tuck anchor: legs folded (crouch-anchor values from the velstand crouch
 # reset), servo-index keyed. Mid-roll spawns lerp HOME→tuck by a per-env factor.
@@ -278,6 +284,22 @@ def make_microduck_roulade_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
         params={
             "target_height": STAND_Z,
             "std":           0.04,
+            "gate_lo":       LANDING_GATE_LO,
+            "gate_hi":       LANDING_GATE_HI,
+        },
+    )
+
+    # Completion-gated stand tax (run-3, THE standup lesson): once the
+    # rotation is done, every step spent below STAND_Z costs — "crumple in a
+    # heap after the roll" flips from free to net-negative, the same fix that
+    # broke standup's static-sit basin (its height L1 at ÷4-scaled weight
+    # 7.5). Gate closed during the roll, so the roll itself is never taxed;
+    # mid/late-roll spawns are born with it active, which is the point.
+    cfg.rewards["roulade_stand_tax"] = RewardTermCfg(
+        func=microduck_mdp.roulade_stand_tax,
+        weight=5.0,
+        params={
+            "target_height": STAND_Z,
             "gate_lo":       LANDING_GATE_LO,
             "gate_hi":       LANDING_GATE_HI,
         },
@@ -574,14 +596,18 @@ def make_microduck_roulade_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     # learnable from day 0 — it overlaps face-up recovery), shift toward
     # standing starts as the full roll gets discovered. Mid-roll never goes to
     # zero: it keeps the second half practiced and is realistic DR anyway.
+    # Run-3: stages pushed 1500/3000 → 3000/6000 — run 2 shifted away from
+    # mid-roll BEFORE standing-spawn rolls were mastered (progress episode-sum
+    # was ~20% of a full roll at iter 1876; curriculum-pacing failure, same
+    # family as the 2026-07-28 standup regression).
     cfg.curriculum["roulade_spawn_mix"] = CurriculumTermCfg(
         func=microduck_mdp.event_param_curriculum,
         params={
             "event_name": "set_roulade_state",
             "param_stages": [
                 {"step": 0,          "params": {"standing_prob": 0.50, "midroll_prob": 0.50}},
-                {"step": 1500 * 24,  "params": {"standing_prob": 0.65, "midroll_prob": 0.35}},
-                {"step": 3000 * 24,  "params": {"standing_prob": 0.80, "midroll_prob": 0.20}},
+                {"step": 3000 * 24,  "params": {"standing_prob": 0.65, "midroll_prob": 0.35}},
+                {"step": 6000 * 24,  "params": {"standing_prob": 0.80, "midroll_prob": 0.20}},
             ],
         },
     )

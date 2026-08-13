@@ -6451,6 +6451,33 @@ def roulade_height_after_roll(
     return g * _roulade_completion_gate(env, gate_lo, gate_hi, require_head=True)
 
 
+def roulade_stand_tax(
+    env: ManagerBasedRlEnv,
+    target_height: float,
+    gate_lo: float = math.radians(260.0),
+    gate_hi: float = math.radians(330.0),
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """SELF-NEGATING height L1 below target, active only after roll completion.
+
+    Returns −max(0, target − z) × completion_gate — use a POSITIVE weight
+    (penalty sign convention). The run-3 fix for post-roll crumple-camping:
+    the gated landing rewards made standing better than lying in a heap, but
+    the heap itself was FREE — with only positive gated terms, "stay crumpled"
+    collects ≈0/step, a comfortable basin (the standup static-sit lesson:
+    the basin must be net NEGATIVE to force the rise). The gate keeps the
+    roll itself untaxed, and requires the head latch so a no-roll episode
+    can't be punished into weird avoidance behaviors.
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    _update_roulade_accum(env, asset)
+    z = torch.nan_to_num(
+        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
+    )
+    shortfall = torch.clamp(target_height - z, min=0.0)
+    return -shortfall * _roulade_completion_gate(env, gate_lo, gate_hi, require_head=True)
+
+
 def roulade_rise_velocity(
     env: ManagerBasedRlEnv,
     max_height: float = 0.125,
