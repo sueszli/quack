@@ -6072,17 +6072,49 @@ def joint_vel_rel_backlash(
 #     rotation accumulator is initialized to the spawn angle so the progress
 #     accounting stays consistent.
 #
+# RUN-1 LESSON (2026-08): with unsupported rotation counting and uncapped
+# paid rate, the optimal policy is a violent ballistic whip ("breakdance") —
+# same 2π, finishes sooner, more discounted annuity. Doesn't transfer. Fixes:
+#   • SUPPORT GATE: the accumulator only integrates while some robot geom
+#     touches the terrain (robot_ground_contact sensor) — a real roulade never
+#     leaves the ground; airborne rotation now earns nothing and cannot open
+#     the completion gate.
+#   • HEAD LATCH: the landing annuity additionally requires head-ground
+#     contact to have occurred while accum was in the first-quadrant window —
+#     "went over the head" is a requirement, not a 0.5-weight suggestion.
+#   • PAID-RATE CAP: progress increments are capped at max_paid_rate; rotation
+#     faster than the cap FORFEITS the excess (not deferred), so speed no
+#     longer pays. An explicit overspeed penalty backs this up.
+#
 # Per-env state on the env object (created lazily, reset by
 # reset_roulade_state):
-#   env._roulade_accum — signed integral of forward pitch rate (rad)
-#   env._roulade_max   — max(accum) so far this episode (progress frontier)
-#   env._roulade_paid  — frontier already paid out by roulade_progress
+#   env._roulade_accum      — supported-only integral of forward pitch rate (rad)
+#   env._roulade_max        — max(accum) so far this episode (progress frontier)
+#   env._roulade_paid       — frontier already paid out by roulade_progress
+#   env._roulade_head_latch — True once the head touched ground mid-first-quadrant
 
 # Forward-roll sign: face-down is +90° pitch = rotation about body +y
 # (set_random_ground_state convention), so forward roll = POSITIVE body-frame
 # ω_y. Verified empirically (see claude_experiments smoke test): a positive
 # qvel about +y pitches the robot nose-down/forward and drives accum upward.
 _ROULADE_FWD_SIGN = 1.0
+
+# Sensor names read by the accumulator update (must match the env cfg).
+_ROULADE_SUPPORT_SENSOR = "robot_ground_contact"
+_ROULADE_HEAD_SENSOR = "head_ground_contact"
+
+# Head-latch window: head-ground contact while accum is inside this window
+# marks the episode as a genuine over-the-head roll. In a real roulade the
+# head plants at ~60–120° of body rotation; the window is generous around it.
+_HEAD_LATCH_LO = math.radians(20.0)
+_HEAD_LATCH_HI = math.radians(170.0)
+
+
+def _sensor_any_contact(env: ManagerBasedRlEnv, name: str) -> torch.Tensor | None:
+    if name not in env.scene.sensors:
+        return None
+    found = env.scene.sensors[name].data.found
+    return (found.view(found.shape[0], -1) > 0).any(dim=-1)
 
 
 def _roulade_state(env: ManagerBasedRlEnv) -> tuple:
@@ -6091,6 +6123,7 @@ def _roulade_state(env: ManagerBasedRlEnv) -> tuple:
         env._roulade_accum = z.clone()
         env._roulade_max = z.clone()
         env._roulade_paid = z.clone()
+        env._roulade_head_latch = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
         env._roulade_last_update_step = -1
     return env._roulade_accum, env._roulade_max, env._roulade_paid
 
@@ -6101,13 +6134,32 @@ def _update_roulade_accum(env: ManagerBasedRlEnv, asset: Entity) -> None:
     Step-guarded so that multiple reward terms reading the accumulator in the
     same control step don't double-integrate. The frontier (max) only moves
     forward; backward rocking (wind-up) neither pays nor un-pays.
+
+    SUPPORT GATE (run-1 fix): rotation is integrated only while the robot
+    touches the terrain — a roulade is a supported motion; ballistic flips
+    accumulate nothing, so they neither get paid nor open the completion gate.
+
+    Also latches env._roulade_head_latch when the head touches the ground
+    while accum is inside the first-quadrant window — the landing annuity
+    requires this, making "over the head" a hard requirement of the task.
     """
     _roulade_state(env)
     step = int(env.common_step_counter)
     if step != env._roulade_last_update_step:
         omega_fwd = _ROULADE_FWD_SIGN * asset.data.root_link_ang_vel_b[:, 1]
-        env._roulade_accum = env._roulade_accum + torch.nan_to_num(omega_fwd, nan=0.0) * env.step_dt
+        delta = torch.nan_to_num(omega_fwd, nan=0.0) * env.step_dt
+        supported = _sensor_any_contact(env, _ROULADE_SUPPORT_SENSOR)
+        if supported is not None:
+            delta = delta * supported.float()
+        env._roulade_accum = env._roulade_accum + delta
         env._roulade_max = torch.maximum(env._roulade_max, env._roulade_accum)
+
+        head_contact = _sensor_any_contact(env, _ROULADE_HEAD_SENSOR)
+        if head_contact is not None:
+            in_window = (env._roulade_accum > _HEAD_LATCH_LO) & (
+                env._roulade_accum < _HEAD_LATCH_HI
+            )
+            env._roulade_head_latch = env._roulade_head_latch | (head_contact & in_window)
         env._roulade_last_update_step = step
 
 
@@ -6115,15 +6167,22 @@ def _roulade_completion_gate(
     env: ManagerBasedRlEnv,
     gate_lo: float,
     gate_hi: float,
+    require_head: bool = False,
 ) -> torch.Tensor:
     """Smoothstep on the progress frontier: 0 below gate_lo rad, 1 above gate_hi.
 
     State-based replacement for the old phase-clock landing window — it can
-    only be opened by actually rotating, so pre-roll standing collects nothing.
+    only be opened by actually rotating (while SUPPORTED — the accumulator is
+    contact-gated), so neither pre-roll standing nor a ballistic flip collects.
+    With require_head=True the gate additionally requires the head latch —
+    the episode must have rolled over the head to unlock the landing annuity.
     """
     _, max_accum, _ = _roulade_state(env)
     t = torch.clamp((max_accum - gate_lo) / max(gate_hi - gate_lo, 1e-6), 0.0, 1.0)
-    return t * t * (3.0 - 2.0 * t)
+    gate = t * t * (3.0 - 2.0 * t)
+    if require_head:
+        gate = gate * env._roulade_head_latch.float()
+    return gate
 
 
 def reset_roulade_state(
@@ -6252,27 +6311,38 @@ def reset_roulade_state(
     accum[env_ids] = spawn_angle
     max_accum[env_ids] = spawn_angle
     paid[env_ids] = spawn_angle
+    # Head latch: mid-roll spawns are considered already past the head phase
+    # (the reverse curriculum teaches roll COMPLETION; requiring a latch they
+    # never had the chance to earn would keep their landing gate shut forever).
+    # Standing spawns must earn it by actually rolling over the head.
+    env._roulade_head_latch[env_ids] = is_mid
 
 
 def roulade_progress(
     env: ManagerBasedRlEnv,
     target_angle: float = 2 * math.pi,
+    max_paid_rate: float = 3.0,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
 ) -> torch.Tensor:
     """Pay increments of the progress frontier, up to one full roll.
 
-    reward = Δ(min(max_accum, target)) / (step_dt · target) — i.e. normalized
-    forward rotation RATE while at the frontier, zero otherwise. Total payout
-    per episode is exactly (target − spawn_angle)/target · weight · step_dt⁻¹…
-    integrated: a full roll pays the same total no matter how fast or slow, so
-    there is nothing to farm by camping face-down (0/step), rocking below the
-    frontier (0/step), or spinning past 2π (clamped).
+    reward = Δ(min(max_accum, target)) / (step_dt · target), CAPPED at
+    max_paid_rate rad/s of paid rotation. Nothing to farm by camping
+    face-down (0/step), rocking below the frontier (0/step), or spinning past
+    2π (clamped). The accumulator is support-gated, so airborne rotation pays
+    nothing either.
+
+    max_paid_rate (run-1 fix): rotation faster than the cap FORFEITS the
+    excess — the paid pointer still jumps to the frontier, it just pays the
+    capped amount. A violent whip therefore collects LESS total progress
+    reward than a controlled ≤cap roll, instead of the same total sooner.
     """
     asset: Entity = env.scene[asset_cfg.name]
     _update_roulade_accum(env, asset)
     _, max_accum, paid = _roulade_state(env)
     new_paid = torch.clamp(max_accum, max=target_angle)
     delta = torch.clamp(new_paid - torch.clamp(paid, max=target_angle), min=0.0)
+    delta = torch.clamp(delta, max=max_paid_rate * env.step_dt)
     env._roulade_paid = torch.maximum(paid, new_paid)
     return delta / (env.step_dt * target_angle)
 
@@ -6339,7 +6409,7 @@ def roulade_landing_composite(
         target_overrides=target_overrides,
         asset_cfg=asset_cfg,
     )
-    return score * _roulade_completion_gate(env, gate_lo, gate_hi)
+    return score * _roulade_completion_gate(env, gate_lo, gate_hi, require_head=True)
 
 
 def roulade_upright_after_roll(
@@ -6358,7 +6428,9 @@ def roulade_upright_after_roll(
     _update_roulade_accum(env, asset)
     quat = asset.data.root_link_quat_w
     upright = 1.0 - 2.0 * (quat[:, 1].pow(2) + quat[:, 2].pow(2))
-    return torch.clamp(upright, min=0.0) * _roulade_completion_gate(env, gate_lo, gate_hi)
+    return torch.clamp(upright, min=0.0) * _roulade_completion_gate(
+        env, gate_lo, gate_hi, require_head=True
+    )
 
 
 def roulade_height_after_roll(
@@ -6376,7 +6448,7 @@ def roulade_height_after_roll(
         asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
     )
     g = torch.exp(-((z - target_height) / std) ** 2)
-    return g * _roulade_completion_gate(env, gate_lo, gate_hi)
+    return g * _roulade_completion_gate(env, gate_lo, gate_hi, require_head=True)
 
 
 def roulade_rise_velocity(
@@ -6401,7 +6473,26 @@ def roulade_rise_velocity(
     )
     vz = torch.nan_to_num(asset.data.root_link_lin_vel_w[:, 2], nan=0.0)
     reward = torch.clamp(vz, min=0.0) * (z < max_height).float()
-    return reward * _roulade_completion_gate(env, gate_lo, gate_hi)
+    return reward * _roulade_completion_gate(env, gate_lo, gate_hi, require_head=True)
+
+
+def roulade_overspeed_penalty(
+    env: ManagerBasedRlEnv,
+    omega_max: float = 4.0,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """max(0, |ω_y| − omega_max)² — quadratic tax on whip-speed rotation.
+
+    Positive quantity; use a negative weight. Complements the paid-rate cap
+    in roulade_progress: the cap removes the INCENTIVE to rotate faster than
+    ~3 rad/s, this adds an explicit COST above omega_max, so "violent" is
+    strictly worse than "controlled" rather than merely not-better. A
+    controlled full roll (~2–3 rad/s average) never touches it.
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    omega_y = torch.nan_to_num(asset.data.root_link_ang_vel_b[:, 1], nan=0.0)
+    excess = torch.clamp(omega_y.abs() - omega_max, min=0.0)
+    return excess.pow(2)
 
 
 def roulade_sagittal_penalty(

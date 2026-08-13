@@ -1,8 +1,17 @@
-"""Microduck forward-roll (roulade) task — attempt 3.
+"""Microduck forward-roll (roulade) task — attempt 3, run 2.
 
 Episodic policy: robot starts standing, rolls forward over the flat top of
 its head, and lands back on its feet. Triggered at deployment like sit/standup
 (policy switch = roll starts immediately; no phase clock, no reference motion).
+
+RUN-2 REWORK (run 1 learned a violent ballistic "breakdance" whip — optimal
+under the run-1 rewards: same 2π, sooner, no cost): rotation now only counts
+while the robot touches the ground (support-gated accumulator — a roulade
+never leaves the floor), the landing annuity requires an over-the-head
+contact latch, paid progress rate is capped at 3 rad/s (faster forfeits the
+excess), an overspeed penalty taxes |ω| > 4 rad/s, and the impact/smoothness
+penalties are active from step 0 (discovery in this env is easy; style is
+the scarce resource, not exploration).
 
 Design (see the roulade section of mdp.py for the full history):
   • ONE dense progress signal — paid increments of the max-so-far cumulative
@@ -151,10 +160,24 @@ def make_microduck_roulade_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
 
     # Head-ground contact — the roll's pivot signal. jaw_soft is the body that
     # carries the head collision geoms (top_head_shell = the flat top, jaw,
-    # bottom_head_shell) in robot_allcollisions.xml.
+    # bottom_head_shell) in robot_allcollisions.xml. NAME IS LOAD-BEARING:
+    # _update_roulade_accum reads it for the over-the-head latch.
     head_ground_cfg = ContactSensorCfg(
         name="head_ground_contact",
         primary=ContactMatch(mode="body", pattern="jaw_soft", entity="robot"),
+        secondary=ContactMatch(mode="body", pattern="terrain"),
+        fields=("found",),
+        reduce="none",
+        num_slots=1,
+    )
+
+    # Whole-robot ground contact — the SUPPORT GATE (run-2 fix): the rotation
+    # accumulator only integrates while some robot geom touches the terrain,
+    # so ballistic flips ("breakdance") earn no progress and never complete.
+    # NAME IS LOAD-BEARING: _update_roulade_accum reads it.
+    robot_ground_cfg = ContactSensorCfg(
+        name="robot_ground_contact",
+        primary=ContactMatch(mode="subtree", pattern="trunk_base", entity="robot"),
         secondary=ContactMatch(mode="body", pattern="terrain"),
         fields=("found",),
         reduce="none",
@@ -167,7 +190,7 @@ def make_microduck_roulade_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     cfg = make_velocity_env_cfg()
 
     cfg.scene.entities = {"robot": MICRODUCK_STANDUP_ROBOT_CFG}
-    cfg.scene.sensors  = (feet_ground_cfg, self_collision_cfg, head_ground_cfg)
+    cfg.scene.sensors  = (feet_ground_cfg, self_collision_cfg, head_ground_cfg, robot_ground_cfg)
     cfg.viewer.body_name = "trunk_base"
 
     cfg.episode_length_s = EPISODE_LENGTH_S
@@ -197,7 +220,19 @@ def make_microduck_roulade_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     cfg.rewards["roulade_progress"] = RewardTermCfg(
         func=microduck_mdp.roulade_progress,
         weight=8.0,
-        params={"target_angle": 2 * math.pi},
+        # max_paid_rate 3 rad/s: a controlled full roll takes ≥ ~2 s; rotating
+        # faster forfeits the excess (run-2 anti-violence fix).
+        params={"target_angle": 2 * math.pi, "max_paid_rate": 3.0},
+    )
+
+    # Explicit whip-speed tax above 4 rad/s — active from step 0 (run 1 proved
+    # discovery here is EASY; the standup "no attempt-tax during discovery"
+    # lesson doesn't bind — the risk in this env is violent solutions locking
+    # in, not exploration being taxed to death).
+    cfg.rewards["roulade_overspeed"] = RewardTermCfg(
+        func=microduck_mdp.roulade_overspeed_penalty,
+        weight=-0.1,
+        params={"omega_max": 4.0},
     )
 
     # Head-as-pivot shaping: contact × mid-roll window × forward-rate factor
@@ -277,7 +312,7 @@ def make_microduck_roulade_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     # angular-velocity + impact event); the settle/polish pressure comes from
     # the LATE-introduced gated terms below (arrival_damping, |a_z|, torque
     # rate) — the standup timing lesson.
-    cfg.rewards["action_rate_l2"] = RewardTermCfg(func=mdp.action_rate_l2, weight=-0.05)
+    cfg.rewards["action_rate_l2"] = RewardTermCfg(func=mdp.action_rate_l2, weight=-0.1)
     cfg.rewards["joint_torque_rate_l2"] = RewardTermCfg(
         func=microduck_mdp.joint_torque_rate_l2, weight=0.0
     )
@@ -301,11 +336,16 @@ def make_microduck_roulade_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
         },
     )
 
-    # |a_z| impact shaping — starts at 0 (impacts are inherent to a roll;
-    # taxing attempts blocks discovery), ramped in late to soften the slam.
+    # |a_z| impact shaping — active from step 0 (run-2 change: run 1
+    # discovered a violent solution under zero impact cost and locked it in;
+    # discovery is easy in this env, so shaping the style from the start is
+    # the priority). Curriculum ramps it further.
+    # NOTE: trunk_vertical_accel_penalty is SELF-NEGATING (returns -|a_z|) →
+    # POSITIVE weight (penalty sign convention; a negative weight here would
+    # reward violence — caught in the run-2 smoke test, sum was positive).
     cfg.rewards["gentle_landing"] = RewardTermCfg(
         func=microduck_mdp.trunk_vertical_accel_penalty,
-        weight=0.0,
+        weight=0.002,
         params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))},
     )
 
@@ -573,17 +613,17 @@ def make_microduck_roulade_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
             },
         )
 
-    # action_rate ramp — gentler ceiling than standup's -1.0: the roll is the
-    # most dynamic maneuver in the repertoire and -1.0 was already the proven
-    # ceiling for mere flips. Discovery happens under -0.05.
+    # action_rate ramp — run-2: starts at -0.1 (was -0.05; run 1 bred a
+    # violent solution under near-zero smoothing) and still ends below
+    # standup's -1.0 ceiling since the roll needs more dynamism than a flip.
     cfg.curriculum["action_rate_weight"] = CurriculumTermCfg(
         func=microduck_mdp.reward_weight,
         params={
             "reward_name":   "action_rate_l2",
             "weight_stages": [
-                {"step": 0,          "weight": -0.05},
-                {"step": 1000 * 24,  "weight": -0.1},
-                {"step": 2000 * 24,  "weight": -0.3},
+                {"step": 0,          "weight": -0.1},
+                {"step": 1000 * 24,  "weight": -0.2},
+                {"step": 2000 * 24,  "weight": -0.4},
                 {"step": 3000 * 24,  "weight": -0.6},
             ],
         },
@@ -617,10 +657,11 @@ def make_microduck_roulade_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     cfg.curriculum["gentle_landing_weight"] = CurriculumTermCfg(
         func=microduck_mdp.reward_weight,
         params={
+            # POSITIVE weights: the func is self-negating (returns -|a_z|).
             "reward_name":   "gentle_landing",
             "weight_stages": [
-                {"step": 0,          "weight": 0.0},
-                {"step": 2500 * 24,  "weight": -0.002},
+                {"step": 0,          "weight": 0.002},
+                {"step": 2500 * 24,  "weight": 0.005},
             ],
         },
     )
