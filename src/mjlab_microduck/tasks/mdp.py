@@ -6451,6 +6451,36 @@ def roulade_height_after_roll(
     return g * _roulade_completion_gate(env, gate_lo, gate_hi, require_head=True)
 
 
+def roulade_landing_sharp(
+    env: ManagerBasedRlEnv,
+    target_height: float,
+    height_std: float = 0.015,
+    upright_std: float = 0.3,
+    gate_lo: float = math.radians(260.0),
+    gate_hi: float = math.radians(330.0),
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """Tight-std upright × height Gaussians × completion gate — the last mile.
+
+    Run-4 fix for the 27°-lean / 1-cm-crouch end basin: the broad landing
+    composite (upright_std 0.40) scores ~0.5 at that pose, so the policy
+    parks there. This is standup's two-layer lesson — the broad layers reach,
+    the sharp layers finish. At 27° tilt this term scores ~0.1 (real
+    gradient); at vertical it pays ~1.
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    _update_roulade_accum(env, asset)
+    quat = asset.data.root_link_quat_w
+    tilt_sq = 2.0 * (quat[:, 1].pow(2) + quat[:, 2].pow(2))
+    upright_g = torch.exp(-tilt_sq / (upright_std * upright_std))
+    z = torch.nan_to_num(
+        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
+    )
+    height_g = torch.exp(-((z - target_height) / height_std) ** 2)
+    gate = _roulade_completion_gate(env, gate_lo, gate_hi, require_head=True)
+    return upright_g * height_g * gate
+
+
 def roulade_stand_tax(
     env: ManagerBasedRlEnv,
     target_height: float,

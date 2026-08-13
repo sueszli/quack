@@ -226,19 +226,21 @@ def make_microduck_roulade_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     cfg.rewards["roulade_progress"] = RewardTermCfg(
         func=microduck_mdp.roulade_progress,
         weight=8.0,
-        # max_paid_rate 3 rad/s: a controlled full roll takes ≥ ~2 s; rotating
-        # faster forfeits the excess (run-2 anti-violence fix).
-        params={"target_angle": 2 * math.pi, "max_paid_rate": 3.0},
+        # max_paid_rate: run-4 raised 3 → 5 rad/s. Measured physics (run-3
+        # checkpoint eval): the over-the-top transit runs at 3.5–5.5 rad/s —
+        # this robot is 10 cm tall, its natural tumble timescale is fast, and
+        # the 3 rad/s cap was forfeiting most of the physically-necessary
+        # rotation. Style pressure lives in |a_z| / action_rate / the support
+        # gate, not in fighting gravity's clock.
+        params={"target_angle": 2 * math.pi, "max_paid_rate": 5.0},
     )
 
-    # Explicit whip-speed tax above 4 rad/s — active from step 0 (run 1 proved
-    # discovery here is EASY; the standup "no attempt-tax during discovery"
-    # lesson doesn't bind — the risk in this env is violent solutions locking
-    # in, not exploration being taxed to death).
+    # Whip-speed tax — run-4 threshold 4 → 7 rad/s (above the measured p90
+    # transit speed of ~5.5): taxes genuine whips, not the natural tumble.
     cfg.rewards["roulade_overspeed"] = RewardTermCfg(
         func=microduck_mdp.roulade_overspeed_penalty,
         weight=-0.1,
-        params={"omega_max": 4.0},
+        params={"omega_max": 7.0},
     )
 
     # Head-as-pivot shaping: contact × mid-roll window × forward-rate factor
@@ -284,6 +286,23 @@ def make_microduck_roulade_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
         params={
             "target_height": STAND_Z,
             "std":           0.04,
+            "gate_lo":       LANDING_GATE_LO,
+            "gate_hi":       LANDING_GATE_HI,
+        },
+    )
+
+    # Sharp landing layer (run-4): tight-std upright × height product on top
+    # of the broad composite. Run-3 eval showed EVERY completed episode
+    # parking at the same z≈0.105 / 27°-lean pose — the broad stds score ~0.5
+    # there, no gradient to finish. Sharp layer: ~0.1 at the basin, ~1.0
+    # upright — 10× differential across the last mile.
+    cfg.rewards["roulade_landing_sharp"] = RewardTermCfg(
+        func=microduck_mdp.roulade_landing_sharp,
+        weight=2.0,
+        params={
+            "target_height": STAND_Z,
+            "height_std":    0.015,
+            "upright_std":   0.3,
             "gate_lo":       LANDING_GATE_LO,
             "gate_hi":       LANDING_GATE_HI,
         },
@@ -639,18 +658,19 @@ def make_microduck_roulade_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
             },
         )
 
-    # action_rate ramp — run-2: starts at -0.1 (was -0.05; run 1 bred a
-    # violent solution under near-zero smoothing) and still ends below
-    # standup's -1.0 ceiling since the roll needs more dynamism than a flip.
+    # action_rate ramp — run-4: ceiling softened -0.6 → -0.4 and the -0.4
+    # stage pushed 2000 → 3000. Run-3's landing metrics peaked at ~iter 2700
+    # then declined, tracking the -0.4/-0.6 stages — the tightening was
+    # squeezing the rise. (Run-2 note still holds: -0.1 minimum from step 0,
+    # run 1 bred violence under near-zero smoothing.)
     cfg.curriculum["action_rate_weight"] = CurriculumTermCfg(
         func=microduck_mdp.reward_weight,
         params={
             "reward_name":   "action_rate_l2",
             "weight_stages": [
                 {"step": 0,          "weight": -0.1},
-                {"step": 1000 * 24,  "weight": -0.2},
-                {"step": 2000 * 24,  "weight": -0.4},
-                {"step": 3000 * 24,  "weight": -0.6},
+                {"step": 1500 * 24,  "weight": -0.2},
+                {"step": 3000 * 24,  "weight": -0.4},
             ],
         },
     )
