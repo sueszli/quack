@@ -93,11 +93,17 @@ MIDROLL_PITCH_MIN   = math.radians(50.0)
 MIDROLL_PITCH_MAX   = math.radians(340.0)
 MIDROLL_OMEGA_RANGE = (0.0, 3.0)   # rad/s forward momentum at spawn
 # Tuck anchor: legs folded (crouch-anchor values from the velstand crouch
-# reset), servo-index keyed. Mid-roll spawns lerp HOME→tuck by a per-env factor.
+# reset) + CHIN TUCK (run-5: neck_pitch −1 / head_pitch +1 puts the flat head
+# top squarely on the floor — measured axis_z −0.99 vs +0.6 for the passive
+# face-plant; the head-top latch requires this, so mid-roll spawns must
+# demonstrate the tucked configuration). Servo-index keyed; mid-roll spawns
+# lerp HOME→tuck by a per-env factor.
 TUCK_OVERRIDES = {
     2:  -1.15,  # left  hip_pitch
     3:   1.25,  # left  knee
     4:   1.05,  # left  ankle
+    5:  -1.0,   # neck_pitch  (chin tuck)
+    6:   1.0,   # head_pitch  (chin tuck)
     11:  1.15,  # right hip_pitch
     12: -1.25,  # right knee
     13: -1.05,  # right ankle
@@ -337,15 +343,24 @@ def make_microduck_roulade_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
         },
     )
 
-    # Straightness — keep the roll in the sagittal plane. Light: these are
-    # motion penalties and must not tax roll attempts into net-negative.
+    # Straightness — run-5: the run-4 policy rolled over the SHOULDER (lower
+    # energy path than straight over the head — it avoids the fully-inverted
+    # configuration, same cheat human beginners default to). The structural
+    # fix is the flatness gate on the accumulator + the head-top latch (side
+    # rolls no longer count as rotation at all); these penalties provide the
+    # dense per-step gradient back toward the plane, weights raised 5× from
+    # the run-2 values that were noise against progress@8.
     cfg.rewards["roulade_sagittal"] = RewardTermCfg(
         func=microduck_mdp.roulade_sagittal_penalty,
-        weight=-0.02,
+        weight=-0.1,
     )
     cfg.rewards["roulade_lateral_vel"] = RewardTermCfg(
         func=microduck_mdp.roulade_lateral_velocity_penalty,
-        weight=-0.2,
+        weight=-0.5,
+    )
+    cfg.rewards["roulade_flatness"] = RewardTermCfg(
+        func=microduck_mdp.roulade_flatness_penalty,
+        weight=-0.5,
     )
 
     # ── Sim2real regularisers ─────────────────────────────────────────────────

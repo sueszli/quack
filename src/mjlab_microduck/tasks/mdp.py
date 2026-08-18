@@ -6109,6 +6109,48 @@ _ROULADE_HEAD_SENSOR = "head_ground_contact"
 _HEAD_LATCH_LO = math.radians(20.0)
 _HEAD_LATCH_HI = math.radians(170.0)
 
+# Head-top axis in jaw_soft's LOCAL frame (measured empirically 2026-08-13:
+# world-up expressed in jaw_soft's frame with the robot settled at HOME).
+# The latch requires this axis to point DOWN at contact — "the flat top of
+# the head on the floor", not the face or the side of the shell (run-5 fix:
+# the run-4 policy rolled over the shoulder, which still touched jaw_soft).
+_HEAD_TOP_AXIS = (0.882, 0.0, 0.471)
+# dot(top_axis_world, -z) threshold. Measured landmarks (trunk pitched 110°):
+# passive face-plant (neck at HOME) reads +0.6, full chin-tuck (neck_pitch −1,
+# head_pitch +1) reads −0.99 — 0.3 accepts partial tucks while staying far
+# from any face/side contact.
+_HEAD_TOP_DOWN_MIN = 0.3
+
+# Sagittal flatness gate on the accumulator (run-5): in a clean forward roll
+# the body's LATERAL axis stays horizontal the whole way — its world-z
+# component is 2(q_y·q_z + q_w·q_x) ≈ 0 for ANY amount of pure pitch, and
+# grows toward ±1 as the roll goes over the shoulder instead. Full rotation
+# credit while the lateral axis is within ~30° of horizontal, zero beyond
+# ~60°: a side roll does not count as rotation, earns no progress, and never
+# opens the landing gate.
+_FLAT_FULL = 0.5    # |lateral_axis_z| = sin(30°): full credit below
+_FLAT_ZERO = 0.866  # sin(60°): zero credit above
+
+
+def _lateral_axis_z(quat: torch.Tensor) -> torch.Tensor:
+    """World-z component of the body's lateral (y) axis. 0 = flat/sagittal."""
+    return 2.0 * (quat[:, 2] * quat[:, 3] + quat[:, 0] * quat[:, 1])
+
+
+def _head_top_down(env: ManagerBasedRlEnv, asset: Entity) -> torch.Tensor:
+    """True where the head-top axis points at the floor (dot with -z > min)."""
+    if not hasattr(env, "_roulade_head_body_id"):
+        ids, _ = asset.find_bodies("jaw_soft")
+        env._roulade_head_body_id = ids[0]
+    q = asset.data.body_link_quat_w[:, env._roulade_head_body_id]
+    w, x, y, z = q[:, 0], q[:, 1], q[:, 2], q[:, 3]
+    a, b, c = _HEAD_TOP_AXIS
+    # z-component of R(q) @ axis_local
+    axis_world_z = (
+        2.0 * (x * z - w * y) * a + 2.0 * (y * z + w * x) * b + (1.0 - 2.0 * (x * x + y * y)) * c
+    )
+    return axis_world_z < -_HEAD_TOP_DOWN_MIN
+
 
 def _sensor_any_contact(env: ManagerBasedRlEnv, name: str) -> torch.Tensor | None:
     if name not in env.scene.sensors:
@@ -6151,6 +6193,10 @@ def _update_roulade_accum(env: ManagerBasedRlEnv, asset: Entity) -> None:
         supported = _sensor_any_contact(env, _ROULADE_SUPPORT_SENSOR)
         if supported is not None:
             delta = delta * supported.float()
+        # Sagittal flatness gate (run-5): side/shoulder rolls don't count.
+        y_z = torch.nan_to_num(_lateral_axis_z(asset.data.root_link_quat_w), nan=1.0).abs()
+        t = torch.clamp((_FLAT_ZERO - y_z) / (_FLAT_ZERO - _FLAT_FULL), 0.0, 1.0)
+        delta = delta * (t * t * (3.0 - 2.0 * t))
         env._roulade_accum = env._roulade_accum + delta
         env._roulade_max = torch.maximum(env._roulade_max, env._roulade_accum)
 
@@ -6159,7 +6205,11 @@ def _update_roulade_accum(env: ManagerBasedRlEnv, asset: Entity) -> None:
             in_window = (env._roulade_accum > _HEAD_LATCH_LO) & (
                 env._roulade_accum < _HEAD_LATCH_HI
             )
-            env._roulade_head_latch = env._roulade_head_latch | (head_contact & in_window)
+            # Run-5: contact must be with the FLAT TOP of the head (top axis
+            # pointing at the floor) — face/side shell contacts don't latch.
+            env._roulade_head_latch = env._roulade_head_latch | (
+                head_contact & in_window & _head_top_down(env, asset)
+            )
         env._roulade_last_update_step = step
 
 
@@ -6357,11 +6407,13 @@ def roulade_head_pivot(
 ) -> torch.Tensor:
     """Reward head-ground contact while rotating forward mid-roll.
 
-    contact × window(accum ∈ [angle_lo, angle_hi]) × clamp(ω_fwd/rate_norm, 0, 1).
+    contact × window(accum ∈ [angle_lo, angle_hi]) × clamp(ω_fwd/rate_norm, 0, 1)
+    × (0.3 + 0.7·top_down).
     The rate factor is the anti-camping guard: a face-planted robot resting its
     head on the floor has ω_fwd ≈ 0 and earns nothing — the term only pays for
-    pivoting OVER the head, which is the physical mechanism we want (flat head
-    top as the rolling surface).
+    pivoting OVER the head. The top_down factor (run-5) aligns this dense
+    shaping with the latch: any head contact mid-roll pays 30%, contact on the
+    FLAT TOP (chin tucked) pays full — the gradient that teaches the tuck.
     """
     asset: Entity = env.scene[asset_cfg.name]
     _update_roulade_accum(env, asset)
@@ -6375,7 +6427,8 @@ def roulade_head_pivot(
     in_window = ((accum > angle_lo) & (accum < angle_hi)).float()
     omega_fwd = _ROULADE_FWD_SIGN * asset.data.root_link_ang_vel_b[:, 1]
     rate = torch.clamp(torch.nan_to_num(omega_fwd, nan=0.0) / rate_norm, 0.0, 1.0)
-    return contact * in_window * rate
+    top = 0.3 + 0.7 * _head_top_down(env, asset).float()
+    return contact * in_window * rate * top
 
 
 def roulade_landing_composite(
@@ -6550,6 +6603,22 @@ def roulade_overspeed_penalty(
     omega_y = torch.nan_to_num(asset.data.root_link_ang_vel_b[:, 1], nan=0.0)
     excess = torch.clamp(omega_y.abs() - omega_max, min=0.0)
     return excess.pow(2)
+
+
+def roulade_flatness_penalty(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """(lateral-axis world-z)² — dense gradient toward a sagittal roll.
+
+    Positive quantity; use a negative weight. Zero when standing, zero
+    through an arbitrarily deep CLEAN forward roll (pure pitch keeps the
+    lateral axis horizontal), up to 1 when tipped fully onto a shoulder.
+    The accumulator's flatness gate makes side rolls unprofitable; this term
+    adds the per-step gradient that steers back toward the plane.
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    return torch.nan_to_num(_lateral_axis_z(asset.data.root_link_quat_w), nan=0.0).pow(2)
 
 
 def roulade_sagittal_penalty(
