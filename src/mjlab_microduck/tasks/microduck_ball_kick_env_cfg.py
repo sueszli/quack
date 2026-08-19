@@ -38,7 +38,7 @@ from copy import deepcopy
 # Flips the ball spawn side and the support-foot (anti-hop) sensor. Everything
 # else is left/right symmetric (HOME pose has mirrored signs). Train the two
 # policies as separate runs — wandb experiment/run name follows this flag.
-KICK_FOOT = "left"
+KICK_FOOT = "right"
 assert KICK_FOOT in ("right", "left")
 
 # Symmetry — must stay OFF: the kick task is inherently one-footed.
