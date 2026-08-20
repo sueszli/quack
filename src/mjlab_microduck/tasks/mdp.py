@@ -5138,16 +5138,36 @@ def head_pose_tracking(
 
     cmd has shape (N, 4) = deltas from default joint positions in the order
     [neck_pitch, head_pitch, head_yaw, head_roll].
+
+    On backlash models the measured angle is qpos[servo] + qpos[backlash] —
+    the OUTPUT link, which is also what the encoder obs
+    (joint_pos_rel_backlash) reports. Measuring the servo alone would let the
+    head droop the backlash play reward-free AND penalize the policy for
+    compensating it (servo biased up = servo-side "error"). On models without
+    passive_*_backlash joints the mask is 0 and this reduces to the servo.
     """
     asset: Entity = env.scene[asset_cfg.name]
     cmd = env.command_manager.get_command(command_name)  # (N, 4)
 
     if not hasattr(env, "_head_pose_neck_ids"):
-        ids, _ = asset.find_joints_by_actuator_names(_NECK_JOINT_PATTERNS)
+        ids, names = asset.find_joints_by_actuator_names(_NECK_JOINT_PATTERNS)
         env._head_pose_neck_ids = torch.tensor(ids, device=env.device, dtype=torch.long)
+        name_to_id = {n: i for i, n in enumerate(asset.joint_names)}
+        bl = [name_to_id.get(f"passive_{n}_backlash") for n in names]
+        env._head_pose_bl_ids = torch.tensor(
+            [0 if b is None else b for b in bl], device=env.device, dtype=torch.long
+        )
+        env._head_pose_bl_mask = torch.tensor(
+            [0.0 if b is None else 1.0 for b in bl], device=env.device
+        )
 
     neck_ids = env._head_pose_neck_ids
-    actual = asset.data.joint_pos[:, neck_ids] - asset.data.default_joint_pos[:, neck_ids]
+    joint_pos = asset.data.joint_pos
+    measured = (
+        joint_pos[:, neck_ids]
+        + joint_pos[:, env._head_pose_bl_ids] * env._head_pose_bl_mask
+    )
+    actual = measured - asset.data.default_joint_pos[:, neck_ids]
     err = actual - cmd
     per_joint = torch.exp(-(err / std) ** 2)
     if fine_std is not None:
