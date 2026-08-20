@@ -109,8 +109,17 @@ def make_microduck_velocity2_env_cfg(
     # over ALL action dims, neck included), the neck is fully shaped even though
     # the neck-only neck_action_rate_l2 term was removed. body_pose tracking
     # stays disabled for now.
+    #
+    # fine_std=0.1: 2026-08-20 eval — the head walks pitched ~10-20° down (worse
+    # on the real robot). With only std=0.5 (≈29°), a 10° sag on the two pitch
+    # joints costs ~0.06/step at weight 2.0 — cheaper than actively holding the
+    # 300 g head against gravity, so the policy lets it droop. The narrow
+    # component prices small errors (~6× more gradient at 5°) while std=0.5
+    # keeps the far-command gradient alive as the curriculum widens.
     if "head_pose_tracking" in r:
         r["head_pose_tracking"].weight = 2.0
+        r["head_pose_tracking"].params["fine_std"] = 0.1
+        r["head_pose_tracking"].params["fine_weight"] = 0.5
     if "body_pose_tracking" in r:
         r["body_pose_tracking"].weight = 0.0
 

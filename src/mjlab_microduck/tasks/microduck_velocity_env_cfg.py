@@ -109,9 +109,9 @@ MICRODUCK_ROUGH_TERRAINS_CFG = TerrainGeneratorCfg(
     num_rows=10,
     num_cols=20,
     sub_terrains={
-        "flat": terrain_gen.BoxFlatTerrainCfg(proportion=0.3),
+        "flat": terrain_gen.BoxFlatTerrainCfg(proportion=0.25),
         "pyramid_stairs": terrain_gen.BoxPyramidStairsTerrainCfg(
-            proportion=0.3,  # increased from 0.2 (absorbed inverted pyramid's share)
+            proportion=0.25,
             step_height_range=(0.0, 0.015),  # max 1.5 cm (vs 10 cm default)
             step_width=0.15,
             platform_width=2.0,
@@ -125,10 +125,23 @@ MICRODUCK_ROUGH_TERRAINS_CFG = TerrainGeneratorCfg(
         # 0.45 m gives 17×17 = 289 boxes/patch → ~17 K total (border = 0.35 m ✓).
         # Must not divide evenly into terrain size (8.0 m): 0.45 × 17 = 7.65 ✓
         "random_grid": terrain_gen.BoxRandomGridTerrainCfg(
-            proportion=0.4,  # increased from 0.3 (absorbed inverted pyramid's share)
+            proportion=0.30,
             grid_width=0.45,
             grid_height_range=(0.0, 0.010),  # max 1 cm
             platform_width=1.5,
+        ),
+        # Gentle slopes (heightfield pyramid, platform on TOP — robot spawns on
+        # the flat platform and walks down/up/across the slope as commands
+        # resample). slope_range is rise/run: 0.03→0.10 ≈ 1.7°→5.7° by
+        # difficulty — small robot, small slopes. NOT inverted (see the
+        # inverted-pyramid env_origin note above — same pit-spawn risk class).
+        # vertical_scale=0.001 keeps quantization steps at 1 mm so a gentle
+        # slope is smooth instead of a staircase of 5 mm ledges.
+        "pyramid_slope": terrain_gen.HfPyramidSlopedTerrainCfg(
+            proportion=0.20,
+            slope_range=(0.03, 0.10),
+            platform_width=2.0,
+            vertical_scale=0.001,
         ),
     },
     add_lights=False,

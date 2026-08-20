@@ -5114,6 +5114,8 @@ def head_pose_tracking(
     env: ManagerBasedRlEnv,
     command_name: str = "head_pose",
     std: float = 0.5,
+    fine_std: float | None = None,
+    fine_weight: float = 0.5,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
 ) -> torch.Tensor:
     """Per-joint Gaussian reward for matching commanded neck/head deltas.
@@ -5125,6 +5127,14 @@ def head_pose_tracking(
     `std` is the per-joint tolerance: at err=std the per-joint reward is 1/e
     (~0.37). Pick std on the order of the command range so the gradient
     doesn't die as the curriculum widens.
+
+    `fine_std` (optional) blends in a second, narrow Gaussian:
+    (1-fine_weight)·exp(-(err/std)²) + fine_weight·exp(-(err/fine_std)²).
+    Rationale: a single wide std (0.5 rad ≈ 29°) makes small errors nearly
+    free — a 10° gravity sag on the heavy head costs ~0.03 reward, so the
+    policy lets it droop. The narrow component (~0.1 rad) prices those small
+    errors while the wide one keeps gradient alive at far commands during
+    curriculum widening.
 
     cmd has shape (N, 4) = deltas from default joint positions in the order
     [neck_pitch, head_pitch, head_yaw, head_roll].
@@ -5140,6 +5150,10 @@ def head_pose_tracking(
     actual = asset.data.joint_pos[:, neck_ids] - asset.data.default_joint_pos[:, neck_ids]
     err = actual - cmd
     per_joint = torch.exp(-(err / std) ** 2)
+    if fine_std is not None:
+        per_joint = (1.0 - fine_weight) * per_joint + fine_weight * torch.exp(
+            -(err / fine_std) ** 2
+        )
     return per_joint.mean(dim=-1)
 
 
