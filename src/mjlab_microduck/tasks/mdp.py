@@ -5177,6 +5177,56 @@ def head_pose_tracking(
     return per_joint.mean(dim=-1)
 
 
+def head_pose_bias_penalty(
+    env: ManagerBasedRlEnv,
+    command_name: str = "head_pose",
+    tau_s: float = 1.0,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """Penalize the time-averaged (DC) neck/head tracking error: -mean(|EMA(err)|).
+
+    Companion to ``head_pose_tracking``, which scores the INSTANTANEOUS error.
+    Why a separate DC term instead of just tightening that Gaussian's std:
+    walking unavoidably shakes a head that is 38% of the robot's mass, so an
+    instantaneous tight-tolerance term is a permanent tax on walking that no
+    policy can escape — measured at ~0.77/step against an air_time reward of
+    ~1.01/step, which is exactly what made velocity2 run 2026-08-20 abandon
+    stepping altogether (wandb 5yay13u4). The steady-state droop IS escapable:
+    the policy can bias its neck command up to cancel gravity sag. Averaging
+    over ``tau_s`` lets the oscillation cancel and prices only the bias.
+
+    L1 (not Gaussian) on purpose: the gradient stays constant at large bias,
+    where a tight Gaussian would be flat and dead.
+
+    On backlash models the measured angle reads through the play, matching
+    head_pose_tracking and the encoder obs.
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    cmd = env.command_manager.get_command(command_name)  # (N, 4)
+
+    if not hasattr(env, "_head_pose_neck_ids"):
+        # Share the id cache with head_pose_tracking (either may run first).
+        head_pose_tracking(env, command_name=command_name, asset_cfg=asset_cfg)
+
+    neck_ids = env._head_pose_neck_ids
+    joint_pos = asset.data.joint_pos
+    measured = (
+        joint_pos[:, neck_ids]
+        + joint_pos[:, env._head_pose_bl_ids] * env._head_pose_bl_mask
+    )
+    err = (measured - asset.data.default_joint_pos[:, neck_ids]) - cmd
+
+    if not hasattr(env, "_head_bias_ema"):
+        env._head_bias_ema = torch.zeros_like(err)
+    # Freshly reset envs: drop the previous episode's accumulated bias.
+    fresh = env.episode_length_buf <= 1
+    env._head_bias_ema[fresh] = 0.0
+
+    alpha = min(1.0, float(env.step_dt) / max(tau_s, 1e-6))
+    env._head_bias_ema = (1.0 - alpha) * env._head_bias_ema + alpha * err
+    return -env._head_bias_ema.abs().mean(dim=-1)
+
+
 def body_pose_tracking_6d(
     env: ManagerBasedRlEnv,
     command_name: str = "body_pose",

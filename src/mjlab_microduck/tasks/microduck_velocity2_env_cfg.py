@@ -110,16 +110,26 @@ def make_microduck_velocity2_env_cfg(
     # the neck-only neck_action_rate_l2 term was removed. body_pose tracking
     # stays disabled for now.
     #
-    # fine_std=0.1: 2026-08-20 eval — the head walks pitched ~10-20° down (worse
-    # on the real robot). With only std=0.5 (≈29°), a 10° sag on the two pitch
-    # joints costs ~0.06/step at weight 2.0 — cheaper than actively holding the
-    # 300 g head against gravity, so the policy lets it droop. The narrow
-    # component prices small errors (~6× more gradient at 5°) while std=0.5
-    # keeps the far-command gradient alive as the curriculum widens.
     if "head_pose_tracking" in r:
         r["head_pose_tracking"].weight = 2.0
-        r["head_pose_tracking"].params["fine_std"] = 0.1
-        r["head_pose_tracking"].params["fine_weight"] = 0.5
+
+    # Head droop fix (2026-08-20). The head walks pitched ~15° down (measured:
+    # run ww1g2198 head_pose_tracking 1.544/2.0 → 14.6° mean joint error).
+    # DO NOT fix this by tightening head_pose_tracking's std: run 5yay13u4 tried
+    # fine_std=0.1 and the policy stopped walking entirely by iter 300 (air_time
+    # 1.01 → 0.02, peak foot height 15 mm → 2 mm, entropy collapsed 10.9 → 1.9).
+    # An instantaneous tight tolerance taxes walking 0.77/step — 76% of the whole
+    # air_time reward — and is UNESCAPABLE, since a 280 g head (38% of robot
+    # mass) must oscillate while stepping. Standing still scored higher, so it
+    # stood still.
+    # The DC bias, unlike the oscillation, IS escapable (bias the neck command up
+    # to cancel gravity sag), so price only that: L1 on a 1 s EMA of the error.
+    # At the optimum this costs a walking policy nothing.
+    r["head_pose_bias"] = RewardTermCfg(
+        func=microduck_mdp.head_pose_bias_penalty,
+        weight=0.0,  # ramped by the curriculum below
+        params={"command_name": "head_pose", "tau_s": 1.0},
+    )
     if "body_pose_tracking" in r:
         r["body_pose_tracking"].weight = 0.0
 
@@ -152,6 +162,26 @@ def make_microduck_velocity2_env_cfg(
                 {"step": 1000 * NUM_STEPS_PER_ENV, "weight": -0.6},
                 {"step": 1250 * NUM_STEPS_PER_ENV, "weight": -0.8},
                 {"step": 1500 * NUM_STEPS_PER_ENV, "weight": -1.0},
+            ],
+        },
+    )
+
+    # head_pose_bias ramp: OFF until iter 600, then 1.0 → 3.0 by iter 1500.
+    # Held at 0 early for two reasons: (1) iters 0-600 then reproduce the
+    # reference run ww1g2198 exactly apart from the terrain, so this run doubles
+    # as a clean test of the new slope sub-terrain — if walking fails before 600
+    # it is the slopes, not the head; (2) a posture-precision term is a
+    # distraction before a gait exists. At weight 3.0 a 15° residual bias costs
+    # 0.79/step and a 2° bias costs 0.10/step.
+    cfg.curriculum["head_pose_bias_weight"] = CurriculumTermCfg(
+        func=microduck_mdp.reward_weight,
+        params={
+            "reward_name": "head_pose_bias",
+            "weight_stages": [
+                {"step": 0, "weight": 0.0},
+                {"step": 600 * NUM_STEPS_PER_ENV, "weight": 1.0},
+                {"step": 1000 * NUM_STEPS_PER_ENV, "weight": 2.0},
+                {"step": 1500 * NUM_STEPS_PER_ENV, "weight": 3.0},
             ],
         },
     )
