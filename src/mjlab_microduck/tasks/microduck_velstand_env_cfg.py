@@ -172,6 +172,21 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
     # robot can physically lie on the ground and push off it.
     cfg.scene.entities = {"robot": MICRODUCK_STANDUP_ROBOT_CFG}
 
+    # velocity2's head_pose_bias flows in UNGATED (fine on a walk-only env —
+    # fell_over terminates fallen episodes there). Velstand episodes SURVIVE
+    # falls, so the ungated EMA would charge head "droop" all through the
+    # ground phase — a flat tax on being fallen that the recovery economics
+    # (runs 1-7) never priced in. Add the upright gate: error stops feeding the
+    # EMA below z=0.09 / beyond 40° tilt (matching REWARD_GATE_TILT_DEG), so
+    # the term prices exactly what it does in velocity2 — sustained droop while
+    # actually standing/walking — and nothing during recovery.
+    cfg.rewards["head_pose_bias"].params.update({
+        "gate_height_low":    0.09,
+        "gate_height_high":   0.11,
+        "gate_tilt_full_deg": 20.0,
+        "gate_tilt_zero_deg": REWARD_GATE_TILT_DEG,
+    })
+
     # ── Recovery reward layer ─────────────────────────────────────────────────
     # LESSON (runs 1/2/4 — sitting, lying, head-tripod): ANY positive reward for
     # BEING in a fallen-ish state gets farmed from some comfortable pose. The

@@ -5230,6 +5230,10 @@ def head_pose_bias_penalty(
     env: ManagerBasedRlEnv,
     command_name: str = "head_pose",
     tau_s: float = 1.0,
+    gate_height_low: float | None = None,
+    gate_height_high: float = 0.11,
+    gate_tilt_full_deg: float = 20.0,
+    gate_tilt_zero_deg: float = 45.0,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
 ) -> torch.Tensor:
     """Penalize the time-averaged (DC) neck/head tracking error: -mean(|EMA(err)|).
@@ -5249,6 +5253,17 @@ def head_pose_bias_penalty(
 
     On backlash models the measured angle reads through the play, matching
     head_pose_tracking and the encoder obs.
+
+    ``gate_height_low`` (optional): upright gate for recovery envs (standup /
+    velstand), same smoothstep shape and semantics as body_ang_vel_at_height —
+    zero below gate_height_low or above gate_tilt_zero_deg tilt, full above
+    gate_height_high and below gate_tilt_full_deg. The gate multiplies the
+    ERROR feeding the EMA (not just the output): while fallen/rising the EMA
+    sees zero and decays, so arriving upright starts the bias clock from ~0
+    instead of charging the whole ground phase's accumulated error at the
+    finish line — that would be a reward wall right before recovery completes,
+    the exact failure mode of the retired head_impact_penalty. The output is
+    gated too, so a fresh fall stops the charge immediately.
     """
     asset: Entity = env.scene[asset_cfg.name]
     cmd = env.command_manager.get_command(command_name)  # (N, 4)
@@ -5265,6 +5280,29 @@ def head_pose_bias_penalty(
     )
     err = (measured - asset.data.default_joint_pos[:, neck_ids]) - cmd
 
+    if gate_height_low is not None:
+        z = torch.nan_to_num(
+            asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2],
+            nan=0.0,
+        )
+        t = torch.clamp(
+            (z - gate_height_low) / max(gate_height_high - gate_height_low, 1e-6),
+            0.0, 1.0,
+        )
+        gate = t * t * (3.0 - 2.0 * t)
+        quat = asset.data.root_link_quat_w
+        cos_tilt = 1.0 - 2.0 * (quat[:, 1] ** 2 + quat[:, 2] ** 2)
+        tilt_deg = torch.rad2deg(torch.acos(cos_tilt.clamp(-1.0, 1.0)))
+        st = torch.clamp(
+            (gate_tilt_zero_deg - tilt_deg)
+            / max(gate_tilt_zero_deg - gate_tilt_full_deg, 1e-6),
+            0.0, 1.0,
+        )
+        gate = gate * (st * st * (3.0 - 2.0 * st))
+        err = err * gate.unsqueeze(-1)
+    else:
+        gate = None
+
     if not hasattr(env, "_head_bias_ema"):
         env._head_bias_ema = torch.zeros_like(err)
     # Freshly reset envs: drop the previous episode's accumulated bias.
@@ -5273,7 +5311,10 @@ def head_pose_bias_penalty(
 
     alpha = min(1.0, float(env.step_dt) / max(tau_s, 1e-6))
     env._head_bias_ema = (1.0 - alpha) * env._head_bias_ema + alpha * err
-    return -env._head_bias_ema.abs().mean(dim=-1)
+    out = -env._head_bias_ema.abs().mean(dim=-1)
+    if gate is not None:
+        out = out * gate
+    return out
 
 
 def body_pose_tracking_6d(

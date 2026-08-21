@@ -253,6 +253,29 @@ def make_microduck_standup_env_cfg(
         params={"command_name": "head_pose", "std": 0.5},
     )
 
+    # Head DC-droop penalty (velocity2's fix, standup-adapted). L1 on a 1 s EMA
+    # of the head tracking error — prices only the sustained gravity sag the
+    # policy can cancel by biasing the neck command up; transient motion
+    # averages out. TWO standup-specific safeties, both mandatory here:
+    #  - UPRIGHT GATE (same values as arrival_damping): the gate multiplies the
+    #    error feeding the EMA, so the ground/rising phase accumulates NOTHING
+    #    — no reward wall at the finish line, no tax on the head-pivot flip
+    #    (the retired head_impact_penalty froze the policy exactly that way).
+    #  - STARTS AT 0, introduced at iter 3000 by the curriculum below — same
+    #    discovery-vs-refinement timing as arrival_damping/torque_rate.
+    cfg.rewards["head_pose_bias"] = RewardTermCfg(
+        func=microduck_mdp.head_pose_bias_penalty,
+        weight=0.0,  # ramped by head_pose_bias_weight curriculum
+        params={
+            "command_name":       "head_pose",
+            "tau_s":              1.0,
+            "gate_height_low":    0.09,
+            "gate_height_high":   0.11,
+            "gate_tilt_full_deg": 20.0,
+            "gate_tilt_zero_deg": 45.0,
+        },
+    )
+
     # L1 bootstrap — constant gradient even when far from HOME.
     # Bumped 2 → 5: at convergence the policy parks ~0.18 rad off-HOME (mostly
     # bent knees) costing only -0.35/step at weight 2 — cheap enough to ignore.
@@ -513,6 +536,17 @@ def make_microduck_standup_env_cfg(
     del cfg.observations["critic"].terms["foot_height"]
     del cfg.observations["actor"].terms["height_scan"]
     del cfg.observations["critic"].terms["height_scan"]
+    # The retained sensor-derived critic terms get the NaN-safe wrappers: a
+    # non-finite contact force slips past robot_state_is_nan (it checks joint +
+    # root state only) and a single NaN here kills the run via rsl_rl's
+    # check_nan — the 2026-08-21 Velocity2-Rough-Backlash crash. Standup lands
+    # and flips constantly, so degenerate contacts are MORE likely here.
+    for _term, _safe in (
+        ("foot_contact_forces", microduck_mdp.foot_contact_forces_safe),
+        ("foot_air_time", microduck_mdp.foot_air_time_safe),
+    ):
+        if _term in cfg.observations["critic"].terms:
+            cfg.observations["critic"].terms[_term].func = _safe
 
     gravity_term_name = "projected_gravity"
     cfg.observations["actor"].terms[gravity_term_name] = deepcopy(
@@ -641,6 +675,7 @@ def make_microduck_standup_env_cfg(
     cfg.terminations["nan_state"] = TerminationTermCfg(
         func=microduck_mdp.robot_state_is_nan,
         time_out=False,
+        params={"sensor_names": ("feet_ground_contact",)},
     )
 
     # ── Events ────────────────────────────────────────────────────────────────
@@ -939,6 +974,24 @@ def make_microduck_standup_env_cfg(
                 {"step": 0,          "weight": 0.0},
                 {"step": 3000 * 24,  "weight": -0.025},
                 {"step": 4000 * 24,  "weight": -0.05},
+            ],
+        },
+    )
+    # head_pose_bias: same introduction timing as arrival_damping (see its
+    # comment — timing, not magnitude, is what protects recovery discovery).
+    # Dosage: standup runs head_pose_tracking at 0.75 vs velocity2's 2.0 (task
+    # weights ÷4 rebalance), so the bias lands at 1.5 vs velocity2's 3.0. At
+    # 1.5 a 15° standing droop costs 0.39/step, 5° costs 0.13/step. If the
+    # standing head is still down after a run, raise the last stage — do NOT
+    # move the introduction earlier.
+    cfg.curriculum["head_pose_bias_weight"] = CurriculumTermCfg(
+        func=microduck_mdp.reward_weight,
+        params={
+            "reward_name":   "head_pose_bias",
+            "weight_stages": [
+                {"step": 0,          "weight": 0.0},
+                {"step": 3000 * 24,  "weight": 0.5},
+                {"step": 4000 * 24,  "weight": 1.5},
             ],
         },
     )

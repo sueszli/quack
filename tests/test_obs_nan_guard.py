@@ -116,3 +116,22 @@ def test_nan_state_termination_watches_the_contact_sensor():
     cfg = make_microduck_velocity2_env_cfg(rough=True)
     params = cfg.terminations["nan_state"].params
     assert params.get("sensor_names"), "nan_state no longer watches contact forces"
+
+
+def test_standup_env_is_also_guarded():
+    # The deployed standing policy trains on StandUp, which builds on mjlab's
+    # base env (NOT the microduck velocity env) and therefore does not inherit
+    # the guards wired there.
+    from mjlab_microduck.tasks.microduck_standup_env_cfg import (
+        make_microduck_standup_env_cfg,
+    )
+
+    cfg = make_microduck_standup_env_cfg()
+    terms = cfg.observations["critic"].terms
+    for name in ("foot_contact_forces", "foot_air_time"):
+        assert terms[name].func.__name__.endswith("_safe"), (
+            f"standup critic/{name} lost its NaN guard"
+        )
+    assert cfg.terminations["nan_state"].params.get("sensor_names"), (
+        "standup nan_state no longer watches contact forces"
+    )
