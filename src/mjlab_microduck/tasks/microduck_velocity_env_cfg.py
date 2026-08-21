@@ -427,6 +427,7 @@ def make_microduck_velocity_env_cfg(
     cfg.terminations["nan_state"] = TerminationTermCfg(
         func=microduck_mdp.robot_state_is_nan,
         time_out=False,
+        params={"sensor_names": (feet_ground_cfg.name,)},
     )
 
     cfg.events["reset_base"].params["pose_range"]["z"] = (0.12, 0.13)
@@ -612,6 +613,20 @@ def make_microduck_velocity_env_cfg(
     cfg.observations["actor"].terms[gravity_term_name].delay_min_lag = 0
     cfg.observations["actor"].terms[gravity_term_name].delay_max_lag = 1  # was 3 (=60 ms worst case); real dxl IMU path is fast — ±20 ms envelope (2026-07 audit)
     cfg.observations["actor"].terms[gravity_term_name].delay_update_period = 64
+
+    # The critic's sensor-derived terms are the one obs path `nan_state` cannot
+    # protect (it checks joint + root state; these read raycast/contact sensor
+    # data, which MuJoCo can return non-finite for while the state is still
+    # clean). A single NaN here kills the whole run via rsl_rl's check_nan —
+    # that is the 2026-08-21 Velocity2-Rough-Backlash crash. Critic-only, so
+    # sanitizing costs the policy nothing.
+    for _term, _safe in (
+        ("foot_contact_forces", microduck_mdp.foot_contact_forces_safe),
+        ("foot_height", microduck_mdp.foot_height_safe),
+        ("foot_air_time", microduck_mdp.foot_air_time_safe),
+    ):
+        if _term in cfg.observations["critic"].terms:
+            cfg.observations["critic"].terms[_term].func = _safe
 
     # Observation noise configuration (edit these values as needed)
     cfg.observations["actor"].terms["base_ang_vel"].noise = Unoise(n_min=-0.03, n_max=0.03) # was 0.2

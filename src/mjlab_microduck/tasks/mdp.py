@@ -13,6 +13,7 @@ from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.managers.reward_manager import RewardManager as _RewardManager
 from mjlab.entity import Entity
 from mjlab.tasks.velocity.mdp.velocity_command import UniformVelocityCommand, UniformVelocityCommandCfg
+from mjlab.tasks.velocity.mdp import observations as _velocity_obs
 from mjlab.managers.command_manager import CommandTerm
 from mjlab.managers import CommandTermCfg
 from mjlab.managers.event_manager import requires_model_fields
@@ -962,6 +963,7 @@ def fallen_too_long(
 def robot_state_is_nan(
     env: ManagerBasedRlEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    sensor_names: tuple[str, ...] = (),
 ) -> torch.Tensor:
     """Terminate environments where MuJoCo produced NaN joint positions.
 
@@ -996,6 +998,19 @@ def robot_state_is_nan(
     bad |= ~torch.isfinite(d.root_link_quat_w).all(dim=1)
     bad |= ~torch.isfinite(d.root_link_lin_vel_w).all(dim=1)
     bad |= ~torch.isfinite(d.root_link_ang_vel_w).all(dim=1)
+
+    # Contact FORCES can blow up a step before qpos/qvel do: MuJoCo resolves a
+    # degenerate contact into an inf/NaN impulse while the integrated state is
+    # still finite. That force feeds the critic-only `foot_contact_forces` obs
+    # (sign(F)*log1p(|F|)), which the state checks above do NOT cover — so the
+    # env was not reset and the NaN reached the runner's check_nan, killing the
+    # whole run (crash 2026-08-21, Velocity2-Rough-Backlash with hfield slopes).
+    for name in sensor_names:
+        if name not in env.scene.sensors:
+            continue
+        force = getattr(env.scene.sensors[name].data, "force", None)
+        if force is not None:
+            bad |= ~torch.isfinite(force).flatten(start_dim=1).all(dim=1)
     return bad
 
 
@@ -5175,6 +5190,40 @@ def head_pose_tracking(
             -(err / fine_std) ** 2
         )
     return per_joint.mean(dim=-1)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# NaN-safe wrappers for the sensor-derived critic observations.
+#
+# `robot_state_is_nan` covers joint + root state, so every obs derived from
+# those is protected by the reset it triggers. The three terms below are NOT:
+# they read sensor data (raycast heights, contact air-time, contact forces),
+# which MuJoCo can return non-finite for while the integrated robot state is
+# still clean. They are critic-only, so a single sanitized step costs the
+# policy nothing, whereas letting the value through kills the entire run via
+# rsl_rl's check_nan. Sanitizing here does not hide real physics blowups —
+# those still terminate through nan_state and show up as
+# Episode_Termination/nan_state in wandb.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _finite(x: torch.Tensor) -> torch.Tensor:
+    return torch.nan_to_num(x, nan=0.0, posinf=0.0, neginf=0.0)
+
+
+def foot_contact_forces_safe(env: ManagerBasedRlEnv, sensor_name: str) -> torch.Tensor:
+    """NaN-safe `foot_contact_forces` (see note above)."""
+    return _finite(_velocity_obs.foot_contact_forces(env, sensor_name))
+
+
+def foot_height_safe(env: ManagerBasedRlEnv, sensor_name: str) -> torch.Tensor:
+    """NaN-safe `foot_height` (see note above)."""
+    return _finite(_velocity_obs.foot_height(env, sensor_name))
+
+
+def foot_air_time_safe(env: ManagerBasedRlEnv, sensor_name: str) -> torch.Tensor:
+    """NaN-safe `foot_air_time` (see note above)."""
+    return _finite(_velocity_obs.foot_air_time(env, sensor_name))
 
 
 def head_pose_bias_penalty(
