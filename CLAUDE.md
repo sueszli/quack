@@ -221,7 +221,7 @@ Never launch a long run without one.
 - A fresh `uv sync` is the ground truth (HF Jobs run one): anything that only
   works via manually-installed local packages will die remotely. Keep
   `pyproject.toml` honest.
-- Physics-aligned limits: a 12 cm robot tumbles at 3.5–5.5 rad/s NATURALLY —
+- Physics-aligned limits: a 25 cm robot tumbles at 3.5–5.5 rad/s NATURALLY —
   don't impose human-scale speed intuitions via caps; put anti-violence
   pressure on impacts and thrash (|a_z|, action_rate, support gates), not on
   rotation speed.
