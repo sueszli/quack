@@ -1,5 +1,3 @@
-import os
-import sys
 from mjlab.tasks.registry import register_mjlab_task
 from mjlab.tasks.velocity.rl import VelocityOnPolicyRunner
 
@@ -17,13 +15,6 @@ class MicroduckOnPolicyRunner(VelocityOnPolicyRunner):
             alg["symmetry_cfg"] = {k: v for k, v in sym.items() if k != "_env"}
 
 
-# ---------------------------------------------------------------------------
-# mjlab 1.3.0 migration — velocity-family-first scope.
-# Only velocity / velocity2 / velstand / velstand_tiptoe / standup / sit are
-# ported and verified under 1.3.0 + canonical BAM. The remaining env cfgs
-# (rollers, pose, sitstand, testbench) are NOT yet migrated — re-enable each
-# import + registration once it is ported and verified.
-# ---------------------------------------------------------------------------
 from .microduck_velocity_env_cfg import (
     make_microduck_velocity_env_cfg,
     MicroduckRlCfg,
@@ -40,10 +31,6 @@ from .microduck_velstand_env_cfg import (
     make_microduck_velstand_env_cfg,
     MicroduckVelStandRlCfg,
 )
-from .microduck_velstand_tiptoe_env_cfg import (
-    make_microduck_velstand_tiptoe_env_cfg,
-    MicroduckVelStandTipToeRlCfg,
-)
 from .microduck_ground_pick_env_cfg import (
     make_microduck_ground_pick_env_cfg,
     MicroduckGroundPickRlCfg,
@@ -51,10 +38,6 @@ from .microduck_ground_pick_env_cfg import (
 from .microduck_ball_kick_env_cfg import (
     make_microduck_ball_kick_env_cfg,
     MicroduckBallKickRlCfg,
-)
-from .microduck_sit_env_cfg import (
-    make_microduck_sit_env_cfg,
-    MicroduckSitRlCfg,
 )
 from .microduck_sitstand_env_cfg import (
     make_microduck_sitstand_env_cfg,
@@ -75,10 +58,6 @@ from .microduck_roller_crouch_env_cfg import (
 from .microduck_roller_slope_env_cfg import (
     make_microduck_roller_slope_env_cfg,
     MicroduckRollerSlopeRlCfg,
-)
-from .microduck_shoot_env_cfg import (
-    make_microduck_shoot_env_cfg,
-    MicroduckShootRlCfg,
 )
 from .microduck_roller_standup_env_cfg import (
     make_microduck_roller_standup_env_cfg,
@@ -102,7 +81,6 @@ register_mjlab_task(
     rl_cfg=MicroduckRlCfg,
     runner_cls=MicroduckOnPolicyRunner,
 )
-print("✓ Velocity task registered: Mjlab-Velocity-Flat-MicroDuck")
 
 register_mjlab_task(
     task_id="Mjlab-Velocity-Rough-MicroDuck",
@@ -137,7 +115,6 @@ register_mjlab_task(
     rl_cfg=MicroduckVelStandRlCfg,
     runner_cls=MicroduckOnPolicyRunner,
 )
-print("✓ VelStand task registered: Mjlab-VelStand-Flat-MicroDuck")
 
 register_mjlab_task(
     task_id="Mjlab-VelStand-Rough-MicroDuck",
@@ -146,26 +123,6 @@ register_mjlab_task(
     rl_cfg=MicroduckVelStandRlCfg,
     runner_cls=MicroduckOnPolicyRunner,
 )
-print("✓ VelStand task registered: Mjlab-VelStand-Rough-MicroDuck")
-
-# VelStand-TipToe — same as VelStand but with a feet_tiptoe_alignment reward.
-register_mjlab_task(
-    task_id="Mjlab-VelStandTipToe-Flat-MicroDuck",
-    env_cfg=make_microduck_velstand_tiptoe_env_cfg(),
-    play_env_cfg=make_microduck_velstand_tiptoe_env_cfg(play=True),
-    rl_cfg=MicroduckVelStandTipToeRlCfg,
-    runner_cls=MicroduckOnPolicyRunner,
-)
-print("✓ VelStand-TipToe task registered: Mjlab-VelStandTipToe-Flat-MicroDuck")
-
-register_mjlab_task(
-    task_id="Mjlab-VelStandTipToe-Rough-MicroDuck",
-    env_cfg=make_microduck_velstand_tiptoe_env_cfg(rough=True),
-    play_env_cfg=make_microduck_velstand_tiptoe_env_cfg(play=True, rough=True),
-    rl_cfg=MicroduckVelStandTipToeRlCfg,
-    runner_cls=MicroduckOnPolicyRunner,
-)
-print("✓ VelStand-TipToe task registered: Mjlab-VelStandTipToe-Rough-MicroDuck")
 
 # Stand-up task — robot starts inverted (lying on back) and must stand up
 register_mjlab_task(
@@ -175,7 +132,6 @@ register_mjlab_task(
     rl_cfg=MicroduckStandUpRlCfg,
     runner_cls=MicroduckOnPolicyRunner,
 )
-print("✓ StandUp task registered: Mjlab-StandUp-Flat-MicroDuck")
 
 register_mjlab_task(
     task_id="Mjlab-StandUp-Rough-MicroDuck",
@@ -184,26 +140,6 @@ register_mjlab_task(
     rl_cfg=MicroduckStandUpRlCfg,
     runner_cls=MicroduckOnPolicyRunner,
 )
-print("✓ StandUp task registered: Mjlab-StandUp-Rough-MicroDuck")
-
-# Sit task — standing → sitting keyframe, gently (companion to StandUp)
-register_mjlab_task(
-    task_id="Mjlab-Sit-Flat-MicroDuck",
-    env_cfg=make_microduck_sit_env_cfg(),
-    play_env_cfg=make_microduck_sit_env_cfg(play=True),
-    rl_cfg=MicroduckSitRlCfg,
-    runner_cls=MicroduckOnPolicyRunner,
-)
-print("✓ Sit task registered: Mjlab-Sit-Flat-MicroDuck")
-
-register_mjlab_task(
-    task_id="Mjlab-Sit-Rough-MicroDuck",
-    env_cfg=make_microduck_sit_env_cfg(rough=True),
-    play_env_cfg=make_microduck_sit_env_cfg(play=True, rough=True),
-    rl_cfg=MicroduckSitRlCfg,
-    runner_cls=MicroduckOnPolicyRunner,
-)
-print("✓ Sit task registered: Mjlab-Sit-Rough-MicroDuck")
 
 # SitStand task — commanded sit ↔ stand in one policy, gently, head commandable
 register_mjlab_task(
@@ -213,7 +149,6 @@ register_mjlab_task(
     rl_cfg=MicroduckSitStandRlCfg,
     runner_cls=MicroduckOnPolicyRunner,
 )
-print("✓ SitStand task registered: Mjlab-SitStand-Flat-MicroDuck")
 
 register_mjlab_task(
     task_id="Mjlab-SitStand-Rough-MicroDuck",
@@ -222,7 +157,6 @@ register_mjlab_task(
     rl_cfg=MicroduckSitStandRlCfg,
     runner_cls=MicroduckOnPolicyRunner,
 )
-print("✓ SitStand task registered: Mjlab-SitStand-Rough-MicroDuck")
 
 # Ground-pick task — crouch, touch the ground with the mouth tip, return to stand
 register_mjlab_task(
@@ -232,7 +166,6 @@ register_mjlab_task(
     rl_cfg=MicroduckGroundPickRlCfg,
     runner_cls=MicroduckOnPolicyRunner,
 )
-print("✓ GroundPick task registered: Mjlab-GroundPick-Flat-MicroDuck")
 
 # BallKick task — kick a 70mm/15g ball forward hard with the right foot from a
 # standing start (flat terrain only — a ball on rough terrain is another task).
@@ -243,7 +176,6 @@ register_mjlab_task(
     rl_cfg=MicroduckBallKickRlCfg,
     runner_cls=MicroduckOnPolicyRunner,
 )
-print("✓ BallKick task registered: Mjlab-BallKick-Flat-MicroDuck")
 
 register_mjlab_task(
     task_id="Mjlab-GroundPick-Rough-MicroDuck",
@@ -252,17 +184,6 @@ register_mjlab_task(
     rl_cfg=MicroduckGroundPickRlCfg,
     runner_cls=MicroduckOnPolicyRunner,
 )
-print("✓ GroundPick task registered: Mjlab-GroundPick-Rough-MicroDuck")
-
-# Shoot task — standing kick with the right leg while the left leg stays planted
-register_mjlab_task(
-    task_id="Mjlab-Shoot-Flat-MicroDuck",
-    env_cfg=make_microduck_shoot_env_cfg(),
-    play_env_cfg=make_microduck_shoot_env_cfg(play=True),
-    rl_cfg=MicroduckShootRlCfg,
-    runner_cls=MicroduckOnPolicyRunner,
-)
-print("✓ Shoot task registered: Mjlab-Shoot-Flat-MicroDuck")
 
 # Roller skate velocity task (passive-wheel model; historical task id kept)
 register_mjlab_task(
@@ -272,7 +193,6 @@ register_mjlab_task(
     rl_cfg=MicroduckRollersRlCfg,
     runner_cls=MicroduckOnPolicyRunner,
 )
-print("✓ Rollers task registered: Mjlab-Velocity-Flat-MicroDuck-Rollers")
 
 # Roller SWIZZLE task — clean classic swizzle (symmetric, feet grounded).
 register_mjlab_task(
@@ -282,7 +202,6 @@ register_mjlab_task(
     rl_cfg=MicroduckSwizzleRlCfg,
     runner_cls=MicroduckOnPolicyRunner,
 )
-print("✓ Swizzle task registered: Mjlab-Velocity-Swizzle-MicroDuck")
 
 register_mjlab_task(
     task_id="Mjlab-RollerCrouch-Flat-MicroDuck",
@@ -291,7 +210,6 @@ register_mjlab_task(
     rl_cfg=MicroduckRollerCrouchRlCfg,
     runner_cls=MicroduckOnPolicyRunner,
 )
-print("✓ RollerCrouch task registered: Mjlab-RollerCrouch-Flat-MicroDuck")
 
 register_mjlab_task(
     task_id="Mjlab-RollerSlope-Flat-MicroDuck",
@@ -300,7 +218,6 @@ register_mjlab_task(
     rl_cfg=MicroduckRollerSlopeRlCfg,
     runner_cls=MicroduckOnPolicyRunner,
 )
-print("✓ RollerSlope task registered: Mjlab-RollerSlope-Flat-MicroDuck")
 
 # Roller STANDUP — se relever sur rollers (policy dédiée, départ au sol).
 register_mjlab_task(
@@ -310,7 +227,6 @@ register_mjlab_task(
     rl_cfg=MicroduckRollerStandUpRlCfg,
     runner_cls=MicroduckOnPolicyRunner,
 )
-print("✓ RollerStandUp task registered: Mjlab-RollerStandUp-Flat-MicroDuck")
 
 # Spin task — rotation rapide sur place, sur rollers (slot ground-pick).
 register_mjlab_task(
@@ -320,7 +236,6 @@ register_mjlab_task(
     rl_cfg=MicroduckSpinRlCfg,
     runner_cls=MicroduckOnPolicyRunner,
 )
-print("✓ Spin task registered: Mjlab-Spin-Flat-MicroDuck")
 
 # Roulade — forward roll over the flat head top, land back on the feet.
 register_mjlab_task(
@@ -330,7 +245,6 @@ register_mjlab_task(
     rl_cfg=MicroduckRouladeRlCfg,
     runner_cls=MicroduckOnPolicyRunner,
 )
-print("✓ Roulade task registered: Mjlab-Roulade-Flat-MicroDuck")
 
 # Backlash variants — ±1° serial gear play per servo + encoder-through-backlash
 # actuator feedback and joint obs (see tasks/backlash.py). Each family keeps its
@@ -357,18 +271,13 @@ _BACKLASH_TASKS = (
     ("Mjlab-Velocity2-Rough-Backlash-MicroDuck", make_microduck_velocity2_env_cfg, {"rough": True}, MicroduckVelocity2RlCfg, _BL_WALK),
     ("Mjlab-VelStand-Flat-Backlash-MicroDuck", make_microduck_velstand_env_cfg, {}, MicroduckVelStandRlCfg, _BL_ALLCOL),
     ("Mjlab-VelStand-Rough-Backlash-MicroDuck", make_microduck_velstand_env_cfg, {"rough": True}, MicroduckVelStandRlCfg, _BL_ALLCOL),
-    ("Mjlab-VelStandTipToe-Flat-Backlash-MicroDuck", make_microduck_velstand_tiptoe_env_cfg, {}, MicroduckVelStandTipToeRlCfg, _BL_ALLCOL),
-    ("Mjlab-VelStandTipToe-Rough-Backlash-MicroDuck", make_microduck_velstand_tiptoe_env_cfg, {"rough": True}, MicroduckVelStandTipToeRlCfg, _BL_ALLCOL),
     ("Mjlab-StandUp-Flat-Backlash-MicroDuck", make_microduck_standup_env_cfg, {}, MicroduckStandUpRlCfg, _BL_ALLCOL),
     ("Mjlab-StandUp-Rough-Backlash-MicroDuck", make_microduck_standup_env_cfg, {"rough": True}, MicroduckStandUpRlCfg, _BL_ALLCOL),
-    ("Mjlab-Sit-Flat-Backlash-MicroDuck", make_microduck_sit_env_cfg, {}, MicroduckSitRlCfg, _BL_ALLCOL),
-    ("Mjlab-Sit-Rough-Backlash-MicroDuck", make_microduck_sit_env_cfg, {"rough": True}, MicroduckSitRlCfg, _BL_ALLCOL),
     ("Mjlab-SitStand-Flat-Backlash-MicroDuck", make_microduck_sitstand_env_cfg, {}, MicroduckSitStandRlCfg, _BL_ALLCOL),
     ("Mjlab-SitStand-Rough-Backlash-MicroDuck", make_microduck_sitstand_env_cfg, {"rough": True}, MicroduckSitStandRlCfg, _BL_ALLCOL),
     ("Mjlab-GroundPick-Flat-Backlash-MicroDuck", make_microduck_ground_pick_env_cfg, {}, MicroduckGroundPickRlCfg, _BL_ALLCOL),
     ("Mjlab-GroundPick-Rough-Backlash-MicroDuck", make_microduck_ground_pick_env_cfg, {"rough": True}, MicroduckGroundPickRlCfg, _BL_ALLCOL),
     ("Mjlab-BallKick-Flat-Backlash-MicroDuck", make_microduck_ball_kick_env_cfg, {}, MicroduckBallKickRlCfg, _BL_ALLCOL),
-    ("Mjlab-Shoot-Flat-Backlash-MicroDuck", make_microduck_shoot_env_cfg, {}, MicroduckShootRlCfg, _BL_ALLCOL),
     ("Mjlab-Velocity-Flat-Backlash-MicroDuck-Rollers", make_microduck_velocity_rollers_env_cfg, {}, MicroduckRollersRlCfg, _BL_ROLLERS),
     ("Mjlab-Velocity-Swizzle-Backlash-MicroDuck", make_microduck_velocity_swizzle_env_cfg, {}, MicroduckSwizzleRlCfg, _BL_ROLLERS),
     ("Mjlab-RollerCrouch-Flat-Backlash-MicroDuck", make_microduck_roller_crouch_env_cfg, {}, MicroduckRollerCrouchRlCfg, _BL_ROLLERS),
@@ -382,4 +291,3 @@ for _task_id, _make_cfg, _kw, _rl_cfg, _robot_cfg in _BACKLASH_TASKS:
         rl_cfg=_rl_cfg,
         runner_cls=MicroduckOnPolicyRunner,
     )
-    print(f"✓ Backlash task registered: {_task_id}")
