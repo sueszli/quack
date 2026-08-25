@@ -1,6 +1,6 @@
 """head_pose_bias_penalty: prices sustained standing droop, never the recovery.
 
-The velocity2 lesson (run 5yay13u4): instantaneous posture precision is an
+The velocity-env lesson (run 5yay13u4): instantaneous posture precision is an
 unescapable tax on motion. The standup lesson (retired head_impact_penalty):
 any head cost active during the ground phase blocks the head-pivot flip. So
 this term must (a) charge only the DC bias, (b) accumulate NOTHING while
@@ -115,8 +115,8 @@ def test_fall_stops_the_charge_immediately():
     assert torch.allclose(out, torch.zeros(2), atol=1e-9), out
 
 
-def test_ungated_matches_velocity2_behavior():
-    # No gate params -> plain EMA of the raw error (the velocity2 term).
+def test_ungated_matches_velocity_env_behavior():
+    # No gate params -> plain EMA of the raw error (the velocity-env term).
     env = _Env(2)
     _set_pose(env, z=0.05, pitch_deg=90.0)          # pose must be irrelevant
     env.scene._asset.data.joint_pos[:, :4] = math.radians(15)
@@ -154,17 +154,17 @@ def test_standup_cfg_wiring():
     assert min(s["step"] for s in stages if s["weight"] > 0) >= 3000 * 24
 
 
-def test_velocity2_cfg_unchanged_no_gate():
-    from mjlab_microduck.tasks.microduck_velocity2_env_cfg import (
-        make_microduck_velocity2_env_cfg,
+def test_velocity_cfg_unchanged_no_gate():
+    from mjlab_microduck.tasks.microduck_velocity_env_cfg import (
+        make_microduck_velocity_env_cfg,
     )
 
-    cfg = make_microduck_velocity2_env_cfg()
+    cfg = make_microduck_velocity_env_cfg()
     assert "gate_height_low" not in cfg.rewards["head_pose_bias"].params
 
 
 def test_velstand_inherited_term_is_gated():
-    # Velstand episodes survive falls — the inherited velocity2 term must not
+    # Velstand episodes survive falls — the inherited velocity-env term must not
     # charge the ground phase.
     from mjlab_microduck.tasks.microduck_velstand_env_cfg import (
         make_microduck_velstand_env_cfg,

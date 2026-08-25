@@ -96,11 +96,11 @@ def test_finite_helper_sanitizes_nan_and_inf():
 
 def test_safe_obs_wrappers_are_wired_into_the_critic():
     # Guards must actually be installed on the env cfg, not just exist.
-    from mjlab_microduck.tasks.microduck_velocity2_env_cfg import (
-        make_microduck_velocity2_env_cfg,
+    from mjlab_microduck.tasks.microduck_velocity_env_cfg import (
+        make_microduck_velocity_env_cfg,
     )
 
-    cfg = make_microduck_velocity2_env_cfg(rough=True)
+    cfg = make_microduck_velocity_env_cfg(rough=True)
     terms = cfg.observations["critic"].terms
     for name in ("foot_contact_forces", "foot_height", "foot_air_time"):
         assert terms[name].func.__name__.endswith("_safe"), (
@@ -109,11 +109,11 @@ def test_safe_obs_wrappers_are_wired_into_the_critic():
 
 
 def test_nan_state_termination_watches_the_contact_sensor():
-    from mjlab_microduck.tasks.microduck_velocity2_env_cfg import (
-        make_microduck_velocity2_env_cfg,
+    from mjlab_microduck.tasks.microduck_velocity_env_cfg import (
+        make_microduck_velocity_env_cfg,
     )
 
-    cfg = make_microduck_velocity2_env_cfg(rough=True)
+    cfg = make_microduck_velocity_env_cfg(rough=True)
     params = cfg.terminations["nan_state"].params
     assert params.get("sensor_names"), "nan_state no longer watches contact forces"
 

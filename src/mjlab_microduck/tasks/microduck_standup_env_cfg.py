@@ -106,7 +106,7 @@ ENABLE_BODY_CONTROL = True
 # them (they're reward-uncorrelated noise) instead of leaving dead weights.
 # z range is ASYMMETRIC: STAND_Z is the natural equilibrium at HOME, so there
 # is plenty of crouch below it but only ~1 cm of leg extension above it.
-# Angles capped at ±15°: velocity2 body-control run 1 showed ±20° trains
+# Angles capped at ±15°: velocity body-control run 1 showed ±20° trains
 # twitchy/overdriven tilting.
 BODY_CMD_MAX_Z_DOWN  = 0.04             # m, crouch below STAND_Z
 BODY_CMD_MAX_Z_UP    = 0.030             # m, extend above STAND_Z
@@ -114,7 +114,7 @@ BODY_CMD_MAX_ANGLE   = math.radians(15)  # rad, trunk pitch/roll
 BODY_CMD_ALIVE_XY    = 0.005             # m, permanent x/y noise range
 BODY_CMD_ALIVE_ANGLE = 0.05              # rad, stage-0 / permanent-yaw range
 # Exact-zero command probability at resample: keeps the deployment idle case
-# ("stand at nominal, no command") trained (velocity2 run-1 lesson — uniform
+# ("stand at nominal, no command") trained (velocity run-1 lesson — uniform
 # sampling never produces the all-zero command).
 BODY_CMD_ZERO_PROB   = 0.3
 
@@ -221,8 +221,8 @@ def make_microduck_standup_env_cfg(
     #
     # 2026-07 TRANSFER FIX (violent/shaky on the real robot): ALL task weights
     # below divided by 4 (8→2, 30→7.5, 15→3.75, …) so the total task mass
-    # (~12) matches velocity2's (~11) and the shared sim2real regularisers act
-    # at the same RELATIVE strength as in the well-transferring velocity2 env.
+    # (~12) matches velocity's (~11) and the shared sim2real regularisers act
+    # at the same RELATIVE strength as in the well-transferring velocity env.
     # Previously the task mass was ~49, so nominally-identical regulariser
     # weights were effectively ~4× weaker here → jitter/limit-cycle around the
     # standing point was nearly free. Internal ratios between task terms are
@@ -253,7 +253,7 @@ def make_microduck_standup_env_cfg(
         params={"command_name": "head_pose", "std": 0.5},
     )
 
-    # Head DC-droop penalty (velocity2's fix, standup-adapted). L1 on a 1 s EMA
+    # Head DC-droop penalty (velocity's fix, standup-adapted). L1 on a 1 s EMA
     # of the head tracking error — prices only the sustained gravity sag the
     # policy can cancel by biasing the neck command up; transient motion
     # averages out. TWO standup-specific safeties, both mandatory here:
@@ -476,12 +476,12 @@ def make_microduck_standup_env_cfg(
             },
         )
 
-    # ── Sim2real regularisers — MATCHED to velocity2 (2026-07) ───────────────
-    # velocity2's exact set and absolute weights:
+    # ── Sim2real regularisers — MATCHED to velocity (2026-07) ───────────────
+    # velocity's exact set and absolute weights:
     #   • action_rate_l2: -0.1 at stage 0, ramped -0.1 → -1.0 by iter 1500
-    #     (action_rate_weight curriculum below, velocity2's exact stages)
+    #     (action_rate_weight curriculum below, velocity's exact stages)
     #   • body_ang_vel -0.05, angular_momentum -0.02
-    #   • microduck-only extras DROPPED, like velocity2 drops them:
+    #   • microduck-only extras DROPPED, like velocity drops them:
     #     neck_action_rate_l2, joint_torques_l2, joint_torque_rate_l2, soft_landing
     # Parity is made REAL by the ÷4 task-stack scaling above — previously the
     # same absolute weights were ~4× weaker relative to the ~49 task mass.
@@ -507,9 +507,9 @@ def make_microduck_standup_env_cfg(
     )
 
     cfg.rewards["body_ang_vel"].params["asset_cfg"].body_names = ("trunk_base",)
-    cfg.rewards["body_ang_vel"].weight = -0.05      # motion-blocker: kept LIGHT (velocity2 value)
-    cfg.rewards["angular_momentum"].weight = -0.02  # velocity2 value
-    cfg.rewards.pop("soft_landing", None)           # velocity2 removes it
+    cfg.rewards["body_ang_vel"].weight = -0.05      # motion-blocker: kept LIGHT (velocity value)
+    cfg.rewards["angular_momentum"].weight = -0.02  # velocity value
+    cfg.rewards.pop("soft_landing", None)           # velocity removes it
 
     cfg.rewards["self_collisions"] = RewardTermCfg(
         func=mdp.self_collision_cost,
@@ -519,7 +519,7 @@ def make_microduck_standup_env_cfg(
 
     # Drop only the base "upright" Gaussian — standup uses its own
     # upright_linear/upright_sharp instead. (angular_momentum kept above to match
-    # velocity2; soft_landing/hip_yaw_roll_deviation dropped to match velocity2.)
+    # velocity; soft_landing/hip_yaw_roll_deviation dropped to match velocity.)
     if "upright" in cfg.rewards:
         del cfg.rewards["upright"]
 
@@ -938,7 +938,7 @@ def make_microduck_standup_env_cfg(
             },
         )
 
-    # action_rate curriculum — velocity2's exact ramp (-0.1 → -1.0 by iter 1500).
+    # action_rate curriculum — velocity's exact ramp (-0.1 → -1.0 by iter 1500).
     # Gentler early stages than the old -0.4/-0.8/-1.0-by-500 ramp: the rise
     # skill gets discovered under light smoothing, then damping tightens.
     # (Old note, still relevant: a -1.2 end once blocked back-recovery; -1.0 is
@@ -979,8 +979,8 @@ def make_microduck_standup_env_cfg(
     )
     # head_pose_bias: same introduction timing as arrival_damping (see its
     # comment — timing, not magnitude, is what protects recovery discovery).
-    # Dosage: standup runs head_pose_tracking at 0.75 vs velocity2's 2.0 (task
-    # weights ÷4 rebalance), so the bias lands at 1.5 vs velocity2's 3.0. At
+    # Dosage: standup runs head_pose_tracking at 0.75 vs velocity's 2.0 (task
+    # weights ÷4 rebalance), so the bias lands at 1.5 vs velocity's 3.0. At
     # 1.5 a 15° standing droop costs 0.39/step, 5° costs 0.13/step. If the
     # standing head is still down after a run, raise the last stage — do NOT
     # move the introduction earlier.

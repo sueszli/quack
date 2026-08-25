@@ -190,7 +190,7 @@ MICRODUCK_GROUND_PICK_ROBOT_CFG = EntityCfg(
 # Encoder reads through the backlash (BacklashEncoderBamActuator feedback +
 # joint_pos/vel_rel_backlash observations — see tasks/backlash.py).
 # Allcollisions variant → VelStand/StandUp backlash tasks (mirrors
-# MICRODUCK_STANDUP_ROBOT_CFG); walk variant → Velocity/Velocity2 backlash
+# MICRODUCK_STANDUP_ROBOT_CFG); walk variant → Velocity backlash
 # tasks (mirrors MICRODUCK_WALK_ROBOT_CFG, keeps backlash-vs-base comparisons
 # unconfounded by the collision model).
 MICRODUCK_BACKLASH_ROBOT_CFG = EntityCfg(

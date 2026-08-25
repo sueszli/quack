@@ -25,8 +25,8 @@ migration and every sit/standup lesson). Design synthesis:
     pose vs the commanded target — partial-sum exploits like plank/flop/lean
     collapse to ~0).
   - Head commandable in BOTH postures (head_pose command + tracking, exactly
-    like velocity2/standup), body_command slot zero-padded → 61D obs parity.
-  - Sim2real: velocity2-parity DR / obs noise / delays / regularisers (the
+    like velocity/standup), body_command slot zero-padded → 61D obs parity.
+  - Sim2real: velocity-parity DR / obs noise / delays / regularisers (the
     transferring recipe), sit env's contact-solver hardening (nconmax=200,
     iters 30/50 — seated contact NaN fix), delayed push ramp (pushes early
     made the sit env unlearn sitting).
@@ -242,7 +242,7 @@ def make_microduck_sitstand_env_cfg(
     # ── Rewards: posture-conditioned single-target stack ──────────────────────
     # Every task term below reads the commanded posture and selects its target
     # (SIT keyframe + SIT_Z vs HOME + STAND_Z) per env. Weights mirror the sit
-    # env's proven stack (positive task mass ≈ velocity2 scale, so the shared
+    # env's proven stack (positive task mass ≈ velocity scale, so the shared
     # sim2real regularisers act at the same RELATIVE strength — the standup
     # transfer lesson).
 
@@ -259,7 +259,7 @@ def make_microduck_sitstand_env_cfg(
         },
     )
 
-    # Head pose tracking (commandable head control, like velocity2/standup) —
+    # Head pose tracking (commandable head control, like velocity/standup) —
     # active in BOTH postures. Weight kept light so a transient head-assist
     # during a transition only pays a small tracking cost.
     cfg.rewards["head_pose_tracking"] = RewardTermCfg(
@@ -435,8 +435,8 @@ def make_microduck_sitstand_env_cfg(
         },
     )
 
-    # ── Sim2real regularisers — MATCHED to velocity2 ─────────────────────────
-    # velocity2's exact set and absolute weights:
+    # ── Sim2real regularisers — MATCHED to velocity ─────────────────────────
+    # velocity's exact set and absolute weights:
     #   • action_rate_l2: -0.1 at stage 0, ramped -0.1 → -1.0 by iter 1500
     #   • body_ang_vel -0.05, angular_momentum -0.02
     #   • soft_landing dropped; joint_torques_l2 / neck_action_rate_l2 not added
@@ -451,9 +451,9 @@ def make_microduck_sitstand_env_cfg(
     )
 
     cfg.rewards["body_ang_vel"].params["asset_cfg"].body_names = ("trunk_base",)
-    cfg.rewards["body_ang_vel"].weight = -0.05      # velocity2 value
-    cfg.rewards["angular_momentum"].weight = -0.02  # velocity2 value
-    cfg.rewards.pop("soft_landing", None)           # velocity2 removes it
+    cfg.rewards["body_ang_vel"].weight = -0.05      # velocity value
+    cfg.rewards["angular_momentum"].weight = -0.02  # velocity value
+    cfg.rewards.pop("soft_landing", None)           # velocity removes it
 
     cfg.rewards["self_collisions"] = RewardTermCfg(
         func=mdp.self_collision_cost,
@@ -537,7 +537,7 @@ def make_microduck_sitstand_env_cfg(
     else:
         cfg.events.pop("encoder_bias", None)
 
-    # ── Head pose command (commandable head control, like velocity2/standup) ──
+    # ── Head pose command (commandable head control, like velocity/standup) ──
     cfg.commands["head_pose"] = microduck_mdp.UniformPoseCommandCfg(
         resampling_time_range=HEAD_POSE_CMD_RESAMPLE_S,
         ranges=(
@@ -818,7 +818,7 @@ def make_microduck_sitstand_env_cfg(
             },
         )
 
-    # action_rate curriculum — velocity2's exact ramp (-0.1 → -1.0 by iter 1500).
+    # action_rate curriculum — velocity's exact ramp (-0.1 → -1.0 by iter 1500).
     cfg.curriculum["action_rate_weight"] = CurriculumTermCfg(
         func=microduck_mdp.reward_weight,
         params={

@@ -19,10 +19,6 @@ from .microduck_velocity_env_cfg import (
     make_microduck_velocity_env_cfg,
     MicroduckRlCfg,
 )
-from .microduck_velocity2_env_cfg import (
-    make_microduck_velocity2_env_cfg,
-    MicroduckVelocity2RlCfg,
-)
 from .microduck_standup_env_cfg import (
     make_microduck_standup_env_cfg,
     MicroduckStandUpRlCfg,
@@ -87,23 +83,6 @@ register_mjlab_task(
     env_cfg=make_microduck_velocity_env_cfg(rough=True),
     play_env_cfg=make_microduck_velocity_env_cfg(play=True, rough=True),
     rl_cfg=MicroduckRlCfg,
-    runner_cls=MicroduckOnPolicyRunner,
-)
-
-# Velocity2 — microban reward/regularization recipe on the velocity task.
-register_mjlab_task(
-    task_id="Mjlab-Velocity2-Flat-MicroDuck",
-    env_cfg=make_microduck_velocity2_env_cfg(),
-    play_env_cfg=make_microduck_velocity2_env_cfg(play=True),
-    rl_cfg=MicroduckVelocity2RlCfg,
-    runner_cls=MicroduckOnPolicyRunner,
-)
-
-register_mjlab_task(
-    task_id="Mjlab-Velocity2-Rough-MicroDuck",
-    env_cfg=make_microduck_velocity2_env_cfg(rough=True),
-    play_env_cfg=make_microduck_velocity2_env_cfg(play=True, rough=True),
-    rl_cfg=MicroduckVelocity2RlCfg,
     runner_cls=MicroduckOnPolicyRunner,
 )
 
@@ -248,7 +227,7 @@ register_mjlab_task(
 
 # Backlash variants — ±1° serial gear play per servo + encoder-through-backlash
 # actuator feedback and joint obs (see tasks/backlash.py). Each family keeps its
-# base task's collision model: Velocity/Velocity2 → robot_walk_backlash.xml,
+# base task's collision model: Velocity → robot_walk_backlash.xml,
 # VelStand/StandUp → robot_allcollisions_backlash.xml. Obs/action dims are
 # unchanged vs the base tasks.
 from mjlab_microduck.robot.microduck_constants import (
@@ -267,8 +246,6 @@ _BL_ROLLERS = MICRODUCK_ROLLERS_BACKLASH_ROBOT_CFG
 _BACKLASH_TASKS = (
     ("Mjlab-Velocity-Flat-Backlash-MicroDuck", make_microduck_velocity_env_cfg, {}, MicroduckRlCfg, _BL_WALK),
     ("Mjlab-Velocity-Rough-Backlash-MicroDuck", make_microduck_velocity_env_cfg, {"rough": True}, MicroduckRlCfg, _BL_WALK),
-    ("Mjlab-Velocity2-Flat-Backlash-MicroDuck", make_microduck_velocity2_env_cfg, {}, MicroduckVelocity2RlCfg, _BL_WALK),
-    ("Mjlab-Velocity2-Rough-Backlash-MicroDuck", make_microduck_velocity2_env_cfg, {"rough": True}, MicroduckVelocity2RlCfg, _BL_WALK),
     ("Mjlab-VelStand-Flat-Backlash-MicroDuck", make_microduck_velstand_env_cfg, {}, MicroduckVelStandRlCfg, _BL_ALLCOL),
     ("Mjlab-VelStand-Rough-Backlash-MicroDuck", make_microduck_velstand_env_cfg, {"rough": True}, MicroduckVelStandRlCfg, _BL_ALLCOL),
     ("Mjlab-StandUp-Flat-Backlash-MicroDuck", make_microduck_standup_env_cfg, {}, MicroduckStandUpRlCfg, _BL_ALLCOL),

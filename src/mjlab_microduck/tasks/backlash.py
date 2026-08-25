@@ -9,7 +9,7 @@ counterpart (task ids ``Mjlab-<Task>-<Flat|Rough>-Backlash-MicroDuck``):
    closes on the encoder READING THROUGH the backlash — like the real servo,
    whose encoder sits on the output side of the gear play. Pass the robot cfg
    that mirrors the base task's model: MICRODUCK_WALK_BACKLASH_ROBOT_CFG for
-   Velocity/Velocity2 (robot_walk_backlash.xml), the default
+   Velocity (robot_walk_backlash.xml), the default
    MICRODUCK_BACKLASH_ROBOT_CFG for VelStand/StandUp
    (robot_allcollisions_backlash.xml).
 2. joint_pos / joint_vel obs → joint_pos_rel_backlash / joint_vel_rel_backlash:

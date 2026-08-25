@@ -27,8 +27,8 @@ Never launch a long run without one.
 - `src/mjlab_microduck/tasks/mdp.py` — ALL custom MDP functions (rewards, events,
   observations, commands, curricula). Add new functions here, grouped by task.
 - `src/mjlab_microduck/tasks/microduck_*_env_cfg.py` — one cfg module per task
-  family. `microduck_velocity_env_cfg.py` is the shared walking base (robot, DR,
-  obs, commands); most envs build on it or on the velocity2 recipe.
+  family. `microduck_velocity_env_cfg.py` is the main walking recipe AND the
+  shared base (robot, DR, obs, commands) other envs build on or mirror.
 - `src/mjlab_microduck/tasks/__init__.py` — task registration (base + `-Backlash-` variants).
 - `src/mjlab_microduck/tasks/backlash.py` — wraps any env cfg into its backlash twin.
 - `src/mjlab_microduck/robot/microduck_constants.py` — robot cfgs, HOME frame, BAM actuator cfg.

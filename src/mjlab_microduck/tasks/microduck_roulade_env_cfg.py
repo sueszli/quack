@@ -29,7 +29,7 @@ Design (see the roulade section of mdp.py for the full history):
     spawns an initial forward base velocity — set ROULADE_FORWARD_VEL_RANGE
     to e.g. (0.0, 0.3) to train rolls out of a walk. (0, 0) = standstill-only.
 
-DR / obs / regularisers mirror the standup env (velocity2 sim2real parity),
+DR / obs / regularisers mirror the standup env (velocity sim2real parity),
 with the motion-blockers (body_ang_vel, |a_z|, arrival damping) kept near zero
 during discovery and introduced late by curriculum — the roll IS a large
 angular-velocity, large-impact event; taxing attempts prevents discovery
@@ -45,7 +45,7 @@ from copy import deepcopy
 # "policy" → "actor" output-key fix; roulade is the first env to use it).
 ENABLE_SYMMETRY = True
 
-# ── Domain randomisation (matched to standup/velocity2 for sim2real parity) ───
+# ── Domain randomisation (matched to standup/velocity for sim2real parity) ───
 ENABLE_COM_RANDOMIZATION             = True
 ENABLE_HEAD_COM_RANDOMIZATION        = True
 ENABLE_KP_RANDOMIZATION              = False  # match velocity (OFF)

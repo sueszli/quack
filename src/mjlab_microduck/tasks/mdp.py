@@ -5092,7 +5092,7 @@ class UniformPoseCommand(CommandTerm):
             self._command[env_ids, i] = r.uniform_(lo, hi)
         # Explicit zero-command bucket. Uniform sampling essentially never
         # produces the all-zero command, so the deployment idle case ("hold the
-        # nominal pose") would otherwise be absent from training (velocity2
+        # nominal pose") would otherwise be absent from training (velocity
         # body-control run-1 lesson: the policy only stood still when a command
         # was present).
         if self.cfg.zero_command_prob > 0.0:
@@ -5243,7 +5243,7 @@ def head_pose_bias_penalty(
     walking unavoidably shakes a head that is 38% of the robot's mass, so an
     instantaneous tight-tolerance term is a permanent tax on walking that no
     policy can escape — measured at ~0.77/step against an air_time reward of
-    ~1.01/step, which is exactly what made velocity2 run 2026-08-20 abandon
+    ~1.01/step, which is exactly what made velocity run 2026-08-20 abandon
     stepping altogether (wandb 5yay13u4). The steady-state droop IS escapable:
     the policy can bias its neck command up to cancel gravity sag. Averaging
     over ``tau_s`` lets the oscillation cancel and prices only the bias.
@@ -5577,7 +5577,7 @@ def feet_distance_penalty(
 
     Returns ``clamp(min_dist - d, min=0)`` per env (use with a negative weight),
     where ``d`` is the horizontal (xy) distance between the two foot sites.
-    Ported from mjlab_microban. Not wired into velocity2 yet — pinned for later.
+    Ported from mjlab_microban. Not wired into velocity yet — pinned for later.
     """
     asset: Entity = env.scene[asset_cfg.name]
     foot_pos_xy = asset.data.site_pos_w[:, asset_cfg.site_ids, :2]  # (N, 2, 2)
