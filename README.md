@@ -1,10 +1,10 @@
 # MicroDuck RL
 
-RL training environments for the [MicroDuck](https://github.com/apirrone/microduck) —
+RL training environments for the [MicroDuck](https://github.com/pollen-robotics/microduck) —
 a 737 g, ~12 cm open-source bipedal robot — built on
 [mjlab](https://github.com/mujocolab/mjlab) (MuJoCo Warp) with PPO.
 Policies are trained here at 50 Hz, exported to ONNX, and deployed on the real
-robot by [microduck_runtime](https://github.com/apirrone/microduck_runtime).
+robot by the runtime in [pollen-robotics/microduck](https://github.com/pollen-robotics/microduck).
 
 <!-- HERO VIDEO — real robot montage: walking, standup, roulade, roller skating.
      Keep it short (~30 s) and real-robot-first: this is the "why should I care" shot. -->
@@ -106,8 +106,8 @@ under load, command delay, and friction magnitude
 (`FrictionDRBamActuator` in `src/mjlab_microduck/actuator/`).
 
 At this scale — tiny servos driving a 737 g biped — actuator fidelity is most
-of the sim2real gap: `docs/sim2real/` is a full write-up of every technique
-tried, what failed, and why.
+of the sim2real gap, which is why the actuator is modeled down to its voltage
+control law instead of an ideal PD.
 
 ## Robot models
 
@@ -178,8 +178,7 @@ joint-index mappings, reward sign conventions, and NaN guards.
 
 ## Related projects
 
-- [microduck](https://github.com/apirrone/microduck) — the robot: CAD, electronics, BOM
-- [microduck_runtime](https://github.com/apirrone/microduck_runtime) — onboard Rust runtime that runs the exported policies
+- [microduck](https://github.com/pollen-robotics/microduck) — the MicroDuck project home: CAD, electronics, BOM, and the onboard runtime that runs the exported policies
 - [mjlab](https://github.com/mujocolab/mjlab) — the training framework (MuJoCo Warp + rsl_rl)
 - [BAM](https://github.com/Rhoban/bam) — better actuator models, by Rhoban
 
