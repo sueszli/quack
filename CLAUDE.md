@@ -1,7 +1,7 @@
 # CLAUDE.md
 
-RL training environments for the MicroDuck — a 737 g, ~12 cm bipedal robot with
-14 Dynamixel XL330 servos — built on [mjlab](https://github.com/mujocolab/mjlab)
+RL training environments for the MicroDuck — a ~800 g, ~25 cm tall bipedal
+robot with 14 Dynamixel XL330 servos — built on [mjlab](https://github.com/mujocolab/mjlab)
 (MuJoCo Warp) with PPO (rsl_rl). Policies are trained here at 50 Hz, exported to
 ONNX, and deployed by the runtime in the `pollen-robotics/microduck` repo on
 the real robot. Sim2real transfer

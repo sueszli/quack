@@ -1,7 +1,7 @@
 # MicroDuck RL
 
 RL training environments for the [MicroDuck](https://github.com/pollen-robotics/microduck) —
-a 737 g, ~12 cm open-source bipedal robot — built on
+a ~800 g, ~25 cm tall bipedal robot — built on
 [mjlab](https://github.com/mujocolab/mjlab) (MuJoCo Warp) with PPO.
 Policies are trained here at 50 Hz, exported to ONNX, and deployed on the real
 robot by the runtime in [pollen-robotics/microduck](https://github.com/pollen-robotics/microduck).
@@ -11,9 +11,9 @@ robot by the runtime in [pollen-robotics/microduck](https://github.com/pollen-ro
 
 https://github.com/user-attachments/assets/50c3d537-8db2-4005-9d9c-3472faeec4d0
 
-Everything transfers sim-to-real with `action_scale = 1.0` — no gain fudging.
-The repo encodes the full recipe: BAM actuator physics, domain randomization,
-backlash simulation, and the reward-design lessons that made it work
+The repo encodes the full sim2real recipe: [BAM](https://github.com/Rhoban/bam)
+actuator physics, domain randomization, backlash simulation, and the
+reward-design lessons that made it work
 (see [CLAUDE.md](CLAUDE.md) for the distilled playbook).
 
 ## Quickstart
@@ -105,7 +105,7 @@ friction), with per-env domain randomization on battery voltage, voltage sag
 under load, command delay, and friction magnitude
 (`FrictionDRBamActuator` in `src/mjlab_microduck/actuator/`).
 
-At this scale — tiny servos driving a 737 g biped — actuator fidelity is most
+At this scale — tiny servos driving a ~800 g biped — actuator fidelity is most
 of the sim2real gap, which is why the actuator is modeled down to its voltage
 control law instead of an ideal PD.
 
@@ -178,7 +178,7 @@ joint-index mappings, reward sign conventions, and NaN guards.
 
 ## Related projects
 
-- [microduck](https://github.com/pollen-robotics/microduck) — the MicroDuck project home: CAD, electronics, BOM, and the onboard runtime that runs the exported policies
+- [microduck](https://github.com/pollen-robotics/microduck) — the MicroDuck project home, including the onboard runtime that runs the exported policies
 - [mjlab](https://github.com/mujocolab/mjlab) — the training framework (MuJoCo Warp + rsl_rl)
 - [BAM](https://github.com/Rhoban/bam) — better actuator models, by Rhoban
 
