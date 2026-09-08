@@ -114,7 +114,7 @@ def test_terrain_is_plain_plane():
 def test_task_is_registered():
     from mjlab.tasks.registry import list_tasks
 
-    import mjlab_microduck.tasks  # noqa: F401  (l'import déclenche l'enregistrement)
+    import mjlab_microduck.tasks.registry  # noqa: F401  (l'import déclenche l'enregistrement)
 
     assert "Mjlab-RollerStandUp-Flat-MicroDuck" in list_tasks()
 

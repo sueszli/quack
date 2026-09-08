@@ -52,9 +52,6 @@ uv run train Mjlab-Velocity-Flat-MicroDuck --env.scene.num-envs 4096 \
     --agent.run-name resume --agent.load-checkpoint model_29999.pt --agent.resume True
 ```
 
-No GPU? Add `--hf-jobs` to any train command to run it on Hugging Face Jobs
-instead of locally (see [scripts/hf/README.md](scripts/hf/README.md)).
-
 ## Tasks
 
 `uv run list-envs` prints the live registry. Flat/Rough variants exist where noted.
@@ -150,13 +147,10 @@ src/mjlab_microduck/
 │   └── microduck_constants.py        # robot cfgs, HOME frame, BAM actuator cfg
 ├── actuator/friction_dr_bam.py       # BAM + friction DR + backlash encoder feedback
 ├── tasks/
-│   ├── __init__.py                   # task registration (base + backlash variants)
+│   ├── registry.py                   # task registration (base + backlash variants)
 │   ├── mdp.py                        # rewards, events, observations, custom classes
 │   ├── backlash.py                   # make_backlash_variant() env-cfg wrapper
 │   └── microduck_*_env_cfg.py        # one cfg module per task family
-├── train_cli.py                      # `train` script (identical to mjlab's)
-├── train_hook.py                     # intercepts `train ... --hf-jobs`
-└── hf_jobs.py                        # Hugging Face Jobs submission
 ```
 
 Conventions worth knowing:

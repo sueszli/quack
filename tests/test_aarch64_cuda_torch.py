@@ -12,8 +12,8 @@ cases `uv sync` succeeds and you only find out when you launch a run:
    direct dependencies only, so deleting the `torch==...` line (which looks
    redundant, since torch already comes in via mjlab/rsl_rl) makes the
    source binding a no-op without any warning.
-2. The x86_64 resolution must stay on PyPI, otherwise HF Jobs silently
-   switch wheels.
+2. The x86_64 resolution must stay on PyPI, otherwise x86_64 machines
+   silently switch wheels.
 """
 
 import platform
@@ -96,7 +96,7 @@ def test_lockfile_routes_aarch64_torch_to_cuda_wheels():
 
 
 def test_x86_64_resolution_stays_on_pypi():
-    """HF Jobs run on x86_64: their resolution must not move."""
+    """The x86_64 resolution must not move off PyPI."""
     others = [
         p
         for p in _packages("torch")
@@ -105,7 +105,7 @@ def test_x86_64_resolution_stays_on_pypi():
     assert others, "no non-aarch64 torch entry found"
     for pkg in others:
         assert _registry(pkg) == "https://pypi.org/simple", (
-            f"x86_64 torch moved to {_registry(pkg)!r} — HF Jobs would switch "
+            f"x86_64 torch moved to {_registry(pkg)!r} — x86_64 would switch "
             "wheels."
         )
         assert "+cu" not in pkg["version"], "x86_64 torch must not be CUDA-pinned"
