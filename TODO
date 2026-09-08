@@ -1,6 +1,6 @@
 TODO: Watch MuJoCo on eth from my Mac.
 
-1. Run: ssh -L 8080:localhost:8080 eth
+1. Run: ssh eth (viewer port forwarding is already configured).
 2. Go to the remote quack folder.
 3. Run: uv run play TASK_ID --wandb-run-path ENTITY/PROJECT/RUN_ID --viewer viser --num-envs 1
    Replace TASK_ID and ENTITY/PROJECT/RUN_ID with the real values.
