@@ -3,7 +3,7 @@ from pathlib import Path
 
 import mujoco
 from mjlab.actuator import XmlActuatorCfg
-from mjlab_microduck.actuator import (
+from mjlab_microduck.actuator.friction_dr_bam import (
     BacklashEncoderBamActuatorCfg,
     FrictionDRBamActuatorCfg,
 )
