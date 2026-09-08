@@ -36,6 +36,8 @@ uv run train Mjlab-Velocity-Flat-MicroDuck --env.scene.num-envs 4096
 
 # watch a trained policy in the viewer
 uv run play Mjlab-Velocity-Flat-MicroDuck --wandb-run-path <entity/project/run_id>
+# remote GPU box: `ssh -L 8080:localhost:8080 USER@HOST`, then `uv run play ... --viewer viser --num-envs 1`
+# there and open http://localhost:8080 locally (keep the SSH session open)
 
 # export to ONNX for deployment
 uv run scripts/export.py Mjlab-Velocity-Flat-MicroDuck --wandb-run-path <...>
