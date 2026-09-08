@@ -1,11 +1,3 @@
-from mjlab_microduck.train_hook import maybe_submit_to_hf_jobs
-
-# `train <task> ... --hf-jobs` submits to HF Jobs and exits here, before any
-# of the cfg imports below: this module is what mjlab's plugin loader pulls
-# in, and it is the only train path no install order can take from us (see
-# train_hook.py). A no-op without the flag.
-maybe_submit_to_hf_jobs()
-
 from mjlab.tasks.registry import register_mjlab_task
 from mjlab.tasks.velocity.rl import VelocityOnPolicyRunner
 
@@ -23,59 +15,59 @@ class MicroduckOnPolicyRunner(VelocityOnPolicyRunner):
             alg["symmetry_cfg"] = {k: v for k, v in sym.items() if k != "_env"}
 
 
-from .microduck_velocity_env_cfg import (
+from mjlab_microduck.tasks.microduck_velocity_env_cfg import (
     make_microduck_velocity_env_cfg,
     MicroduckRlCfg,
 )
-from .microduck_standup_env_cfg import (
+from mjlab_microduck.tasks.microduck_standup_env_cfg import (
     make_microduck_standup_env_cfg,
     MicroduckStandUpRlCfg,
 )
-from .microduck_velstand_env_cfg import (
+from mjlab_microduck.tasks.microduck_velstand_env_cfg import (
     make_microduck_velstand_env_cfg,
     MicroduckVelStandRlCfg,
 )
-from .microduck_ground_pick_env_cfg import (
+from mjlab_microduck.tasks.microduck_ground_pick_env_cfg import (
     make_microduck_ground_pick_env_cfg,
     MicroduckGroundPickRlCfg,
 )
-from .microduck_ball_kick_env_cfg import (
+from mjlab_microduck.tasks.microduck_ball_kick_env_cfg import (
     make_microduck_ball_kick_env_cfg,
     MicroduckBallKickRlCfg,
 )
-from .microduck_sitstand_env_cfg import (
+from mjlab_microduck.tasks.microduck_sitstand_env_cfg import (
     make_microduck_sitstand_env_cfg,
     MicroduckSitStandRlCfg,
 )
-from .microduck_velocity_rollers_env_cfg import (
+from mjlab_microduck.tasks.microduck_velocity_rollers_env_cfg import (
     make_microduck_velocity_rollers_env_cfg,
     MicroduckRollersRlCfg,
 )
-from .microduck_velocity_swizzle_env_cfg import (
+from mjlab_microduck.tasks.microduck_velocity_swizzle_env_cfg import (
     make_microduck_velocity_swizzle_env_cfg,
     MicroduckSwizzleRlCfg,
 )
-from .microduck_roller_crouch_env_cfg import (
+from mjlab_microduck.tasks.microduck_roller_crouch_env_cfg import (
     make_microduck_roller_crouch_env_cfg,
     MicroduckRollerCrouchRlCfg,
 )
-from .microduck_roller_slope_env_cfg import (
+from mjlab_microduck.tasks.microduck_roller_slope_env_cfg import (
     make_microduck_roller_slope_env_cfg,
     MicroduckRollerSlopeRlCfg,
 )
-from .microduck_roller_standup_env_cfg import (
+from mjlab_microduck.tasks.microduck_roller_standup_env_cfg import (
     make_microduck_roller_standup_env_cfg,
     MicroduckRollerStandUpRlCfg,
 )
-from .microduck_spin_env_cfg import (
+from mjlab_microduck.tasks.microduck_spin_env_cfg import (
     make_microduck_spin_env_cfg,
     MicroduckSpinRlCfg,
 )
-from .microduck_roulade_env_cfg import (
+from mjlab_microduck.tasks.microduck_roulade_env_cfg import (
     make_microduck_roulade_env_cfg,
     MicroduckRouladeRlCfg,
 )
-from .backlash import make_backlash_variant
+from mjlab_microduck.tasks.backlash import make_backlash_variant
 
 # Standard velocity task
 register_mjlab_task(

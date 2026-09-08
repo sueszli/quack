@@ -12,7 +12,7 @@ policy that worked in the viewer and failed on hardware.
 
 ```bash
 uv run list-envs                                    # live task registry
-uv run train <TASK_ID> --env.scene.num-envs 4096    # train (add --hf-jobs for Hugging Face Jobs)
+uv run train <TASK_ID> --env.scene.num-envs 4096    # train
 uv run train <TASK_ID> --env.scene.num-envs 64 --agent.max_iterations 5   # SMOKE TEST — always run first
 uv run play <TASK_ID> --wandb-run-path <entity/project/run_id>
 uv run scripts/export.py <TASK_ID> --wandb-run-path <...>   # → ONNX (bakes obs normalizer — mandatory path)
@@ -32,7 +32,8 @@ Never launch a long run without one.
 - `src/mjlab_microduck/tasks/microduck_*_env_cfg.py` — one cfg module per task
   family. `microduck_velocity_env_cfg.py` is the main walking recipe AND the
   shared base (robot, DR, obs, commands) other envs build on or mirror.
-- `src/mjlab_microduck/tasks/__init__.py` — task registration (base + `-Backlash-` variants).
+- `src/mjlab_microduck/tasks/registry.py` — task registration (base + `-Backlash-` variants; the `mjlab.tasks` entry point).
+- No `__init__.py` files: `src/mjlab_microduck` is a namespace package (`[tool.uv.build-backend] namespace = true`).
 - `src/mjlab_microduck/tasks/backlash.py` — wraps any env cfg into its backlash twin.
 - `src/mjlab_microduck/robot/microduck_constants.py` — robot cfgs, HOME frame, BAM actuator cfg.
 - `src/mjlab_microduck/robot/microduck/` — MJCF exports from Onshape
@@ -104,7 +105,7 @@ Never launch a long run without one.
      STAND_Z once turned the goal into an impossible target for days.
 3. **Config conventions**: `ENABLE_*` toggles + tuned constants at the top of
    the cfg file; factory `make_..._env_cfg(play: bool, rough: bool)`; register
-   in `tasks/__init__.py` (+ the `_BACKLASH_TASKS` table if applicable); own
+   in `tasks/registry.py` (+ the `_BACKLASH_TASKS` table if applicable); own
    `RslRl...RunnerCfg` with a distinct `experiment_name`. Symmetry mirror-loss
    is available (61D table in `symmetry.py`) — OFF by default, never for
    asymmetric tasks.
@@ -224,15 +225,15 @@ Never launch a long run without one.
 
 ## Sim2real footguns (cost real debugging weeks)
 
-- A fresh `uv sync` is the ground truth (HF Jobs run one): anything that only
-  works via manually-installed local packages will die remotely. Keep
+- A fresh `uv sync` is the ground truth: anything that only works via
+  manually-installed local packages will die on another machine. Keep
   `pyproject.toml` honest.
 - **Wheels are per-architecture.** On linux-`aarch64` (DGX Spark / GB10) PyPI's
   torch wheel is CPU-ONLY (`2.9.1+cpu`, `torch.version.cuda is None`), so
   `torch.cuda.device_count() == 0` and mjlab's `select_gpus()` indexes an empty
   list → `IndexError` before iteration 0. `[tool.uv.sources]` routes torch to
   the cu129 index for `aarch64` only (cu129 matches the CUDA toolkit warp
-  bundles; x86_64/HF Jobs stay on PyPI). Two silent break points, both locked
+  bundles; x86_64 stays on PyPI). Two silent break points, both locked
   by `tests/test_aarch64_cuda_torch.py`: torch must stay a DIRECT dependency
   (uv applies `[tool.uv.sources]` to direct deps only — deleting the
   redundant-looking `torch==` pin makes the routing a no-op), and the pin must
