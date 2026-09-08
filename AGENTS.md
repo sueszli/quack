@@ -15,10 +15,10 @@ uv run list-envs                                    # live task registry
 uv run train <TASK_ID> --env.scene.num-envs 4096    # train (add --hf-jobs for Hugging Face Jobs)
 uv run train <TASK_ID> --env.scene.num-envs 64 --agent.max_iterations 5   # SMOKE TEST — always run first
 uv run play <TASK_ID> --wandb-run-path <entity/project/run_id>
-uv run scripts/export.py <TASK_ID> --wandb-run-path <...>   # → ONNX (bakes obs normalizer — mandatory path)
+uv run export <TASK_ID> --wandb-run-path <...>   # → ONNX (bakes obs normalizer — mandatory path)
 uv run publish --task <TASK_ID> --wandb-run-path <...> --checkpoint N --repo <user>/microduck-<name> --kind episodic --duration-s 4.0
                                                     # → HF Hub repo (policy.onnx + schema-2 manifest.json + README) the daemon loads via `robotctl policy add`
-uv run scripts/infer_policy.py --walking out.onnx   # CPU MuJoCo deployment rehearsal (BAM M6 actuators as in training; --no-bam = XML PD)
+uv run infer --walking out.onnx   # CPU MuJoCo deployment rehearsal (BAM M6 actuators as in training; --no-bam = XML PD)
 uv run --with pytest pytest tests/
 ```
 
@@ -38,11 +38,11 @@ Never launch a long run without one.
 - `src/mjlab_microduck/robot/microduck/` — MJCF exports from Onshape
   (onshape-to-robot, one `config_mjcf_*.json` per model) + scenes + `add_backlash.py`.
 - `src/mjlab_microduck/actuator/friction_dr_bam.py` — BAM actuator + friction DR + backlash encoder.
-- `src/mjlab_microduck/export.py` — the ONNX export (normalizer baked in); `scripts/export.py` wraps it.
+- `src/mjlab_microduck/export.py` — the ONNX export (normalizer baked in), `uv run export`.
+- `src/mjlab_microduck/infer_policy.py` — CPU MuJoCo deployment rehearsal, `uv run infer`.
 - `src/mjlab_microduck/publish/` — `uv run publish`: schema-2 manifest builder + ONNX shape/smoke
   gate + Hub upload. Contract = `docs/policy-manifest.md` in the `microduck` repo; only
   constant-command episodic/perpetual policies are publishable (phase/posture-flag are the set's).
-- `scripts/` — export wrapper, infer, sim2real comparison, wandb helpers.
 - `tests/` — cfg-invariant and mdp-function regression tests (CPU, no GPU needed).
 
 ## Invariants — do not break these
@@ -68,7 +68,7 @@ Never launch a long run without one.
   the actuator's `friction_scale` — `dof_frictionloss` is zeroed under BAM, so
   randomizing it is a silent no-op.
 - **Obs normalization is ON** → the normalizer must be baked into the ONNX.
-  `scripts/export.py` does this; in-sim play hides the bug (it applies the
+  `uv run export` does this; in-sim play hides the bug (it applies the
   normalizer anyway), so never hand-convert a checkpoint.
 - **Policies are UNFILTERED** (no action low-pass in training). Don't add EMA
   filtering without a matched runtime flag and a transfer test — trained-with /
@@ -245,7 +245,7 @@ Never launch a long run without one.
 - IMU DR is zero-centered — it trains tolerance to misalignment magnitude, and
   CANNOT compensate a systematic mounting bias (that's a runtime calibration).
 - Real deployments hot-swap ONNX policies (walk / stand / trick) with a shared
-  obs contract — rehearse in `scripts/infer_policy.py` before touching the
+  obs contract — rehearse with `uv run infer` before touching the
   robot, with the correct command-slot writes (a posture flag lives in the
   twist vx slot; feeding all-zeros means "stand", which looks like "policy
   ignores the button").

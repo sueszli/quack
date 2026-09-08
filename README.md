@@ -36,13 +36,15 @@ uv run train Mjlab-Velocity-Flat-MicroDuck --env.scene.num-envs 4096
 
 # watch a trained policy in the viewer
 uv run play Mjlab-Velocity-Flat-MicroDuck --wandb-run-path <entity/project/run_id>
+# remote GPU box: `ssh -L 8080:localhost:8080 USER@HOST`, then `uv run play ... --viewer viser --num-envs 1`
+# there and open http://localhost:8080 locally (keep the SSH session open)
 
 # export to ONNX for deployment
-uv run scripts/export.py Mjlab-Velocity-Flat-MicroDuck --wandb-run-path <...>
+uv run export Mjlab-Velocity-Flat-MicroDuck --wandb-run-path <...>
 uv run publish --onnx output.onnx --repo <user>/microduck-<name> --kind episodic --duration-s 4.0   # share it (see "Publishing a policy")
 
 # drive the exported policy in CPU MuJoCo with the keyboard
-uv run scripts/infer_policy.py --walking output.onnx
+uv run infer --walking output.onnx
 ```
 
 Resume from a checkpoint:
@@ -81,10 +83,10 @@ instead of locally (see [scripts/hf/README.md](scripts/hf/README.md)).
 
 At deployment the runtime hot-swaps these policies (walk / recover / trick)
 behind a shared 61-dimensional observation contract, so any of them can take
-over the robot at any moment. `scripts/infer_policy.py` rehearses exactly that:
+over the robot at any moment. `uv run infer` rehearses exactly that:
 
 ```bash
-uv run scripts/infer_policy.py --walking walk.onnx --standing stand.onnx \
+uv run infer --walking walk.onnx --standing stand.onnx \
     --sitstand sitstand.onnx --roulade roulade.onnx --new-cmd-obs
 ```
 
@@ -174,7 +176,7 @@ Conventions worth knowing:
   ankle), 5–8 neck/head (neck_pitch, head_pitch, head_yaw, head_roll),
   9–13 right leg.
 - The exporter bakes the observation normalizer into the ONNX graph — always
-  deploy ONNX produced by `scripts/export.py`, never a hand-converted
+  deploy ONNX produced by `uv run export`, never a hand-converted
   checkpoint, or the policy sees unnormalized observations at runtime.
 
 [AGENTS.md](AGENTS.md) documents the env-building workflow and the reward-design

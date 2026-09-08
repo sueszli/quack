@@ -53,7 +53,7 @@ HOLD_END      = 0.50
 RISE_END      = 0.60
 
 # Pose ACCROUPI cible (rad, par NOM d'articulation) — composée dans
-# scripts/crouch_pose_editor.py. La reward interpole DEBOUT(HOME) <-> cette pose
+# a since-removed pose-editor script. La reward interpole DEBOUT(HOME) <-> cette pose
 # selon la phase. Résolution par nom -> robuste aux roues intercalées.
 # Pose DEBOUT (départ/fin du trick). Défaut = HOME du sim (convention validée
 # égale à la lecture robot). Remplace ces valeurs par une lecture read_pose.py
