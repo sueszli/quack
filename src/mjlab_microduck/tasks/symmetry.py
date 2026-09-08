@@ -60,17 +60,12 @@ SYMMETRY_CFG = {
     "data_augmentation_func": "mjlab_microduck.tasks.symmetry.microduck_vel_symmetry",
 }
 
-# ---------------------------------------------------------------------------
-# Permutation and sign tables
-# ---------------------------------------------------------------------------
 
 # Within a 14-joint block: left (0-4) <-> right (9-13), midline (5-8) fixed
 _JOINT_PERM: list[int] = [9, 10, 11, 12, 13, 5, 6, 7, 8, 0, 1, 2, 3, 4]
 
-# Signs applied AFTER permutation for each joint position
 _JOINT_SIGN: list[float] = [-1, -1, -1, -1, -1, 1, 1, -1, -1, -1, -1, -1, -1, -1]
 
-# Full 61-dim actor obs permutation (all command slots mirror in place)
 _OBS_PERM: list[int] = (
     [0, 1, 2]                           # base_ang_vel (indices unchanged)
     + [3, 4, 5]                         # projected_gravity
@@ -82,7 +77,6 @@ _OBS_PERM: list[int] = (
     + [55, 56, 57, 58, 59, 60]          # body command
 )
 
-# Full 61-dim sign vector
 _OBS_SIGN: list[float] = (
     [-1.0, 1.0, -1.0]   # base_ang_vel: negate roll, yaw
     + [1.0, -1.0, 1.0]  # projected_gravity: negate gy
@@ -94,7 +88,6 @@ _OBS_SIGN: list[float] = (
     + [1.0, -1.0, 1.0, -1.0, 1.0, -1.0]  # body: negate y, roll, yaw
 )
 
-# Cache tensors per device to avoid reallocating on every call
 _cache: dict[torch.device, tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]] = {}
 
 
@@ -110,9 +103,6 @@ def _get_tensors(
     return _cache[device]
 
 
-# ---------------------------------------------------------------------------
-# Public augmentation function
-# ---------------------------------------------------------------------------
 
 
 def microduck_vel_symmetry(

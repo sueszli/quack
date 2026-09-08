@@ -249,12 +249,8 @@ def run_export(task_id: str, cfg: ExportConfig) -> ExportResult:
         runner.load(str(resume_path), map_location=device)
         policy = runner.get_inference_policy(device=device)
 
-    # mjlab 1.3.0: ONNX export + metadata moved to mjlab.rl.exporter_utils and
-    # the runner's built-in export_policy_to_onnx. Observation normalization is
-    # baked into the exported graph automatically — EmpiricalNormalization is a
-    # submodule of the policy's MLPModel (obs_normalization=True in RslRlModelCfg),
-    # so export_policy_to_onnx emits actor(normalizer(obs)). No manual normalizer
-    # handling needed (the old export_velocity_policy_as_onnx path is gone).
+    # EmpiricalNormalization is a submodule of the policy, so export_policy_to_onnx emits
+    # actor(normalizer(obs)) — the normalizer is baked in.
     from mjlab.rl.exporter_utils import get_base_metadata, attach_metadata_to_onnx
 
     onnx_path = os.path.abspath(cfg.onnx_file)

@@ -218,7 +218,6 @@ def validate_manifest(manifest: dict[str, Any]) -> None:
         raise ManifestError("command.idle is a 3-vector twist")
 
 
-# ---------------------------------------------------------------------------------------------
 # The ONNX file: the shape gate the daemon applies at load, applied before the upload.
 
 
@@ -305,7 +304,6 @@ def smoke_run_onnx(path: Path, steps: int = 50, seed: int = 0) -> None:
         raise ManifestError(f"{path.name}: the network's output never changes; is it a real policy?")
 
 
-# ---------------------------------------------------------------------------------------------
 # What else goes in the repo.
 
 
