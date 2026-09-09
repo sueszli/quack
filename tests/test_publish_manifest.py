@@ -36,7 +36,7 @@ def test_an_untrained_export_is_refused(tmp_path):
     onnx.save(model, str(path))
 
     assert m.is_untrained_onnx(path)
-    with pytest.raises(m.ManifestError, match="untrained"):
+    with pytest.raises(AssertionError, match="untrained"):
         m.check_onnx(path)
 
 
@@ -66,13 +66,13 @@ def test_the_official_set_validates_per_entry():
     m.validate_manifest(OFFICIAL_SET)
     broken = json.loads(json.dumps(OFFICIAL_SET))
     broken["policies"][3]["duration_s"] = None
-    with pytest.raises(m.ManifestError, match="duration_s"):
+    with pytest.raises(AssertionError, match="duration_s"):
         m.validate_manifest(broken)
 
 
 @pytest.mark.parametrize("bad, why", [({"obs_len": 51}, "obs_len"), ({"action_len": 12}, "action_len"), ({"model_api": 2}, "model_api"), ({"robot": {"model": "reachy"}}, "robot.model"), ({"kind": "oneshot"}, "kind"), ({"command": {"encoding": "telepathy"}}, "encoding")])
 def test_a_present_and_wrong_claim_is_refused(bad, why):
-    with pytest.raises(m.ManifestError, match=why):
+    with pytest.raises(AssertionError, match=why):
         m.validate_manifest(bad)
 
 
@@ -105,12 +105,12 @@ def test_a_perpetual_manifest_says_how_to_come_back():
 
 @pytest.mark.parametrize("kwargs, why", [({"kind": "episodic"}, "duration_s"), ({"kind": "episodic", "duration_s": 0.0}, "duration_s"), ({"kind": "episodic", "duration_s": 1.0, "unwind_s": 2.0}, "unwind_s"), ({"kind": "perpetual", "unwind_s": 0.0}, "unwind_s"), ({"kind": "perpetual", "slot": "jetpack"}, "slot"), ({"kind": "perpetual", "unwind_s": 1.0, "duration_s": 3.0}, "duration_s"), ({"kind": "perpetual", "unwind_s": 1.0, "chain": True}, "chain"), ({"kind": "scripted", "duration_s": 1.0}, "kind"), ({"kind": "episodic", "duration_s": 1.0, "action_scale": 5.0}, "action_scale")])
 def test_the_builder_refuses_what_the_kind_cannot_mean(kwargs, why):
-    with pytest.raises(m.ManifestError, match=why):
+    with pytest.raises(AssertionError, match=why):
         m.build_manifest(name="x", description="d", **kwargs)
 
 
 def test_a_name_is_a_bare_word():
-    with pytest.raises(m.ManifestError, match="name"):
+    with pytest.raises(AssertionError, match="name"):
         m.build_manifest(name="user/thing", kind="episodic", description="d", duration_s=1.0)
 
 
@@ -141,13 +141,13 @@ def test_a_61_to_14_graph_passes_and_smoke_runs(tmp_path):
 
 def test_a_legacy_51d_graph_is_refused_before_upload(tmp_path):
     path = _tiny_policy(tmp_path / "old.onnx", obs_len=51)
-    with pytest.raises(m.ManifestError, match="51"):
+    with pytest.raises(AssertionError, match="51"):
         m.check_onnx(path)
 
 
 def test_a_wrong_action_width_is_refused(tmp_path):
     path = _tiny_policy(tmp_path / "wide.onnx", action_len=16)
-    with pytest.raises(m.ManifestError, match="16 actions"):
+    with pytest.raises(AssertionError, match="16 actions"):
         m.check_onnx(path)
 
 
@@ -158,7 +158,7 @@ def test_a_constant_network_fails_the_smoke_run(tmp_path):
     model.ir_version = 8
     path = tmp_path / "dead.onnx"
     onnx.save(model, str(path))
-    with pytest.raises(m.ManifestError, match="never changes"):
+    with pytest.raises(AssertionError, match="never changes"):
         m.smoke_run_onnx(path)
 
 
