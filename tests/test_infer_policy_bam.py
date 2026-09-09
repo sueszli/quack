@@ -23,7 +23,7 @@ def ip():
 
 def test_cpu_bam_constants_mirror_training_cfg(ip):
     from bam.mjlab import BamActuator
-    from mjlab_microduck.robot.microduck_constants import _BAM_ACTUATOR_KWARGS as k
+    from mjlab_microduck.microduck_constants import _BAM_ACTUATOR_KWARGS as k
 
     assert ip.BAM_MOTOR_NAME == k["motor_name"]
     assert ip.BAM_MODEL == k["model"]

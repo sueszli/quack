@@ -128,7 +128,7 @@ def test_joint_indices_match_actual_roller_model():
     """
     import mujoco
 
-    from mjlab_microduck.robot.microduck_constants import get_walk_rollers_spec
+    from mjlab_microduck.microduck_constants import get_walk_rollers_spec
     from mjlab_microduck.tasks.microduck_roller_standup_env_cfg import (
         _LEG_JOINTS,
         _NECK_JOINTS,

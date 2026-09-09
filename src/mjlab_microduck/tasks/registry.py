@@ -230,7 +230,7 @@ register_mjlab_task(
 # base task's collision model: Velocity → robot_walk_backlash.xml,
 # VelStand/StandUp → robot_groundcontact_backlash.xml. Obs/action dims are
 # unchanged vs the base tasks.
-from mjlab_microduck.robot.microduck_constants import (
+from mjlab_microduck.microduck_constants import (
     MICRODUCK_BACKLASH_ROBOT_CFG,
     MICRODUCK_ROLLERS_BACKLASH_ROBOT_CFG,
     MICRODUCK_WALK_BACKLASH_ROBOT_CFG,

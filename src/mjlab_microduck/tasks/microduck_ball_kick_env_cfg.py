@@ -120,7 +120,7 @@ from mjlab.tasks.velocity import mdp
 from mjlab.tasks.velocity.velocity_env_cfg import make_velocity_env_cfg
 from mjlab.utils.noise import UniformNoiseCfg as Unoise
 
-from mjlab_microduck.robot.microduck_constants import (
+from mjlab_microduck.microduck_constants import (
     MICRODUCK_BALL_CFG,
     MICRODUCK_STANDUP_ROBOT_CFG,
 )

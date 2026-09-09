@@ -114,7 +114,7 @@ All tasks use the [BAM](https://github.com/Rhoban/bam) M6 actuator model for
 the Dynamixel XL330 (voltage control law, back-EMF, Coulomb/Stribeck/load-dependent
 friction), with per-env domain randomization on battery voltage, voltage sag
 under load, command delay, and friction magnitude
-(`FrictionDRBamActuator` in `src/mjlab_microduck/actuator/`).
+(`FrictionDRBamActuator` in `src/mjlab_microduck/friction_dr_bam.py`).
 
 At this scale — tiny servos driving a ~800 g biped — actuator fidelity is most
 of the sim2real gap, which is why the actuator is modeled down to its voltage
@@ -146,8 +146,8 @@ for quick viewing and for `infer_policy.py`.
 src/mjlab_microduck/
 ├── mjcf/                             # MJCF exports, export configs, scenes, meshes
 ├── add_backlash.py                   # generates the robot_*_backlash.xml variants
-├── robot/microduck_constants.py      # robot cfgs, HOME frame, BAM actuator cfg
-├── actuator/friction_dr_bam.py       # BAM + friction DR + backlash encoder feedback
+├── microduck_constants.py            # robot cfgs, HOME frame, BAM actuator cfg
+├── friction_dr_bam.py                # BAM + friction DR + backlash encoder feedback
 ├── tasks/
 │   ├── registry.py                   # task registration (base + backlash variants)
 │   ├── mdp.py                        # rewards, events, observations, custom classes
