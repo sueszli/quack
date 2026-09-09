@@ -13,10 +13,9 @@ from __future__ import annotations
 
 import json
 import subprocess
-from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 SCHEMA_VERSION = 2
 # `duck_ipc_proto`: the daemon refuses a policy whose manifest disagrees with these, and refuses
@@ -29,7 +28,6 @@ ROBOT: dict[str, Any] = {"model": "microduck", "hw_rev": 1, "servos": "xl330", "
 # The one `.onnx` a repo carries. The daemon takes the sole `.onnx` in a repo and refuses several.
 POLICY_FILE = "policy.onnx"
 
-Kind = Literal["episodic", "perpetual"]
 KINDS: tuple[str, ...] = ("episodic", "perpetual")
 
 ZERO_TWIST: tuple[float, float, float] = (0.0, 0.0, 0.0)
@@ -41,27 +39,6 @@ SLOTS: tuple[str, ...] = ("walk", "stand", "sitstand", "ground_pick", "kick_left
 class ManifestError(ValueError):
     # A manifest that the daemon would refuse, or that would load and run wrongly.
     pass
-
-
-@dataclass(frozen=True)
-class Provenance:
-    # Where the weights came from. Display-only for the daemon; the part people skip by hand.
-
-    task_id: str | None = None
-    repo: str = "pollen-robotics/microduck_rl"
-    commit: str | None = None
-    branch: str | None = None
-    dirty: bool | None = None
-    checkpoint: int | None = None
-    source_file: str | None = None
-    exported: str = field(default_factory=lambda: _now_utc())
-
-    def as_dict(self) -> dict[str, Any]:
-        return {k: v for k, v in self.__dict__.items() if v is not None}
-
-
-def _now_utc() -> str:
-    return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def git_provenance(repo_root: Path | None = None) -> dict[str, Any]:

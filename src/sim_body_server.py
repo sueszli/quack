@@ -74,7 +74,6 @@ HOME_TRUNK_Z = 0.125
 # it. Duplicated here rather than shared, because the two repositories cannot share a constant — and
 # checked against the model at startup, which is the next best thing.
 JOINT_NAMES = ("left_hip_yaw", "left_hip_roll", "left_hip_pitch", "left_knee", "left_ankle", "neck_pitch", "head_pitch", "head_yaw", "head_roll", "mouth", "right_hip_yaw", "right_hip_roll", "right_hip_pitch", "right_knee", "right_ankle")
-MOUTH_INDEX = JOINT_NAMES.index("mouth")
 
 # `duck_control::DEFAULT_POSITION`, and `DEFAULT_POSE` in `infer.py` with the mouth put back.
 # The right leg is mirrored, not symmetric — worth reading rather than assuming.
