@@ -241,6 +241,7 @@ def _leg_env(pos_rows, phases):
 
 
 def test_leg_antisymmetry_prefers_scissor_over_mirror():
+    # Mirrored joint axes: q_L = -q_R is symmetric; q_L = q_R is the scissor.
     env = _leg_env([[0.4, 0.3, 0.4, 0.3], [0.4, 0.3, -0.4, -0.3]], [0.30, 0.30])
     r = mdp.leg_antisymmetry(env)
     assert torch.allclose(r, torch.tensor([0.0, -0.7]), atol=1e-6)

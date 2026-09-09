@@ -6,6 +6,7 @@ def test_cfg_uses_phase_command_with_runtime_default_period():
     cfg = make_microduck_spin_env_cfg()
     cmd = cfg.commands["twist"]
     assert isinstance(cmd, microduck_mdp.GroundPickPhaseCommandCfg)
+    # Runtime's --ground-pick-period defaults to 4.0 s.
     assert cmd.period == 4.0
     assert cmd.randomize_phase is False
 

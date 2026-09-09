@@ -52,6 +52,8 @@ def test_actuators_converted_like_warp(bam_sim):
     assert (model.actuator_gaintype == mujoco.mjtGain.mjGAIN_FIXED).all()
     assert (model.actuator_biastype == mujoco.mjtBias.mjBIAS_NONE).all()
     assert np.allclose(model.actuator_gainprm[:, 0], 1.0)
+    # (set_to_motor leaves the old PD biasprm bytes behind; inert under BIAS_NONE,
+    # exactly as in warp's edit_spec.)
     assert (model.actuator_forcelimited == 1).all()
     assert np.allclose(model.actuator_forcerange[:, 1], 7.4 * kt / R)
     dofs = model.jnt_dofadr[model.actuator_trnid[:, 0]]

@@ -21,8 +21,11 @@ from src import publish_manifest as m
 
 _ROOT = Path(__file__).resolve().parents[1]
 
+# `RemiFabre/microduck-flamingo-cycle`'s manifest as published — the community convention this
+# schema had to stay compatible with, verbatim except for trimmed prose.
 FLAMINGO = {"schema_version": 2, "model_api": 1, "name": "flamingo-cycle", "kind": "perpetual", "obs_len": 61, "action_len": 14, "action_scale": 1.0, "entry_pose": "standing", "duration_s": None, "description": "Stand on one foot, either side, on command: twist = [flag, side, 0].", "command": {"twist": ["flag: 0 = two feet, 1 = one foot", "side: +1 right down, -1 left down", "unused"], "head": "unused (zeros)", "body": "unused (zeros)", "idle": [0, 0, 0]}, "robot": {"model": "microduck", "hw_rev": 1, "servos": "xl330", "control_hz": 50}, "training": {"task_id": "Mjlab-FlamingoCycleHard-Flat-MicroDuck"}}
 
+# The official set, as uploaded 2026-09-02 (schema 2).
 OFFICIAL_SET = {"schema_version": 2, "model_api": 1, "obs_len": 61, "action_len": 14, "robot": {"model": "microduck", "hw_rev": 1, "servos": "xl330", "control_hz": 50}, "policies": [{"file": "alpha_walking.onnx", "kind": "perpetual"}, {"file": "alpha_sitstand.onnx", "name": "sitstand", "kind": "scripted", "command": {"encoding": "posture_flag", "sit": 1.0, "stand": 0.0, "idle": [0, 0, 0]}, "ramp_s": 2.0, "unwind_s": 1.0}, {"file": "alpha_ground_pick.onnx", "name": "ground_pick", "kind": "episodic", "duration_s": 2.8, "command": {"encoding": "phase", "period_s": 4.0, "end_phase": 0.7}}, {"file": "roulade.onnx", "kind": "episodic", "duration_s": 1.0, "chain": True}]}
 
 

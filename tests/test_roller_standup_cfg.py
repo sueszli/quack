@@ -30,6 +30,7 @@ def test_smoothness_regularisers_kept():
 
 
 def test_twist_command_is_neutralised():
+    # Deployed as --standing: the runtime leaves the twist slot at zero.
     cfg = make_microduck_roller_standup_env_cfg()
     cmd = cfg.commands["twist"]
     assert cmd.ranges.lin_vel_x == (-0.01, 0.01)
@@ -151,6 +152,8 @@ def test_starts_from_ground_states():
 def test_ground_state_heights_are_roller_specific():
     cfg = make_microduck_roller_standup_env_cfg()
     params = cfg.events["set_ground_state"].params
+    # Measured HOME contacts: belly clears at z=0.0752, back rests at 0.0475.
+    # The shared spawn range must avoid belly interpenetration.
     assert (params["prone_z_min"], params["prone_z_max"]) == (0.076, 0.09)
     assert params["prone_z_min"] >= 0.0752
     assert params["standing_z_min"] == 0.134
@@ -159,6 +162,7 @@ def test_ground_state_heights_are_roller_specific():
 
 
 def test_ground_state_event_runs_after_base_reset():
+    # Reset events execute in insertion order.
     cfg = make_microduck_roller_standup_env_cfg()
     order = list(cfg.events.keys())
     assert order.index("set_ground_state") > order.index("reset_base")
@@ -214,6 +218,8 @@ def test_wheel_friction_curriculum_is_decreasing():
 
 
 def test_wheel_friction_event_default_matches_stage_zero():
+    # Curriculum runs before reset events, even on the first reset;
+    # this default is a fallback if the curriculum is removed.
     cfg = make_microduck_roller_standup_env_cfg()
     stage0 = cfg.curriculum["wheel_friction"].params["ranges_stages"][0]["ranges"]
     assert cfg.events["randomize_wheel_friction"].params["ranges"] == stage0
@@ -252,6 +258,7 @@ def test_play_face_up_override_forces_back_starts(monkeypatch):
     assert params["face_up_prob"] == 1.0
     assert params["face_down_prob"] == 0.0
     assert params["standing_prob"] == 0.0
+    # Curriculum runs before reset events and would overwrite the play override.
     assert "ground_state_mix" not in cfg.curriculum
 
 
