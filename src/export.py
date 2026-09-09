@@ -36,7 +36,7 @@ class ExportConfig:
     agent: Literal["zero", "random", "trained"] = "trained"
     registry_name: str | None = None
     wandb_run_path: str | None = None
-    checkpoint: int | None = None      # Select checkpoint by iteration number (e.g. 3000)
+    checkpoint: int | None = None  # Select checkpoint by iteration number (e.g. 3000)
     checkpoint_file: str | None = None
     motion_file: str | None = None
     num_envs: int | None = None
@@ -102,16 +102,14 @@ def run_export(task_id: str, cfg: ExportConfig) -> ExportResult:
 
         # Check if motion file is already set and exists
         motion_file_already_set = (
-            hasattr(motion_cmd, 'motion_file')
+            hasattr(motion_cmd, "motion_file")
             and motion_cmd.motion_file is not None
             and Path(motion_cmd.motion_file).exists()
         )
 
         if DUMMY_MODE:
             if not cfg.registry_name:
-                raise ValueError(
-                    "Tracking tasks require `registry_name` when using dummy agents."
-                )
+                raise ValueError("Tracking tasks require `registry_name` when using dummy agents.")
             # Check if the registry name includes alias, if not, append ":latest".
             registry_name = cfg.registry_name
             if ":" not in registry_name:
@@ -139,10 +137,7 @@ def run_export(task_id: str, cfg: ExportConfig) -> ExportResult:
                     )
                 if cfg.wandb_run_path is not None:
                     wandb_run = api.run(str(cfg.wandb_run_path))
-                    art = next(
-                        (a for a in wandb_run.used_artifacts() if a.type == "motions"),
-                        None,
-                    )
+                    art = next((a for a in wandb_run.used_artifacts() if a.type == "motions"), None)
                     if art is None:
                         raise RuntimeError("No motion artifact found in the run.")
                     motion_cmd.motion_file = str(Path(art.download()) / "motion.npz")
@@ -161,6 +156,7 @@ def run_export(task_id: str, cfg: ExportConfig) -> ExportResult:
             checkpoint_filename = f"model_{cfg.checkpoint}.pt"
             if cfg.wandb_run_path is not None:
                 import wandb
+
                 api = wandb.Api()
                 wandb_run = api.run(str(cfg.wandb_run_path))
                 run_id = cfg.wandb_run_path.split("/")[-1]
@@ -172,31 +168,22 @@ def run_export(task_id: str, cfg: ExportConfig) -> ExportResult:
                     available = [f.name for f in wandb_run.files() if "model" in f.name]
                     if checkpoint_filename not in available:
                         raise FileNotFoundError(
-                            f"Checkpoint '{checkpoint_filename}' not found in wandb run. "
-                            f"Available: {sorted(available)}"
+                            f"Checkpoint '{checkpoint_filename}' not found in wandb run. Available: {sorted(available)}"
                         )
                     wandb_run.file(checkpoint_filename).download(str(download_dir), replace=True)
                     print(f"[INFO]: Loading checkpoint: {checkpoint_filename} (run: {run_id}, downloaded)")
             else:
-                resume_path = get_checkpoint_path(
-                    log_root_path, checkpoint=re.escape(checkpoint_filename)
-                )
+                resume_path = get_checkpoint_path(log_root_path, checkpoint=re.escape(checkpoint_filename))
                 print(f"[INFO]: Loading checkpoint: {resume_path.name}")
         else:
             if cfg.wandb_run_path is None:
-                raise ValueError(
-                    "`wandb_run_path` is required when `checkpoint_file` is not provided."
-                )
-            resume_path, was_cached = get_wandb_checkpoint_path(
-                log_root_path, Path(cfg.wandb_run_path)
-            )
+                raise ValueError("`wandb_run_path` is required when `checkpoint_file` is not provided.")
+            resume_path, was_cached = get_wandb_checkpoint_path(log_root_path, Path(cfg.wandb_run_path))
             # Extract run_id and checkpoint name from path for display.
             run_id = resume_path.parent.name
             checkpoint_name = resume_path.name
             cached_str = "cached" if was_cached else "downloaded"
-            print(
-                f"[INFO]: Loading checkpoint: {checkpoint_name} (run: {run_id}, {cached_str})"
-            )
+            print(f"[INFO]: Loading checkpoint: {checkpoint_name} (run: {run_id}, {cached_str})")
         log_dir = resume_path.parent
 
     if cfg.num_envs is not None:
@@ -208,9 +195,7 @@ def run_export(task_id: str, cfg: ExportConfig) -> ExportResult:
 
     render_mode = "rgb_array" if (TRAINED_MODE and cfg.video) else None
     if cfg.video and DUMMY_MODE:
-        print(
-            "[WARN] Video recording with dummy agents is disabled (no checkpoint/log_dir)."
-        )
+        print("[WARN] Video recording with dummy agents is disabled (no checkpoint/log_dir).")
     env = ManagerBasedRlEnv(cfg=env_cfg, device=device, render_mode=render_mode)
 
     if TRAINED_MODE and cfg.video:
@@ -284,9 +269,7 @@ def main():
 
     all_tasks = list_tasks()
     chosen_task, remaining_args = tyro.cli(
-        tyro.extras.literal_type_from_choices(all_tasks),
-        add_help=False,
-        return_unknown_args=True,
+        tyro.extras.literal_type_from_choices(all_tasks), add_help=False, return_unknown_args=True
     )
 
     # Parse the rest of the arguments + allow overriding env_cfg and agent_cfg.
@@ -297,10 +280,7 @@ def main():
         args=remaining_args,
         default=ExportConfig(),
         prog=sys.argv[0] + f" {chosen_task}",
-        config=(
-            tyro.conf.AvoidSubcommands,
-            tyro.conf.FlagConversionOff,
-        ),
+        config=(tyro.conf.AvoidSubcommands, tyro.conf.FlagConversionOff),
     )
     del remaining_args, agent_cfg
 

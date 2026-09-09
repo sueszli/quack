@@ -1,6 +1,4 @@
-from src.task_ground_pick import (
-    make_microduck_ground_pick_env_cfg,
-)
+from src.task_ground_pick import make_microduck_ground_pick_env_cfg
 from src.task_mdp import GroundPickPhaseCommand
 
 

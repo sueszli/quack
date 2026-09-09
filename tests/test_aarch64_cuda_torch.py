@@ -45,10 +45,7 @@ def _markers(pkg):
 def _aarch64_entry(pkgs):
     """The entry whose resolution-markers SELECT linux-aarch64."""
     hits = [
-        p
-        for p in pkgs
-        if "platform_machine == 'aarch64'" in _markers(p)
-        and "sys_platform == 'linux'" in _markers(p)
+        p for p in pkgs if "platform_machine == 'aarch64'" in _markers(p) and "sys_platform == 'linux'" in _markers(p)
     ]
     assert len(hits) == 1, f"expected 1 aarch64 entry, found {len(hits)}"
     return hits[0]
@@ -76,9 +73,7 @@ def test_torch_source_is_pinned_to_a_cuda_index_on_aarch64():
     indexes = {p["name"]: p["url"] for p in uv_cfg.get("index", [])}
     for src in sources:
         assert "aarch64" in src["marker"], "the torch source must stay aarch64-scoped"
-        assert indexes[src["index"]].startswith(_CUDA_INDEX), (
-            f"index {src['index']} is not a PyTorch CUDA index"
-        )
+        assert indexes[src["index"]].startswith(_CUDA_INDEX), f"index {src['index']} is not a PyTorch CUDA index"
 
 
 def test_lockfile_routes_aarch64_torch_to_cuda_wheels():
@@ -90,23 +85,16 @@ def test_lockfile_routes_aarch64_torch_to_cuda_wheels():
     )
     wheels = " ".join(w["url"] for w in aarch64["wheels"])
     assert "aarch64" in wheels, "no aarch64 wheel in the aarch64 torch entry"
-    assert "%2Bcu" in wheels or "+cu" in wheels, (
-        "the aarch64 wheel has no +cuXXX local version -> CPU build"
-    )
+    assert "%2Bcu" in wheels or "+cu" in wheels, "the aarch64 wheel has no +cuXXX local version -> CPU build"
 
 
 def test_x86_64_resolution_stays_on_pypi():
     """The x86_64 resolution must not move off PyPI."""
-    others = [
-        p
-        for p in _packages("torch")
-        if "platform_machine == 'aarch64'" not in _markers(p)
-    ]
+    others = [p for p in _packages("torch") if "platform_machine == 'aarch64'" not in _markers(p)]
     assert others, "no non-aarch64 torch entry found"
     for pkg in others:
         assert _registry(pkg) == "https://pypi.org/simple", (
-            f"x86_64 torch moved to {_registry(pkg)!r} — x86_64 would switch "
-            "wheels."
+            f"x86_64 torch moved to {_registry(pkg)!r} — x86_64 would switch wheels."
         )
         assert "+cu" not in pkg["version"], "x86_64 torch must not be CUDA-pinned"
 

@@ -22,10 +22,7 @@ from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.tasks.velocity import mdp
 
 from . import task_mdp as microduck_mdp
-from .task_velocity_rollers import (
-    MicroduckRollersRlCfg,
-    make_microduck_velocity_rollers_env_cfg,
-)
+from .task_velocity_rollers import MicroduckRollersRlCfg, make_microduck_velocity_rollers_env_cfg
 
 # Stride / anti-swizzle rewards to drop for the swizzle task.
 _ANTI_SWIZZLE = ("single_support", "glide", "skating_air_time", "gait_symmetry", "hip_roll_neutral")
@@ -42,9 +39,7 @@ def make_microduck_velocity_swizzle_env_cfg(play: bool = False) -> ManagerBasedR
 
     # Legs mirror each other (the swizzle's defining symmetry).
     cfg.rewards["leg_symmetry"] = RewardTermCfg(
-        func=microduck_mdp.leg_symmetry_reward,
-        weight=2.0,
-        params={"asset_cfg": SceneEntityCfg("robot")},
+        func=microduck_mdp.leg_symmetry_reward, weight=2.0, params={"asset_cfg": SceneEntityCfg("robot")}
     )
     # Keep both blades on the ground (classic swizzle: no lifting).
     cfg.rewards["grounded"] = RewardTermCfg(
@@ -87,10 +82,10 @@ def make_microduck_velocity_swizzle_env_cfg(play: bool = False) -> ManagerBasedR
         params={
             "reward_name": "heading_hold",
             "weight_stages": [
-                {"step": 0,          "weight": 1.0},   # must match heading_hold's initial weight
-                {"step": 1000 * 24,  "weight": 1.0},   # hold straight while the swizzle solidifies
-                {"step": 1750 * 24,  "weight": 0.5},
-                {"step": 2500 * 24,  "weight": 0.0},
+                {"step": 0, "weight": 1.0},  # must match heading_hold's initial weight
+                {"step": 1000 * 24, "weight": 1.0},  # hold straight while the swizzle solidifies
+                {"step": 1750 * 24, "weight": 0.5},
+                {"step": 2500 * 24, "weight": 0.0},
             ],
         },
     )
@@ -99,10 +94,10 @@ def make_microduck_velocity_swizzle_env_cfg(play: bool = False) -> ManagerBasedR
         params={
             "reward_name": "heading_tracking",
             "weight_stages": [
-                {"step": 0,          "weight": 0.0},
-                {"step": 1000 * 24,  "weight": 0.0},   # straight-only until here
-                {"step": 1750 * 24,  "weight": 1.5},
-                {"step": 2500 * 24,  "weight": 3.0},
+                {"step": 0, "weight": 0.0},
+                {"step": 1000 * 24, "weight": 0.0},  # straight-only until here
+                {"step": 1750 * 24, "weight": 1.5},
+                {"step": 2500 * 24, "weight": 3.0},
             ],
         },
     )
@@ -114,9 +109,9 @@ def make_microduck_velocity_swizzle_env_cfg(play: bool = False) -> ManagerBasedR
     cfg.commands["head_pose"] = microduck_mdp.UniformPoseCommandCfg(
         resampling_time_range=(2.0, 5.0),
         ranges=(
-            (-0.05, 0.05),    # neck_pitch
-            (-0.05, 0.05),    # head_pitch
-            (-0.07, 0.07),    # head_yaw
+            (-0.05, 0.05),  # neck_pitch
+            (-0.05, 0.05),  # head_pitch
+            (-0.07, 0.07),  # head_yaw
             (-0.015, 0.015),  # head_roll (tighter — small mechanical range)
         ),
     )
@@ -125,16 +120,13 @@ def make_microduck_velocity_swizzle_env_cfg(play: bool = False) -> ManagerBasedR
     # both groups. body_command stays zero-padded (no body-pose control here).
     for group in ("actor", "critic"):
         cfg.observations[group].terms["head_command"] = ObservationTermCfg(
-            func=mdp.generated_commands,
-            params={"command_name": "head_pose"},
+            func=mdp.generated_commands, params={"command_name": "head_pose"}
         )
 
     # Reward the head tracking its command. Weight 0 here — ramped in LATE by the
     # curriculum so it doesn't disturb the swizzle before it's solid.
     cfg.rewards["head_pose_tracking"] = RewardTermCfg(
-        func=microduck_mdp.head_pose_tracking,
-        weight=0.0,
-        params={"command_name": "head_pose", "std": 0.5},
+        func=microduck_mdp.head_pose_tracking, weight=0.0, params={"command_name": "head_pose", "std": 0.5}
     )
 
     # Reconcile the two HOME-pullers that would fight head_pose_tracking:
@@ -148,8 +140,7 @@ def make_microduck_velocity_swizzle_env_cfg(play: bool = False) -> ManagerBasedR
             std_dict = cfg.rewards["pose"].params[std_key]
             # Keep only leg joint patterns (filter out neck, head, passive)
             cfg.rewards["pose"].params[std_key] = {
-                k: v for k, v in std_dict.items()
-                if "neck" not in k and "head" not in k and "passive" not in k
+                k: v for k, v in std_dict.items() if "neck" not in k and "head" not in k and "passive" not in k
             }
     # Scope asset_cfg to LEG joints only (excludes neck, head, passive wheels)
     cfg.rewards["pose"].params["asset_cfg"] = SceneEntityCfg(
@@ -163,10 +154,10 @@ def make_microduck_velocity_swizzle_env_cfg(play: bool = False) -> ManagerBasedR
         params={
             "reward_name": "head_pose_tracking",
             "weight_stages": [
-                {"step": 0,          "weight": 0.0},   # must match initial weight
-                {"step": 1500 * 24,  "weight": 0.0},   # head off while swizzle solidifies
-                {"step": 2250 * 24,  "weight": 2.0},
-                {"step": 3000 * 24,  "weight": 4.0},
+                {"step": 0, "weight": 0.0},  # must match initial weight
+                {"step": 1500 * 24, "weight": 0.0},  # head off while swizzle solidifies
+                {"step": 2250 * 24, "weight": 2.0},
+                {"step": 3000 * 24, "weight": 4.0},
             ],
         },
     )
@@ -179,10 +170,10 @@ def make_microduck_velocity_swizzle_env_cfg(play: bool = False) -> ManagerBasedR
             "command_name": "head_pose",
             "range_stages": [
                 # step,               ((neck_pitch), (head_pitch), (head_yaw),  (head_roll))
-                {"step": 0,          "ranges": ((-0.05, 0.05), (-0.05, 0.05), (-0.07, 0.07), (-0.015, 0.015))},
-                {"step": 1500 * 24,  "ranges": ((-0.05, 0.05), (-0.05, 0.05), (-0.07, 0.07), (-0.015, 0.015))},
-                {"step": 2250 * 24,  "ranges": ((-0.55, 0.55), (-0.55, 0.55), (-0.70, 0.70), (-0.15, 0.15))},
-                {"step": 3000 * 24,  "ranges": ((-1.10, 1.10), (-1.10, 1.10), (-1.40, 1.40), (-0.31, 0.31))},
+                {"step": 0, "ranges": ((-0.05, 0.05), (-0.05, 0.05), (-0.07, 0.07), (-0.015, 0.015))},
+                {"step": 1500 * 24, "ranges": ((-0.05, 0.05), (-0.05, 0.05), (-0.07, 0.07), (-0.015, 0.015))},
+                {"step": 2250 * 24, "ranges": ((-0.55, 0.55), (-0.55, 0.55), (-0.70, 0.70), (-0.15, 0.15))},
+                {"step": 3000 * 24, "ranges": ((-1.10, 1.10), (-1.10, 1.10), (-1.40, 1.40), (-0.31, 0.31))},
             ],
         },
     )
@@ -192,7 +183,5 @@ def make_microduck_velocity_swizzle_env_cfg(play: bool = False) -> ManagerBasedR
 
 # Same PPO hyperparameters as the stride roller task, new experiment/run name.
 MicroduckSwizzleRlCfg = dataclasses.replace(
-    MicroduckRollersRlCfg,
-    experiment_name="velocity_swizzle",
-    run_name="velocity_swizzle",
+    MicroduckRollersRlCfg, experiment_name="velocity_swizzle", run_name="velocity_swizzle"
 )

@@ -72,24 +72,24 @@ _JOINT_SIGN: list[float] = [-1, -1, -1, -1, -1, 1, 1, -1, -1, -1, -1, -1, -1, -1
 
 # Full 61-dim actor obs permutation (all command slots mirror in place)
 _OBS_PERM: list[int] = (
-    [0, 1, 2]                           # base_ang_vel (indices unchanged)
-    + [3, 4, 5]                         # projected_gravity
-    + [6 + j for j in _JOINT_PERM]     # joint_pos
-    + [20 + j for j in _JOINT_PERM]    # joint_vel
-    + [34 + j for j in _JOINT_PERM]    # last_action
-    + [48, 49, 50]                      # twist command
-    + [51, 52, 53, 54]                  # head command
-    + [55, 56, 57, 58, 59, 60]          # body command
+    [0, 1, 2]  # base_ang_vel (indices unchanged)
+    + [3, 4, 5]  # projected_gravity
+    + [6 + j for j in _JOINT_PERM]  # joint_pos
+    + [20 + j for j in _JOINT_PERM]  # joint_vel
+    + [34 + j for j in _JOINT_PERM]  # last_action
+    + [48, 49, 50]  # twist command
+    + [51, 52, 53, 54]  # head command
+    + [55, 56, 57, 58, 59, 60]  # body command
 )
 
 # Full 61-dim sign vector
 _OBS_SIGN: list[float] = (
-    [-1.0, 1.0, -1.0]   # base_ang_vel: negate roll, yaw
+    [-1.0, 1.0, -1.0]  # base_ang_vel: negate roll, yaw
     + [1.0, -1.0, 1.0]  # projected_gravity: negate gy
-    + _JOINT_SIGN       # joint_pos
-    + _JOINT_SIGN       # joint_vel
-    + _JOINT_SIGN       # last_action
-    + [1.0, -1.0, -1.0] # twist: negate lin_vel_y, ang_vel_z
+    + _JOINT_SIGN  # joint_pos
+    + _JOINT_SIGN  # joint_vel
+    + _JOINT_SIGN  # last_action
+    + [1.0, -1.0, -1.0]  # twist: negate lin_vel_y, ang_vel_z
     + [1.0, 1.0, -1.0, -1.0]  # head: negate head_yaw, head_roll
     + [1.0, -1.0, 1.0, -1.0, 1.0, -1.0]  # body: negate y, roll, yaw
 )
@@ -98,9 +98,7 @@ _OBS_SIGN: list[float] = (
 _cache: dict[torch.device, tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]] = {}
 
 
-def _get_tensors(
-    device: torch.device,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+def _get_tensors(device: torch.device) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     if device not in _cache:
         obs_perm = torch.tensor(_OBS_PERM, dtype=torch.long, device=device)
         obs_sign = torch.tensor(_OBS_SIGN, dtype=torch.float32, device=device)
@@ -116,9 +114,7 @@ def _get_tensors(
 
 
 def microduck_vel_symmetry(
-    env,
-    obs: TensorDict | None,
-    actions: torch.Tensor | None,
+    env, obs: TensorDict | None, actions: torch.Tensor | None
 ) -> tuple[TensorDict | None, torch.Tensor | None]:
     """Bilateral symmetry augmentation / mirror function for the microduck vel env.
 
@@ -153,10 +149,7 @@ def microduck_vel_symmetry(
         critic_repeated = torch.cat([critic_orig, critic_orig], dim=0)
 
         aug_obs = TensorDict(
-            {
-                "actor": torch.cat([actor_orig, actor_sym], dim=0),
-                "critic": critic_repeated,
-            },
+            {"actor": torch.cat([actor_orig, actor_sym], dim=0), "critic": critic_repeated},
             batch_size=[actor_orig.shape[0] * 2],
             device=actor_orig.device,
         )

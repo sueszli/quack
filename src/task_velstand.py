@@ -73,23 +73,13 @@ Phases (as before, but with a recovery backstop):
 import math
 
 from mjlab.envs import ManagerBasedRlEnvCfg
-from mjlab.managers import (
-    CurriculumTermCfg,
-    EventTermCfg,
-    RewardTermCfg,
-    TerminationTermCfg,
-)
+from mjlab.managers import CurriculumTermCfg, EventTermCfg, RewardTermCfg, TerminationTermCfg
 from mjlab.managers.scene_entity_config import SceneEntityCfg
-from mjlab.rl import (
-    RslRlOnPolicyRunnerCfg,
-    RslRlModelCfg,
-)
+from mjlab.rl import RslRlOnPolicyRunnerCfg, RslRlModelCfg
 
 from .robot import MICRODUCK_STANDUP_ROBOT_CFG
 from . import task_mdp as microduck_mdp
-from .task_velocity import (
-    make_microduck_velocity_env_cfg,
-)
+from .task_velocity import make_microduck_velocity_env_cfg
 from .task_symmetry import PpoWithSymmetryCfg
 
 # Phase boundaries (PPO iterations; env step counter scales by num_steps_per_env=24)
@@ -104,12 +94,12 @@ NUM_STEPS_PER_ENV = 24
 # the state. Tilt>40° can't be farmed from a comfortable pose — you're
 # genuinely toppled. The TERMINATION keeps the z-condition so sitters and
 # stuck-low envs get recycled (terminated) rather than paid.
-REWARD_GATE_TILT_DEG = 40.0   # recovery rewards: fallen = tilt > 40° ONLY
+REWARD_GATE_TILT_DEG = 40.0  # recovery rewards: fallen = tilt > 40° ONLY
 # TERM z-gate at 0.08, NOT 0.10 (run-3 lesson): a normally wobbling upright
 # robot dips to z=0.084-0.096 — 0.10 sits inside the early-learning envelope
 # and recycled crouch-walking explorers every 5 s. 0.08 still catches sitting
 # (z≈0.07) and prone (z≈0.05).
-TERM_GATE_Z = 0.08            # fallen_too_long: z < 0.08 OR tilt > 40°
+TERM_GATE_Z = 0.08  # fallen_too_long: z < 0.08 OR tilt > 40°
 TERM_GATE_TILT_DEG = 40.0
 
 # "Recovery COMPLETE" definition — shared by the recovery_success bounty and
@@ -151,8 +141,8 @@ FALLEN_TIMEOUT_S = 8.0
 # Crouch slice alone starts at 800: near-upright states, tax-free until econ,
 # and it doubles as full-stand posture data (run 6 stood truly vertical).
 PRONE_RAMP_STAGES = [
-    {"step": 0,                        "params": {"prone_prob": 0.00, "face_down_prob": 1.0,  "crouch_prob": 0.00}},
-    {"step": 800 * NUM_STEPS_PER_ENV,  "params": {"prone_prob": 0.00, "face_down_prob": 1.0,  "crouch_prob": 0.15}},
+    {"step": 0, "params": {"prone_prob": 0.00, "face_down_prob": 1.0, "crouch_prob": 0.00}},
+    {"step": 800 * NUM_STEPS_PER_ENV, "params": {"prone_prob": 0.00, "face_down_prob": 1.0, "crouch_prob": 0.15}},
     {"step": 1500 * NUM_STEPS_PER_ENV, "params": {"prone_prob": 0.15, "face_down_prob": 0.80, "crouch_prob": 0.15}},
     {"step": 2000 * NUM_STEPS_PER_ENV, "params": {"prone_prob": 0.30, "face_down_prob": 0.65, "crouch_prob": 0.15}},
     {"step": 2500 * NUM_STEPS_PER_ENV, "params": {"prone_prob": 0.45, "face_down_prob": 0.50, "crouch_prob": 0.15}},
@@ -180,12 +170,14 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
     # EMA below z=0.09 / beyond 40° tilt (matching REWARD_GATE_TILT_DEG), so
     # the term prices exactly what it does in the velocity env — sustained droop while
     # actually standing/walking — and nothing during recovery.
-    cfg.rewards["head_pose_bias"].params.update({
-        "gate_height_low":    0.09,
-        "gate_height_high":   0.11,
-        "gate_tilt_full_deg": 20.0,
-        "gate_tilt_zero_deg": REWARD_GATE_TILT_DEG,
-    })
+    cfg.rewards["head_pose_bias"].params.update(
+        {
+            "gate_height_low": 0.09,
+            "gate_height_high": 0.11,
+            "gate_tilt_full_deg": 20.0,
+            "gate_tilt_zero_deg": REWARD_GATE_TILT_DEG,
+        }
+    )
 
     # ── Recovery reward layer ─────────────────────────────────────────────────
     # LESSON (runs 1/2/4 — sitting, lying, head-tripod): ANY positive reward for
@@ -198,9 +190,7 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
     cfg.rewards["upright_progress"] = RewardTermCfg(
         func=microduck_mdp.upright_progress,
         weight=5.0,
-        params={
-            "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
-        },
+        params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))},
     )
     # z-axis companion to upright_progress (run-5 crouch-endpoint lesson): the
     # crouch→stand last mile is mostly a HEIGHT change at modest tilt — where
@@ -211,10 +201,7 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
     cfg.rewards["height_progress"] = RewardTermCfg(
         func=microduck_mdp.height_progress,
         weight=30.0,
-        params={
-            "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
-            "ceiling": 0.115,
-        },
+        params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)), "ceiling": 0.115},
     )
     cfg.rewards["com_upward_velocity"] = RewardTermCfg(
         func=microduck_mdp.com_upward_velocity,
@@ -236,10 +223,7 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
     # than getting up. joint_torque_rate_l2 below covers landing harshness.
     # Standup's proven anti-jitter term: penalizes torque CHANGE (not magnitude
     # or rotation) → smooths transfer without blocking the recovery flip.
-    cfg.rewards["joint_torque_rate_l2"] = RewardTermCfg(
-        func=microduck_mdp.joint_torque_rate_l2,
-        weight=-2e-3,
-    )
+    cfg.rewards["joint_torque_rate_l2"] = RewardTermCfg(func=microduck_mdp.joint_torque_rate_l2, weight=-2e-3)
 
     # ── Recovery economics (first-run lessons #3-#5) ──────────────────────────
     # air_time zeroed while fallen: a robot lying on its trunk can rhythmically
@@ -294,11 +278,11 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
         func=microduck_mdp.maybe_set_random_prone_orientation,
         mode="reset",
         params={
-            "prone_prob": 0.0,        # ramped by the prone_init_prob curriculum
+            "prone_prob": 0.0,  # ramped by the prone_init_prob curriculum
             "face_down_prob": 1.0,
             "prone_z_min": 0.05,
             "prone_z_max": 0.09,
-            "crouch_prob": 0.0,       # ramped by the prone_init_prob curriculum
+            "crouch_prob": 0.0,  # ramped by the prone_init_prob curriculum
         },
     )
 
@@ -323,10 +307,8 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
             params={
                 "term_name": "fell_over",
                 "param_stages": [
-                    {"step": 0,
-                     "params": {"limit_angle": math.radians(70.0)}},
-                    {"step": FELL_OVER_DISABLE_ITER * NUM_STEPS_PER_ENV,
-                     "params": {"limit_angle": math.pi}},
+                    {"step": 0, "params": {"limit_angle": math.radians(70.0)}},
+                    {"step": FELL_OVER_DISABLE_ITER * NUM_STEPS_PER_ENV, "params": {"limit_angle": math.pi}},
                 ],
             },
         )
@@ -334,10 +316,7 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
     # Phase 3: prone-init ramp (face-down first, face-up later, capped 45%).
     cfg.curriculum["prone_init_prob"] = CurriculumTermCfg(
         func=microduck_mdp.event_param_curriculum,
-        params={
-            "event_name": "random_prone_init",
-            "param_stages": PRONE_RAMP_STAGES,
-        },
+        params={"event_name": "random_prone_init", "param_stages": PRONE_RAMP_STAGES},
     )
 
     # Recovery economics ramp: tax + bounty OFF until the walk is established
@@ -381,17 +360,9 @@ MicroduckVelStandRlCfg = RslRlOnPolicyRunnerCfg(
         hidden_dims=(512, 256, 128),
         activation="elu",
         obs_normalization=True,
-        distribution_cfg={
-            "class_name": "GaussianDistribution",
-            "init_std": 1.0,
-            "std_type": "scalar",
-        },
+        distribution_cfg={"class_name": "GaussianDistribution", "init_std": 1.0, "std_type": "scalar"},
     ),
-    critic=RslRlModelCfg(
-        hidden_dims=(512, 256, 128),
-        activation="elu",
-        obs_normalization=True,
-    ),
+    critic=RslRlModelCfg(hidden_dims=(512, 256, 128), activation="elu", obs_normalization=True),
     algorithm=PpoWithSymmetryCfg(
         value_loss_coef=1.0,
         use_clipped_value_loss=True,

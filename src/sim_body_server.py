@@ -39,6 +39,7 @@ own shape lives is the whole reason the protocol carries the robot's units rathe
 gives an orientation quaternion, so this does the rotation — the same arithmetic the IMU's SFLP
 filter does on the robot, on the other side of the same wire.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -74,18 +75,42 @@ HOME_TRUNK_Z = 0.125
 # it. Duplicated here rather than shared, because the two repositories cannot share a constant — and
 # checked against the model at startup, which is the next best thing.
 JOINT_NAMES = (
-    "left_hip_yaw", "left_hip_roll", "left_hip_pitch", "left_knee", "left_ankle",
-    "neck_pitch", "head_pitch", "head_yaw", "head_roll", "mouth",
-    "right_hip_yaw", "right_hip_roll", "right_hip_pitch", "right_knee", "right_ankle",
+    "left_hip_yaw",
+    "left_hip_roll",
+    "left_hip_pitch",
+    "left_knee",
+    "left_ankle",
+    "neck_pitch",
+    "head_pitch",
+    "head_yaw",
+    "head_roll",
+    "mouth",
+    "right_hip_yaw",
+    "right_hip_roll",
+    "right_hip_pitch",
+    "right_knee",
+    "right_ankle",
 )
 MOUTH_INDEX = JOINT_NAMES.index("mouth")
 
 # `duck_control::DEFAULT_POSITION`, and `DEFAULT_POSE` in `infer.py` with the mouth put back.
 # The right leg is mirrored, not symmetric — worth reading rather than assuming.
 HOME_POSE = (
-    0.0, -0.0873, -0.4579, -0.0049, 0.4530,
-    0.3491, 0.3491, 0.0, 0.0, 0.0,
-    0.0, 0.0873, 0.4579, 0.0049, -0.4530,
+    0.0,
+    -0.0873,
+    -0.4579,
+    -0.0049,
+    0.4530,
+    0.3491,
+    0.3491,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0873,
+    0.4579,
+    0.0049,
+    -0.4530,
 )
 
 SCENES = MJCF_DIR
@@ -143,9 +168,7 @@ def pose_table(scene: Path, keyframe: str) -> tuple[dict[str, float] | None, flo
     model = mujoco.MjModel.from_xml_path(str(scene))
     names = [mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_KEY, i) for i in range(model.nkey)]
     if keyframe not in names:
-        raise SystemExit(
-            f"no keyframe {keyframe!r} in {scene.name}. It has: {', '.join(n for n in names if n)}"
-        )
+        raise SystemExit(f"no keyframe {keyframe!r} in {scene.name}. It has: {', '.join(n for n in names if n)}")
     qpos = model.key_qpos[names.index(keyframe)]
     table = {}
     for joint in range(model.njnt):
@@ -229,12 +252,8 @@ class Body:
         if not self.actuators:
             raise SystemExit(f"no actuated joints for duck {index} (prefix {self.prefix!r})")
 
-        self.qpos_adr = np.array(
-            [model.jnt_qposadr[model.actuator_trnid[a, 0]] for a in self.actuators]
-        )
-        self.qvel_adr = np.array(
-            [model.jnt_dofadr[model.actuator_trnid[a, 0]] for a in self.actuators]
-        )
+        self.qpos_adr = np.array([model.jnt_qposadr[model.actuator_trnid[a, 0]] for a in self.actuators])
+        self.qvel_adr = np.array([model.jnt_dofadr[model.actuator_trnid[a, 0]] for a in self.actuators])
         # The depth sensor, on the model's own `tof` site — so a head that turns takes it along,
         # which is what makes `robot.look` a way to scan a room.
         self.tof = Tof(model, ident(mujoco.mjtObj.mjOBJ_SITE, "tof"), seed=index)
@@ -277,10 +296,7 @@ class Body:
 
     def remember(self) -> None:
         data = self.world.data
-        self.held = (
-            data.qpos[self.trunk : self.trunk + 7].copy(),
-            data.qpos[self.qpos_adr].copy(),
-        )
+        self.held = (data.qpos[self.trunk : self.trunk + 7].copy(), data.qpos[self.qpos_adr].copy())
 
     def restore(self) -> None:
         """Put this duck back where it was, for the one that has not been enabled yet."""
@@ -410,9 +426,7 @@ class Handler(socketserver.StreamRequestHandler):
         if op == "hello":
             asked = request.get("protocol")
             if asked != PROTOCOL:
-                raise ValueError(
-                    f"the daemon speaks protocol {asked} and this simulator speaks {PROTOCOL}"
-                )
+                raise ValueError(f"the daemon speaks protocol {asked} and this simulator speaks {PROTOCOL}")
             return {"protocol": PROTOCOL}
         if op == "read":
             return body.sensors()
@@ -451,9 +465,7 @@ def run(world: World, headless: bool) -> None:
 
             # No side panels: this window is for watching ducks, and everything the panels would
             # drive belongs to the daemons.
-            viewer = mujoco.viewer.launch_passive(
-                world.model, world.data, show_left_ui=False, show_right_ui=False
-            )
+            viewer = mujoco.viewer.launch_passive(world.model, world.data, show_left_ui=False, show_right_ui=False)
         except Exception as error:
             print(f"== no viewer ({error}); running headless", flush=True)
 
@@ -485,10 +497,7 @@ def run(world: World, headless: bool) -> None:
                 time.sleep(slack)
             elif slack < -0.25:
                 behind += 1
-                print(
-                    f"== behind real time by {-slack:.2f}s (x{behind}) — fewer ducks, or --headless",
-                    flush=True,
-                )
+                print(f"== behind real time by {-slack:.2f}s (x{behind}) — fewer ducks, or --headless", flush=True)
                 next_step = time.perf_counter()
             step += 1
             if viewer is not None and step % passes_per_frame == 0:
@@ -537,8 +546,7 @@ def main() -> None:
 
     if not args.scene.exists():
         raise SystemExit(
-            f"no scene at {args.scene}. Available:\n  "
-            + "\n  ".join(sorted(p.name for p in SCENES.glob("scene*.xml")))
+            f"no scene at {args.scene}. Available:\n  " + "\n  ".join(sorted(p.name for p in SCENES.glob("scene*.xml")))
         )
     if args.ducks < 1:
         raise SystemExit("--ducks needs at least one duck")

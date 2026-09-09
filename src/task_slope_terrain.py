@@ -13,19 +13,13 @@ from dataclasses import dataclass
 import mujoco
 import numpy as np
 
-from mjlab.terrains.terrain_generator import (
-    SubTerrainCfg,
-    TerrainGeometry,
-    TerrainOutput,
-)
+from mjlab.terrains.terrain_generator import SubTerrainCfg, TerrainGeometry, TerrainOutput
 
 RAMP_DEG_MIN = 2.0
 RAMP_DEG_MAX = 20.0
 
 
-def ramp_angle_by_difficulty(
-    difficulty: float, deg_min: float = RAMP_DEG_MIN, deg_max: float = RAMP_DEG_MAX
-) -> float:
+def ramp_angle_by_difficulty(difficulty: float, deg_min: float = RAMP_DEG_MIN, deg_max: float = RAMP_DEG_MAX) -> float:
     """Ramp angle (radians) linearly interpolated by the difficulty [0,1]."""
     d = float(np.clip(difficulty, 0.0, 1.0))
     return math.radians(deg_min + d * (deg_max - deg_min))
@@ -44,21 +38,17 @@ class FlatRampTerrainCfg(SubTerrainCfg):
          lands on something solid instead of the void.
     """
 
-    flat_length: float = 2.0                       # starting flat (m)
-    ramp_length_range: tuple = (3.0, 8.0)          # horizontal ramp length (m), drawn at random
-    runout_length: float = 4.0                     # exit flat at the bottom (m)
-    spawn_on_ramp: float = 0.3                      # spawn this many m ON the ramp (gravity => rolling)
+    flat_length: float = 2.0  # starting flat (m)
+    ramp_length_range: tuple = (3.0, 8.0)  # horizontal ramp length (m), drawn at random
+    runout_length: float = 4.0  # exit flat at the bottom (m)
+    spawn_on_ramp: float = 0.3  # spawn this many m ON the ramp (gravity => rolling)
     deg_min: float = RAMP_DEG_MIN
     deg_max: float = RAMP_DEG_MAX
-    thickness: float = 0.5                          # box thickness (m)
+    thickness: float = 0.5  # box thickness (m)
 
-    def function(
-        self, difficulty: float, spec: mujoco.MjSpec, rng
-    ) -> TerrainOutput:
+    def function(self, difficulty: float, spec: mujoco.MjSpec, rng) -> TerrainOutput:
         total_max = self.flat_length + self.ramp_length_range[1] + self.runout_length
-        assert total_max <= self.size[0], (
-            f"flat+ramp_max+runout ({total_max}) must fit in size[0] ({self.size[0]})"
-        )
+        assert total_max <= self.size[0], f"flat+ramp_max+runout ({total_max}) must fit in size[0] ({self.size[0]})"
         body = spec.body("terrain")
         angle = ramp_angle_by_difficulty(difficulty, self.deg_min, self.deg_max)
         width = self.size[1]

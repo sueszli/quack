@@ -25,32 +25,34 @@ from copy import deepcopy
 ENABLE_SYMMETRY = False
 
 # ── Domain randomisation (matched to the velocity env for sim2real parity) ────
-ENABLE_COM_RANDOMIZATION             = True
-ENABLE_HEAD_COM_RANDOMIZATION        = True   # match velocity: randomize head-assembly CoM
-ENABLE_KP_RANDOMIZATION              = False  # match velocity (OFF)
-ENABLE_KD_RANDOMIZATION              = False  # match velocity (OFF)
-ENABLE_MASS_INERTIA_RANDOMIZATION    = True   # match velocity: dr.pseudo_inertia (mass+inertia)
-ENABLE_JOINT_FRICTION_RANDOMIZATION  = True   # match velocity: FrictionDRBamActuator.friction_scale
-ENABLE_ARMATURE_RANDOMIZATION        = True   # match velocity: reflected rotor inertia
-ENABLE_VELOCITY_PUSHES               = True
-ENABLE_IMU_ORIENTATION_RANDOMIZATION = True   # match velocity: obs-level per-env misalignment
-ENABLE_ENCODER_BIAS                  = True   # match velocity: per-env joint encoder offset (actor obs)
+ENABLE_COM_RANDOMIZATION = True
+ENABLE_HEAD_COM_RANDOMIZATION = True  # match velocity: randomize head-assembly CoM
+ENABLE_KP_RANDOMIZATION = False  # match velocity (OFF)
+ENABLE_KD_RANDOMIZATION = False  # match velocity (OFF)
+ENABLE_MASS_INERTIA_RANDOMIZATION = True  # match velocity: dr.pseudo_inertia (mass+inertia)
+ENABLE_JOINT_FRICTION_RANDOMIZATION = True  # match velocity: FrictionDRBamActuator.friction_scale
+ENABLE_ARMATURE_RANDOMIZATION = True  # match velocity: reflected rotor inertia
+ENABLE_VELOCITY_PUSHES = True
+ENABLE_IMU_ORIENTATION_RANDOMIZATION = True  # match velocity: obs-level per-env misalignment
+ENABLE_ENCODER_BIAS = True  # match velocity: per-env joint encoder offset (actor obs)
 
 # ── Ranges (matched to the velocity env) ──────────────────────────────────────
-COM_RANDOMIZATION_RANGE             = 0.003           # ramped to 0.015 via com_range curriculum (velocity's 2026-07 audit cap; was 0.02 here)
-HEAD_COM_RANDOMIZATION_RANGE        = 0.003           # ramped to 0.01 via head_com_range curriculum
-MASS_INERTIA_RANDOMIZATION_RANGE    = (0.95, 1.05)
-ARMATURE_RANDOMIZATION_RANGE        = (0.9, 1.1)
-JOINT_FRICTION_RANDOMIZATION_RANGE  = (0.9, 1.1)
-ENCODER_BIAS_RANGE                  = (-0.015, 0.015)
-KP_RANDOMIZATION_RANGE              = (0.85, 1.15)    # unused (kp DR off)
-KD_RANDOMIZATION_RANGE              = (0.9, 1.1)      # unused (kd DR off)
-VELOCITY_PUSH_INTERVAL_S            = (3.0, 6.0)
+COM_RANDOMIZATION_RANGE = (
+    0.003  # ramped to 0.015 via com_range curriculum (velocity's 2026-07 audit cap; was 0.02 here)
+)
+HEAD_COM_RANDOMIZATION_RANGE = 0.003  # ramped to 0.01 via head_com_range curriculum
+MASS_INERTIA_RANDOMIZATION_RANGE = (0.95, 1.05)
+ARMATURE_RANDOMIZATION_RANGE = (0.9, 1.1)
+JOINT_FRICTION_RANDOMIZATION_RANGE = (0.9, 1.1)
+ENCODER_BIAS_RANGE = (-0.015, 0.015)
+KP_RANDOMIZATION_RANGE = (0.85, 1.15)  # unused (kp DR off)
+KD_RANDOMIZATION_RANGE = (0.9, 1.1)  # unused (kd DR off)
+VELOCITY_PUSH_INTERVAL_S = (3.0, 6.0)
 # Match velocity's ±0.3 (velocity was itself softened from ±0.5 in the 2026-07
 # audit). The push curriculum below still ramps 0 → ±0.08 → this final value so
 # the sit-rise bootstrap isn't shoved around from step 0 (velocity pushes at
 # full strength from step 0, but it starts standing, not seated/prone).
-VELOCITY_PUSH_RANGE                 = (-0.3, 0.3)
+VELOCITY_PUSH_RANGE = (-0.3, 0.3)
 IMU_ORIENTATION_RANDOMIZATION_ANGLE = 6.0  # match velocity (was 2.0 — pre-audit value; real IMU has ~5° systematic pitch error + estimator drift, 2° trained too narrow a band)
 
 # Episode length: long enough for a gentle rise + brief stabilisation.
@@ -68,17 +70,17 @@ EPISODE_LENGTH_S = 6.0
 # layout is the clean 14-joint order: 0-4 left leg, 5-8 neck/head, 9-13 right leg.
 # (Previously passive_1/passive_2 sat at 9,10 and shifted the right leg to 11-15.)
 SITTING_JOINT_OVERRIDES = {
-    1:   0.0,      # left  hip_roll   (HOME -0.0873)
-    2:  -0.4079,   # left  hip_pitch  (HOME -0.4579; +0.05 = slight fwd lean)
-    3:   1.35,     # left  knee       (HOME -0.0049)
-    4:   0.0,      # left  ankle      (HOME +0.4530)
-    10:  0.0,      # right hip_roll   (HOME +0.0873)
-    11:  0.4079,   # right hip_pitch  (HOME +0.4579)
-    12: -1.35,     # right knee       (HOME +0.0049)
-    13:  0.0,      # right ankle      (HOME -0.4530)
+    1: 0.0,  # left  hip_roll   (HOME -0.0873)
+    2: -0.4079,  # left  hip_pitch  (HOME -0.4579; +0.05 = slight fwd lean)
+    3: 1.35,  # left  knee       (HOME -0.0049)
+    4: 0.0,  # left  ankle      (HOME +0.4530)
+    10: 0.0,  # right hip_roll   (HOME +0.0873)
+    11: 0.4079,  # right hip_pitch  (HOME +0.4579)
+    12: -1.35,  # right knee       (HOME +0.0049)
+    13: 0.0,  # right ankle      (HOME -0.4530)
 }
 
-_LEG_JOINTS  = [0, 1, 2, 3, 4, 9, 10, 11, 12, 13]
+_LEG_JOINTS = [0, 1, 2, 3, 4, 9, 10, 11, 12, 13]
 _NECK_JOINTS = [5, 6, 7, 8]
 
 # Trunk height targets (m).
@@ -108,31 +110,22 @@ ENABLE_BODY_CONTROL = True
 # is plenty of crouch below it but only ~1 cm of leg extension above it.
 # Angles capped at ±15°: velocity body-control run 1 showed ±20° trains
 # twitchy/overdriven tilting.
-BODY_CMD_MAX_Z_DOWN  = 0.04             # m, crouch below STAND_Z
-BODY_CMD_MAX_Z_UP    = 0.030             # m, extend above STAND_Z
-BODY_CMD_MAX_ANGLE   = math.radians(15)  # rad, trunk pitch/roll
-BODY_CMD_ALIVE_XY    = 0.005             # m, permanent x/y noise range
-BODY_CMD_ALIVE_ANGLE = 0.05              # rad, stage-0 / permanent-yaw range
+BODY_CMD_MAX_Z_DOWN = 0.04  # m, crouch below STAND_Z
+BODY_CMD_MAX_Z_UP = 0.030  # m, extend above STAND_Z
+BODY_CMD_MAX_ANGLE = math.radians(15)  # rad, trunk pitch/roll
+BODY_CMD_ALIVE_XY = 0.005  # m, permanent x/y noise range
+BODY_CMD_ALIVE_ANGLE = 0.05  # rad, stage-0 / permanent-yaw range
 # Exact-zero command probability at resample: keeps the deployment idle case
 # ("stand at nominal, no command") trained (velocity run-1 lesson — uniform
 # sampling never produces the all-zero command).
-BODY_CMD_ZERO_PROB   = 0.3
+BODY_CMD_ZERO_PROB = 0.3
 
 from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.envs.mdp import dr
 from mjlab.envs.mdp.actions import JointPositionActionCfg
-from mjlab.managers import (
-    CurriculumTermCfg,
-    EventTermCfg,
-    ObservationTermCfg,
-    RewardTermCfg,
-    TerminationTermCfg,
-)
+from mjlab.managers import CurriculumTermCfg, EventTermCfg, ObservationTermCfg, RewardTermCfg, TerminationTermCfg
 from mjlab.managers.scene_entity_config import SceneEntityCfg
-from mjlab.rl import (
-    RslRlOnPolicyRunnerCfg,
-    RslRlModelCfg,
-)
+from mjlab.rl import RslRlOnPolicyRunnerCfg, RslRlModelCfg
 from mjlab.sensor import ContactMatch, ContactSensorCfg
 from mjlab.tasks.velocity import mdp
 from mjlab.tasks.velocity.velocity_env_cfg import make_velocity_env_cfg
@@ -149,21 +142,14 @@ from .task_velocity import (
 from .task_symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
 
 
-def make_microduck_standup_env_cfg(
-    play: bool = False,
-    rough: bool = False,
-) -> ManagerBasedRlEnvCfg:
+def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> ManagerBasedRlEnvCfg:
     """Create Microduck stand environment configuration (sit-keyframe start)."""
 
     site_names = ["left_foot", "right_foot"]
 
     feet_ground_cfg = ContactSensorCfg(
         name="feet_ground_contact",
-        primary=ContactMatch(
-            mode="geom",
-            pattern=r"^(left_foot_collision|right_foot_collision)$",
-            entity="robot",
-        ),
+        primary=ContactMatch(mode="geom", pattern=r"^(left_foot_collision|right_foot_collision)$", entity="robot"),
         secondary=ContactMatch(mode="body", pattern="terrain"),
         fields=("found", "force"),
         reduce="netforce",
@@ -186,7 +172,7 @@ def make_microduck_standup_env_cfg(
     cfg = make_velocity_env_cfg()
 
     cfg.scene.entities = {"robot": MICRODUCK_STANDUP_ROBOT_CFG}
-    cfg.scene.sensors  = (feet_ground_cfg, self_collision_cfg)
+    cfg.scene.sensors = (feet_ground_cfg, self_collision_cfg)
     cfg.viewer.body_name = "trunk_base"
 
     cfg.episode_length_s = EPISODE_LENGTH_S
@@ -238,7 +224,7 @@ def make_microduck_standup_env_cfg(
         params={
             "std": 0.5,
             "joint_indices": _LEG_JOINTS,
-            "target_overrides": None,   # HOME = standing
+            "target_overrides": None,  # HOME = standing
         },
     )
 
@@ -248,9 +234,7 @@ def make_microduck_standup_env_cfg(
     # from pose_stand_l1 / standing_composite below for the same reason, so no
     # reward fights head_pose_tracking's gradient.
     cfg.rewards["head_pose_tracking"] = RewardTermCfg(
-        func=microduck_mdp.head_pose_tracking,
-        weight=0.75,
-        params={"command_name": "head_pose", "std": 0.5},
+        func=microduck_mdp.head_pose_tracking, weight=0.75, params={"command_name": "head_pose", "std": 0.5}
     )
 
     # Head DC-droop penalty (velocity's fix, standup-adapted). L1 on a 1 s EMA
@@ -267,10 +251,10 @@ def make_microduck_standup_env_cfg(
         func=microduck_mdp.head_pose_bias_penalty,
         weight=0.0,  # ramped by head_pose_bias_weight curriculum
         params={
-            "command_name":       "head_pose",
-            "tau_s":              1.0,
-            "gate_height_low":    0.09,
-            "gate_height_high":   0.11,
+            "command_name": "head_pose",
+            "tau_s": 1.0,
+            "gate_height_low": 0.09,
+            "gate_height_high": 0.11,
             "gate_tilt_full_deg": 20.0,
             "gate_tilt_zero_deg": 45.0,
         },
@@ -303,18 +287,18 @@ def make_microduck_standup_env_cfg(
         func=microduck_mdp.height_target_gaussian,
         weight=1.0,
         params={
-            "std":           0.04,
+            "std": 0.04,
             "target_height": STAND_Z,
-            "asset_cfg":     SceneEntityCfg("robot", body_names=("trunk_base",)),
+            "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
         },
     )
     cfg.rewards["height_stand_sharp"] = RewardTermCfg(
         func=microduck_mdp.height_target_gaussian,
         weight=1.0,
         params={
-            "std":           0.015,
+            "std": 0.015,
             "target_height": STAND_Z,
-            "asset_cfg":     SceneEntityCfg("robot", body_names=("trunk_base",)),
+            "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
         },
     )
     # L1 bumped 10 → 30: previous run plateaued sitting still because the
@@ -324,10 +308,7 @@ def make_microduck_standup_env_cfg(
     cfg.rewards["height_stand_l1"] = RewardTermCfg(
         func=microduck_mdp.height_l1_penalty,
         weight=7.5,
-        params={
-            "target_height": STAND_Z,
-            "asset_cfg":     SceneEntityCfg("robot", body_names=("trunk_base",)),
-        },
+        params={"target_height": STAND_Z, "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))},
     )
 
     # Reward upward CoM velocity below STAND_Z — pays for the *motion* of
@@ -351,10 +332,7 @@ def make_microduck_standup_env_cfg(
     cfg.rewards["com_upward_velocity"] = RewardTermCfg(
         func=microduck_mdp.com_upward_velocity,
         weight=0.75,
-        params={
-            "asset_cfg":  SceneEntityCfg("robot", body_names=("trunk_base",)),
-            "max_height": 0.125,
-        },
+        params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)), "max_height": 0.125},
     )
 
     # Gentle rise — penalty on |a_z|. Compatible with com_upward_velocity:
@@ -394,11 +372,11 @@ def make_microduck_standup_env_cfg(
         func=microduck_mdp.body_ang_vel_at_height,
         weight=0.0,
         params={
-            "height_low":    0.09,
-            "height_high":   0.11,
+            "height_low": 0.09,
+            "height_high": 0.11,
             "tilt_full_deg": 20.0,
             "tilt_zero_deg": 45.0,
-            "asset_cfg":     SceneEntityCfg("robot", body_names=("trunk_base",)),
+            "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
         },
     )
 
@@ -426,10 +404,10 @@ def make_microduck_standup_env_cfg(
         func=microduck_mdp.upright_gaussian_at_height,
         weight=1.5,
         params={
-            "std":         0.3,
-            "height_low":  SIT_Z,
+            "std": 0.3,
+            "height_low": SIT_Z,
             "height_high": STAND_Z,
-            "asset_cfg":   SceneEntityCfg("robot", body_names=("trunk_base",)),
+            "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
         },
     )
 
@@ -442,13 +420,13 @@ def make_microduck_standup_env_cfg(
         func=microduck_mdp.standing_composite_score,
         weight=3.75,
         params={
-            "target_height":    STAND_Z,
-            "height_std":       0.04,    # 4cm — broad, covers the climb
-            "upright_std":      0.40,    # ≈ 23° — lean basin scores ~0.3
-            "pose_std":         0.40,    # joint-RMS, broad enough for partial pose
-            "joint_indices":    _LEG_JOINTS,   # neck/head steered by head_pose_tracking
+            "target_height": STAND_Z,
+            "height_std": 0.04,  # 4cm — broad, covers the climb
+            "upright_std": 0.40,  # ≈ 23° — lean basin scores ~0.3
+            "pose_std": 0.40,  # joint-RMS, broad enough for partial pose
+            "joint_indices": _LEG_JOINTS,  # neck/head steered by head_pose_tracking
             "target_overrides": None,
-            "asset_cfg":        SceneEntityCfg("robot", body_names=("trunk_base",)),
+            "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
         },
     )
 
@@ -502,19 +480,15 @@ def make_microduck_standup_env_cfg(
     # arrival_damping comment for why timing (discovery vs fine-tuning), not
     # magnitude, is what decides whether these terms break recovery.
     cfg.rewards["action_rate_l2"] = RewardTermCfg(func=mdp.action_rate_l2, weight=-0.1)
-    cfg.rewards["joint_torque_rate_l2"] = RewardTermCfg(
-        func=microduck_mdp.joint_torque_rate_l2, weight=0.0
-    )
+    cfg.rewards["joint_torque_rate_l2"] = RewardTermCfg(func=microduck_mdp.joint_torque_rate_l2, weight=0.0)
 
     cfg.rewards["body_ang_vel"].params["asset_cfg"].body_names = ("trunk_base",)
-    cfg.rewards["body_ang_vel"].weight = -0.05      # motion-blocker: kept LIGHT (velocity value)
+    cfg.rewards["body_ang_vel"].weight = -0.05  # motion-blocker: kept LIGHT (velocity value)
     cfg.rewards["angular_momentum"].weight = -0.02  # velocity value
-    cfg.rewards.pop("soft_landing", None)           # velocity removes it
+    cfg.rewards.pop("soft_landing", None)  # velocity removes it
 
     cfg.rewards["self_collisions"] = RewardTermCfg(
-        func=mdp.self_collision_cost,
-        weight=-1.0,
-        params={"sensor_name": self_collision_cfg.name},
+        func=mdp.self_collision_cost, weight=-1.0, params={"sensor_name": self_collision_cfg.name}
     )
 
     # Drop only the base "upright" Gaussian — standup uses its own
@@ -526,9 +500,7 @@ def make_microduck_standup_env_cfg(
     # ── Observations (identical layout to walking / sit policies) ─────────────
     del cfg.observations["actor"].terms["base_lin_vel"]
 
-    cfg.observations["critic"].terms["base_lin_vel"] = ObservationTermCfg(
-        func=mdp.base_lin_vel, scale=1.0,
-    )
+    cfg.observations["critic"].terms["base_lin_vel"] = ObservationTermCfg(func=mdp.base_lin_vel, scale=1.0)
     # mjlab 1.3.0 base template adds sensor-based foot_height + height_scan obs.
     # Standup has no terrain-height sensor (and drops the walking foot rewards),
     # so remove these terms. foot_air_time/foot_contact(_forces) use the
@@ -549,12 +521,8 @@ def make_microduck_standup_env_cfg(
             cfg.observations["critic"].terms[_term].func = _safe
 
     gravity_term_name = "projected_gravity"
-    cfg.observations["actor"].terms[gravity_term_name] = deepcopy(
-        cfg.observations["actor"].terms[gravity_term_name]
-    )
-    cfg.observations["actor"].terms["base_ang_vel"] = deepcopy(
-        cfg.observations["actor"].terms["base_ang_vel"]
-    )
+    cfg.observations["actor"].terms[gravity_term_name] = deepcopy(cfg.observations["actor"].terms[gravity_term_name])
+    cfg.observations["actor"].terms["base_ang_vel"] = deepcopy(cfg.observations["actor"].terms["base_ang_vel"])
 
     # IMU obs delay: max_lag 1 (was 3 = 60 ms worst case) — match velocity's
     # 2026-07 audit value; the real dxl IMU path is fast (±20 ms envelope).
@@ -566,10 +534,10 @@ def make_microduck_standup_env_cfg(
     cfg.observations["actor"].terms[gravity_term_name].delay_update_period = 64
 
     # Obs noise matched to the velocity env.
-    cfg.observations["actor"].terms["base_ang_vel"].noise    = Unoise(n_min=-0.03, n_max=0.03)
+    cfg.observations["actor"].terms["base_ang_vel"].noise = Unoise(n_min=-0.03, n_max=0.03)
     cfg.observations["actor"].terms[gravity_term_name].noise = Unoise(n_min=-0.01, n_max=0.01)
-    cfg.observations["actor"].terms["joint_pos"].noise       = Unoise(n_min=-0.001, n_max=0.001)
-    cfg.observations["actor"].terms["joint_vel"].noise       = Unoise(n_min=-0.25, n_max=0.25)
+    cfg.observations["actor"].terms["joint_pos"].noise = Unoise(n_min=-0.001, n_max=0.001)
+    cfg.observations["actor"].terms["joint_vel"].noise = Unoise(n_min=-0.25, n_max=0.25)
 
     # IMU mounting-misalignment DR (match velocity): per-env constant rotation of
     # the IMU-derived actor obs; critic keeps the true values.
@@ -581,9 +549,7 @@ def make_microduck_standup_env_cfg(
         g.func = microduck_mdp.projected_gravity_imu_misaligned
         g.params = {"max_angle_deg": IMU_ORIENTATION_RANDOMIZATION_ANGLE}
 
-    cfg.observations["actor"].terms["joint_vel"] = deepcopy(
-        cfg.observations["actor"].terms["joint_vel"]
-    )
+    cfg.observations["actor"].terms["joint_vel"] = deepcopy(cfg.observations["actor"].terms["joint_vel"])
     cfg.observations["actor"].terms["joint_vel"].delay_min_lag = 1
     cfg.observations["actor"].terms["joint_vel"].delay_max_lag = 1
     cfg.observations["actor"].terms["joint_vel"].delay_update_period = 0
@@ -612,9 +578,9 @@ def make_microduck_standup_env_cfg(
     cfg.commands["head_pose"] = microduck_mdp.UniformPoseCommandCfg(
         resampling_time_range=HEAD_POSE_CMD_RESAMPLE_S,
         ranges=(
-            (-0.05, 0.05),    # neck_pitch
-            (-0.05, 0.05),    # head_pitch
-            (-0.07, 0.07),    # head_yaw
+            (-0.05, 0.05),  # neck_pitch
+            (-0.05, 0.05),  # head_pitch
+            (-0.07, 0.07),  # head_yaw
             (-0.015, 0.015),  # head_roll
         ),
     )
@@ -629,9 +595,9 @@ def make_microduck_standup_env_cfg(
             resampling_time_range=BODY_POSE_CMD_RESAMPLE_S,
             zero_command_prob=BODY_CMD_ZERO_PROB,
             ranges=(
-                (-BODY_CMD_ALIVE_XY, BODY_CMD_ALIVE_XY),        # x (m)
-                (-BODY_CMD_ALIVE_XY, BODY_CMD_ALIVE_XY),        # y (m)
-                (-0.005, 0.005),                                # z (m)
+                (-BODY_CMD_ALIVE_XY, BODY_CMD_ALIVE_XY),  # x (m)
+                (-BODY_CMD_ALIVE_XY, BODY_CMD_ALIVE_XY),  # y (m)
+                (-0.005, 0.005),  # z (m)
                 (-BODY_CMD_ALIVE_ANGLE, BODY_CMD_ALIVE_ANGLE),  # roll
                 (-BODY_CMD_ALIVE_ANGLE, BODY_CMD_ALIVE_ANGLE),  # pitch
                 (-BODY_CMD_ALIVE_ANGLE, BODY_CMD_ALIVE_ANGLE),  # yaw
@@ -644,23 +610,23 @@ def make_microduck_standup_env_cfg(
     # Layout parity with velocity/velstand: [twist(3), head_pose(4), body_pose(6)].
     for group in ("actor", "critic"):
         cfg.observations[group].terms["head_command"] = ObservationTermCfg(
-            func=mdp.generated_commands, params={"command_name": "head_pose"},
+            func=mdp.generated_commands, params={"command_name": "head_pose"}
         )
         if ENABLE_BODY_CONTROL:
             cfg.observations[group].terms["body_command"] = ObservationTermCfg(
-                func=mdp.generated_commands, params={"command_name": "body_pose"},
+                func=mdp.generated_commands, params={"command_name": "body_pose"}
             )
         else:
             cfg.observations[group].terms["body_command"] = ObservationTermCfg(
-                func=microduck_mdp.zero_command_padding, params={"dim": 6},
+                func=microduck_mdp.zero_command_padding, params={"dim": 6}
             )
 
     # ── Command: tiny noise around zero (kept for obs-shape parity) ──────────
     command = cfg.commands["twist"]
     command.rel_standing_envs = 0.0
-    command.rel_heading_envs  = 0.0
-    command.heading_command   = False
-    command.ranges.heading    = None
+    command.rel_heading_envs = 0.0
+    command.heading_command = False
+    command.ranges.heading = None
     command.resampling_time_range = (EPISODE_LENGTH_S, EPISODE_LENGTH_S * 2)
     command.debug_vis = False
     command.ranges.lin_vel_x = (-0.01, 0.01)
@@ -673,23 +639,17 @@ def make_microduck_standup_env_cfg(
     if "fell_over" in cfg.terminations:
         del cfg.terminations["fell_over"]
     cfg.terminations["nan_state"] = TerminationTermCfg(
-        func=microduck_mdp.robot_state_is_nan,
-        time_out=False,
-        params={"sensor_names": ("feet_ground_contact",)},
+        func=microduck_mdp.robot_state_is_nan, time_out=False, params={"sensor_names": ("feet_ground_contact",)}
     )
 
     # ── Events ────────────────────────────────────────────────────────────────
     # BAM (mjlab_frictionloss branch) writes per-env dof_frictionloss/dof_damping
     # every step; this no-op event registers those fields for per-world expansion.
     cfg.events["expand_bam_friction_fields"] = EventTermCfg(
-        func=microduck_mdp.expand_bam_friction_fields,
-        mode="startup",
+        func=microduck_mdp.expand_bam_friction_fields, mode="startup"
     )
 
-    cfg.events["reset_action_history"] = EventTermCfg(
-        func=microduck_mdp.reset_action_history,
-        mode="reset",
-    )
+    cfg.events["reset_action_history"] = EventTermCfg(func=microduck_mdp.reset_action_history, mode="reset")
     cfg.events["foot_friction"].params["asset_cfg"].geom_names = foot_frictions_geom_names
     cfg.events["foot_friction"].params["ranges"] = (0.7, 1.3)  # match velocity
 
@@ -708,32 +668,32 @@ def make_microduck_standup_env_cfg(
             # Initial mix = curriculum stage 0 (easy); the ground_state_mix
             # curriculum ramps these easy→hard over training. Face-up (back) starts
             # at 0 and is introduced late (hardest recovery).
-            "face_down_prob":            0.20,  # belly to floor (+90° pitch)
-            "face_up_prob":              0.00,  # back to floor (-90° pitch) — introduced late
-            "sitting_prob":              0.40,  # sit keyframe (deployment hand-off)
-            "standing_prob":             0.40,  # already upright at standing height
+            "face_down_prob": 0.20,  # belly to floor (+90° pitch)
+            "face_up_prob": 0.00,  # back to floor (-90° pitch) — introduced late
+            "sitting_prob": 0.40,  # sit keyframe (deployment hand-off)
+            "standing_prob": 0.40,  # already upright at standing height
             # Prone reset height: trunk rests at ~0.044 m face-down (measured), so
             # spawn just above the ground rather than the 0.20–0.25 default (which
             # would free-fall ~15 cm before landing).
-            "prone_z_min":               0.05,
-            "prone_z_max":               0.09,
+            "prone_z_min": 0.05,
+            "prone_z_max": 0.09,
             # Partial-roll noise on face-up spawns (±90° about the body long
             # axis): back-recovery was seed-lucky (1 success / 3 failures with
             # equivalent rewards) because the reward landscape from flat
             # supine to prone is flat — no gradient until the roll completes.
             # Near-on-side spawns put starts partway along the roll → built-in
             # reverse curriculum. See set_random_ground_state in task_mdp.py.
-            "face_up_roll_max":          math.radians(90),
-            "sitting_joint_overrides":   SITTING_JOINT_OVERRIDES,
-            "sitting_joint_noise_std":   0.12,           # ≈ 7° per joint
-            "sitting_tilt_max":          math.radians(10),  # ±10° pitch/roll
+            "face_up_roll_max": math.radians(90),
+            "sitting_joint_overrides": SITTING_JOINT_OVERRIDES,
+            "sitting_joint_noise_std": 0.12,  # ≈ 7° per joint
+            "sitting_tilt_max": math.radians(10),  # ±10° pitch/roll
             # Seated equilibrium is SIT_Z=0.060 — band is −1cm/+3cm around it
             # (same spread as when equilibrium was 0.07 with 0.06–0.10).
-            "sitting_z_min":             0.05,
-            "sitting_z_max":             0.09,
+            "sitting_z_min": 0.05,
+            "sitting_z_max": 0.09,
             # Standing init: trunk just above the measured equilibrium (STAND_Z=0.115).
-            "standing_z_min":            0.11,
-            "standing_z_max":            0.12,
+            "standing_z_min": 0.11,
+            "standing_z_max": 0.12,
         },
     )
 
@@ -744,10 +704,7 @@ def make_microduck_standup_env_cfg(
             mode="interval",
             interval_range_s=interval,
             params={
-                "velocity_range": {
-                    "x": VELOCITY_PUSH_RANGE,
-                    "y": VELOCITY_PUSH_RANGE,
-                },
+                "velocity_range": {"x": VELOCITY_PUSH_RANGE, "y": VELOCITY_PUSH_RANGE},
                 "asset_cfg": SceneEntityCfg("robot"),
             },
         )
@@ -823,10 +780,7 @@ def make_microduck_standup_env_cfg(
         cfg.events["randomize_joint_friction"] = EventTermCfg(
             func=microduck_mdp.randomize_bam_friction,
             mode="reset",
-            params={
-                "asset_cfg": SceneEntityCfg("robot"),
-                "scale_range": JOINT_FRICTION_RANDOMIZATION_RANGE,
-            },
+            params={"asset_cfg": SceneEntityCfg("robot"), "scale_range": JOINT_FRICTION_RANDOMIZATION_RANGE},
         )
 
     # NOTE: IMU mounting-misalignment is applied at the OBSERVATION level below
@@ -864,10 +818,42 @@ def make_microduck_standup_env_cfg(
             "event_name": "set_ground_state",
             "param_stages": [
                 # step,          standing, sitting, face_down(front), face_up(back)
-                {"step": 0,          "params": {"standing_prob": 0.40, "sitting_prob": 0.40, "face_down_prob": 0.20, "face_up_prob": 0.00}},
-                {"step": 600 * 24,   "params": {"standing_prob": 0.25, "sitting_prob": 0.30, "face_down_prob": 0.35, "face_up_prob": 0.10}},
-                {"step": 1500 * 24,  "params": {"standing_prob": 0.20, "sitting_prob": 0.25, "face_down_prob": 0.30, "face_up_prob": 0.25}},
-                {"step": 2500 * 24,  "params": {"standing_prob": 0.15, "sitting_prob": 0.20, "face_down_prob": 0.30, "face_up_prob": 0.35}},
+                {
+                    "step": 0,
+                    "params": {
+                        "standing_prob": 0.40,
+                        "sitting_prob": 0.40,
+                        "face_down_prob": 0.20,
+                        "face_up_prob": 0.00,
+                    },
+                },
+                {
+                    "step": 600 * 24,
+                    "params": {
+                        "standing_prob": 0.25,
+                        "sitting_prob": 0.30,
+                        "face_down_prob": 0.35,
+                        "face_up_prob": 0.10,
+                    },
+                },
+                {
+                    "step": 1500 * 24,
+                    "params": {
+                        "standing_prob": 0.20,
+                        "sitting_prob": 0.25,
+                        "face_down_prob": 0.30,
+                        "face_up_prob": 0.25,
+                    },
+                },
+                {
+                    "step": 2500 * 24,
+                    "params": {
+                        "standing_prob": 0.15,
+                        "sitting_prob": 0.20,
+                        "face_down_prob": 0.30,
+                        "face_up_prob": 0.35,
+                    },
+                },
             ],
         },
     )
@@ -879,11 +865,11 @@ def make_microduck_standup_env_cfg(
         params={
             "command_name": "head_pose",
             "range_stages": [
-                {"step": 0,         "ranges": ((-0.05, 0.05),  (-0.05, 0.05),  (-0.07, 0.07),  (-0.015, 0.015))},
-                {"step": 500 * 24,  "ranges": ((-0.17, 0.17),  (-0.17, 0.17),  (-0.21, 0.21),  (-0.047, 0.047))},
-                {"step": 1000 * 24, "ranges": ((-0.39, 0.39),  (-0.39, 0.39),  (-0.49, 0.49),  (-0.11, 0.11))},
-                {"step": 1500 * 24, "ranges": ((-0.72, 0.72),  (-0.72, 0.72),  (-0.91, 0.91),  (-0.20, 0.20))},
-                {"step": 2000 * 24, "ranges": ((-1.10, 1.10),  (-1.10, 1.10),  (-1.40, 1.40),  (-0.31, 0.31))},
+                {"step": 0, "ranges": ((-0.05, 0.05), (-0.05, 0.05), (-0.07, 0.07), (-0.015, 0.015))},
+                {"step": 500 * 24, "ranges": ((-0.17, 0.17), (-0.17, 0.17), (-0.21, 0.21), (-0.047, 0.047))},
+                {"step": 1000 * 24, "ranges": ((-0.39, 0.39), (-0.39, 0.39), (-0.49, 0.49), (-0.11, 0.11))},
+                {"step": 1500 * 24, "ranges": ((-0.72, 0.72), (-0.72, 0.72), (-0.91, 0.91), (-0.20, 0.20))},
+                {"step": 2000 * 24, "ranges": ((-1.10, 1.10), (-1.10, 1.10), (-1.40, 1.40), (-0.31, 0.31))},
             ],
         },
     )
@@ -904,8 +890,8 @@ def make_microduck_standup_env_cfg(
             params={
                 "event_name": "randomize_com",
                 "range_stages": [
-                    {"step": 0,         "range": 0.003},
-                    {"step": 500 * 24,  "range": 0.005},
+                    {"step": 0, "range": 0.003},
+                    {"step": 500 * 24, "range": 0.005},
                     {"step": 1000 * 24, "range": 0.01},
                     {"step": 1500 * 24, "range": 0.015},
                 ],
@@ -918,8 +904,8 @@ def make_microduck_standup_env_cfg(
             params={
                 "event_name": "randomize_head_com",
                 "range_stages": [
-                    {"step": 0,         "range": 0.003},
-                    {"step": 500 * 24,  "range": 0.005},
+                    {"step": 0, "range": 0.003},
+                    {"step": 500 * 24, "range": 0.005},
                     {"step": 1000 * 24, "range": 0.01},
                 ],
             },
@@ -931,8 +917,8 @@ def make_microduck_standup_env_cfg(
             params={
                 "event_name": "push_robot",
                 "push_stages": [
-                    {"step": 0,         "velocity_range": {"x": (0.0, 0.0),    "y": (0.0, 0.0)}},
-                    {"step": 500 * 24,  "velocity_range": {"x": (-0.08, 0.08), "y": (-0.08, 0.08)}},
+                    {"step": 0, "velocity_range": {"x": (0.0, 0.0), "y": (0.0, 0.0)}},
+                    {"step": 500 * 24, "velocity_range": {"x": (-0.08, 0.08), "y": (-0.08, 0.08)}},
                     {"step": 1000 * 24, "velocity_range": {"x": VELOCITY_PUSH_RANGE, "y": VELOCITY_PUSH_RANGE}},
                 ],
             },
@@ -946,14 +932,14 @@ def make_microduck_standup_env_cfg(
     cfg.curriculum["action_rate_weight"] = CurriculumTermCfg(
         func=microduck_mdp.reward_weight,
         params={
-            "reward_name":   "action_rate_l2",
+            "reward_name": "action_rate_l2",
             "weight_stages": [
-                {"step": 0,          "weight": -0.1},
-                {"step": 500 * 24,   "weight": -0.2},
-                {"step": 750 * 24,   "weight": -0.4},
-                {"step": 1000 * 24,  "weight": -0.6},
-                {"step": 1250 * 24,  "weight": -0.8},
-                {"step": 1500 * 24,  "weight": -1.0},
+                {"step": 0, "weight": -0.1},
+                {"step": 500 * 24, "weight": -0.2},
+                {"step": 750 * 24, "weight": -0.4},
+                {"step": 1000 * 24, "weight": -0.6},
+                {"step": 1250 * 24, "weight": -0.8},
+                {"step": 1500 * 24, "weight": -1.0},
             ],
         },
     )
@@ -969,11 +955,11 @@ def make_microduck_standup_env_cfg(
     cfg.curriculum["arrival_damping_weight"] = CurriculumTermCfg(
         func=microduck_mdp.reward_weight,
         params={
-            "reward_name":   "arrival_damping",
+            "reward_name": "arrival_damping",
             "weight_stages": [
-                {"step": 0,          "weight": 0.0},
-                {"step": 3000 * 24,  "weight": -0.025},
-                {"step": 4000 * 24,  "weight": -0.05},
+                {"step": 0, "weight": 0.0},
+                {"step": 3000 * 24, "weight": -0.025},
+                {"step": 4000 * 24, "weight": -0.05},
             ],
         },
     )
@@ -987,22 +973,19 @@ def make_microduck_standup_env_cfg(
     cfg.curriculum["head_pose_bias_weight"] = CurriculumTermCfg(
         func=microduck_mdp.reward_weight,
         params={
-            "reward_name":   "head_pose_bias",
+            "reward_name": "head_pose_bias",
             "weight_stages": [
-                {"step": 0,          "weight": 0.0},
-                {"step": 3000 * 24,  "weight": 0.5},
-                {"step": 4000 * 24,  "weight": 1.5},
+                {"step": 0, "weight": 0.0},
+                {"step": 3000 * 24, "weight": 0.5},
+                {"step": 4000 * 24, "weight": 1.5},
             ],
         },
     )
     cfg.curriculum["torque_rate_weight"] = CurriculumTermCfg(
         func=microduck_mdp.reward_weight,
         params={
-            "reward_name":   "joint_torque_rate_l2",
-            "weight_stages": [
-                {"step": 0,          "weight": 0.0},
-                {"step": 3000 * 24,  "weight": -1e-3},
-            ],
+            "reward_name": "joint_torque_rate_l2",
+            "weight_stages": [{"step": 0, "weight": 0.0}, {"step": 3000 * 24, "weight": -1e-3}],
         },
     )
 
@@ -1022,12 +1005,12 @@ def make_microduck_standup_env_cfg(
     cfg.curriculum["body_pose_tracking_weight"] = CurriculumTermCfg(
         func=microduck_mdp.reward_weight,
         params={
-            "reward_name":   "body_pose_tracking",
+            "reward_name": "body_pose_tracking",
             "weight_stages": [
-                {"step": 0,          "weight": 0.0},
-                {"step": 2500 * 24,  "weight": 1.5},
-                {"step": 3000 * 24,  "weight": 3.0},
-                {"step": 4000 * 24,  "weight": 4.0},
+                {"step": 0, "weight": 0.0},
+                {"step": 2500 * 24, "weight": 1.5},
+                {"step": 3000 * 24, "weight": 3.0},
+                {"step": 4000 * 24, "weight": 4.0},
             ],
         },
     )
@@ -1035,7 +1018,7 @@ def make_microduck_standup_env_cfg(
     # Command range widening, synced to the weight ramp. x/y/yaw stay at their
     # alive ranges (untracked); only z/roll/pitch widen. z asymmetric — see the
     # BODY_CMD constants block.
-    _alive_xy  = (-BODY_CMD_ALIVE_XY, BODY_CMD_ALIVE_XY)
+    _alive_xy = (-BODY_CMD_ALIVE_XY, BODY_CMD_ALIVE_XY)
     _alive_ang = (-BODY_CMD_ALIVE_ANGLE, BODY_CMD_ALIVE_ANGLE)
     cfg.curriculum["body_pose_range"] = CurriculumTermCfg(
         func=microduck_mdp.pose_command_range_curriculum,
@@ -1043,29 +1026,40 @@ def make_microduck_standup_env_cfg(
             "command_name": "body_pose",
             "range_stages": [
                 # ranges = (x, y, z, roll, pitch, yaw)
-                {"step": 0, "ranges": (
-                    _alive_xy, _alive_xy, (-0.005, 0.005),
-                    _alive_ang, _alive_ang, _alive_ang,
-                )},
-                {"step": 2500 * 24, "ranges": (
-                    _alive_xy, _alive_xy, (-0.010, 0.005),
-                    (-math.radians(8), math.radians(8)),
-                    (-math.radians(8), math.radians(8)),
-                    _alive_ang,
-                )},
-                {"step": 3000 * 24, "ranges": (
-                    _alive_xy, _alive_xy, (-0.018, 0.008),
-                    (-math.radians(12), math.radians(12)),
-                    (-math.radians(12), math.radians(12)),
-                    _alive_ang,
-                )},
-                {"step": 4000 * 24, "ranges": (
-                    _alive_xy, _alive_xy,
-                    (-BODY_CMD_MAX_Z_DOWN, BODY_CMD_MAX_Z_UP),
-                    (-BODY_CMD_MAX_ANGLE, BODY_CMD_MAX_ANGLE),
-                    (-BODY_CMD_MAX_ANGLE, BODY_CMD_MAX_ANGLE),
-                    _alive_ang,
-                )},
+                {"step": 0, "ranges": (_alive_xy, _alive_xy, (-0.005, 0.005), _alive_ang, _alive_ang, _alive_ang)},
+                {
+                    "step": 2500 * 24,
+                    "ranges": (
+                        _alive_xy,
+                        _alive_xy,
+                        (-0.010, 0.005),
+                        (-math.radians(8), math.radians(8)),
+                        (-math.radians(8), math.radians(8)),
+                        _alive_ang,
+                    ),
+                },
+                {
+                    "step": 3000 * 24,
+                    "ranges": (
+                        _alive_xy,
+                        _alive_xy,
+                        (-0.018, 0.008),
+                        (-math.radians(12), math.radians(12)),
+                        (-math.radians(12), math.radians(12)),
+                        _alive_ang,
+                    ),
+                },
+                {
+                    "step": 4000 * 24,
+                    "ranges": (
+                        _alive_xy,
+                        _alive_xy,
+                        (-BODY_CMD_MAX_Z_DOWN, BODY_CMD_MAX_Z_UP),
+                        (-BODY_CMD_MAX_ANGLE, BODY_CMD_MAX_ANGLE),
+                        (-BODY_CMD_MAX_ANGLE, BODY_CMD_MAX_ANGLE),
+                        _alive_ang,
+                    ),
+                },
             ],
         },
     )
@@ -1083,33 +1077,33 @@ def make_microduck_standup_env_cfg(
     cfg.curriculum["height_stand_sharp_weight"] = CurriculumTermCfg(
         func=microduck_mdp.reward_weight,
         params={
-            "reward_name":   "height_stand_sharp",
+            "reward_name": "height_stand_sharp",
             "weight_stages": [
-                {"step": 0,          "weight": 1.0},
-                {"step": 3000 * 24,  "weight": 0.5},
-                {"step": 4000 * 24,  "weight": 0.2},
+                {"step": 0, "weight": 1.0},
+                {"step": 3000 * 24, "weight": 0.5},
+                {"step": 4000 * 24, "weight": 0.2},
             ],
         },
     )
     cfg.curriculum["upright_sharp_weight"] = CurriculumTermCfg(
         func=microduck_mdp.reward_weight,
         params={
-            "reward_name":   "upright_sharp",
+            "reward_name": "upright_sharp",
             "weight_stages": [
-                {"step": 0,          "weight": 1.5},
-                {"step": 3000 * 24,  "weight": 1.0},
-                {"step": 4000 * 24,  "weight": 0.5},
+                {"step": 0, "weight": 1.5},
+                {"step": 3000 * 24, "weight": 1.0},
+                {"step": 4000 * 24, "weight": 0.5},
             ],
         },
     )
     cfg.curriculum["standing_composite_weight"] = CurriculumTermCfg(
         func=microduck_mdp.reward_weight,
         params={
-            "reward_name":   "standing_composite",
+            "reward_name": "standing_composite",
             "weight_stages": [
-                {"step": 0,          "weight": 3.75},
-                {"step": 3000 * 24,  "weight": 2.5},
-                {"step": 4000 * 24,  "weight": 1.5},
+                {"step": 0, "weight": 3.75},
+                {"step": 3000 * 24, "weight": 2.5},
+                {"step": 4000 * 24, "weight": 1.5},
             ],
         },
     )
@@ -1124,17 +1118,9 @@ MicroduckStandUpRlCfg = RslRlOnPolicyRunnerCfg(
         hidden_dims=(512, 256, 128),
         activation="elu",
         obs_normalization=True,  # matches velocity; normalizer MUST be baked into ONNX by export.py
-        distribution_cfg={
-            "class_name": "GaussianDistribution",
-            "init_std": 1.0,
-            "std_type": "scalar",
-        },
+        distribution_cfg={"class_name": "GaussianDistribution", "init_std": 1.0, "std_type": "scalar"},
     ),
-    critic=RslRlModelCfg(
-        hidden_dims=(512, 256, 128),
-        activation="elu",
-        obs_normalization=True,
-    ),
+    critic=RslRlModelCfg(hidden_dims=(512, 256, 128), activation="elu", obs_normalization=True),
     algorithm=PpoWithSymmetryCfg(
         value_loss_coef=1.0,
         use_clipped_value_loss=True,
