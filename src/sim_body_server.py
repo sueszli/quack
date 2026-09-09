@@ -74,44 +74,12 @@ HOME_TRUNK_Z = 0.125
 # `duck_ipc_proto::JOINT_NAMES`, which is protocol: every positional array on the wire is indexed by
 # it. Duplicated here rather than shared, because the two repositories cannot share a constant — and
 # checked against the model at startup, which is the next best thing.
-JOINT_NAMES = (
-    "left_hip_yaw",
-    "left_hip_roll",
-    "left_hip_pitch",
-    "left_knee",
-    "left_ankle",
-    "neck_pitch",
-    "head_pitch",
-    "head_yaw",
-    "head_roll",
-    "mouth",
-    "right_hip_yaw",
-    "right_hip_roll",
-    "right_hip_pitch",
-    "right_knee",
-    "right_ankle",
-)
+JOINT_NAMES = ("left_hip_yaw", "left_hip_roll", "left_hip_pitch", "left_knee", "left_ankle", "neck_pitch", "head_pitch", "head_yaw", "head_roll", "mouth", "right_hip_yaw", "right_hip_roll", "right_hip_pitch", "right_knee", "right_ankle")
 MOUTH_INDEX = JOINT_NAMES.index("mouth")
 
 # `duck_control::DEFAULT_POSITION`, and `DEFAULT_POSE` in `infer.py` with the mouth put back.
 # The right leg is mirrored, not symmetric — worth reading rather than assuming.
-HOME_POSE = (
-    0.0,
-    -0.0873,
-    -0.4579,
-    -0.0049,
-    0.4530,
-    0.3491,
-    0.3491,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0873,
-    0.4579,
-    0.0049,
-    -0.4530,
-)
+HOME_POSE = (0.0, -0.0873, -0.4579, -0.0049, 0.4530, 0.3491, 0.3491, 0.0, 0.0, 0.0, 0.0, 0.0873, 0.4579, 0.0049, -0.4530)
 
 SCENES = MJCF_DIR
 # `scene.xml`, not `scene_walk.xml`: the walking scene includes the model the RL work trains
@@ -348,11 +316,7 @@ class Body:
             # advertisement gets for free and a faked one has to be told.
             "trunk": trunk,
             "sim_time": sim_time,
-            "imu": {
-                "gyro": [float(v) for v in gyro],
-                "gravity": [float(v) for v in gravity_in_trunk(quat)],
-                "quat": [float(v) for v in quat],
-            },
+            "imu": {"gyro": [float(v) for v in gyro], "gravity": [float(v) for v in gravity_in_trunk(quat)], "quat": [float(v) for v in quat]},
         }
 
     def slow_sensors(self) -> dict:
@@ -520,34 +484,15 @@ def main() -> None:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=7801, help="the first duck's port; +1 each")
     parser.add_argument("--headless", action="store_true", help="no viewer window")
-    parser.add_argument(
-        "--cameras",
-        default="",
-        help="which ducks render a head camera, by letter — `a`, `a,c`, or `all`. Opt in, because a "
-        "rendered frame costs 12 ms and four cameras is most of a core; four ducks without them is "
-        "nothing. Each becomes a frame port at --frame-port + its index",
-    )
+    parser.add_argument("--cameras", default="", help="which ducks render a head camera, by letter — `a`, `a,c`, or `all`. Opt in, because a rendered frame costs 12 ms and four cameras is most of a core; four ducks without them is nothing. Each becomes a frame port at --frame-port + its index")
     parser.add_argument("--frame-port", type=int, default=7901, help="the first camera's port")
     parser.add_argument("--camera-fps", type=int, default=CAMERA_FPS)
-    parser.add_argument(
-        "--limp",
-        action="store_true",
-        help="start with no torque, so a duck collapses where it stands — a robot found on the "
-        "floor, which is what `robotd`'s seated-boot path is for",
-    )
-    parser.add_argument(
-        "--keyframe",
-        default="SIT",
-        help="where to start. SIT is a duck folded on the floor, which is stable while it waits and "
-        "which the standing policy rises from on its own. HOME is infer.py's placement — "
-        "home pose, trunk 0.125 m, upright — and STAND and FOLD are the scene's other poses",
-    )
+    parser.add_argument("--limp", action="store_true", help="start with no torque, so a duck collapses where it stands — a robot found on the floor, which is what `robotd`'s seated-boot path is for")
+    parser.add_argument("--keyframe", default="SIT", help="where to start. SIT is a duck folded on the floor, which is stable while it waits and which the standing policy rises from on its own. HOME is infer.py's placement — home pose, trunk 0.125 m, upright — and STAND and FOLD are the scene's other poses")
     args = parser.parse_args()
 
     if not args.scene.exists():
-        raise SystemExit(
-            f"no scene at {args.scene}. Available:\n  " + "\n  ".join(sorted(p.name for p in SCENES.glob("scene*.xml")))
-        )
+        raise SystemExit(f"no scene at {args.scene}. Available:\n  " + "\n  ".join(sorted(p.name for p in SCENES.glob("scene*.xml"))))
     if args.ducks < 1:
         raise SystemExit("--ducks needs at least one duck")
 

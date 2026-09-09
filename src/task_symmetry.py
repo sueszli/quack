@@ -53,12 +53,7 @@ class PpoWithSymmetryCfg(RslRlPpoAlgorithmCfg):
     symmetry_cfg: dict | None = None
 
 
-SYMMETRY_CFG = {
-    "use_data_augmentation": False,
-    "use_mirror_loss": True,
-    "mirror_loss_coeff": 0.5,
-    "data_augmentation_func": "src.task_symmetry.microduck_vel_symmetry",
-}
+SYMMETRY_CFG = {"use_data_augmentation": False, "use_mirror_loss": True, "mirror_loss_coeff": 0.5, "data_augmentation_func": "src.task_symmetry.microduck_vel_symmetry"}
 
 # ---------------------------------------------------------------------------
 # Permutation and sign tables
@@ -113,9 +108,7 @@ def _get_tensors(device: torch.device) -> tuple[torch.Tensor, torch.Tensor, torc
 # ---------------------------------------------------------------------------
 
 
-def microduck_vel_symmetry(
-    env, obs: TensorDict | None, actions: torch.Tensor | None
-) -> tuple[TensorDict | None, torch.Tensor | None]:
+def microduck_vel_symmetry(env, obs: TensorDict | None, actions: torch.Tensor | None) -> tuple[TensorDict | None, torch.Tensor | None]:
     """Bilateral symmetry augmentation / mirror function for the microduck vel env.
 
     Returns [original, mirrored] concatenated along the batch dimension.
@@ -148,11 +141,7 @@ def microduck_vel_symmetry(
         # not present in the actor obs.
         critic_repeated = torch.cat([critic_orig, critic_orig], dim=0)
 
-        aug_obs = TensorDict(
-            {"actor": torch.cat([actor_orig, actor_sym], dim=0), "critic": critic_repeated},
-            batch_size=[actor_orig.shape[0] * 2],
-            device=actor_orig.device,
-        )
+        aug_obs = TensorDict({"actor": torch.cat([actor_orig, actor_sym], dim=0), "critic": critic_repeated}, batch_size=[actor_orig.shape[0] * 2], device=actor_orig.device)
 
     if actions is not None:
         _, _, act_perm, act_sign = _get_tensors(actions.device)

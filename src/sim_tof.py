@@ -55,11 +55,7 @@ class Tof:
             elevation = -centres[row]
             for col in range(COLS):
                 azimuth = -centres[col]
-                self.directions[row * COLS + col] = [
-                    np.cos(elevation) * np.cos(azimuth),
-                    np.cos(elevation) * np.sin(azimuth),
-                    np.sin(elevation),
-                ]
+                self.directions[row * COLS + col] = [np.cos(elevation) * np.cos(azimuth), np.cos(elevation) * np.sin(azimuth), np.sin(elevation)]
 
     def frame(self, data: mujoco.MjData) -> tuple[list[int], list[int]]:
         """One capture: distances in millimetres and a status per zone.

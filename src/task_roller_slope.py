@@ -74,14 +74,7 @@ def make_microduck_roller_slope_env_cfg(play: bool = False) -> ManagerBasedRlEnv
             num_rows=10,  # 10 steepness levels
             num_cols=1,
             difficulty_range=(0.0, 1.0),
-            sub_terrains={
-                "flat_ramp": FlatRampTerrainCfg(
-                    flat_length=FLAT_LENGTH,
-                    ramp_length_range=RAMP_LENGTH_RANGE,
-                    runout_length=RUNOUT_LENGTH,
-                    spawn_on_ramp=SPAWN_ON_RAMP,
-                )
-            },
+            sub_terrains={"flat_ramp": FlatRampTerrainCfg(flat_length=FLAT_LENGTH, ramp_length_range=RAMP_LENGTH_RANGE, runout_length=RUNOUT_LENGTH, spawn_on_ramp=SPAWN_ON_RAMP)},
         ),
         max_init_terrain_level=0,  # curriculum: start on the gentlest ramp
     )
@@ -128,32 +121,19 @@ def make_microduck_roller_slope_env_cfg(play: bool = False) -> ManagerBasedRlEnv
         if name not in keep:
             del cfg.rewards[name]
 
-    cfg.rewards["upright"] = RewardTermCfg(
-        func=microduck_mdp.body_upright_gaussian,
-        weight=3.0,
-        params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)), "std": 0.2},
-    )
+    cfg.rewards["upright"] = RewardTermCfg(func=microduck_mdp.body_upright_gaussian, weight=3.0, params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)), "std": 0.2})
     cfg.rewards["alive"] = RewardTermCfg(func=microduck_mdp.is_alive, weight=1.0)
     # LET IT GLIDE (roll), do NOT accelerate/run: rewards the wheels ROLLING
     # downhill, capped at cap_speed. Capped => no incentive to
     # push faster; wheel-based => "running" (pushing the base without
     # rolling) pays nothing. Without a glide reward, the optimum would be to
     # stay still; with it, it lets itself roll as long as it keeps its balance.
-    cfg.rewards["wheel_glide"] = RewardTermCfg(
-        func=microduck_mdp.wheel_glide_reward, weight=2.0, params={"cap_speed": 0.35}
-    )
+    cfg.rewards["wheel_glide"] = RewardTermCfg(func=microduck_mdp.wheel_glide_reward, weight=2.0, params={"cap_speed": 0.35})
     # GO STRAIGHT: hold the spawn yaw (= 0 = facing the descent). Corrective
     # (the robot can recover), this is the right way to go straight. NB: the
     # PPO symmetry (SYMMETRY_CFG) is coded for the old 51D obs -> unusable here.
     cfg.rewards["heading_hold"] = RewardTermCfg(func=microduck_mdp.heading_hold_reward, weight=1.5, params={"std": 0.4})
-    cfg.rewards["feet_flat"] = RewardTermCfg(
-        func=microduck_mdp.feet_flat_penalty,
-        weight=-2.0,
-        params={
-            "asset_cfg": SceneEntityCfg("robot", site_names=("left_foot", "right_foot")),
-            "sensor_name": "feet_ground_contact",
-        },
-    )
+    cfg.rewards["feet_flat"] = RewardTermCfg(func=microduck_mdp.feet_flat_penalty, weight=-2.0, params={"asset_cfg": SceneEntityCfg("robot", site_names=("left_foot", "right_foot")), "sensor_name": "feet_ground_contact"})
     cfg.rewards["neck_action_rate_l2"] = RewardTermCfg(func=microduck_mdp.neck_action_rate_l2, weight=-0.5)
     # KEEP THE HEAD STRAIGHT: penalizes the deviation of the neck/head joints from
     # the home position. The fixed LEG pose was removed (for free
@@ -168,16 +148,10 @@ def make_microduck_roller_slope_env_cfg(play: bool = False) -> ManagerBasedRlEnv
     # terminate "at the edge" (terrain_edge_reached cut long ramps
     # too early). Kept: fall (bad_orientation), NaN, and "fell into the void"
     # (trunk below the lowest exit flat) in case the robot leaves solid ground.
-    cfg.terminations["fell_over"] = TerminationTermCfg(
-        func=base_mdp.bad_orientation,
-        params={"limit_angle": 1.0, "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))},
-    )
+    cfg.terminations["fell_over"] = TerminationTermCfg(func=base_mdp.bad_orientation, params={"limit_angle": 1.0, "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))})
     if "out_of_terrain_bounds" in cfg.terminations:
         del cfg.terminations["out_of_terrain_bounds"]
-    cfg.terminations["fell_into_void"] = TerminationTermCfg(
-        func=microduck_mdp.root_height_below,
-        params={"min_height": VOID_FLOOR, "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))},
-    )
+    cfg.terminations["fell_into_void"] = TerminationTermCfg(func=microduck_mdp.root_height_below, params={"min_height": VOID_FLOOR, "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))})
     cfg.terminations["nan_state"] = TerminationTermCfg(func=microduck_mdp.robot_state_is_nan, time_out=False)
 
     # === OBS: sanitize NaN/Inf (robustness to rare contact divergences) ===
@@ -192,9 +166,7 @@ def make_microduck_roller_slope_env_cfg(play: bool = False) -> ManagerBasedRlEnv
     # === EVENTS ===
     cfg.events["reset_action_history"] = EventTermCfg(func=microduck_mdp.reset_action_history, mode="reset")
     # Rolling start (momentum at the wheels, no skidding). AFTER reset_base.
-    cfg.events["reset_rolling_entry"] = EventTermCfg(
-        func=microduck_mdp.reset_rolling_entry, mode="reset", params={"speed_range": ENTRY_VELOCITY_X}
-    )
+    cfg.events["reset_rolling_entry"] = EventTermCfg(func=microduck_mdp.reset_rolling_entry, mode="reset", params={"speed_range": ENTRY_VELOCITY_X})
 
     # === CURRICULUM: steepness gentle -> steep ===
     # Starts on the gentlest slope (2°) and promotes towards steeper (up to
@@ -209,33 +181,4 @@ def make_microduck_roller_slope_env_cfg(play: bool = False) -> ManagerBasedRlEnv
     return cfg
 
 
-MicroduckRollerSlopeRlCfg = RslRlOnPolicyRunnerCfg(
-    actor=RslRlModelCfg(
-        hidden_dims=(512, 256, 128),
-        activation="elu",
-        obs_normalization=True,
-        distribution_cfg={"class_name": "GaussianDistribution", "init_std": 1.0, "std_type": "scalar"},
-    ),
-    critic=RslRlModelCfg(hidden_dims=(512, 256, 128), activation="elu", obs_normalization=True),
-    algorithm=PpoWithSymmetryCfg(
-        value_loss_coef=1.0,
-        use_clipped_value_loss=True,
-        clip_param=0.2,
-        entropy_coef=0.01,
-        num_learning_epochs=5,
-        num_mini_batches=4,
-        learning_rate=1.0e-3,
-        schedule="adaptive",
-        gamma=0.99,
-        lam=0.95,
-        desired_kl=0.01,
-        max_grad_norm=1.0,
-        symmetry_cfg=None,
-    ),
-    wandb_project="mjlab_microduck",
-    experiment_name="roller_slope",
-    run_name="roller_slope",
-    save_interval=250,
-    num_steps_per_env=24,
-    max_iterations=8_000,
-)
+MicroduckRollerSlopeRlCfg = RslRlOnPolicyRunnerCfg(actor=RslRlModelCfg(hidden_dims=(512, 256, 128), activation="elu", obs_normalization=True, distribution_cfg={"class_name": "GaussianDistribution", "init_std": 1.0, "std_type": "scalar"}), critic=RslRlModelCfg(hidden_dims=(512, 256, 128), activation="elu", obs_normalization=True), algorithm=PpoWithSymmetryCfg(value_loss_coef=1.0, use_clipped_value_loss=True, clip_param=0.2, entropy_coef=0.01, num_learning_epochs=5, num_mini_batches=4, learning_rate=1.0e-3, schedule="adaptive", gamma=0.99, lam=0.95, desired_kl=0.01, max_grad_norm=1.0, symmetry_cfg=None), wandb_project="mjlab_microduck", experiment_name="roller_slope", run_name="roller_slope", save_interval=250, num_steps_per_env=24, max_iterations=8_000)

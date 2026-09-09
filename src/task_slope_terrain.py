@@ -57,11 +57,7 @@ class FlatRampTerrainCfg(SubTerrainCfg):
         drop = ramp_length * math.tan(angle)  # elevation drop (m), positive
 
         # 1) Starting flat: surface at z=0, x in [0, flat_length].
-        flat = body.add_geom(
-            type=mujoco.mjtGeom.mjGEOM_BOX,
-            size=(self.flat_length / 2.0, width / 2.0, t / 2.0),
-            pos=(self.flat_length / 2.0, 0.0, -t / 2.0),
-        )
+        flat = body.add_geom(type=mujoco.mjtGeom.mjGEOM_BOX, size=(self.flat_length / 2.0, width / 2.0, t / 2.0), pos=(self.flat_length / 2.0, 0.0, -t / 2.0))
 
         # 2) Ramp: box rotated by +angle about +y (the +x edge goes down).
         # Offset -(t/2)·sin(angle) in x: without it, the TOP edge of the inclined
@@ -73,20 +69,11 @@ class FlatRampTerrainCfg(SubTerrainCfg):
         ramp_cx = self.flat_length + ramp_length / 2.0 - (t / 2.0) * math.sin(angle)
         ramp_cz = -(drop / 2.0) - (t / 2.0) * math.cos(angle)
         half = angle / 2.0
-        ramp = body.add_geom(
-            type=mujoco.mjtGeom.mjGEOM_BOX,
-            size=(surf_len / 2.0, width / 2.0, t / 2.0),
-            pos=(ramp_cx, 0.0, ramp_cz),
-            quat=(math.cos(half), 0.0, math.sin(half), 0.0),
-        )
+        ramp = body.add_geom(type=mujoco.mjtGeom.mjGEOM_BOX, size=(surf_len / 2.0, width / 2.0, t / 2.0), pos=(ramp_cx, 0.0, ramp_cz), quat=(math.cos(half), 0.0, math.sin(half), 0.0))
 
         # 3) Exit flat: surface at the level of the bottom of the ramp (z = -drop).
         runout_cx = self.flat_length + ramp_length + self.runout_length / 2.0
-        runout = body.add_geom(
-            type=mujoco.mjtGeom.mjGEOM_BOX,
-            size=(self.runout_length / 2.0, width / 2.0, t / 2.0),
-            pos=(runout_cx, 0.0, -drop - t / 2.0),
-        )
+        runout = body.add_geom(type=mujoco.mjtGeom.mjGEOM_BOX, size=(self.runout_length / 2.0, width / 2.0, t / 2.0), pos=(runout_cx, 0.0, -drop - t / 2.0))
 
         # Spawn slightly ON the ramp: gravity makes the wheels roll right
         # away (momentum AT THE WHEELS, no base push that would slip), and the
@@ -94,11 +81,4 @@ class FlatRampTerrainCfg(SubTerrainCfg):
         spawn_x = self.flat_length + self.spawn_on_ramp
         spawn_z = -self.spawn_on_ramp * math.tan(angle)
         origin = np.array([spawn_x, 0.0, spawn_z])
-        return TerrainOutput(
-            origin=origin,
-            geometries=[
-                TerrainGeometry(geom=flat, color=(0.5, 0.5, 0.5, 1.0)),
-                TerrainGeometry(geom=ramp, color=(0.45, 0.55, 0.75, 1.0)),
-                TerrainGeometry(geom=runout, color=(0.5, 0.5, 0.5, 1.0)),
-            ],
-        )
+        return TerrainOutput(origin=origin, geometries=[TerrainGeometry(geom=flat, color=(0.5, 0.5, 0.5, 1.0)), TerrainGeometry(geom=ramp, color=(0.45, 0.55, 0.75, 1.0)), TerrainGeometry(geom=runout, color=(0.5, 0.5, 0.5, 1.0))])

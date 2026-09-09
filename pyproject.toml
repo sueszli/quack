@@ -44,13 +44,13 @@ namespace = true
 
 [tool.ruff]
 indent-width = 4
-line-length = 120
+line-length = 5000
 target-version = "py312"
 
 [tool.ruff.format]
-# Ignore magic trailing commas so short collections inline instead of sitting
-# one-element-per-line. line-length 120 keeps the big tables (task registry,
-# runner cfgs) exploded, which is what makes them readable.
+# Ignore magic trailing commas so collections inline instead of sitting
+# one-element-per-line. Combined with the very large line-length, this means
+# a collection wraps only when it genuinely cannot fit on one line.
 skip-magic-trailing-comma = true
 
 [tool.ruff.lint.isort]

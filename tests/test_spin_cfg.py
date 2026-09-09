@@ -14,14 +14,7 @@ def test_cfg_uses_phase_command_with_runtime_default_period():
 
 def test_cfg_has_the_spin_rewards():
     cfg = make_microduck_spin_env_cfg()
-    for name in (
-        "spin_rate_track",
-        "spin_rate_l1",
-        "spin_stay_in_place",
-        "spin_wheel_differential",
-        "spin_grounded",
-        "leg_antisymmetry",
-    ):
+    for name in ("spin_rate_track", "spin_rate_l1", "spin_stay_in_place", "spin_wheel_differential", "spin_grounded", "leg_antisymmetry"):
         assert name in cfg.rewards, name
     # main objective with a dominant weight
     assert cfg.rewards["spin_rate_track"].weight == 6.0
@@ -100,6 +93,4 @@ def test_obs_parity_with_roller_crouch():
     spin = make_microduck_spin_env_cfg()
     crouch = make_microduck_roller_crouch_env_cfg()
     for grp in ("actor", "critic"):
-        assert list(spin.observations[grp].terms.keys()) == list(crouch.observations[grp].terms.keys()), (
-            f"observation layout diverges on group {grp}"
-        )
+        assert list(spin.observations[grp].terms.keys()) == list(crouch.observations[grp].terms.keys()), f"observation layout diverges on group {grp}"

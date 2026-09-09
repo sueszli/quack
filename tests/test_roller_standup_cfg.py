@@ -4,21 +4,7 @@ from src.task_roller_standup import EPISODE_LENGTH_S, make_microduck_roller_stan
 from src.task_velocity_rollers import make_microduck_velocity_rollers_env_cfg
 
 # SKATING rewards: none of them may survive in a stand-up env.
-SKATING_REWARDS = (
-    "wheel_speed",
-    "braking",
-    "skating_air_time",
-    "glide",
-    "single_support",
-    "gait_symmetry",
-    "forward_lean",
-    "heading_hold",
-    "feet_flat",
-    "hip_roll_neutral",
-    "pose",
-    "com_height_target",
-    "upright",
-)
+SKATING_REWARDS = ("wheel_speed", "braking", "skating_air_time", "glide", "single_support", "gait_symmetry", "forward_lean", "heading_hold", "feet_flat", "hip_roll_neutral", "pose", "com_height_target", "upright")
 
 
 def test_env_builds_train_and_play():
@@ -42,16 +28,7 @@ def test_smoothness_regularisers_kept():
     # Kept from the roller inheritance: the stand-up needs sim2real smoothness, but
     # body_ang_vel must stay LIGHT (standup documents that at -0.15 it froze).
     cfg = make_microduck_roller_standup_env_cfg()
-    for name in (
-        "action_over_limit",
-        "self_collisions",
-        "body_ang_vel",
-        "angular_momentum",
-        "action_rate_l2",
-        "neck_action_rate_l2",
-        "neck_joint_pos_l2",
-        "joint_torques_l2",
-    ):
+    for name in ("action_over_limit", "self_collisions", "body_ang_vel", "angular_momentum", "action_rate_l2", "neck_action_rate_l2", "neck_joint_pos_l2", "joint_torques_l2"):
         assert name in cfg.rewards, f"lost regularizer: {name}"
     assert cfg.rewards["body_ang_vel"].weight == -0.05
 
@@ -93,9 +70,7 @@ def test_obs_parity_with_roller_env():
     standup = make_microduck_roller_standup_env_cfg()
     roller = make_microduck_velocity_rollers_env_cfg()
     for grp in ("actor", "critic"):
-        assert list(standup.observations[grp].terms.keys()) == list(roller.observations[grp].terms.keys()), (
-            f"observation layout diverges on group {grp}"
-        )
+        assert list(standup.observations[grp].terms.keys()) == list(roller.observations[grp].terms.keys()), f"observation layout diverges on group {grp}"
 
 
 def test_terrain_is_plain_plane():
@@ -127,31 +102,11 @@ def test_joint_indices_match_actual_roller_model():
     from src.task_roller_standup import _LEG_JOINTS, _NECK_JOINTS, _WHEEL_JOINTS
 
     model = get_walk_rollers_spec().compile()
-    articulated = [
-        mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_JOINT, j)
-        for j in range(model.njnt)
-        if model.jnt_type[j] != mujoco.mjtJoint.mjJNT_FREE
-    ]
+    articulated = [mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_JOINT, j) for j in range(model.njnt) if model.jnt_type[j] != mujoco.mjtJoint.mjJNT_FREE]
 
-    assert [articulated[i] for i in _LEG_JOINTS] == [
-        "left_hip_yaw",
-        "left_hip_roll",
-        "left_hip_pitch",
-        "left_knee",
-        "left_ankle",
-        "right_hip_yaw",
-        "right_hip_roll",
-        "right_hip_pitch",
-        "right_knee",
-        "right_ankle",
-    ]
+    assert [articulated[i] for i in _LEG_JOINTS] == ["left_hip_yaw", "left_hip_roll", "left_hip_pitch", "left_knee", "left_ankle", "right_hip_yaw", "right_hip_roll", "right_hip_pitch", "right_knee", "right_ankle"]
     assert [articulated[i] for i in _NECK_JOINTS] == ["neck_pitch", "head_pitch", "head_yaw", "head_roll"]
-    assert [articulated[i] for i in _WHEEL_JOINTS] == [
-        "passive_LF_wheel",
-        "passive_LR_wheel",
-        "passive_RF_wheel",
-        "passive_RR_wheel",
-    ]
+    assert [articulated[i] for i in _WHEEL_JOINTS] == ["passive_LF_wheel", "passive_LR_wheel", "passive_RF_wheel", "passive_RR_wheel"]
     # No overlap, and the three lists cover every joint.
     assert len(set(_LEG_JOINTS) | set(_NECK_JOINTS) | set(_WHEEL_JOINTS)) == len(articulated)
 
@@ -213,16 +168,7 @@ def test_trunk_asset_cfgs_are_distinct_objects():
     several terms causes stale indices. Each term must have its own.
     """
     cfg = make_microduck_roller_standup_env_cfg()
-    names = (
-        "height_stand",
-        "height_stand_sharp",
-        "height_stand_l1",
-        "com_upward_velocity",
-        "gentle_rise",
-        "upright_linear",
-        "upright_sharp",
-        "standing_composite",
-    )
+    names = ("height_stand", "height_stand_sharp", "height_stand_l1", "com_upward_velocity", "gentle_rise", "upright_linear", "upright_sharp", "standing_composite")
     seen = [id(cfg.rewards[n].params["asset_cfg"]) for n in names]
     assert len(set(seen)) == len(seen), "asset_cfg shared between several terms"
 
@@ -363,15 +309,7 @@ def test_inherited_dr_curricula_survive():
     cfg = make_microduck_roller_standup_env_cfg()
     for name in ("com_range", "head_com_range"):
         assert name in cfg.curriculum, f"lost DR curriculum: {name}"
-    for name in (
-        "randomize_com",
-        "randomize_head_com",
-        "randomize_armature",
-        "randomize_joint_friction",
-        "randomize_mass_inertia",
-        "randomize_wheel_friction",
-        "encoder_bias",
-    ):
+    for name in ("randomize_com", "randomize_head_com", "randomize_armature", "randomize_joint_friction", "randomize_mass_inertia", "randomize_wheel_friction", "encoder_bias"):
         assert name in cfg.events, f"lost DR event: {name}"
 
 
@@ -464,10 +402,7 @@ def test_already_negative_penalties_use_positive_weights():
     # These three terms call functions that already return a negative value
     # (height_l1_penalty, pose_l1_penalty, trunk_vertical_accel_penalty).
     for name in ("height_stand_l1", "pose_stand_l1", "gentle_rise"):
-        assert cfg.rewards[name].weight > 0, (
-            f"{name} calls a function that already returns a negative value: "
-            f"a negative weight would turn it into a reward"
-        )
+        assert cfg.rewards[name].weight > 0, f"{name} calls a function that already returns a negative value: a negative weight would turn it into a reward"
     # And these terms return a positive magnitude → negative weight.
     for name in ("joint_torques_l2", "joint_torque_rate_l2", "action_rate_l2"):
         assert cfg.rewards[name].weight < 0, f"{name} expects a negative weight"

@@ -38,18 +38,13 @@ from .robot import MICRODUCK_BACKLASH_ROBOT_CFG
 _SERVO_JOINTS_ONLY = (r"^(?!passive_).*",)
 
 
-def make_backlash_variant(
-    cfg: ManagerBasedRlEnvCfg, robot_cfg: EntityCfg = MICRODUCK_BACKLASH_ROBOT_CFG
-) -> ManagerBasedRlEnvCfg:
+def make_backlash_variant(cfg: ManagerBasedRlEnvCfg, robot_cfg: EntityCfg = MICRODUCK_BACKLASH_ROBOT_CFG) -> ManagerBasedRlEnvCfg:
     """Convert a microduck env cfg (velocity/velstand/standup/...) to backlash."""
     cfg.scene.entities = {**cfg.scene.entities, "robot": robot_cfg}
 
     for group in ("actor", "critic"):
         terms = cfg.observations[group].terms
-        for term_name, func in (
-            ("joint_pos", microduck_mdp.joint_pos_rel_backlash),
-            ("joint_vel", microduck_mdp.joint_vel_rel_backlash),
-        ):
+        for term_name, func in (("joint_pos", microduck_mdp.joint_pos_rel_backlash), ("joint_vel", microduck_mdp.joint_vel_rel_backlash)):
             term = terms.get(term_name)
             if term is None:
                 continue
@@ -77,9 +72,7 @@ def make_backlash_variant(
         # Deepcopy first — base templates share SceneEntityCfg objects across
         # make() calls; mutating in place would leak into the base tasks.
         ac = deepcopy(pose.params["asset_cfg"])
-        ac.joint_names = tuple(
-            p if "_backlash" in p else r"^(?!passive_.*_backlash)" + p.lstrip("^") for p in ac.joint_names
-        )
+        ac.joint_names = tuple(p if "_backlash" in p else r"^(?!passive_.*_backlash)" + p.lstrip("^") for p in ac.joint_names)
         pose.params["asset_cfg"] = ac
 
     return cfg

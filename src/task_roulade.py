@@ -138,50 +138,21 @@ from .task_velocity import HEAD_BODY_NAMES
 def make_microduck_roulade_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     """Create Microduck forward-roll environment configuration."""
 
-    feet_ground_cfg = ContactSensorCfg(
-        name="feet_ground_contact",
-        primary=ContactMatch(mode="geom", pattern=r"^(left_foot_collision|right_foot_collision)$", entity="robot"),
-        secondary=ContactMatch(mode="body", pattern="terrain"),
-        fields=("found", "force"),
-        reduce="netforce",
-        num_slots=1,
-        track_air_time=True,
-    )
+    feet_ground_cfg = ContactSensorCfg(name="feet_ground_contact", primary=ContactMatch(mode="geom", pattern=r"^(left_foot_collision|right_foot_collision)$", entity="robot"), secondary=ContactMatch(mode="body", pattern="terrain"), fields=("found", "force"), reduce="netforce", num_slots=1, track_air_time=True)
 
-    self_collision_cfg = ContactSensorCfg(
-        name="self_collision",
-        primary=ContactMatch(mode="subtree", pattern="trunk_base", entity="robot"),
-        secondary=ContactMatch(mode="subtree", pattern="trunk_base", entity="robot"),
-        fields=("found",),
-        reduce="none",
-        num_slots=1,
-    )
+    self_collision_cfg = ContactSensorCfg(name="self_collision", primary=ContactMatch(mode="subtree", pattern="trunk_base", entity="robot"), secondary=ContactMatch(mode="subtree", pattern="trunk_base", entity="robot"), fields=("found",), reduce="none", num_slots=1)
 
     # Head-ground contact — the roll's pivot signal. jaw_soft is the body that
     # carries the head collision geoms (top_head_shell = the flat top, jaw,
     # bottom_head_shell) in robot_groundcontact.xml. NAME IS LOAD-BEARING:
     # _update_roulade_accum reads it for the over-the-head latch.
-    head_ground_cfg = ContactSensorCfg(
-        name="head_ground_contact",
-        primary=ContactMatch(mode="body", pattern="jaw_soft", entity="robot"),
-        secondary=ContactMatch(mode="body", pattern="terrain"),
-        fields=("found",),
-        reduce="none",
-        num_slots=1,
-    )
+    head_ground_cfg = ContactSensorCfg(name="head_ground_contact", primary=ContactMatch(mode="body", pattern="jaw_soft", entity="robot"), secondary=ContactMatch(mode="body", pattern="terrain"), fields=("found",), reduce="none", num_slots=1)
 
     # Whole-robot ground contact — the SUPPORT GATE (run-2 fix): the rotation
     # accumulator only integrates while some robot geom touches the terrain,
     # so ballistic flips ("breakdance") earn no progress and never complete.
     # NAME IS LOAD-BEARING: _update_roulade_accum reads it.
-    robot_ground_cfg = ContactSensorCfg(
-        name="robot_ground_contact",
-        primary=ContactMatch(mode="subtree", pattern="trunk_base", entity="robot"),
-        secondary=ContactMatch(mode="body", pattern="terrain"),
-        fields=("found",),
-        reduce="none",
-        num_slots=1,
-    )
+    robot_ground_cfg = ContactSensorCfg(name="robot_ground_contact", primary=ContactMatch(mode="subtree", pattern="trunk_base", entity="robot"), secondary=ContactMatch(mode="body", pattern="terrain"), fields=("found",), reduce="none", num_slots=1)
 
     foot_frictions_geom_names = ("left_foot_collision", "right_foot_collision")
 
@@ -200,15 +171,7 @@ def make_microduck_roulade_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     joint_pos_action.scale = 1.0
 
     # ── Rewards: drop walking-specific terms ──────────────────────────────────
-    for name in [
-        "track_linear_velocity",
-        "track_angular_velocity",
-        "air_time",
-        "foot_clearance",
-        "foot_swing_height",
-        "foot_slip",
-        "pose",
-    ]:
+    for name in ["track_linear_velocity", "track_angular_velocity", "air_time", "foot_clearance", "foot_swing_height", "foot_slip", "pose"]:
         if name in cfg.rewards:
             del cfg.rewards[name]
 
@@ -230,69 +193,27 @@ def make_microduck_roulade_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
 
     # Whip-speed tax — run-4 threshold 4 → 7 rad/s (above the measured p90
     # transit speed of ~5.5): taxes genuine whips, not the natural tumble.
-    cfg.rewards["roulade_overspeed"] = RewardTermCfg(
-        func=microduck_mdp.roulade_overspeed_penalty, weight=-0.1, params={"omega_max": 7.0}
-    )
+    cfg.rewards["roulade_overspeed"] = RewardTermCfg(func=microduck_mdp.roulade_overspeed_penalty, weight=-0.1, params={"omega_max": 7.0})
 
     # Head-as-pivot shaping: contact × mid-roll window × forward-rate factor
     # (the rate factor kills the "rest face-down with head on floor" farm).
-    cfg.rewards["roulade_head_pivot"] = RewardTermCfg(
-        func=microduck_mdp.roulade_head_pivot,
-        weight=0.5,
-        params={
-            "sensor_name": head_ground_cfg.name,
-            "angle_lo": math.radians(30.0),
-            "angle_hi": math.radians(240.0),
-            "rate_norm": 2.0,
-        },
-    )
+    cfg.rewards["roulade_head_pivot"] = RewardTermCfg(func=microduck_mdp.roulade_head_pivot, weight=0.5, params={"sensor_name": head_ground_cfg.name, "angle_lo": math.radians(30.0), "angle_hi": math.radians(240.0), "rate_norm": 2.0})
 
     # Completion-gated standing annuity — the dominant attractor. Broad stds
     # (standup composite lesson: partial landing must score visibly, ~0.2+).
-    cfg.rewards["roulade_landing_composite"] = RewardTermCfg(
-        func=microduck_mdp.roulade_landing_composite,
-        weight=4.0,
-        params={
-            "target_height": STAND_Z,
-            "height_std": 0.04,
-            "upright_std": 0.40,
-            "pose_std": 0.40,
-            "joint_indices": _LEG_JOINTS,
-            "gate_lo": LANDING_GATE_LO,
-            "gate_hi": LANDING_GATE_HI,
-            "target_overrides": None,
-        },
-    )
+    cfg.rewards["roulade_landing_composite"] = RewardTermCfg(func=microduck_mdp.roulade_landing_composite, weight=4.0, params={"target_height": STAND_Z, "height_std": 0.04, "upright_std": 0.40, "pose_std": 0.40, "joint_indices": _LEG_JOINTS, "gate_lo": LANDING_GATE_LO, "gate_hi": LANDING_GATE_HI, "target_overrides": None})
 
     # Completion-gated bootstrap layers (gradient far from the goal, where the
     # composite product is ≈0): linear upright + broad height Gaussian.
-    cfg.rewards["roulade_upright_after_roll"] = RewardTermCfg(
-        func=microduck_mdp.roulade_upright_after_roll,
-        weight=1.5,
-        params={"gate_lo": LANDING_GATE_LO, "gate_hi": LANDING_GATE_HI},
-    )
-    cfg.rewards["roulade_height_after_roll"] = RewardTermCfg(
-        func=microduck_mdp.roulade_height_after_roll,
-        weight=1.0,
-        params={"target_height": STAND_Z, "std": 0.04, "gate_lo": LANDING_GATE_LO, "gate_hi": LANDING_GATE_HI},
-    )
+    cfg.rewards["roulade_upright_after_roll"] = RewardTermCfg(func=microduck_mdp.roulade_upright_after_roll, weight=1.5, params={"gate_lo": LANDING_GATE_LO, "gate_hi": LANDING_GATE_HI})
+    cfg.rewards["roulade_height_after_roll"] = RewardTermCfg(func=microduck_mdp.roulade_height_after_roll, weight=1.0, params={"target_height": STAND_Z, "std": 0.04, "gate_lo": LANDING_GATE_LO, "gate_hi": LANDING_GATE_HI})
 
     # Sharp landing layer (run-4): tight-std upright × height product on top
     # of the broad composite. Run-3 eval showed EVERY completed episode
     # parking at the same z≈0.105 / 27°-lean pose — the broad stds score ~0.5
     # there, no gradient to finish. Sharp layer: ~0.1 at the basin, ~1.0
     # upright — 10× differential across the last mile.
-    cfg.rewards["roulade_landing_sharp"] = RewardTermCfg(
-        func=microduck_mdp.roulade_landing_sharp,
-        weight=2.0,
-        params={
-            "target_height": STAND_Z,
-            "height_std": 0.015,
-            "upright_std": 0.3,
-            "gate_lo": LANDING_GATE_LO,
-            "gate_hi": LANDING_GATE_HI,
-        },
-    )
+    cfg.rewards["roulade_landing_sharp"] = RewardTermCfg(func=microduck_mdp.roulade_landing_sharp, weight=2.0, params={"target_height": STAND_Z, "height_std": 0.015, "upright_std": 0.3, "gate_lo": LANDING_GATE_LO, "gate_hi": LANDING_GATE_HI})
 
     # Completion-gated stand tax (run-3, THE standup lesson): once the
     # rotation is done, every step spent below STAND_Z costs — "crumple in a
@@ -300,20 +221,12 @@ def make_microduck_roulade_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     # broke standup's static-sit basin (its height L1 at ÷4-scaled weight
     # 7.5). Gate closed during the roll, so the roll itself is never taxed;
     # mid/late-roll spawns are born with it active, which is the point.
-    cfg.rewards["roulade_stand_tax"] = RewardTermCfg(
-        func=microduck_mdp.roulade_stand_tax,
-        weight=5.0,
-        params={"target_height": STAND_Z, "gate_lo": LANDING_GATE_LO, "gate_hi": LANDING_GATE_HI},
-    )
+    cfg.rewards["roulade_stand_tax"] = RewardTermCfg(func=microduck_mdp.roulade_stand_tax, weight=5.0, params={"target_height": STAND_Z, "gate_lo": LANDING_GATE_LO, "gate_hi": LANDING_GATE_HI})
 
     # Exit-rise bootstrap: upward CoM velocity, gated to the late-roll region
     # (supine → up is the face-up-recovery problem; end-state rewards have zero
     # gradient at zero motion there — standup lesson #2).
-    cfg.rewards["roulade_rise_velocity"] = RewardTermCfg(
-        func=microduck_mdp.roulade_rise_velocity,
-        weight=0.75,
-        params={"max_height": STAND_Z + 0.01, "gate_lo": RISE_GATE_LO, "gate_hi": RISE_GATE_HI},
-    )
+    cfg.rewards["roulade_rise_velocity"] = RewardTermCfg(func=microduck_mdp.roulade_rise_velocity, weight=0.75, params={"max_height": STAND_Z + 0.01, "gate_lo": RISE_GATE_LO, "gate_hi": RISE_GATE_HI})
 
     # Straightness — run-5: the run-4 policy rolled over the SHOULDER (lower
     # energy path than straight over the head — it avoids the fully-inverted
@@ -341,17 +254,7 @@ def make_microduck_roulade_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
 
     # Arrival damper — trunk ω_xy² gated on standing height AND low tilt, so
     # the roll itself is never taxed; introduced at 0 and ramped by curriculum.
-    cfg.rewards["arrival_damping"] = RewardTermCfg(
-        func=microduck_mdp.body_ang_vel_at_height,
-        weight=0.0,
-        params={
-            "height_low": 0.09,
-            "height_high": 0.11,
-            "tilt_full_deg": 20.0,
-            "tilt_zero_deg": 45.0,
-            "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
-        },
-    )
+    cfg.rewards["arrival_damping"] = RewardTermCfg(func=microduck_mdp.body_ang_vel_at_height, weight=0.0, params={"height_low": 0.09, "height_high": 0.11, "tilt_full_deg": 20.0, "tilt_zero_deg": 45.0, "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))})
 
     # |a_z| impact shaping — active from step 0 (run-2 change: run 1
     # discovered a violent solution under zero impact cost and locked it in;
@@ -360,17 +263,11 @@ def make_microduck_roulade_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     # NOTE: trunk_vertical_accel_penalty is SELF-NEGATING (returns -|a_z|) →
     # POSITIVE weight (penalty sign convention; a negative weight here would
     # reward violence — caught in the run-2 smoke test, sum was positive).
-    cfg.rewards["gentle_landing"] = RewardTermCfg(
-        func=microduck_mdp.trunk_vertical_accel_penalty,
-        weight=0.002,
-        params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))},
-    )
+    cfg.rewards["gentle_landing"] = RewardTermCfg(func=microduck_mdp.trunk_vertical_accel_penalty, weight=0.002, params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))})
 
     # Self-collision — LIGHT: a tucked roll needs body-on-body contact
     # (knees against trunk); standup's -1.0 would fight the tuck.
-    cfg.rewards["self_collisions"] = RewardTermCfg(
-        func=mdp.self_collision_cost, weight=-0.1, params={"sensor_name": self_collision_cfg.name}
-    )
+    cfg.rewards["self_collisions"] = RewardTermCfg(func=mdp.self_collision_cost, weight=-0.1, params={"sensor_name": self_collision_cfg.name})
 
     # Always-on upright would oppose the flip (the old attempt's core failure);
     # landing uprightness is handled by the completion-gated terms above.
@@ -432,12 +329,8 @@ def make_microduck_roulade_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     # the 61D obs layout parity with velocity/standup is kept so the runtime
     # stack works unchanged (send zeros).
     for group in ("actor", "critic"):
-        cfg.observations[group].terms["head_command"] = ObservationTermCfg(
-            func=microduck_mdp.zero_command_padding, params={"dim": 4}
-        )
-        cfg.observations[group].terms["body_command"] = ObservationTermCfg(
-            func=microduck_mdp.zero_command_padding, params={"dim": 6}
-        )
+        cfg.observations[group].terms["head_command"] = ObservationTermCfg(func=microduck_mdp.zero_command_padding, params={"dim": 4})
+        cfg.observations[group].terms["body_command"] = ObservationTermCfg(func=microduck_mdp.zero_command_padding, params={"dim": 6})
 
     # ── Command: tiny noise around zero (kept for obs-shape parity) ──────────
     command = cfg.commands["twist"]
@@ -459,9 +352,7 @@ def make_microduck_roulade_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     cfg.terminations["nan_state"] = TerminationTermCfg(func=microduck_mdp.robot_state_is_nan, time_out=False)
 
     # ── Events ────────────────────────────────────────────────────────────────
-    cfg.events["expand_bam_friction_fields"] = EventTermCfg(
-        func=microduck_mdp.expand_bam_friction_fields, mode="startup"
-    )
+    cfg.events["expand_bam_friction_fields"] = EventTermCfg(func=microduck_mdp.expand_bam_friction_fields, mode="startup")
     cfg.events["reset_action_history"] = EventTermCfg(func=microduck_mdp.reset_action_history, mode="reset")
     cfg.events["foot_friction"].params["asset_cfg"].geom_names = foot_frictions_geom_names
     cfg.events["foot_friction"].params["ranges"] = (0.7, 1.3)
@@ -469,94 +360,31 @@ def make_microduck_roulade_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     # Standing start + mid-roll reverse-curriculum spawns; also resets the
     # rotation accumulator (must run after reset_robot_joints — dict insertion
     # order — since mid-roll tuck lerps FROM the HOME pose it wrote).
-    cfg.events["set_roulade_state"] = EventTermCfg(
-        func=microduck_mdp.reset_roulade_state,
-        mode="reset",
-        params={
-            "standing_prob": 0.5,
-            "midroll_prob": 0.5,
-            "standing_z_min": 0.11,
-            "standing_z_max": 0.12,
-            "standing_tilt_max": math.radians(5.0),
-            "forward_vel_range": ROULADE_FORWARD_VEL_RANGE,
-            "midroll_pitch_min": MIDROLL_PITCH_MIN,
-            "midroll_pitch_max": MIDROLL_PITCH_MAX,
-            "midroll_z_min": 0.05,
-            "midroll_z_max": 0.10,
-            "midroll_omega_range": MIDROLL_OMEGA_RANGE,
-            "tuck_overrides": TUCK_OVERRIDES,
-            "tuck_factor_range": (0.3, 1.0),
-            "joint_noise_std": 0.08,
-        },
-    )
+    cfg.events["set_roulade_state"] = EventTermCfg(func=microduck_mdp.reset_roulade_state, mode="reset", params={"standing_prob": 0.5, "midroll_prob": 0.5, "standing_z_min": 0.11, "standing_z_max": 0.12, "standing_tilt_max": math.radians(5.0), "forward_vel_range": ROULADE_FORWARD_VEL_RANGE, "midroll_pitch_min": MIDROLL_PITCH_MIN, "midroll_pitch_max": MIDROLL_PITCH_MAX, "midroll_z_min": 0.05, "midroll_z_max": 0.10, "midroll_omega_range": MIDROLL_OMEGA_RANGE, "tuck_overrides": TUCK_OVERRIDES, "tuck_factor_range": (0.3, 1.0), "joint_noise_std": 0.08})
 
     if "push_robot" in cfg.events:
         del cfg.events["push_robot"]
 
     if ENABLE_COM_RANDOMIZATION:
-        cfg.events["randomize_com"] = EventTermCfg(
-            func=dr.body_ipos,
-            mode="reset",
-            params={
-                "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
-                "operation": "add",
-                "ranges": (-COM_RANDOMIZATION_RANGE, COM_RANDOMIZATION_RANGE),
-            },
-        )
+        cfg.events["randomize_com"] = EventTermCfg(func=dr.body_ipos, mode="reset", params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)), "operation": "add", "ranges": (-COM_RANDOMIZATION_RANGE, COM_RANDOMIZATION_RANGE)})
 
     if ENABLE_HEAD_COM_RANDOMIZATION:
-        cfg.events["randomize_head_com"] = EventTermCfg(
-            func=dr.body_ipos,
-            mode="reset",
-            params={
-                "asset_cfg": SceneEntityCfg("robot", body_names=HEAD_BODY_NAMES),
-                "operation": "add",
-                "ranges": (-HEAD_COM_RANDOMIZATION_RANGE, HEAD_COM_RANDOMIZATION_RANGE),
-            },
-        )
+        cfg.events["randomize_head_com"] = EventTermCfg(func=dr.body_ipos, mode="reset", params={"asset_cfg": SceneEntityCfg("robot", body_names=HEAD_BODY_NAMES), "operation": "add", "ranges": (-HEAD_COM_RANDOMIZATION_RANGE, HEAD_COM_RANDOMIZATION_RANGE)})
 
     if ENABLE_ARMATURE_RANDOMIZATION:
-        cfg.events["randomize_armature"] = EventTermCfg(
-            func=dr.joint_armature,
-            mode="reset",
-            params={
-                "asset_cfg": SceneEntityCfg("robot", joint_names=(r".*",)),
-                "operation": "scale",
-                "ranges": ARMATURE_RANDOMIZATION_RANGE,
-            },
-        )
+        cfg.events["randomize_armature"] = EventTermCfg(func=dr.joint_armature, mode="reset", params={"asset_cfg": SceneEntityCfg("robot", joint_names=(r".*",)), "operation": "scale", "ranges": ARMATURE_RANDOMIZATION_RANGE})
 
     if ENABLE_KP_RANDOMIZATION or ENABLE_KD_RANDOMIZATION:
         kp_range = KP_RANDOMIZATION_RANGE if ENABLE_KP_RANDOMIZATION else (1.0, 1.0)
         kd_range = KD_RANDOMIZATION_RANGE if ENABLE_KD_RANDOMIZATION else (1.0, 1.0)
-        cfg.events["randomize_motor_gains"] = EventTermCfg(
-            func=microduck_mdp.randomize_delayed_actuator_gains,
-            mode="reset",
-            params={
-                "asset_cfg": SceneEntityCfg("robot"),
-                "operation": "scale",
-                "kp_range": kp_range,
-                "kd_range": kd_range,
-            },
-        )
+        cfg.events["randomize_motor_gains"] = EventTermCfg(func=microduck_mdp.randomize_delayed_actuator_gains, mode="reset", params={"asset_cfg": SceneEntityCfg("robot"), "operation": "scale", "kp_range": kp_range, "kd_range": kd_range})
 
     if ENABLE_MASS_INERTIA_RANDOMIZATION:
         _mi_lo, _mi_hi = MASS_INERTIA_RANDOMIZATION_RANGE
-        cfg.events["randomize_mass_inertia"] = EventTermCfg(
-            func=dr.pseudo_inertia,
-            mode="startup",
-            params={
-                "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
-                "alpha_range": (math.log(_mi_lo) / 2.0, math.log(_mi_hi) / 2.0),
-            },
-        )
+        cfg.events["randomize_mass_inertia"] = EventTermCfg(func=dr.pseudo_inertia, mode="startup", params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)), "alpha_range": (math.log(_mi_lo) / 2.0, math.log(_mi_hi) / 2.0)})
 
     if ENABLE_JOINT_FRICTION_RANDOMIZATION:
-        cfg.events["randomize_joint_friction"] = EventTermCfg(
-            func=microduck_mdp.randomize_bam_friction,
-            mode="reset",
-            params={"asset_cfg": SceneEntityCfg("robot"), "scale_range": JOINT_FRICTION_RANDOMIZATION_RANGE},
-        )
+        cfg.events["randomize_joint_friction"] = EventTermCfg(func=microduck_mdp.randomize_bam_friction, mode="reset", params={"asset_cfg": SceneEntityCfg("robot"), "scale_range": JOINT_FRICTION_RANDOMIZATION_RANGE})
 
     # ── Terrain ───────────────────────────────────────────────────────────────
     cfg.scene.terrain.terrain_type = "plane"
@@ -575,87 +403,26 @@ def make_microduck_roulade_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     # mid-roll BEFORE standing-spawn rolls were mastered (progress episode-sum
     # was ~20% of a full roll at iter 1876; curriculum-pacing failure, same
     # family as the 2026-07-28 standup regression).
-    cfg.curriculum["roulade_spawn_mix"] = CurriculumTermCfg(
-        func=microduck_mdp.event_param_curriculum,
-        params={
-            "event_name": "set_roulade_state",
-            "param_stages": [
-                {"step": 0, "params": {"standing_prob": 0.50, "midroll_prob": 0.50}},
-                {"step": 3000 * 24, "params": {"standing_prob": 0.65, "midroll_prob": 0.35}},
-                {"step": 6000 * 24, "params": {"standing_prob": 0.80, "midroll_prob": 0.20}},
-            ],
-        },
-    )
+    cfg.curriculum["roulade_spawn_mix"] = CurriculumTermCfg(func=microduck_mdp.event_param_curriculum, params={"event_name": "set_roulade_state", "param_stages": [{"step": 0, "params": {"standing_prob": 0.50, "midroll_prob": 0.50}}, {"step": 3000 * 24, "params": {"standing_prob": 0.65, "midroll_prob": 0.35}}, {"step": 6000 * 24, "params": {"standing_prob": 0.80, "midroll_prob": 0.20}}]})
 
     if ENABLE_COM_RANDOMIZATION:
-        cfg.curriculum["com_range"] = CurriculumTermCfg(
-            func=microduck_mdp.com_range_curriculum,
-            params={
-                "event_name": "randomize_com",
-                "range_stages": [
-                    {"step": 0, "range": 0.003},
-                    {"step": 500 * 24, "range": 0.005},
-                    {"step": 1000 * 24, "range": 0.01},
-                    {"step": 1500 * 24, "range": 0.015},
-                ],
-            },
-        )
+        cfg.curriculum["com_range"] = CurriculumTermCfg(func=microduck_mdp.com_range_curriculum, params={"event_name": "randomize_com", "range_stages": [{"step": 0, "range": 0.003}, {"step": 500 * 24, "range": 0.005}, {"step": 1000 * 24, "range": 0.01}, {"step": 1500 * 24, "range": 0.015}]})
 
     if ENABLE_HEAD_COM_RANDOMIZATION:
-        cfg.curriculum["head_com_range"] = CurriculumTermCfg(
-            func=microduck_mdp.com_range_curriculum,
-            params={
-                "event_name": "randomize_head_com",
-                "range_stages": [
-                    {"step": 0, "range": 0.003},
-                    {"step": 500 * 24, "range": 0.005},
-                    {"step": 1000 * 24, "range": 0.01},
-                ],
-            },
-        )
+        cfg.curriculum["head_com_range"] = CurriculumTermCfg(func=microduck_mdp.com_range_curriculum, params={"event_name": "randomize_head_com", "range_stages": [{"step": 0, "range": 0.003}, {"step": 500 * 24, "range": 0.005}, {"step": 1000 * 24, "range": 0.01}]})
 
     # action_rate ramp — run-4: ceiling softened -0.6 → -0.4 and the -0.4
     # stage pushed 2000 → 3000. Run-3's landing metrics peaked at ~iter 2700
     # then declined, tracking the -0.4/-0.6 stages — the tightening was
     # squeezing the rise. (Run-2 note still holds: -0.1 minimum from step 0,
     # run 1 bred violence under near-zero smoothing.)
-    cfg.curriculum["action_rate_weight"] = CurriculumTermCfg(
-        func=microduck_mdp.reward_weight,
-        params={
-            "reward_name": "action_rate_l2",
-            "weight_stages": [
-                {"step": 0, "weight": -0.1},
-                {"step": 1500 * 24, "weight": -0.2},
-                {"step": 3000 * 24, "weight": -0.4},
-            ],
-        },
-    )
+    cfg.curriculum["action_rate_weight"] = CurriculumTermCfg(func=microduck_mdp.reward_weight, params={"reward_name": "action_rate_l2", "weight_stages": [{"step": 0, "weight": -0.1}, {"step": 1500 * 24, "weight": -0.2}, {"step": 3000 * 24, "weight": -0.4}]})
 
     # Smoothness polish — introduced only after the roll skill exists (standup
     # timing lesson: any attempt-tax active during discovery prevents the
     # maneuver from being found at all; fix is timing, not magnitude).
-    cfg.curriculum["arrival_damping_weight"] = CurriculumTermCfg(
-        func=microduck_mdp.reward_weight,
-        params={
-            "reward_name": "arrival_damping",
-            "weight_stages": [
-                {"step": 0, "weight": 0.0},
-                {"step": 2500 * 24, "weight": -0.025},
-                {"step": 3500 * 24, "weight": -0.05},
-            ],
-        },
-    )
-    cfg.curriculum["torque_rate_weight"] = CurriculumTermCfg(
-        func=microduck_mdp.reward_weight,
-        params={
-            "reward_name": "joint_torque_rate_l2",
-            "weight_stages": [
-                {"step": 0, "weight": 0.0},
-                {"step": 2500 * 24, "weight": -5e-4},
-                {"step": 3500 * 24, "weight": -1e-3},
-            ],
-        },
-    )
+    cfg.curriculum["arrival_damping_weight"] = CurriculumTermCfg(func=microduck_mdp.reward_weight, params={"reward_name": "arrival_damping", "weight_stages": [{"step": 0, "weight": 0.0}, {"step": 2500 * 24, "weight": -0.025}, {"step": 3500 * 24, "weight": -0.05}]})
+    cfg.curriculum["torque_rate_weight"] = CurriculumTermCfg(func=microduck_mdp.reward_weight, params={"reward_name": "joint_torque_rate_l2", "weight_stages": [{"step": 0, "weight": 0.0}, {"step": 2500 * 24, "weight": -5e-4}, {"step": 3500 * 24, "weight": -1e-3}]})
     cfg.curriculum["gentle_landing_weight"] = CurriculumTermCfg(
         func=microduck_mdp.reward_weight,
         params={
@@ -678,21 +445,7 @@ MicroduckRouladeRlCfg = RslRlOnPolicyRunnerCfg(
         distribution_cfg={"class_name": "GaussianDistribution", "init_std": 1.0, "std_type": "scalar"},
     ),
     critic=RslRlModelCfg(hidden_dims=(512, 256, 128), activation="elu", obs_normalization=True),
-    algorithm=PpoWithSymmetryCfg(
-        value_loss_coef=1.0,
-        use_clipped_value_loss=True,
-        clip_param=0.2,
-        entropy_coef=0.01,
-        num_learning_epochs=5,
-        num_mini_batches=4,
-        learning_rate=1.0e-3,
-        schedule="adaptive",
-        gamma=0.99,
-        lam=0.95,
-        desired_kl=0.01,
-        max_grad_norm=1.0,
-        symmetry_cfg=SYMMETRY_CFG if ENABLE_SYMMETRY else None,
-    ),
+    algorithm=PpoWithSymmetryCfg(value_loss_coef=1.0, use_clipped_value_loss=True, clip_param=0.2, entropy_coef=0.01, num_learning_epochs=5, num_mini_batches=4, learning_rate=1.0e-3, schedule="adaptive", gamma=0.99, lam=0.95, desired_kl=0.01, max_grad_norm=1.0, symmetry_cfg=SYMMETRY_CFG if ENABLE_SYMMETRY else None),
     wandb_project="mjlab_microduck",
     experiment_name="microduck_roulade",
     run_name="microduck_roulade",

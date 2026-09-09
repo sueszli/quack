@@ -38,9 +38,7 @@ assert MICRODUCK_BALL_XML.exists(), f"XML not found: {MICRODUCK_BALL_XML}"
 assert MICRODUCK_GROUNDCONTACT_ROLLERS_XML.exists(), f"XML not found: {MICRODUCK_GROUNDCONTACT_ROLLERS_XML}"
 assert MICRODUCK_GROUNDCONTACT_BACKLASH_XML.exists(), f"XML not found: {MICRODUCK_GROUNDCONTACT_BACKLASH_XML}"
 assert MICRODUCK_WALK_BACKLASH_XML.exists(), f"XML not found: {MICRODUCK_WALK_BACKLASH_XML}"
-assert MICRODUCK_GROUNDCONTACT_ROLLERS_BACKLASH_XML.exists(), (
-    f"XML not found: {MICRODUCK_GROUNDCONTACT_ROLLERS_BACKLASH_XML}"
-)
+assert MICRODUCK_GROUNDCONTACT_ROLLERS_BACKLASH_XML.exists(), f"XML not found: {MICRODUCK_GROUNDCONTACT_ROLLERS_BACKLASH_XML}"
 
 
 def get_walk_spec() -> mujoco.MjSpec:
@@ -107,12 +105,7 @@ HOME_FRAME = EntityCfg.InitialStateCfg(
     joint_vel={".*": 0.0},
 )
 
-FULL_COLLISION = CollisionCfg(
-    geom_names_expr=[".*_collision"],
-    condim={r"^(left|right)_foot_collision$": 3, ".*_collision": 1},
-    priority={r"^(left|right)_foot_collision$": 1},
-    friction={r"^(left|right)_foot_collision$": (1.0,)},
-)
+FULL_COLLISION = CollisionCfg(geom_names_expr=[".*_collision"], condim={r"^(left|right)_foot_collision$": 3, ".*_collision": 1}, priority={r"^(left|right)_foot_collision$": 1}, friction={r"^(left|right)_foot_collision$": (1.0,)})
 
 # -- Old actuator (XML position, MuJoCo built-in PD + friction) --
 # actuators = DelayedActuatorCfg(
@@ -162,30 +155,13 @@ backlash_actuators = BacklashEncoderBamActuatorCfg(**_BAM_ACTUATOR_KWARGS)
 # matching is first-match-wins in declaration order, so the anchored backlash
 # rule placed FIRST pins every backlash joint at 0 and the servo joints fall
 # through to the normal HOME values.
-BACKLASH_HOME_FRAME = EntityCfg.InitialStateCfg(
-    joint_pos={r".*_backlash$": 0.0, **HOME_FRAME.joint_pos}, joint_vel={".*": 0.0}
-)
+BACKLASH_HOME_FRAME = EntityCfg.InitialStateCfg(joint_pos={r".*_backlash$": 0.0, **HOME_FRAME.joint_pos}, joint_vel={".*": 0.0})
 
-MICRODUCK_WALK_ROBOT_CFG = EntityCfg(
-    spec_fn=get_walk_spec,
-    init_state=HOME_FRAME,
-    collisions=(FULL_COLLISION,),
-    articulation=EntityArticulationInfoCfg(actuators=(actuators,), soft_joint_pos_limit_factor=0.9),
-)
+MICRODUCK_WALK_ROBOT_CFG = EntityCfg(spec_fn=get_walk_spec, init_state=HOME_FRAME, collisions=(FULL_COLLISION,), articulation=EntityArticulationInfoCfg(actuators=(actuators,), soft_joint_pos_limit_factor=0.9))
 
-MICRODUCK_STANDUP_ROBOT_CFG = EntityCfg(
-    spec_fn=get_standup_spec,
-    init_state=HOME_FRAME,
-    collisions=(FULL_COLLISION,),
-    articulation=EntityArticulationInfoCfg(actuators=(actuators,), soft_joint_pos_limit_factor=0.9),
-)
+MICRODUCK_STANDUP_ROBOT_CFG = EntityCfg(spec_fn=get_standup_spec, init_state=HOME_FRAME, collisions=(FULL_COLLISION,), articulation=EntityArticulationInfoCfg(actuators=(actuators,), soft_joint_pos_limit_factor=0.9))
 
-MICRODUCK_GROUND_PICK_ROBOT_CFG = EntityCfg(
-    spec_fn=get_ground_pick_spec,
-    init_state=HOME_FRAME,
-    collisions=(FULL_COLLISION,),
-    articulation=EntityArticulationInfoCfg(actuators=(actuators,), soft_joint_pos_limit_factor=0.9),
-)
+MICRODUCK_GROUND_PICK_ROBOT_CFG = EntityCfg(spec_fn=get_ground_pick_spec, init_state=HOME_FRAME, collisions=(FULL_COLLISION,), articulation=EntityArticulationInfoCfg(actuators=(actuators,), soft_joint_pos_limit_factor=0.9))
 
 # Backlash robots: base model + ±1° serial backlash hinge per servo.
 # Encoder reads through the backlash (BacklashEncoderBamActuator feedback +
@@ -194,29 +170,14 @@ MICRODUCK_GROUND_PICK_ROBOT_CFG = EntityCfg(
 # MICRODUCK_STANDUP_ROBOT_CFG); walk variant → Velocity backlash
 # tasks (mirrors MICRODUCK_WALK_ROBOT_CFG, keeps backlash-vs-base comparisons
 # unconfounded by the collision model).
-MICRODUCK_BACKLASH_ROBOT_CFG = EntityCfg(
-    spec_fn=get_backlash_spec,
-    init_state=BACKLASH_HOME_FRAME,
-    collisions=(FULL_COLLISION,),
-    articulation=EntityArticulationInfoCfg(actuators=(backlash_actuators,), soft_joint_pos_limit_factor=0.9),
-)
+MICRODUCK_BACKLASH_ROBOT_CFG = EntityCfg(spec_fn=get_backlash_spec, init_state=BACKLASH_HOME_FRAME, collisions=(FULL_COLLISION,), articulation=EntityArticulationInfoCfg(actuators=(backlash_actuators,), soft_joint_pos_limit_factor=0.9))
 
-MICRODUCK_WALK_BACKLASH_ROBOT_CFG = EntityCfg(
-    spec_fn=get_walk_backlash_spec,
-    init_state=BACKLASH_HOME_FRAME,
-    collisions=(FULL_COLLISION,),
-    articulation=EntityArticulationInfoCfg(actuators=(backlash_actuators,), soft_joint_pos_limit_factor=0.9),
-)
+MICRODUCK_WALK_BACKLASH_ROBOT_CFG = EntityCfg(spec_fn=get_walk_backlash_spec, init_state=BACKLASH_HOME_FRAME, collisions=(FULL_COLLISION,), articulation=EntityArticulationInfoCfg(actuators=(backlash_actuators,), soft_joint_pos_limit_factor=0.9))
 
 # Roller-skate backlash robot: wheels stay free (passive_*wheel untouched by
 # add_backlash.py). collisions=() mirrors MICRODUCK_WALK_ROLLERS_ROBOT_CFG —
 # roller wheel collision geoms have no explicit names; XML defaults apply.
-MICRODUCK_ROLLERS_BACKLASH_ROBOT_CFG = EntityCfg(
-    spec_fn=get_rollers_backlash_spec,
-    init_state=BACKLASH_HOME_FRAME,
-    collisions=(),
-    articulation=EntityArticulationInfoCfg(actuators=(backlash_actuators,), soft_joint_pos_limit_factor=0.9),
-)
+MICRODUCK_ROLLERS_BACKLASH_ROBOT_CFG = EntityCfg(spec_fn=get_rollers_backlash_spec, init_state=BACKLASH_HOME_FRAME, collisions=(), articulation=EntityArticulationInfoCfg(actuators=(backlash_actuators,), soft_joint_pos_limit_factor=0.9))
 
 # Free-floating, non-articulated ball prop for the BallKick task. Position is
 # set each episode by the reset_ball_in_front_of_foot event; the init pos here
