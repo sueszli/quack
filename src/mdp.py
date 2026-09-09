@@ -3224,7 +3224,7 @@ def randomize_bam_friction(
     (Coulomb + Stribeck + load). Restores nominal (1.0) first to avoid accumulation.
     No-op on actuators without a friction_scale hook.
     """
-    from mjlab_microduck.friction_dr_bam import FrictionDRBamActuator
+    from .friction_dr_bam import FrictionDRBamActuator
 
     if env_ids is None:
         env_ids = torch.arange(env.num_envs, device=env.device, dtype=torch.int)

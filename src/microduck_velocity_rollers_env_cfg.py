@@ -76,10 +76,10 @@ from mjlab.tasks.velocity.mdp import UniformVelocityCommandCfg
 from mjlab.tasks.velocity.velocity_env_cfg import make_velocity_env_cfg
 from mjlab.utils.noise import UniformNoiseCfg as Unoise
 
-from mjlab_microduck.microduck_constants import MICRODUCK_WALK_ROLLERS_ROBOT_CFG
-from mjlab_microduck import mdp as microduck_mdp
-from mjlab_microduck.microduck_velocity_env_cfg import HEAD_BODY_NAMES
-from mjlab_microduck.symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
+from .microduck_constants import MICRODUCK_WALK_ROLLERS_ROBOT_CFG
+from . import mdp as microduck_mdp
+from .microduck_velocity_env_cfg import HEAD_BODY_NAMES
+from .symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
 
 
 def make_microduck_velocity_rollers_env_cfg(

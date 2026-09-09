@@ -19,13 +19,13 @@ import mujoco.viewer
 import onnxruntime as ort
 
 # Repo-level assets/mjcf; not imported from microduck_constants (see BAM note below).
-_ROBOT_DIR = Path(__file__).resolve().parents[2] / "assets" / "mjcf"
+_ROBOT_DIR = Path(__file__).resolve().parents[1] / "assets" / "mjcf"
 MICRODUCK_XML = str(_ROBOT_DIR / "scene.xml")
 MICRODUCK_ROLLERS_XML = str(_ROBOT_DIR / "scene_rollers.xml")
 MICRODUCK_BALL_XML = str(_ROBOT_DIR / "scene_ball.xml")
 
 # BAM M6 defaults — MUST mirror `_BAM_ACTUATOR_KWARGS` in
-# mjlab_microduck/microduck_constants.py (the actuator every policy is
+# src/microduck_constants.py (the actuator every policy is
 # trained against in warp). Not imported from there: that module drags in
 # mjlab/torch/warp (~16 s import) for a CPU rehearsal script. Locked by
 # tests/test_infer_policy_bam.py.
