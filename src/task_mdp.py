@@ -4094,3 +4094,58 @@ def roulade_lateral_velocity_penalty(env: ManagerBasedRlEnv, asset_cfg: SceneEnt
     # Body-frame lateral (y) linear velocity² — keeps the roll straight.
     asset: Entity = env.scene[asset_cfg.name]
     return torch.nan_to_num(asset.data.root_link_lin_vel_b[:, 1].pow(2), nan=0.0)
+
+
+_PASSIVE_EXCLUDED_JOINTS = (r"^(?!passive_).*",)
+
+
+def wire_sim2real_obs(cfg, *, gravity_term_name: str = "projected_gravity", imu_delay_max_lag: int = 1, imu_misalignment_deg: float | None = 6.0, misalign_gravity: bool = True, encoder_bias_range: tuple[float, float] | None = (-0.015, 0.015), sanitize_critic_sensors: bool = True) -> None:
+    from copy import deepcopy
+
+    from mjlab.utils.noise import UniformNoiseCfg as Unoise
+
+    actor = cfg.observations["actor"].terms
+    critic = cfg.observations["critic"].terms
+
+    for name in (gravity_term_name, "base_ang_vel"):
+        actor[name] = deepcopy(actor[name])
+
+    for name in ("base_ang_vel", gravity_term_name):
+        actor[name].delay_min_lag = 0
+        actor[name].delay_max_lag = imu_delay_max_lag
+        actor[name].delay_update_period = 64
+
+    if sanitize_critic_sensors:
+        for term, safe in (("foot_contact_forces", foot_contact_forces_safe), ("foot_height", foot_height_safe), ("foot_air_time", foot_air_time_safe)):
+            if term in critic:
+                critic[term].func = safe
+
+    actor["base_ang_vel"].noise = Unoise(n_min=-0.03, n_max=0.03)
+    actor[gravity_term_name].noise = Unoise(n_min=-0.01, n_max=0.01)
+    actor["joint_pos"].noise = Unoise(n_min=-0.001, n_max=0.001)
+    actor["joint_vel"].noise = Unoise(n_min=-0.25, n_max=0.25)
+
+    if imu_misalignment_deg is not None:
+        actor["base_ang_vel"].func = base_ang_vel_imu_misaligned
+        actor["base_ang_vel"].params = {"max_angle_deg": imu_misalignment_deg}
+        if misalign_gravity:
+            actor[gravity_term_name].func = projected_gravity_imu_misaligned
+            actor[gravity_term_name].params = {"max_angle_deg": imu_misalignment_deg}
+
+    actor["joint_vel"] = deepcopy(actor["joint_vel"])
+    actor["joint_vel"].delay_min_lag = 1
+    actor["joint_vel"].delay_max_lag = 1
+    actor["joint_vel"].delay_update_period = 0
+
+    passive_excluded = SceneEntityCfg("robot", joint_names=_PASSIVE_EXCLUDED_JOINTS)
+    for group in ("actor", "critic"):
+        for term in ("joint_pos", "joint_vel"):
+            cfg.observations[group].terms[term] = deepcopy(cfg.observations[group].terms[term])
+            cfg.observations[group].terms[term].params["asset_cfg"] = deepcopy(passive_excluded)
+
+    if encoder_bias_range is not None:
+        cfg.events["encoder_bias"].params["bias_range"] = encoder_bias_range
+        cfg.observations["actor"].terms["joint_pos"].params["biased"] = True
+        cfg.observations["critic"].terms["joint_pos"].params["biased"] = False
+    else:
+        cfg.events.pop("encoder_bias", None)
