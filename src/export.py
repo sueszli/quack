@@ -1,13 +1,12 @@
-"""Export a trained checkpoint to ONNX, with the observation normalizer baked in.
-
-This is the ONE path from a checkpoint to a deployable `.onnx`: `runner.export_policy_to_onnx`
-emits `actor(normalizer(obs))`, so what the robot runs is what training saw. In-sim `play`
-applies the normalizer itself and hides a hand-converted checkpoint that forgot it — never
-convert by hand.
-
-`uv run export` is the command-line entry (:func:`main`); `src.publish_cli` calls
-:func:`run_export` directly so a published policy cannot skip this step.
-"""
+# Export a trained checkpoint to ONNX, with the observation normalizer baked in.
+#
+# This is the ONE path from a checkpoint to a deployable `.onnx`: `runner.export_policy_to_onnx`
+# emits `actor(normalizer(obs))`, so what the robot runs is what training saw. In-sim `play`
+# applies the normalizer itself and hides a hand-converted checkpoint that forgot it — never
+# convert by hand.
+#
+# `uv run export` is the command-line entry (:func:`main`); `src.publish_cli` calls
+# :func:`run_export` directly so a published policy cannot skip this step.
 
 import os
 import re
@@ -52,7 +51,7 @@ class ExportConfig:
 
 @dataclass(frozen=True)
 class ExportResult:
-    """What an export produced and where it came from, for the publisher's provenance block."""
+    # What an export produced and where it came from, for the publisher's provenance block.
 
     onnx_path: Path
     checkpoint_path: Path | None

@@ -1,17 +1,16 @@
-"""Microduck roller crouch-glide task.
-
-One-shot gesture triggered by button A via the runtime's --ground-pick slot:
-the robot crouches and glides on its momentum (~1 s plateau), then stands back up
-and hands control back to the roller policy.
-
-Hybrid:
-  - physics / roller robot  ← task_velocity_rollers.py
-  - one-shot phase machinery ← task_ground_pick.py
-    (GroundPickPhaseCommand command: [cos(2πφ), sin(2πφ), 0], period 4 s)
-
-"Trapezoid" height target (up→down→1 s plateau→up) via
-crouch_glide_height_by_phase. Unified 61D obs → interchangeable at runtime.
-"""
+# Microduck roller crouch-glide task.
+#
+# One-shot gesture triggered by button A via the runtime's --ground-pick slot:
+# the robot crouches and glides on its momentum (~1 s plateau), then stands back up
+# and hands control back to the roller policy.
+#
+# Hybrid:
+#   - physics / roller robot  ← task_velocity_rollers.py
+#   - one-shot phase machinery ← task_ground_pick.py
+#     (GroundPickPhaseCommand command: [cos(2πφ), sin(2πφ), 0], period 4 s)
+#
+# "Trapezoid" height target (up→down→1 s plateau→up) via
+# crouch_glide_height_by_phase. Unified 61D obs → interchangeable at runtime.
 
 import math
 from copy import deepcopy
@@ -117,7 +116,7 @@ from .task_velocity import HEAD_BODY_NAMES
 
 
 def make_microduck_roller_crouch_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
-    """Crouch-glide env on rollers, driven by the phase of the ground-pick slot."""
+    # Crouch-glide env on rollers, driven by the phase of the ground-pick slot.
 
     feet_ground_cfg = ContactSensorCfg(name="feet_ground_contact", primary=ContactMatch(mode="subtree", pattern=r"^(ankle_l_v1|ankle_r_v1)$", entity="robot"), secondary=ContactMatch(mode="body", pattern="terrain"), fields=("found", "force"), reduce="netforce", num_slots=1, track_air_time=True)
     self_collision_cfg = ContactSensorCfg(name="self_collision", primary=ContactMatch(mode="subtree", pattern="trunk_base", entity="robot"), secondary=ContactMatch(mode="subtree", pattern="trunk_base", entity="robot"), fields=("found",), reduce="none", num_slots=1)

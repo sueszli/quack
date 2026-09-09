@@ -1,21 +1,20 @@
-"""Microduck SPIN task — fast in-place rotation, on rollers.
-
-Cyclic gesture triggered by button A via the runtime's --ground-pick slot:
-~1 counter-clockwise turn at ~3 rad/s then a clean stop, standing.
-
-Hybrid:
-  - physics / roller robot  ← task_velocity_rollers.py
-  - cyclic phase machinery ← task_roller_crouch.py
-    (GroundPickPhaseCommand command: [cos(2πφ), sin(2πφ), 0], period 4 s)
-
-Fundamental difference from the crouch: the phase drives a target YAW RATE
-(outcome objective) and not a joint pose. Two decaying primers
-push towards differential rolling — the only certain physical mechanism on
-4 passive wheels: left skate backwards, right skate forwards.
-
-Unified 61D obs → interchangeable at runtime with roller / ground_pick / crouch.
-See docs/superpowers/specs/2026-08-04-spin-env-design.md.
-"""
+# Microduck SPIN task — fast in-place rotation, on rollers.
+#
+# Cyclic gesture triggered by button A via the runtime's --ground-pick slot:
+# ~1 counter-clockwise turn at ~3 rad/s then a clean stop, standing.
+#
+# Hybrid:
+#   - physics / roller robot  ← task_velocity_rollers.py
+#   - cyclic phase machinery ← task_roller_crouch.py
+#     (GroundPickPhaseCommand command: [cos(2πφ), sin(2πφ), 0], period 4 s)
+#
+# Fundamental difference from the crouch: the phase drives a target YAW RATE
+# (outcome objective) and not a joint pose. Two decaying primers
+# push towards differential rolling — the only certain physical mechanism on
+# 4 passive wheels: left skate backwards, right skate forwards.
+#
+# Unified 61D obs → interchangeable at runtime with roller / ground_pick / crouch.
+# See docs/superpowers/specs/2026-08-04-spin-env-design.md.
 
 import math
 from copy import deepcopy
@@ -74,7 +73,7 @@ NECK_PATTERN_NO_YAW = r"^(neck_pitch|head_pitch|head_roll)$"
 
 
 def make_microduck_spin_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
-    """Spin env on rollers, driven by the phase of the ground-pick slot."""
+    # Spin env on rollers, driven by the phase of the ground-pick slot.
 
     feet_ground_cfg = ContactSensorCfg(name="feet_ground_contact", primary=ContactMatch(mode="subtree", pattern=r"^(ankle_l_v1|ankle_r_v1)$", entity="robot"), secondary=ContactMatch(mode="body", pattern="terrain"), fields=("found", "force"), reduce="netforce", num_slots=1, track_air_time=True)
     self_collision_cfg = ContactSensorCfg(name="self_collision", primary=ContactMatch(mode="subtree", pattern="trunk_base", entity="robot"), secondary=ContactMatch(mode="subtree", pattern="trunk_base", entity="robot"), fields=("found",), reduce="none", num_slots=1)
