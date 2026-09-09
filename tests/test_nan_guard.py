@@ -38,7 +38,6 @@ class _Env:
 
 
 def test_catches_base_linear_velocity_nan():
-    # env 1: NaN base velocity (diverged free joint) — joint_pos stays finite.
     d = _Data(3)
     d.root_link_lin_vel_w[1, 0] = float("nan")
     out = robot_state_is_nan(_Env(d))
@@ -46,7 +45,6 @@ def test_catches_base_linear_velocity_nan():
 
 
 def test_catches_base_velocity_inf():
-    # inf in the base angular velocity (before it becomes NaN).
     d = _Data(2)
     d.root_link_ang_vel_w[0, 2] = float("inf")
     out = robot_state_is_nan(_Env(d))
@@ -54,7 +52,6 @@ def test_catches_base_velocity_inf():
 
 
 def test_still_catches_joint_pos_nan():
-    # historical behaviour preserved.
     d = _Data(2)
     d.joint_pos[0, 1] = float("nan")
     out = robot_state_is_nan(_Env(d))

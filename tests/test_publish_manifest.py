@@ -21,11 +21,8 @@ from src import publish_manifest as m
 
 _ROOT = Path(__file__).resolve().parents[1]
 
-# `RemiFabre/microduck-flamingo-cycle`'s manifest as published — the community convention this
-# schema had to stay compatible with, verbatim except for trimmed prose.
 FLAMINGO = {"schema_version": 2, "model_api": 1, "name": "flamingo-cycle", "kind": "perpetual", "obs_len": 61, "action_len": 14, "action_scale": 1.0, "entry_pose": "standing", "duration_s": None, "description": "Stand on one foot, either side, on command: twist = [flag, side, 0].", "command": {"twist": ["flag: 0 = two feet, 1 = one foot", "side: +1 right down, -1 left down", "unused"], "head": "unused (zeros)", "body": "unused (zeros)", "idle": [0, 0, 0]}, "robot": {"model": "microduck", "hw_rev": 1, "servos": "xl330", "control_hz": 50}, "training": {"task_id": "Mjlab-FlamingoCycleHard-Flat-MicroDuck"}}
 
-# The official set, as uploaded 2026-09-02 (schema 2).
 OFFICIAL_SET = {"schema_version": 2, "model_api": 1, "obs_len": 61, "action_len": 14, "robot": {"model": "microduck", "hw_rev": 1, "servos": "xl330", "control_hz": 50}, "policies": [{"file": "alpha_walking.onnx", "kind": "perpetual"}, {"file": "alpha_sitstand.onnx", "name": "sitstand", "kind": "scripted", "command": {"encoding": "posture_flag", "sit": 1.0, "stand": 0.0, "idle": [0, 0, 0]}, "ramp_s": 2.0, "unwind_s": 1.0}, {"file": "alpha_ground_pick.onnx", "name": "ground_pick", "kind": "episodic", "duration_s": 2.8, "command": {"encoding": "phase", "period_s": 4.0, "end_phase": 0.7}}, {"file": "roulade.onnx", "kind": "episodic", "duration_s": 1.0, "chain": True}]}
 
 
@@ -58,9 +55,6 @@ def test_a_normal_export_is_not_flagged_untrained(tmp_path):
     assert m.check_onnx(path).obs_len == m.OBS_LEN
 
 
-# -- the numbers the daemon refuses on -------------------------------------------------------
-
-
 def test_constants_are_the_daemons():
     """`duck_ipc_proto`: POLICY_OBS_LEN 61, POLICY_ACTION_LEN 14, ROBOT_MODEL microduck. A drift
     here is a refusal on every robot, before the download."""
@@ -75,9 +69,6 @@ def test_publish_is_a_declared_script():
     assert scripts["publish"] == "src.publish_cli:main"
 
 
-# -- both shapes validate ----------------------------------------------------------------------
-
-
 def test_the_flamingo_manifest_is_schema_2_and_valid():
     m.validate_manifest(FLAMINGO)
 
@@ -85,7 +76,7 @@ def test_the_flamingo_manifest_is_schema_2_and_valid():
 def test_the_official_set_validates_per_entry():
     m.validate_manifest(OFFICIAL_SET)
     broken = json.loads(json.dumps(OFFICIAL_SET))
-    broken["policies"][3]["duration_s"] = None  # roulade: episodic constant with no length
+    broken["policies"][3]["duration_s"] = None
     with pytest.raises(m.ManifestError, match="duration_s"):
         m.validate_manifest(broken)
 
@@ -99,9 +90,6 @@ def test_a_present_and_wrong_claim_is_refused(bad, why):
 def test_absence_is_not_evidence():
     m.validate_manifest({})
     m.validate_manifest({"name": "something", "unknown_field": 3})
-
-
-# -- what the builder writes ---------------------------------------------------------------------
 
 
 def test_an_episodic_manifest_is_a_loadable_skill():
@@ -154,9 +142,6 @@ def test_the_readme_tells_the_owner_how_to_run_it():
     assert "robot do bow" in text and "chains" in text
     pp = m.build_manifest(name="flamingo", kind="perpetual", description="d", unwind_s=1.5)
     assert "--hold <seconds>" in m.render_readme(pp, "someone/microduck-flamingo")
-
-
-# -- the ONNX gate ------------------------------------------------------------------------------
 
 
 def test_a_61_to_14_graph_passes_and_smoke_runs(tmp_path):

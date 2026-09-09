@@ -49,12 +49,9 @@ def test_actuators_converted_like_warp(bam_sim):
     kt, R = bam_model.kt.value, bam_model.R.value
     assert len(names) == 14 and model.nu == 14
     assert not any(n.startswith("passive_") for n in names)
-    # Torque motors: ctrl is the BAM torque, no MuJoCo PD left over.
     assert (model.actuator_gaintype == mujoco.mjtGain.mjGAIN_FIXED).all()
     assert (model.actuator_biastype == mujoco.mjtBias.mjBIAS_NONE).all()
     assert np.allclose(model.actuator_gainprm[:, 0], 1.0)
-    # (set_to_motor leaves the old PD biasprm bytes behind; inert under BIAS_NONE,
-    # exactly as in warp's edit_spec.)
     assert (model.actuator_forcelimited == 1).all()
     assert np.allclose(model.actuator_forcerange[:, 1], 7.4 * kt / R)
     dofs = model.jnt_dofadr[model.actuator_trnid[:, 0]]
@@ -62,7 +59,7 @@ def test_actuators_converted_like_warp(bam_sim):
     assert np.allclose(model.dof_solref[dofs], ip.BAM_STIFF_SOLREF_FRICTION)
     assert np.allclose(model.dof_solimp[dofs], ip.BAM_STIFF_SOLIMP_FRICTION)
     assert bam_model.actuator.kp == ip.BAM_KP_FW
-    assert bam_model.actuator.max_current is None  # training has no current limiter
+    assert bam_model.actuator.max_current is None
 
 
 def test_bam_step_loop_runs_with_live_friction(bam_sim):
@@ -83,6 +80,6 @@ def test_bam_step_loop_runs_with_live_friction(bam_sim):
         mujoco.mj_step(model, data)
     assert not np.isnan(data.qpos).any()
     limit = model.actuator_forcerange[0, 1]
-    assert (np.abs(data.ctrl) <= limit + 1e-9).all()  # ctrl IS the motor torque
-    assert (model.dof_frictionloss[dofs] > 0).all()  # BAM budget written every step
+    assert (np.abs(data.ctrl) <= limit + 1e-9).all()
+    assert (model.dof_frictionloss[dofs] > 0).all()
     assert np.allclose(model.dof_damping[dofs], bam_model.friction_viscous.value)
