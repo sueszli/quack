@@ -2327,11 +2327,7 @@ def raw_accelerometer(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAU
     accel_negated = -accel_raw
 
     accel_norm = torch.norm(accel_negated, dim=-1, keepdim=True)
-    accel_normalized = torch.where(
-        accel_norm > 0.1,
-        accel_negated / accel_norm,
-        asset.data.projected_gravity_b,
-    )
+    accel_normalized = torch.where(accel_norm > 0.1, accel_negated / accel_norm, asset.data.projected_gravity_b)
 
     return accel_normalized
 
@@ -2398,17 +2394,7 @@ def standing_phase(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_
     return phase.unsqueeze(-1)
 
 
-def air_time_adaptive(
-    env: ManagerBasedRlEnv,
-    sensor_name: str,
-    command_name: str = "twist",
-    command_threshold: float = 0.01,
-    running_threshold: float = 0.5,
-    walk_threshold_min: float = 0.10,
-    walk_threshold_max: float = 0.25,
-    run_threshold_min: float = 0.05,
-    run_threshold_max: float = 0.25,
-) -> torch.Tensor:
+def air_time_adaptive(env: ManagerBasedRlEnv, sensor_name: str, command_name: str = "twist", command_threshold: float = 0.01, running_threshold: float = 0.5, walk_threshold_min: float = 0.10, walk_threshold_max: float = 0.25, run_threshold_min: float = 0.05, run_threshold_max: float = 0.25) -> torch.Tensor:
     """Air-time reward with separate swing-time windows for walking vs running,
     so the walk keeps a deliberate cadence while running can step faster.
 
