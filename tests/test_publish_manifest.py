@@ -94,7 +94,7 @@ def test_constants_are_the_daemons():
 
 def test_publish_is_a_declared_script():
     scripts = tomllib.loads((_ROOT / "pyproject.toml").read_text())["project"]["scripts"]
-    assert scripts["publish"] == "mjlab_microduck.publish:main"
+    assert scripts["publish"] == "mjlab_microduck.publish_cli:main"
 
 
 # -- both shapes validate ----------------------------------------------------------------------
@@ -248,7 +248,7 @@ def test_a_constant_network_fails_the_smoke_run(tmp_path):
 
 def test_the_cli_dry_run_writes_a_repo(tmp_path, monkeypatch):
     """End to end without the Hub or a GPU: an ONNX in, the three repo files out."""
-    from mjlab_microduck.publish import PublishConfig, run
+    from mjlab_microduck.publish_cli import PublishConfig, run
 
     policy = _tiny_policy(tmp_path / "out.onnx")
     monkeypatch.chdir(tmp_path)
