@@ -36,7 +36,7 @@ def test_crouch_height_target_rise_midpoint():
 # ── crouch_pose_blend: 4 segments (descent / low / rise / standing) ───────────
 # test breakpoints: descent [0,0.1), low [0.1,0.5), rise [0.5,0.6),
 # standing [0.6,1.0).
-_BLEND = dict(descent_end=0.10, hold_end=0.50, rise_end=0.60)
+_BLEND = {"descent_end": 0.10, "hold_end": 0.50, "rise_end": 0.60}
 
 
 def test_blend_zero_standing_at_start_and_top_hold():

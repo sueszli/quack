@@ -121,19 +121,19 @@ FULL_COLLISION = CollisionCfg(geom_names_expr=[".*_collision"], condim={r"^(left
 #   - vin_drop_gain_range: load-dependent voltage sag V_drop = gain * sum(|tau|)
 #   - vin_min: hard floor on the effective voltage after sag
 # kp_fw kept at 200 (microduck's preserved firmware stiffness; microban uses 125).
-_BAM_ACTUATOR_KWARGS = dict(
-    motor_name="xl330",
-    model="m6",
-    target_names_expr=(r"^(?!passive_).*",),
-    kp_fw=200.0,  # microduck's preserved firmware stiffness (microban uses 125)
+_BAM_ACTUATOR_KWARGS = {
+    "motor_name": "xl330",
+    "model": "m6",
+    "target_names_expr": (r"^(?!passive_).*",),
+    "kp_fw": 200.0,  # microduck's preserved firmware stiffness (microban uses 125)
     # vin_range=(6.9, 7.9),
-    vin_range=(6.5, 8.2),
-    vin_drop_gain_range=(0.0, 0.2),
-    vin_min=6.0,
+    "vin_range": (6.5, 8.2),
+    "vin_drop_gain_range": (0.0, 0.2),
+    "vin_min": 6.0,
     # max_current=1.75,
-    delay_min_lag=3,
-    delay_max_lag=6,
-)
+    "delay_min_lag": 3,
+    "delay_max_lag": 6,
+}
 actuators = FrictionDRBamActuatorCfg(**_BAM_ACTUATOR_KWARGS)
 
 # Same BAM actuator, but the firmware position loop reads the encoder THROUGH

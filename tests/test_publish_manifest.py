@@ -109,7 +109,7 @@ def test_a_perpetual_manifest_says_how_to_come_back():
     assert built["command"]["twist"] == "[flag, side, 0]"
 
 
-@pytest.mark.parametrize("kwargs, why", [(dict(kind="episodic"), "duration_s"), (dict(kind="episodic", duration_s=0.0), "duration_s"), (dict(kind="episodic", duration_s=1.0, unwind_s=2.0), "unwind_s"), (dict(kind="perpetual", unwind_s=0.0), "unwind_s"), (dict(kind="perpetual", slot="jetpack"), "slot"), (dict(kind="perpetual", unwind_s=1.0, duration_s=3.0), "duration_s"), (dict(kind="perpetual", unwind_s=1.0, chain=True), "chain"), (dict(kind="scripted", duration_s=1.0), "kind"), (dict(kind="episodic", duration_s=1.0, action_scale=5.0), "action_scale")])
+@pytest.mark.parametrize("kwargs, why", [({"kind": "episodic"}, "duration_s"), ({"kind": "episodic", "duration_s": 0.0}, "duration_s"), ({"kind": "episodic", "duration_s": 1.0, "unwind_s": 2.0}, "unwind_s"), ({"kind": "perpetual", "unwind_s": 0.0}, "unwind_s"), ({"kind": "perpetual", "slot": "jetpack"}, "slot"), ({"kind": "perpetual", "unwind_s": 1.0, "duration_s": 3.0}, "duration_s"), ({"kind": "perpetual", "unwind_s": 1.0, "chain": True}, "chain"), ({"kind": "scripted", "duration_s": 1.0}, "kind"), ({"kind": "episodic", "duration_s": 1.0, "action_scale": 5.0}, "action_scale")])
 def test_the_builder_refuses_what_the_kind_cannot_mean(kwargs, why):
     with pytest.raises(m.ManifestError, match=why):
         m.build_manifest(name="x", description="d", **kwargs)

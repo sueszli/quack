@@ -1073,7 +1073,7 @@ def main():
     # to print a running average so we can compare commanded vs achieved speed.
     from collections import deque
 
-    _vel_window_steps = max(1, int(round(1.0 / control_dt)))  # ≈ 50 @ 50 Hz
+    _vel_window_steps = max(1, round(1.0 / control_dt))  # ≈ 50 @ 50 Hz
     vel_history = deque(maxlen=_vel_window_steps)
 
     csv_data = [] if args.save_csv else None
