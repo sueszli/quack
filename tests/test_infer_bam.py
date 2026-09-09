@@ -39,9 +39,7 @@ def test_cpu_bam_constants_mirror_training_cfg(ip):
 @pytest.fixture(scope="module")
 def bam_sim(ip):
     bam_model = ip.load_bam_model(ip.BAM_KP_FW, 7.4, ip.BAM_MAX_CURRENT)
-    model, data, ctrl, names = ip.load_mujoco_with_bam(
-        ip.MICRODUCK_XML, bam_model, 0.005, 0.1, ip.BAM_VIN_MIN
-    )
+    model, data, ctrl, names = ip.load_mujoco_with_bam(ip.MICRODUCK_XML, bam_model, 0.005, 0.1, ip.BAM_VIN_MIN)
     return ip, bam_model, model, data, ctrl, names
 
 

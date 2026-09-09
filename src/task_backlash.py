@@ -40,8 +40,7 @@ _SERVO_JOINTS_ONLY = (r"^(?!passive_).*",)
 
 
 def make_backlash_variant(
-    cfg: ManagerBasedRlEnvCfg,
-    robot_cfg: EntityCfg = MICRODUCK_BACKLASH_ROBOT_CFG,
+    cfg: ManagerBasedRlEnvCfg, robot_cfg: EntityCfg = MICRODUCK_BACKLASH_ROBOT_CFG
 ) -> ManagerBasedRlEnvCfg:
     """Convert a microduck env cfg (velocity/velstand/standup/...) to backlash."""
     cfg.scene.entities = {**cfg.scene.entities, "robot": robot_cfg}
@@ -59,17 +58,13 @@ def make_backlash_variant(
             # Envs that never narrowed the selection would otherwise feed the
             # backlash joints themselves into the obs (wrong dim + double count).
             if "asset_cfg" not in term.params:
-                term.params["asset_cfg"] = SceneEntityCfg(
-                    "robot", joint_names=_SERVO_JOINTS_ONLY
-                )
+                term.params["asset_cfg"] = SceneEntityCfg("robot", joint_names=_SERVO_JOINTS_ONLY)
 
     # Backlash joints legitimately ride their hard limits — exclude them from
     # the soft-limit penalty (its default asset_cfg covers every joint).
     dof_limits = cfg.rewards.get("dof_pos_limits")
     if dof_limits is not None and "asset_cfg" not in dof_limits.params:
-        dof_limits.params["asset_cfg"] = SceneEntityCfg(
-            "robot", joint_names=_SERVO_JOINTS_ONLY
-        )
+        dof_limits.params["asset_cfg"] = SceneEntityCfg("robot", joint_names=_SERVO_JOINTS_ONLY)
 
     # The pose (variable_posture) reward resolves its std dicts against the
     # selected joint names and ERRORS on ambiguous matches — on the backlash
@@ -84,8 +79,7 @@ def make_backlash_variant(
         # make() calls; mutating in place would leak into the base tasks.
         ac = deepcopy(pose.params["asset_cfg"])
         ac.joint_names = tuple(
-            p if "_backlash" in p else r"^(?!passive_.*_backlash)" + p.lstrip("^")
-            for p in ac.joint_names
+            p if "_backlash" in p else r"^(?!passive_.*_backlash)" + p.lstrip("^") for p in ac.joint_names
         )
         pose.params["asset_cfg"] = ac
 

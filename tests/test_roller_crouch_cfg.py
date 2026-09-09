@@ -1,6 +1,4 @@
-from src.task_roller_crouch import (
-    make_microduck_roller_crouch_env_cfg,
-)
+from src.task_roller_crouch import make_microduck_roller_crouch_env_cfg
 from src import task_mdp as microduck_mdp
 
 

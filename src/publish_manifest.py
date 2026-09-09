@@ -71,9 +71,7 @@ def git_provenance(repo_root: Path | None = None) -> dict[str, Any]:
 
     def git(*args: str) -> str | None:
         try:
-            out = subprocess.run(
-                ["git", "-C", root, *args], capture_output=True, text=True, check=True, timeout=10
-            )
+            out = subprocess.run(["git", "-C", root, *args], capture_output=True, text=True, check=True, timeout=10)
         except (OSError, subprocess.SubprocessError):
             return None
         return out.stdout.strip()
@@ -114,13 +112,9 @@ def build_manifest(
         raise ManifestError(f"name must be a bare word a client can ask for, not {name!r}")
     if kind == "episodic":
         if duration_s is None or duration_s <= 0:
-            raise ManifestError(
-                "an episodic policy ends itself: say how long it runs with duration_s > 0"
-            )
+            raise ManifestError("an episodic policy ends itself: say how long it runs with duration_s > 0")
         if unwind_s:
-            raise ManifestError(
-                "an episodic policy is already back when duration_s is up; unwind_s is for perpetual"
-            )
+            raise ManifestError("an episodic policy is already back when duration_s is up; unwind_s is for perpetual")
     else:
         # Two things are perpetual: a gait, which lives in a slot (`policy load walk <repo>`) and
         # needs nothing here, and a held pose like the flamingo, which the owner runs as a

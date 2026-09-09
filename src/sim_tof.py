@@ -83,10 +83,7 @@ class Tof:
 
         geom = np.zeros(1, dtype=np.int32)
         for zone in range(ZONES):
-            hit = mujoco.mj_ray(
-                self.model, data, origin, np.ascontiguousarray(world[:, zone]),
-                None, 1, -1, geom,
-            )
+            hit = mujoco.mj_ray(self.model, data, origin, np.ascontiguousarray(world[:, zone]), None, 1, -1, geom)
             if hit < 0 or hit > MAX_RANGE:
                 continue
             # Noise that grows with range, as the datasheet has it: a few millimetres up close, a

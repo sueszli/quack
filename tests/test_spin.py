@@ -141,10 +141,7 @@ class _FakeEnv:
 def _phase_cmd(phases):
     """Slot command as the policy sees it: [cos(2*pi*phi), sin(...), 0]."""
     p = torch.as_tensor(phases, dtype=torch.float32)
-    return torch.stack(
-        [torch.cos(2 * math.pi * p), torch.sin(2 * math.pi * p), torch.zeros_like(p)],
-        dim=-1,
-    )
+    return torch.stack([torch.cos(2 * math.pi * p), torch.sin(2 * math.pi * p), torch.zeros_like(p)], dim=-1)
 
 
 # ── phase recover ────────────────────────────────────────────────────────────
@@ -169,9 +166,7 @@ def test_spin_rate_track_uses_yaw_and_phase():
     # motionless robot must be far below (exp(-(3/1.5)^2) = 0.018 at the
     # current setting: std=1.5 stays well calibrated to this target, cf. task_mdp.py).
     ang = torch.tensor([[0.0, 0.0, mdp.SPIN_RATE_MAX], [0.0, 0.0, 0.0]])
-    env = _FakeEnv(
-        _FakeEntity(_FakeData(ang_vel_b=ang)), cmd=_phase_cmd([0.30, 0.30])
-    )
+    env = _FakeEnv(_FakeEntity(_FakeData(ang_vel_b=ang)), cmd=_phase_cmd([0.30, 0.30]))
     r = mdp.spin_rate_track(env, std=1.5)
     assert r[0] > 0.99
     assert r[1] < 0.05
@@ -180,9 +175,7 @@ def test_spin_rate_track_uses_yaw_and_phase():
 def test_spin_rate_track_wants_stillness_during_rest():
     # phase 0.80 = rest -> target 0: still spinning is punished, being still is paid.
     ang = torch.tensor([[0.0, 0.0, 0.0], [0.0, 0.0, 6.0]])
-    env = _FakeEnv(
-        _FakeEntity(_FakeData(ang_vel_b=ang)), cmd=_phase_cmd([0.80, 0.80])
-    )
+    env = _FakeEnv(_FakeEntity(_FakeData(ang_vel_b=ang)), cmd=_phase_cmd([0.80, 0.80]))
     r = mdp.spin_rate_track(env, std=1.5)
     assert r[0] > 0.99
     assert r[1] < 0.01
@@ -192,9 +185,7 @@ def test_spin_rate_track_penalizes_wrong_direction():
     # spinning at -SPIN_RATE_MAX (clockwise) when +SPIN_RATE_MAX is requested must
     # be worse than motionless.
     ang = torch.tensor([[0.0, 0.0, -mdp.SPIN_RATE_MAX], [0.0, 0.0, 0.0]])
-    env = _FakeEnv(
-        _FakeEntity(_FakeData(ang_vel_b=ang)), cmd=_phase_cmd([0.30, 0.30])
-    )
+    env = _FakeEnv(_FakeEntity(_FakeData(ang_vel_b=ang)), cmd=_phase_cmd([0.30, 0.30]))
     r = mdp.spin_rate_track(env, std=1.5)
     assert r[0] < r[1]
 
@@ -203,9 +194,7 @@ def test_spin_rate_track_penalizes_wrong_direction():
 def test_spin_rate_l1_is_negative_absolute_error():
     # phase 0.30 = full rate -> target SPIN_RATE_MAX (3.0 rad/s, default).
     ang = torch.tensor([[0.0, 0.0, mdp.SPIN_RATE_MAX], [0.0, 0.0, 1.0]])
-    env = _FakeEnv(
-        _FakeEntity(_FakeData(ang_vel_b=ang)), cmd=_phase_cmd([0.30, 0.30])
-    )
+    env = _FakeEnv(_FakeEntity(_FakeData(ang_vel_b=ang)), cmd=_phase_cmd([0.30, 0.30]))
     r = mdp.spin_rate_l1(env)
     expected = torch.tensor([0.0, -(mdp.SPIN_RATE_MAX - 1.0)])
     assert torch.allclose(r, expected, atol=1e-5)
@@ -215,9 +204,7 @@ def test_spin_rate_l1_is_negative_absolute_error():
 def test_spin_stay_in_place_is_squared_planar_speed():
     # phase 0.30 = full rate -> full-price cost
     lin = torch.tensor([[0.0, 0.0, 0.0], [0.3, 0.4, 9.0]])
-    env = _FakeEnv(
-        _FakeEntity(_FakeData(lin_vel_b=lin)), cmd=_phase_cmd([0.30, 0.30])
-    )
+    env = _FakeEnv(_FakeEntity(_FakeData(lin_vel_b=lin)), cmd=_phase_cmd([0.30, 0.30]))
     c = mdp.spin_stay_in_place(env)
     # 0.3^2 + 0.4^2 = 0.25 ; the z component is ignored
     assert torch.allclose(c, torch.tensor([0.0, 0.25]), atol=1e-6)
@@ -228,9 +215,7 @@ def test_spin_stay_in_place_is_attenuated_during_the_launch_ramp():
     # cost is multiplied by launch_scale, at steady rate (0.30) it is full price.
     # This is what keeps this term from opposing the injection of angular momentum.
     lin = torch.tensor([[0.3, 0.4, 0.0], [0.3, 0.4, 0.0]])
-    env = _FakeEnv(
-        _FakeEntity(_FakeData(lin_vel_b=lin)), cmd=_phase_cmd([0.05, 0.30])
-    )
+    env = _FakeEnv(_FakeEntity(_FakeData(lin_vel_b=lin)), cmd=_phase_cmd([0.05, 0.30]))
     c = mdp.spin_stay_in_place(env, launch_scale=0.2, accel_end=0.125)
     # 0.25 * 0.2 = 0.05
     assert torch.allclose(c, torch.tensor([0.05, 0.25]), atol=1e-6)
@@ -247,12 +232,7 @@ def test_spin_stay_in_place_is_full_price_during_rest():
 
 
 # ── spin_wheel_differential ──────────────────────────────────────────────────
-_WHEEL_IDS = {
-    "passive_LF_wheel": 0,
-    "passive_LR_wheel": 1,
-    "passive_RF_wheel": 2,
-    "passive_RR_wheel": 3,
-}
+_WHEEL_IDS = {"passive_LF_wheel": 0, "passive_LR_wheel": 1, "passive_RF_wheel": 2, "passive_RR_wheel": 3}
 
 
 def _wheel_env(vel_rows, phases):
@@ -267,7 +247,7 @@ def test_wheel_differential_rewards_counter_rolling_wheels():
     env = _wheel_env(
         [
             [-10.0, -10.0, 10.0, 10.0],  # good differential
-            [10.0, 10.0, 10.0, 10.0],    # straight ahead: zero differential
+            [10.0, 10.0, 10.0, 10.0],  # straight ahead: zero differential
             [10.0, 10.0, -10.0, -10.0],  # reversed differential (clockwise)
         ],
         [0.30, 0.30, 0.30],
@@ -287,9 +267,7 @@ def test_wheel_differential_is_gated_off_during_rest():
 
 def test_wheel_differential_saturates():
     # tanh: beyond omega_scale the reward saturates, no race for speed.
-    env = _wheel_env(
-        [[-10.0, -10.0, 10.0, 10.0], [-100.0, -100.0, 100.0, 100.0]], [0.30, 0.30]
-    )
+    env = _wheel_env([[-10.0, -10.0, 10.0, 10.0], [-100.0, -100.0, 100.0, 100.0]], [0.30, 0.30])
     r = mdp.spin_wheel_differential(env, omega_scale=20.0)
     assert r[1] > r[0]
     assert r[1] <= 1.0
@@ -308,9 +286,7 @@ def test_spin_grounded_rewards_both_blades_down_and_is_gated():
     contact = torch.tensor([[0.2, 0.3], [0.2, 0.0], [0.0, 0.0], [0.2, 0.3]])
     entity = _FakeEntity(_FakeData())
     env = _FakeEnv(
-        entity,
-        cmd=_phase_cmd([0.30, 0.30, 0.30, 0.80]),
-        sensors={"feet_ground_contact": _FakeSensor(contact)},
+        entity, cmd=_phase_cmd([0.30, 0.30, 0.30, 0.80]), sensors={"feet_ground_contact": _FakeSensor(contact)}
     )
     r = mdp.spin_grounded(env, sensor_name="feet_ground_contact")
     # both blades on the floor at steady rate -> gate 1.0 ; only one or none -> 0 ;
@@ -319,12 +295,7 @@ def test_spin_grounded_rewards_both_blades_down_and_is_gated():
 
 
 # ── leg_antisymmetry ─────────────────────────────────────────────────────────
-_LEG_IDS = {
-    "left_hip_pitch": 0,
-    "left_knee": 1,
-    "right_hip_pitch": 2,
-    "right_knee": 3,
-}
+_LEG_IDS = {"left_hip_pitch": 0, "left_knee": 1, "right_hip_pitch": 2, "right_knee": 3}
 
 
 def _leg_env(pos_rows, phases):
@@ -338,7 +309,7 @@ def test_leg_antisymmetry_prefers_scissor_over_mirror():
     # q_L = q_R is the SCISSOR (good here). Value = -mean|q_L - q_R|, so <= 0.
     env = _leg_env(
         [
-            [0.4, 0.3, 0.4, 0.3],    # perfect scissor: q_L == q_R -> 0.0
+            [0.4, 0.3, 0.4, 0.3],  # perfect scissor: q_L == q_R -> 0.0
             [0.4, 0.3, -0.4, -0.3],  # mirror: gaps 0.8 and 0.6 -> -0.7
         ],
         [0.30, 0.30],
@@ -356,12 +327,7 @@ def test_leg_antisymmetry_is_gated_off_during_rest():
 
 
 # ── neck_joint_pos_l2: pattern parameter ─────────────────────────────────────
-_NECK_IDS = {
-    "neck_pitch": 0,
-    "head_pitch": 1,
-    "head_roll": 2,
-    "head_yaw": 3,
-}
+_NECK_IDS = {"neck_pitch": 0, "head_pitch": 1, "head_roll": 2, "head_yaw": 3}
 
 
 def test_neck_joint_pos_l2_pattern_can_exclude_head_yaw():
@@ -376,12 +342,8 @@ def test_neck_joint_pos_l2_pattern_can_exclude_head_yaw():
     env = _FakeEnv(entity)
 
     # default pattern: head_yaw counted -> cost 1.0
-    assert torch.allclose(
-        mdp.neck_joint_pos_l2(env), torch.tensor([1.0]), atol=1e-6
-    )
+    assert torch.allclose(mdp.neck_joint_pos_l2(env), torch.tensor([1.0]), atol=1e-6)
     # spin pattern: head_yaw excluded -> cost 0.0 (head free in yaw)
     assert torch.allclose(
-        mdp.neck_joint_pos_l2(env, pattern=r"^(neck_pitch|head_pitch|head_roll)$"),
-        torch.tensor([0.0]),
-        atol=1e-6,
+        mdp.neck_joint_pos_l2(env, pattern=r"^(neck_pitch|head_pitch|head_roll)$"), torch.tensor([0.0]), atol=1e-6
     )

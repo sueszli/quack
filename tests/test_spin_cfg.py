@@ -1,8 +1,5 @@
 from src import task_mdp as microduck_mdp
-from src.task_spin import (
-    make_microduck_spin_env_cfg,
-    MicroduckSpinRlCfg,
-)
+from src.task_spin import make_microduck_spin_env_cfg, MicroduckSpinRlCfg
 
 
 def test_cfg_uses_phase_command_with_runtime_default_period():
@@ -98,13 +95,11 @@ def test_obs_parity_with_roller_crouch():
     # Layout parity is mandatory: otherwise the exported ONNX does not load into the
     # runtime slot. Unlike the structure test above, this one compares the EXACT
     # order of the terms, group by group.
-    from src.task_roller_crouch import (
-        make_microduck_roller_crouch_env_cfg,
-    )
+    from src.task_roller_crouch import make_microduck_roller_crouch_env_cfg
 
     spin = make_microduck_spin_env_cfg()
     crouch = make_microduck_roller_crouch_env_cfg()
     for grp in ("actor", "critic"):
-        assert list(spin.observations[grp].terms.keys()) == list(
-            crouch.observations[grp].terms.keys()
-        ), f"observation layout diverges on group {grp}"
+        assert list(spin.observations[grp].terms.keys()) == list(crouch.observations[grp].terms.keys()), (
+            f"observation layout diverges on group {grp}"
+        )
