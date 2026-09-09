@@ -27,7 +27,7 @@ dependencies = [
 ]
 
 [project.entry-points."mjlab.tasks"]
-mjlab_microduck = "mjlab_microduck.tasks.registry"
+mjlab_microduck = "mjlab_microduck.registry"
 
 [project.scripts]
 # Serve a simulated body to the real `robotd` — see body_server.py.

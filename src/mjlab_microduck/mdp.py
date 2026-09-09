@@ -6137,7 +6137,7 @@ def leg_antisymmetry(
 # ``passive_<joint>_backlash`` hinge in series with each servo joint. The link
 # angle is qpos[servo] + qpos[backlash], and the real encoder sits on the
 # OUTPUT side of the play — it reads the sum. These obs replace joint_pos_rel /
-# joint_vel_rel in backlash tasks (see tasks/backlash.py) so the policy sees
+# joint_vel_rel in backlash tasks (see backlash.py) so the policy sees
 # exactly what the runtime will feed it. The asset_cfg regex is expected to
 # select only the servo joints (the usual ``^(?!passive_).*``).
 
