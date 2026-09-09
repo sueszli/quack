@@ -52,10 +52,10 @@ from pathlib import Path
 import mujoco
 import numpy as np
 
-from mjlab_microduck.camera import FPS as CAMERA_FPS
-from mjlab_microduck.camera import Camera, FrameHandler, FrameServer
-from mjlab_microduck.microduck_constants import MJCF_DIR
-from mjlab_microduck.tof import COLS, ROWS, Tof
+from .camera import FPS as CAMERA_FPS
+from .camera import Camera, FrameHandler, FrameServer
+from .microduck_constants import MJCF_DIR
+from .tof import COLS, ROWS, Tof
 
 PROTOCOL = 1
 
