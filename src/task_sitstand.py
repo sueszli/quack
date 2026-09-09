@@ -1,47 +1,46 @@
-"""Microduck *sitstand* task (v1.5, mjlab 1.3.0) — commanded sit ↔ stand, GENTLY.
-
-One policy, both directions, driven by a posture command:
-    cmd (twist slot) = [sit_flag, 0, 0]   sit_flag ∈ {0 = STAND, 1 = SIT}
-"Stand" is the all-zero command — the same deployment idle as every other
-policy. The command flips mid-episode with a dwell time of a few seconds, so
-each episode trains descents, seated rest, rises and standing rest, plus
-"hold what you're already doing" (reset state × command are independent).
-
-2026-08 rebuild from scratch (the old phase-cycle env predates the 1.3.0
-migration and every sit/standup lesson). Design synthesis:
-  - Posture-conditioned single-target rewards (mdp posture_*): the sit env's
-    minimum-viable "organic discovery" stack, but the target (SIT keyframe +
-    SIT_Z vs HOME + STAND_Z) is selected per env from the live command. No
-    trajectory, no waypoints, no phase timing — the policy discovers its own
-    transition path, in as many steps as it likes (knee-down first, head
-    assist, etc. are all allowed: full-collision model, no head-ground
-    penalty, no fall termination).
-  - Gentleness both ways: descent-speed cap (sit env's proven recipe, -10
-    from step 0) AND a mirrored rise-speed cap (introduced by curriculum
-    AFTER the rise is discovered — the standup attempt-tax lesson), plus the
-    |a_z| shock penalty throughout.
-  - Rest quality: posture_stillness (velocity-Gaussian at the commanded
-    height, tilt-gated) + posture_composite (multiplicative height·upright·
-    pose vs the commanded target — partial-sum exploits like plank/flop/lean
-    collapse to ~0).
-  - Head commandable in BOTH postures (head_pose command + tracking, exactly
-    like velocity/standup), body_command slot zero-padded → 61D obs parity.
-  - Sim2real: velocity-parity DR / obs noise / delays / regularisers (the
-    transferring recipe), sit env's contact-solver hardening (nconmax=200,
-    iters 30/50 — seated contact NaN fix), delayed push ramp (pushes early
-    made the sit env unlearn sitting).
-
-Keyframes (stability-verified, keep in sync with sit/standup envs):
-  SIT  = knee ±1.35, hip_pitch ∓0.4079, ankle/hip_roll 0, trunk z 0.060
-         (swept 2026-07-27 — the old keyframe tipped over; verify TILT in sim
-         before changing this pose).
-  STAND = HOME joints, trunk z 0.115 (measured standing equilibrium).
-
-Joint layout (14 actuated joints):
-    0-4 : left  leg (hip_yaw, hip_roll, hip_pitch, knee, ankle)
-    5-8 : neck/head (neck_pitch, head_pitch, head_yaw, head_roll)
-    9-13: right leg (hip_yaw, hip_roll, hip_pitch, knee, ankle)
-"""
+# Microduck *sitstand* task (v1.5, mjlab 1.3.0) — commanded sit ↔ stand, GENTLY.
+#
+# One policy, both directions, driven by a posture command:
+#     cmd (twist slot) = [sit_flag, 0, 0]   sit_flag ∈ {0 = STAND, 1 = SIT}
+# "Stand" is the all-zero command — the same deployment idle as every other
+# policy. The command flips mid-episode with a dwell time of a few seconds, so
+# each episode trains descents, seated rest, rises and standing rest, plus
+# "hold what you're already doing" (reset state × command are independent).
+#
+# 2026-08 rebuild from scratch (the old phase-cycle env predates the 1.3.0
+# migration and every sit/standup lesson). Design synthesis:
+#   - Posture-conditioned single-target rewards (mdp posture_*): the sit env's
+#     minimum-viable "organic discovery" stack, but the target (SIT keyframe +
+#     SIT_Z vs HOME + STAND_Z) is selected per env from the live command. No
+#     trajectory, no waypoints, no phase timing — the policy discovers its own
+#     transition path, in as many steps as it likes (knee-down first, head
+#     assist, etc. are all allowed: full-collision model, no head-ground
+#     penalty, no fall termination).
+#   - Gentleness both ways: descent-speed cap (sit env's proven recipe, -10
+#     from step 0) AND a mirrored rise-speed cap (introduced by curriculum
+#     AFTER the rise is discovered — the standup attempt-tax lesson), plus the
+#     |a_z| shock penalty throughout.
+#   - Rest quality: posture_stillness (velocity-Gaussian at the commanded
+#     height, tilt-gated) + posture_composite (multiplicative height·upright·
+#     pose vs the commanded target — partial-sum exploits like plank/flop/lean
+#     collapse to ~0).
+#   - Head commandable in BOTH postures (head_pose command + tracking, exactly
+#     like velocity/standup), body_command slot zero-padded → 61D obs parity.
+#   - Sim2real: velocity-parity DR / obs noise / delays / regularisers (the
+#     transferring recipe), sit env's contact-solver hardening (nconmax=200,
+#     iters 30/50 — seated contact NaN fix), delayed push ramp (pushes early
+#     made the sit env unlearn sitting).
+#
+# Keyframes (stability-verified, keep in sync with sit/standup envs):
+#   SIT  = knee ±1.35, hip_pitch ∓0.4079, ankle/hip_roll 0, trunk z 0.060
+#          (swept 2026-07-27 — the old keyframe tipped over; verify TILT in sim
+#          before changing this pose).
+#   STAND = HOME joints, trunk z 0.115 (measured standing equilibrium).
+#
+# Joint layout (14 actuated joints):
+#     0-4 : left  leg (hip_yaw, hip_roll, hip_pitch, knee, ankle)
+#     5-8 : neck/head (neck_pitch, head_pitch, head_yaw, head_roll)
+#     9-13: right leg (hip_yaw, hip_roll, hip_pitch, knee, ankle)
 
 import math
 from copy import deepcopy
@@ -162,7 +161,7 @@ from .task_velocity import HEAD_BODY_NAMES, HEAD_POSE_CMD_RESAMPLE_S, MICRODUCK_
 
 
 def make_microduck_sitstand_env_cfg(play: bool = False, rough: bool = False) -> ManagerBasedRlEnvCfg:
-    """Create Microduck sitstand environment configuration."""
+    # Create Microduck sitstand environment configuration.
 
     feet_ground_cfg = ContactSensorCfg(name="feet_ground_contact", primary=ContactMatch(mode="geom", pattern=r"^(left_foot_collision|right_foot_collision)$", entity="robot"), secondary=ContactMatch(mode="body", pattern="terrain"), fields=("found", "force"), reduce="netforce", num_slots=1, track_air_time=True)
 

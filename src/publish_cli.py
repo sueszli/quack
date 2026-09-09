@@ -1,20 +1,19 @@
-"""`uv run publish` — put a policy on the Hub in the shape the microduck daemon loads.
-
-    # From a wandb run (exports with the normalizer baked in — the only safe path from a checkpoint)
-    uv run publish --task Mjlab-PoliteBow-Flat-MicroDuck --wandb-run-path ent/proj/run --checkpoint 3000 \\
-        --repo <user>/microduck-polite-bow --kind episodic --duration-s 4.0
-
-    # From an ONNX file you already exported
-    uv run publish --onnx out.onnx --repo <user>/microduck-flamingo --kind perpetual --unwind-s 1.5
-
-    # A gait for a slot (no hold, no unwind: it runs until told otherwise)
-    uv run publish --onnx walk.onnx --repo <user>/microduck-my-walk --kind perpetual --slot walk
-
-Either way the repo gets `policy.onnx`, a schema-2 `manifest.json` and a README, the file is
-checked for the 61 -> 14 shape and smoke-run before anything is uploaded, and an existing
-`policy.onnx` is not overwritten without `--force`. `--dry-run` writes the repo contents to a
-local directory and stops.
-"""
+# `uv run publish` — put a policy on the Hub in the shape the microduck daemon loads.
+#
+#     # From a wandb run (exports with the normalizer baked in — the only safe path from a checkpoint)
+#     uv run publish --task Mjlab-PoliteBow-Flat-MicroDuck --wandb-run-path ent/proj/run --checkpoint 3000 \
+#         --repo <user>/microduck-polite-bow --kind episodic --duration-s 4.0
+#
+#     # From an ONNX file you already exported
+#     uv run publish --onnx out.onnx --repo <user>/microduck-flamingo --kind perpetual --unwind-s 1.5
+#
+#     # A gait for a slot (no hold, no unwind: it runs until told otherwise)
+#     uv run publish --onnx walk.onnx --repo <user>/microduck-my-walk --kind perpetual --slot walk
+#
+# Either way the repo gets `policy.onnx`, a schema-2 `manifest.json` and a README, the file is
+# checked for the 61 -> 14 shape and smoke-run before anything is uploaded, and an existing
+# `policy.onnx` is not overwritten without `--force`. `--dry-run` writes the repo contents to a
+# local directory and stops.
 
 from __future__ import annotations
 
@@ -93,7 +92,7 @@ def _fail(msg: str) -> NoReturn:
 
 
 def _resolve_weights(cfg: PublishConfig, workdir: Path) -> tuple[Path, dict]:
-    """The ONNX to publish and the provenance it carries. Exports when given a checkpoint."""
+    # The ONNX to publish and the provenance it carries. Exports when given a checkpoint.
     from_checkpoint = cfg.task is not None or cfg.checkpoint_file is not None
     if (cfg.onnx is None) == (not from_checkpoint):
         _fail("give exactly one source: --onnx <file>, or --task <id> with --wandb-run-path/--checkpoint-file")

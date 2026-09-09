@@ -1,9 +1,8 @@
-"""Custom "flat + descending ramp" terrain for the roller_slope task.
-
-The robot spawns on a flat zone, receives an impulse towards +x, rolls
-to the ramp and lets itself glide down. The ramp angle is interpolated by
-the difficulty (curriculum) over [RAMP_DEG_MIN, RAMP_DEG_MAX] degrees.
-"""
+# Custom "flat + descending ramp" terrain for the roller_slope task.
+#
+# The robot spawns on a flat zone, receives an impulse towards +x, rolls
+# to the ramp and lets itself glide down. The ramp angle is interpolated by
+# the difficulty (curriculum) over [RAMP_DEG_MIN, RAMP_DEG_MAX] degrees.
 
 from __future__ import annotations
 
@@ -19,23 +18,22 @@ RAMP_DEG_MAX = 20.0
 
 
 def ramp_angle_by_difficulty(difficulty: float, deg_min: float = RAMP_DEG_MIN, deg_max: float = RAMP_DEG_MAX) -> float:
-    """Ramp angle (radians) linearly interpolated by the difficulty [0,1]."""
+    # Ramp angle (radians) linearly interpolated by the difficulty [0,1].
     d = float(np.clip(difficulty, 0.0, 1.0))
     return math.radians(deg_min + d * (deg_max - deg_min))
 
 
 @dataclass(kw_only=True)
 class FlatRampTerrainCfg(SubTerrainCfg):
-    """Starting flat → descending ramp → exit flat.
-
-    Three boxes aligned along +x:
-      1. starting flat (surface at z=0) where the robot spawns;
-      2. descending ramp, angle interpolated by the difficulty, HORIZONTAL
-         length drawn at random from ``ramp_length_range`` (one value per
-         tile, fixed at generation);
-      3. exit flat at the level of the bottom of the ramp, so the robot
-         lands on something solid instead of the void.
-    """
+    # Starting flat → descending ramp → exit flat.
+    #
+    # Three boxes aligned along +x:
+    #   1. starting flat (surface at z=0) where the robot spawns;
+    #   2. descending ramp, angle interpolated by the difficulty, HORIZONTAL
+    #      length drawn at random from ``ramp_length_range`` (one value per
+    #      tile, fixed at generation);
+    #   3. exit flat at the level of the bottom of the ramp, so the robot
+    #      lands on something solid instead of the void.
 
     flat_length: float = 2.0  # starting flat (m)
     ramp_length_range: tuple = (3.0, 8.0)  # horizontal ramp length (m), drawn at random

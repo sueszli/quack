@@ -1,22 +1,21 @@
-"""Microduck *stand* task (v1.5) — specialized: sitting pose → standing.
-
-Episodic policy that gently rises from the sitting keyframe to the standing
-keyframe. Companion to the sit env — together they form a clean sit↔stand
-pair, each policy doing one direction.
-
-Reset:  sitting keyframe (trunk z ≈ 0.07, knees/ankles bent, head at HOME).
-Target: standing keyframe (trunk z ≈ 0.12, HOME joints).
-Reward design (mirror of sit env): a single fixed target is rewarded from
-t=0 to end of episode; gentleness is enforced via |a_z| only; smoothness is
-enforced by the usual sim2real regularisers. No trajectory waypoints, no
-episode-progress gating — the policy is free to discover its own rise path.
-
-Body control (reintroduced 2026-07-29): once standing, the policy tracks a
-commanded trunk delta [z, roll, pitch] from the nominal stand (the real
-body_pose command in the previously zero-padded 6D obs slot). Kicks in at
-iter 2500 via the body-control curricula at the bottom of this file, after
-the ground_state_mix recovery curriculum has finished ramping.
-"""
+# Microduck *stand* task (v1.5) — specialized: sitting pose → standing.
+#
+# Episodic policy that gently rises from the sitting keyframe to the standing
+# keyframe. Companion to the sit env — together they form a clean sit↔stand
+# pair, each policy doing one direction.
+#
+# Reset:  sitting keyframe (trunk z ≈ 0.07, knees/ankles bent, head at HOME).
+# Target: standing keyframe (trunk z ≈ 0.12, HOME joints).
+# Reward design (mirror of sit env): a single fixed target is rewarded from
+# t=0 to end of episode; gentleness is enforced via |a_z| only; smoothness is
+# enforced by the usual sim2real regularisers. No trajectory waypoints, no
+# episode-progress gating — the policy is free to discover its own rise path.
+#
+# Body control (reintroduced 2026-07-29): once standing, the policy tracks a
+# commanded trunk delta [z, roll, pitch] from the nominal stand (the real
+# body_pose command in the previously zero-padded 6D obs slot). Kicks in at
+# iter 2500 via the body-control curricula at the bottom of this file, after
+# the ground_state_mix recovery curriculum has finished ramping.
 
 import math
 from copy import deepcopy
@@ -136,7 +135,7 @@ from .task_velocity import BODY_POSE_CMD_RESAMPLE_S, HEAD_BODY_NAMES, HEAD_POSE_
 
 
 def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> ManagerBasedRlEnvCfg:
-    """Create Microduck stand environment configuration (sit-keyframe start)."""
+    # Create Microduck stand environment configuration (sit-keyframe start).
 
     feet_ground_cfg = ContactSensorCfg(name="feet_ground_contact", primary=ContactMatch(mode="geom", pattern=r"^(left_foot_collision|right_foot_collision)$", entity="robot"), secondary=ContactMatch(mode="body", pattern="terrain"), fields=("found", "force"), reduce="netforce", num_slots=1, track_air_time=True)
 
