@@ -19,6 +19,8 @@ import mujoco.viewer
 import numpy as np
 import onnxruntime as ort
 
+import src.utils  # noqa: F401
+
 # Repo-level assets/mjcf; not imported from robot.py (see BAM note below).
 _ROBOT_DIR = Path(__file__).resolve().parents[1] / "assets" / "mjcf"
 MICRODUCK_XML = str(_ROBOT_DIR / "scene.xml")

@@ -27,6 +27,7 @@ from typing import Literal, NoReturn
 import tyro
 
 from . import publish_manifest as m
+from .utils import data_path
 
 
 @dataclass(frozen=True)
@@ -129,7 +130,7 @@ def run(cfg: PublishConfig) -> int:
         _fail("--repo must be `<user-or-org>/<name>`")
     name = cfg.name or _default_name(cfg.repo)
 
-    workdir = Path(tempfile.mkdtemp(prefix="microduck-publish-"))
+    workdir = Path(tempfile.mkdtemp(prefix="publish-", dir=str(data_path("publish"))))
     try:
         onnx_path, training = _resolve_weights(cfg, workdir)
         shape = m.check_onnx(onnx_path)
