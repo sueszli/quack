@@ -1,4 +1,4 @@
-# AGENTS.md
+# CLAUDE.md
 
 RL training environments for Microduck — a ~800 g, ~25 cm tall bipedal
 robot with 14 Dynamixel XL330 servos — built on [mjlab](https://github.com/mujocolab/mjlab)
