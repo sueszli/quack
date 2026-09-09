@@ -124,9 +124,9 @@ from mjlab_microduck.microduck_constants import (
     MICRODUCK_BALL_CFG,
     MICRODUCK_STANDUP_ROBOT_CFG,
 )
-from mjlab_microduck.tasks import mdp as microduck_mdp
-from mjlab_microduck.tasks.microduck_velocity_env_cfg import HEAD_BODY_NAMES
-from mjlab_microduck.tasks.symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
+from mjlab_microduck import mdp as microduck_mdp
+from mjlab_microduck.microduck_velocity_env_cfg import HEAD_BODY_NAMES
+from mjlab_microduck.symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
 
 
 def make_microduck_ball_kick_env_cfg(

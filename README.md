@@ -106,7 +106,7 @@ output side of the play, both the firmware PD emulation
 (`BacklashEncoderBamActuator`) and the `joint_pos`/`joint_vel` observations
 read *through* the backlash (`qpos[servo] + qpos[backlash]`). Observation and
 action dims are unchanged, so ONNX export and the runtime need no changes.
-See `src/mjlab_microduck/tasks/backlash.py`.
+See `src/mjlab_microduck/backlash.py`.
 
 ## Actuator model
 
@@ -143,16 +143,19 @@ for quick viewing and for `infer_policy.py`.
 ## Project structure
 
 ```
-src/mjlab_microduck/
+src/mjlab_microduck/                  # flat: no sub-packages, no __init__.py
 ├── mjcf/                             # MJCF exports, export configs, scenes, meshes
 ├── add_backlash.py                   # generates the robot_*_backlash.xml variants
 ├── microduck_constants.py            # robot cfgs, HOME frame, BAM actuator cfg
 ├── friction_dr_bam.py                # BAM + friction DR + backlash encoder feedback
-├── tasks/
-│   ├── registry.py                   # task registration (base + backlash variants)
-│   ├── mdp.py                        # rewards, events, observations, custom classes
-│   ├── backlash.py                   # make_backlash_variant() env-cfg wrapper
-│   └── microduck_*_env_cfg.py        # one cfg module per task family
+├── registry.py                       # task registration (base + backlash variants)
+├── mdp.py                            # rewards, events, observations, custom classes
+├── backlash.py                       # make_backlash_variant() env-cfg wrapper
+├── symmetry.py, slope_terrain.py     # mirror-loss table, slope heightfield
+├── microduck_*_env_cfg.py            # one cfg module per task family
+├── export.py, publish.py             # uv run export / uv run publish
+├── infer_policy.py                   # uv run infer (CPU MuJoCo rehearsal)
+└── body_server.py, camera.py, tof.py # uv run duck-body: simulated body for robotd
 ```
 
 Conventions worth knowing:
