@@ -1,5 +1,9 @@
 .DEFAULT_GOAL := precommit
 
+.PHONY: sync
+sync:
+	UV_HTTP_TIMEOUT=600 uv sync
+
 .PHONY: precommit-hook
 precommit-hook:
 	@common_dir="$$(git rev-parse --git-common-dir 2>/dev/null)"; \
@@ -31,10 +35,6 @@ precommit:
 .PHONY: smoke
 smoke:
 	uv run train Mjlab-Velocity-Flat-MicroDuck --env.scene.num-envs 64 --agent.max_iterations 5 $(ARGS)
-
-.PHONY: sync
-sync:
-	UV_HTTP_TIMEOUT=600 uv sync
 
 .PHONY: envs
 envs:
