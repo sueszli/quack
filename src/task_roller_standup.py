@@ -38,8 +38,8 @@ from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.rl import RslRlModelCfg, RslRlOnPolicyRunnerCfg
 
 from . import task_mdp as microduck_mdp
-from .task_velocity_rollers import make_microduck_velocity_rollers_env_cfg
 from .task_symmetry import PpoWithSymmetryCfg
+from .task_velocity_rollers import make_microduck_velocity_rollers_env_cfg
 
 # ── Trunk heights (m) ─────────────────────────────────────────────────────────
 # Measured by exact kinematics (minimum of the mesh vertices of the colliding

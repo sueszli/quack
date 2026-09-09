@@ -12,7 +12,6 @@ from dataclasses import dataclass
 
 import mujoco
 import numpy as np
-
 from mjlab.terrains.terrain_generator import SubTerrainCfg, TerrainGeometry, TerrainOutput
 
 RAMP_DEG_MIN = 2.0
