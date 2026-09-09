@@ -2997,8 +2997,6 @@ def randomize_imu_orientation(env: ManagerBasedRlEnv, env_ids: torch.Tensor, max
     else:
         env_ids = env_ids.to(env.device, dtype=torch.int)
 
-    asset: Entity = env.scene[asset_cfg.name]
-
     # IMU site is the first site (index 0) in robot.xml
     # Sites: imu (0), left_foot (1), right_foot (2)
     site_id = 0
@@ -3274,7 +3272,6 @@ def randomize_base_orientation(env: ManagerBasedRlEnv, env_ids: torch.Tensor, ma
     else:
         env_ids = env_ids.to(env.device, dtype=torch.int)
 
-    asset: Entity = env.scene[asset_cfg.name]
     num_envs = len(env_ids)
 
     # Generate random pitch and roll angles
@@ -3436,7 +3433,7 @@ def set_random_ground_state(env: ManagerBasedRlEnv, env_ids: torch.Tensor, asset
         sitting = torch.stack([cy, torch.zeros_like(cy), torch.zeros_like(cy), sy], dim=1)
 
     u = torch.rand(num, device=env.device)
-    is_fd = u < p_fd
+    # is_fd (u < p_fd) is implicit: face_down is the base value of new_quat below.
     is_fu = (u >= p_fd) & (u < p_fu)
     is_sit = (u >= p_fu) & (u < p_sit)
     is_stand = u >= p_sit
