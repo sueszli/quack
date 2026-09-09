@@ -65,7 +65,6 @@ def _force(n, bad_env=None, value=float("nan")):
 
 
 def test_state_only_check_misses_bad_contact_force():
-    # This is the gap that killed the run: robot state is clean, force is not.
     env = _Env(3, _force(3, bad_env=1))
     assert not microduck_mdp.robot_state_is_nan(env).any()
 
@@ -95,7 +94,6 @@ def test_finite_helper_sanitizes_nan_and_inf():
 
 
 def test_safe_obs_wrappers_are_wired_into_the_critic():
-    # Guards must actually be installed on the env cfg, not just exist.
     from src.task_velocity import make_microduck_velocity_env_cfg
 
     cfg = make_microduck_velocity_env_cfg(rough=True)
@@ -113,9 +111,6 @@ def test_nan_state_termination_watches_the_contact_sensor():
 
 
 def test_standup_env_is_also_guarded():
-    # The deployed standing policy trains on StandUp, which builds on mjlab's
-    # base env (NOT the microduck velocity env) and therefore does not inherit
-    # the guards wired there.
     from src.task_standup import make_microduck_standup_env_cfg
 
     cfg = make_microduck_standup_env_cfg()
