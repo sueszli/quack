@@ -79,7 +79,7 @@
   <!-- permanent ~-2.0 reward penalty in the standup env. -->
   <!-- <exclude body1="jaw" body2="bottom_head_shell"/> -->
   <!-- </contact> -->
-  <!-- Backlash injected by add_backlash.py: 2 deg total play (symmetric +/-1 deg) -->
+  <!-- Backlash injected by patch_backlash.py: 2 deg total play (symmetric +/-1 deg) -->
   <default>
     <default class="backlash">
       <!-- stiff limit constraint: with a range this small the default

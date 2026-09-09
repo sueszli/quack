@@ -10,7 +10,7 @@ JOINT_RE = re.compile(r"^(\s*)<joint\b[^>]*/>\s*$")
 ATTR_RE = re.compile(r'(\w+)="([^"]*)"')
 
 DEFAULTS_BLOCK = """\
-  <!-- Backlash injected by add_backlash.py: {total:g} deg total play (symmetric +/-{half_deg:g} deg) -->
+  <!-- Backlash injected by patch_backlash.py: {total:g} deg total play (symmetric +/-{half_deg:g} deg) -->
   <default>
     <default class="backlash">
       <!-- stiff limit constraint: with a range this small the default
@@ -37,10 +37,10 @@ def main() -> int:
         lines = f.readlines()
 
     if any('class="backlash"' in line for line in lines):
-        print(f"[add_backlash] {args.xml} already contains backlash joints — aborting.")
+        print(f"[patch_backlash] {args.xml} already contains backlash joints — aborting.")
         return 1
     if not any("<worldbody>" in line for line in lines):
-        print("[add_backlash] ERROR: no <worldbody> found — is this an MJCF file?")
+        print("[patch_backlash] ERROR: no <worldbody> found — is this an MJCF file?")
         return 1
 
     out: list[str] = []
@@ -64,13 +64,13 @@ def main() -> int:
         added.append(name)
 
     if not added:
-        print(f'[add_backlash] ERROR: no joints with class="{SERVO_CLASS}" found.')
+        print(f'[patch_backlash] ERROR: no joints with class="{SERVO_CLASS}" found.')
         return 1
 
     with open(args.xml, "w") as f:
         f.writelines(out)
 
-    print(f"[add_backlash] added {len(added)} backlash joints (+/-{args.backlash_deg / 2:g} deg = +/-{half:.5f} rad) to {args.xml}: {', '.join(added)}")
+    print(f"[patch_backlash] added {len(added)} backlash joints (+/-{args.backlash_deg / 2:g} deg = +/-{half:.5f} rad) to {args.xml}: {', '.join(added)}")
     return 0
 
 
