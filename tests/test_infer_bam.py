@@ -23,6 +23,7 @@ def ip():
 
 def test_cpu_bam_constants_mirror_training_cfg(ip):
     from bam.mjlab import BamActuator
+
     from src.robot import _BAM_ACTUATOR_KWARGS as k
 
     assert ip.BAM_MOTOR_NAME == k["motor_name"]
@@ -39,14 +40,12 @@ def test_cpu_bam_constants_mirror_training_cfg(ip):
 @pytest.fixture(scope="module")
 def bam_sim(ip):
     bam_model = ip.load_bam_model(ip.BAM_KP_FW, 7.4, ip.BAM_MAX_CURRENT)
-    model, data, ctrl, names = ip.load_mujoco_with_bam(
-        ip.MICRODUCK_XML, bam_model, 0.005, 0.1, ip.BAM_VIN_MIN
-    )
+    model, data, ctrl, names = ip.load_mujoco_with_bam(ip.MICRODUCK_XML, bam_model, 0.005, 0.1, ip.BAM_VIN_MIN)
     return ip, bam_model, model, data, ctrl, names
 
 
 def test_actuators_converted_like_warp(bam_sim):
-    ip, bam_model, model, data, ctrl, names = bam_sim
+    ip, bam_model, model, _data, _ctrl, names = bam_sim
     kt, R = bam_model.kt.value, bam_model.R.value
     assert len(names) == 14 and model.nu == 14
     assert not any(n.startswith("passive_") for n in names)
@@ -67,7 +66,7 @@ def test_actuators_converted_like_warp(bam_sim):
 
 
 def test_bam_step_loop_runs_with_live_friction(bam_sim):
-    ip, bam_model, model, data, ctrl, names = bam_sim
+    ip, bam_model, model, data, ctrl, _names = bam_sim
     fj = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "trunk_base_freejoint")
     qa = model.jnt_qposadr[fj]
     mujoco.mj_resetData(model, data)

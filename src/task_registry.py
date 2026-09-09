@@ -1,3 +1,9 @@
+from collections.abc import Callable
+from typing import Any
+
+from mjlab.entity import EntityCfg
+from mjlab.envs import ManagerBasedRlEnvCfg
+from mjlab.rl import RslRlBaseRunnerCfg
 from mjlab.tasks.registry import register_mjlab_task
 from mjlab.tasks.velocity.rl import VelocityOnPolicyRunner
 
@@ -15,59 +21,59 @@ class MicroduckOnPolicyRunner(VelocityOnPolicyRunner):
             alg["symmetry_cfg"] = {k: v for k, v in sym.items() if k != "_env"}
 
 
-from .task_velocity import (
-    make_microduck_velocity_env_cfg,
-    MicroduckRlCfg,
-)
-from .task_standup import (
-    make_microduck_standup_env_cfg,
-    MicroduckStandUpRlCfg,
-)
-from .task_velstand import (
-    make_microduck_velstand_env_cfg,
-    MicroduckVelStandRlCfg,
+from .task_backlash import make_backlash_variant
+from .task_ball_kick import (
+    MicroduckBallKickRlCfg,
+    make_microduck_ball_kick_env_cfg,
 )
 from .task_ground_pick import (
-    make_microduck_ground_pick_env_cfg,
     MicroduckGroundPickRlCfg,
-)
-from .task_ball_kick import (
-    make_microduck_ball_kick_env_cfg,
-    MicroduckBallKickRlCfg,
-)
-from .task_sitstand import (
-    make_microduck_sitstand_env_cfg,
-    MicroduckSitStandRlCfg,
-)
-from .task_velocity_rollers import (
-    make_microduck_velocity_rollers_env_cfg,
-    MicroduckRollersRlCfg,
-)
-from .task_velocity_swizzle import (
-    make_microduck_velocity_swizzle_env_cfg,
-    MicroduckSwizzleRlCfg,
+    make_microduck_ground_pick_env_cfg,
 )
 from .task_roller_crouch import (
-    make_microduck_roller_crouch_env_cfg,
     MicroduckRollerCrouchRlCfg,
+    make_microduck_roller_crouch_env_cfg,
 )
 from .task_roller_slope import (
-    make_microduck_roller_slope_env_cfg,
     MicroduckRollerSlopeRlCfg,
+    make_microduck_roller_slope_env_cfg,
 )
 from .task_roller_standup import (
-    make_microduck_roller_standup_env_cfg,
     MicroduckRollerStandUpRlCfg,
-)
-from .task_spin import (
-    make_microduck_spin_env_cfg,
-    MicroduckSpinRlCfg,
+    make_microduck_roller_standup_env_cfg,
 )
 from .task_roulade import (
-    make_microduck_roulade_env_cfg,
     MicroduckRouladeRlCfg,
+    make_microduck_roulade_env_cfg,
 )
-from .task_backlash import make_backlash_variant
+from .task_sitstand import (
+    MicroduckSitStandRlCfg,
+    make_microduck_sitstand_env_cfg,
+)
+from .task_spin import (
+    MicroduckSpinRlCfg,
+    make_microduck_spin_env_cfg,
+)
+from .task_standup import (
+    MicroduckStandUpRlCfg,
+    make_microduck_standup_env_cfg,
+)
+from .task_velocity import (
+    MicroduckRlCfg,
+    make_microduck_velocity_env_cfg,
+)
+from .task_velocity_rollers import (
+    MicroduckRollersRlCfg,
+    make_microduck_velocity_rollers_env_cfg,
+)
+from .task_velocity_swizzle import (
+    MicroduckSwizzleRlCfg,
+    make_microduck_velocity_swizzle_env_cfg,
+)
+from .task_velstand import (
+    MicroduckVelStandRlCfg,
+    make_microduck_velstand_env_cfg,
+)
 
 # Standard velocity task
 register_mjlab_task(
@@ -243,7 +249,10 @@ from .robot import (
 _BL_GROUNDCONTACT = MICRODUCK_BACKLASH_ROBOT_CFG
 _BL_WALK = MICRODUCK_WALK_BACKLASH_ROBOT_CFG
 _BL_ROLLERS = MICRODUCK_ROLLERS_BACKLASH_ROBOT_CFG
-_BACKLASH_TASKS = (
+# The make_fn column holds cfg factories with different optional keyword
+# signatures (play/rough/kick_foot/...); the shared contract each one honours is
+# "keyword args in, env cfg out", which is what the annotation states.
+_BACKLASH_TASKS: tuple[tuple[str, Callable[..., ManagerBasedRlEnvCfg], dict[str, Any], RslRlBaseRunnerCfg, EntityCfg], ...] = (
     ("Mjlab-Velocity-Flat-Backlash-MicroDuck", make_microduck_velocity_env_cfg, {}, MicroduckRlCfg, _BL_WALK),
     ("Mjlab-Velocity-Rough-Backlash-MicroDuck", make_microduck_velocity_env_cfg, {"rough": True}, MicroduckRlCfg, _BL_WALK),
     ("Mjlab-VelStand-Flat-Backlash-MicroDuck", make_microduck_velstand_env_cfg, {}, MicroduckVelStandRlCfg, _BL_GROUNDCONTACT),

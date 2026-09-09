@@ -39,6 +39,7 @@ own shape lives is the whole reason the protocol carries the robot's units rathe
 gives an orientation quaternion, so this does the rotation — the same arithmetic the IMU's SFLP
 filter does on the robot, on the other side of the same wire.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -52,9 +53,9 @@ from pathlib import Path
 import mujoco
 import numpy as np
 
+from .robot import MJCF_DIR
 from .sim_camera import FPS as CAMERA_FPS
 from .sim_camera import Camera, FrameHandler, FrameServer
-from .robot import MJCF_DIR
 from .sim_tof import COLS, ROWS, Tof
 
 PROTOCOL = 1
@@ -74,18 +75,42 @@ HOME_TRUNK_Z = 0.125
 # it. Duplicated here rather than shared, because the two repositories cannot share a constant — and
 # checked against the model at startup, which is the next best thing.
 JOINT_NAMES = (
-    "left_hip_yaw", "left_hip_roll", "left_hip_pitch", "left_knee", "left_ankle",
-    "neck_pitch", "head_pitch", "head_yaw", "head_roll", "mouth",
-    "right_hip_yaw", "right_hip_roll", "right_hip_pitch", "right_knee", "right_ankle",
+    "left_hip_yaw",
+    "left_hip_roll",
+    "left_hip_pitch",
+    "left_knee",
+    "left_ankle",
+    "neck_pitch",
+    "head_pitch",
+    "head_yaw",
+    "head_roll",
+    "mouth",
+    "right_hip_yaw",
+    "right_hip_roll",
+    "right_hip_pitch",
+    "right_knee",
+    "right_ankle",
 )
 MOUTH_INDEX = JOINT_NAMES.index("mouth")
 
 # `duck_control::DEFAULT_POSITION`, and `DEFAULT_POSE` in `infer.py` with the mouth put back.
 # The right leg is mirrored, not symmetric — worth reading rather than assuming.
 HOME_POSE = (
-    0.0, -0.0873, -0.4579, -0.0049, 0.4530,
-    0.3491, 0.3491, 0.0, 0.0, 0.0,
-    0.0, 0.0873, 0.4579, 0.0049, -0.4530,
+    0.0,
+    -0.0873,
+    -0.4579,
+    -0.0049,
+    0.4530,
+    0.3491,
+    0.3491,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0873,
+    0.4579,
+    0.0049,
+    -0.4530,
 )
 
 SCENES = MJCF_DIR
@@ -143,9 +168,7 @@ def pose_table(scene: Path, keyframe: str) -> tuple[dict[str, float] | None, flo
     model = mujoco.MjModel.from_xml_path(str(scene))
     names = [mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_KEY, i) for i in range(model.nkey)]
     if keyframe not in names:
-        raise SystemExit(
-            f"no keyframe {keyframe!r} in {scene.name}. It has: {', '.join(n for n in names if n)}"
-        )
+        raise SystemExit(f"no keyframe {keyframe!r} in {scene.name}. It has: {', '.join(n for n in names if n)}")
     qpos = model.key_qpos[names.index(keyframe)]
     table = {}
     for joint in range(model.njnt):
@@ -229,12 +252,8 @@ class Body:
         if not self.actuators:
             raise SystemExit(f"no actuated joints for duck {index} (prefix {self.prefix!r})")
 
-        self.qpos_adr = np.array(
-            [model.jnt_qposadr[model.actuator_trnid[a, 0]] for a in self.actuators]
-        )
-        self.qvel_adr = np.array(
-            [model.jnt_dofadr[model.actuator_trnid[a, 0]] for a in self.actuators]
-        )
+        self.qpos_adr = np.array([model.jnt_qposadr[model.actuator_trnid[a, 0]] for a in self.actuators])
+        self.qvel_adr = np.array([model.jnt_dofadr[model.actuator_trnid[a, 0]] for a in self.actuators])
         # The depth sensor, on the model's own `tof` site — so a head that turns takes it along,
         # which is what makes `robot.look` a way to scan a room.
         self.tof = Tof(model, ident(mujoco.mjtObj.mjOBJ_SITE, "tof"), seed=index)
@@ -392,14 +411,16 @@ class Body:
 class Handler(socketserver.StreamRequestHandler):
     """One duck's daemon. One connection at a time, which is the real relationship too."""
 
+    server: Server  # type: ignore[assignment]  # narrows BaseServer to the concrete server run() builds
+
     def handle(self) -> None:
         self.connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-        body: Body = self.server.body
+        body = self.server.body
         print(f"== duck {body.index}: daemon connected from {self.client_address}", flush=True)
         for raw in self.rfile:
             try:
                 answer = self.dispatch(body, json.loads(raw))
-            except Exception as error:  # a bad frame must not take the simulator down with it
+            except Exception as error:  # noqa: BLE001 - a bad frame must not take the simulator down with it
                 answer = {"error": str(error)}
             self.wfile.write((json.dumps(answer) + "\n").encode())
             self.wfile.flush()
@@ -410,9 +431,7 @@ class Handler(socketserver.StreamRequestHandler):
         if op == "hello":
             asked = request.get("protocol")
             if asked != PROTOCOL:
-                raise ValueError(
-                    f"the daemon speaks protocol {asked} and this simulator speaks {PROTOCOL}"
-                )
+                raise ValueError(f"the daemon speaks protocol {asked} and this simulator speaks {PROTOCOL}")
             return {"protocol": PROTOCOL}
         if op == "read":
             return body.sensors()
@@ -436,6 +455,9 @@ class Server(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
     daemon_threads = True
 
+    # Set by run() right after construction; the handler reads it per connection.
+    body: Body
+
 
 def run(world: World, headless: bool) -> None:
     """Step in real time.
@@ -451,10 +473,8 @@ def run(world: World, headless: bool) -> None:
 
             # No side panels: this window is for watching ducks, and everything the panels would
             # drive belongs to the daemons.
-            viewer = mujoco.viewer.launch_passive(
-                world.model, world.data, show_left_ui=False, show_right_ui=False
-            )
-        except Exception as error:
+            viewer = mujoco.viewer.launch_passive(world.model, world.data, show_left_ui=False, show_right_ui=False)
+        except Exception as error:  # noqa: BLE001 - any viewer failure (no GL, no display) degrades to headless
             print(f"== no viewer ({error}); running headless", flush=True)
 
     dt = world.model.opt.timestep
@@ -514,32 +534,24 @@ def main() -> None:
     parser.add_argument(
         "--cameras",
         default="",
-        help="which ducks render a head camera, by letter — `a`, `a,c`, or `all`. Opt in, because a "
-        "rendered frame costs 12 ms and four cameras is most of a core; four ducks without them is "
-        "nothing. Each becomes a frame port at --frame-port + its index",
+        help="which ducks render a head camera, by letter — `a`, `a,c`, or `all`. Opt in, because a rendered frame costs 12 ms and four cameras is most of a core; four ducks without them is nothing. Each becomes a frame port at --frame-port + its index",
     )
     parser.add_argument("--frame-port", type=int, default=7901, help="the first camera's port")
     parser.add_argument("--camera-fps", type=int, default=CAMERA_FPS)
     parser.add_argument(
         "--limp",
         action="store_true",
-        help="start with no torque, so a duck collapses where it stands — a robot found on the "
-        "floor, which is what `robotd`'s seated-boot path is for",
+        help="start with no torque, so a duck collapses where it stands — a robot found on the floor, which is what `robotd`'s seated-boot path is for",
     )
     parser.add_argument(
         "--keyframe",
         default="SIT",
-        help="where to start. SIT is a duck folded on the floor, which is stable while it waits and "
-        "which the standing policy rises from on its own. HOME is infer.py's placement — "
-        "home pose, trunk 0.125 m, upright — and STAND and FOLD are the scene's other poses",
+        help="where to start. SIT is a duck folded on the floor, which is stable while it waits and which the standing policy rises from on its own. HOME is infer.py's placement — home pose, trunk 0.125 m, upright — and STAND and FOLD are the scene's other poses",
     )
     args = parser.parse_args()
 
     if not args.scene.exists():
-        raise SystemExit(
-            f"no scene at {args.scene}. Available:\n  "
-            + "\n  ".join(sorted(p.name for p in SCENES.glob("scene*.xml")))
-        )
+        raise SystemExit(f"no scene at {args.scene}. Available:\n  " + "\n  ".join(sorted(p.name for p in SCENES.glob("scene*.xml"))))
     if args.ducks < 1:
         raise SystemExit("--ducks needs at least one duck")
 

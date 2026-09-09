@@ -1,23 +1,25 @@
 """MDP functions for microduck tasks"""
 
+from __future__ import annotations
+
+import importlib
 import math
 from dataclasses import dataclass as _dataclass
+from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
-from typing import TYPE_CHECKING, Optional
-import mujoco
-
-from mjlab.envs.manager_based_rl_env import ManagerBasedRlEnv
-from mjlab.managers.scene_entity_config import SceneEntityCfg
-from mjlab.managers.reward_manager import RewardManager as _RewardManager
 from mjlab.entity import Entity
-from mjlab.tasks.velocity.mdp.velocity_command import UniformVelocityCommand, UniformVelocityCommandCfg
-from mjlab.tasks.velocity.mdp import observations as _velocity_obs
-from mjlab.managers.command_manager import CommandTerm
+from mjlab.envs.manager_based_rl_env import ManagerBasedRlEnv, ManagerBasedRlEnvCfg
+from mjlab.envs.mdp.actions.actions import BaseAction
 from mjlab.managers import CommandTermCfg
+from mjlab.managers.command_manager import CommandManager, CommandTerm
 from mjlab.managers.event_manager import requires_model_fields
-from mjlab.utils.lab_api.math import matrix_from_quat, wrap_to_pi, quat_apply, quat_from_angle_axis
+from mjlab.managers.reward_manager import RewardManager as _RewardManager
+from mjlab.managers.scene_entity_config import SceneEntityCfg
+from mjlab.tasks.velocity.mdp import observations as _velocity_obs
+from mjlab.tasks.velocity.mdp.velocity_command import UniformVelocityCommand, UniformVelocityCommandCfg
+from mjlab.utils.lab_api.math import matrix_from_quat, quat_apply, quat_from_angle_axis, wrap_to_pi
 from rsl_rl.algorithms.ppo import PPO as _PPO
 
 # ---------------------------------------------------------------------------
@@ -29,6 +31,7 @@ from rsl_rl.algorithms.ppo import PPO as _PPO
 # ---------------------------------------------------------------------------
 _orig_reward_compute = _RewardManager.compute
 
+
 def _nan_safe_reward_compute(self, dt: float) -> torch.Tensor:
     result = _orig_reward_compute(self, dt)
     # _episode_sums is updated inside compute() before nan_to_num can act.
@@ -36,6 +39,7 @@ def _nan_safe_reward_compute(self, dt: float) -> torch.Tensor:
     for key in self._episode_sums:
         torch.nan_to_num_(self._episode_sums[key], nan=0.0)
     return torch.nan_to_num(result, nan=0.0)
+
 
 _RewardManager.compute = _nan_safe_reward_compute
 
@@ -49,11 +53,13 @@ _RewardManager.compute = _nan_safe_reward_compute
 # ---------------------------------------------------------------------------
 _orig_compute_returns = _PPO.compute_returns
 
+
 def _safe_compute_returns(self, obs) -> None:
     _orig_compute_returns(self, obs)
     st = self.storage
     torch.nan_to_num_(st.advantages, nan=0.0, posinf=0.0, neginf=0.0)
-    torch.nan_to_num_(st.returns,    nan=0.0, posinf=0.0, neginf=0.0)
+    torch.nan_to_num_(st.returns, nan=0.0, posinf=0.0, neginf=0.0)
+
 
 _PPO.compute_returns = _safe_compute_returns
 
@@ -73,8 +79,9 @@ print("[mdp] Patches 1-2 active: NaN-safe reward/advantage")
 # crashing with KeyError on passive_*.  Filter passive joints out of the
 # exported metadata so policies stay consistent with the 14-dim action space.
 # ---------------------------------------------------------------------------
-from mjlab.rl import exporter_utils as _exporter_utils  # noqa: E402
-from mjlab.envs.mdp.actions import JointPositionAction as _JointAction  # noqa: E402
+from mjlab.envs.mdp.actions import JointPositionAction as _JointAction
+from mjlab.rl import exporter_utils as _exporter_utils
+
 
 def _get_base_metadata_no_passive(env, run_path):
     robot = env.scene["robot"]
@@ -96,24 +103,92 @@ def _get_base_metadata_no_passive(env, run_path):
         "default_joint_pos": [default_jp[i] for i in keep_idx],
         "command_names": list(env.command_manager.active_terms),
         "observation_names": env.observation_manager.active_terms["actor"],
-        "action_scale": joint_action._scale[0].cpu().tolist()
-        if isinstance(joint_action._scale, torch.Tensor)
-        else joint_action._scale,
+        "action_scale": joint_action._scale[0].cpu().tolist() if isinstance(joint_action._scale, torch.Tensor) else joint_action._scale,
     }
 
+
 _exporter_utils.get_base_metadata = _get_base_metadata_no_passive
-# Also patch the already-imported reference in the velocity task exporter.
+# Also patch the already-imported reference in the velocity task exporter. That
+# module was removed in mjlab 1.3.0 (export moved into the runner), so this is a
+# best-effort import by name: the patch above is the one that matters.
 try:
-    from mjlab.tasks.velocity.rl import exporter as _vel_exporter  # noqa: E402
+    _vel_exporter = importlib.import_module("mjlab.tasks.velocity.rl.exporter")
     if hasattr(_vel_exporter, "get_base_metadata"):
-        _vel_exporter.get_base_metadata = _get_base_metadata_no_passive
-except Exception:
+        setattr(_vel_exporter, "get_base_metadata", _get_base_metadata_no_passive)  # noqa: B010 - patching a module attribute by name
+except ImportError:
     pass
 
 print("[mdp] Patch 4 active: ONNX export filters passive_* joints")
 
 if TYPE_CHECKING:
     from mjlab.viewer.debug_visualizer import DebugVisualizer
+
+
+class MicroduckEnv(ManagerBasedRlEnv):
+    """Typing-only view of the env with the scratch state these MDP terms attach.
+
+    mjlab's ``ManagerBasedRlEnv`` is a plain class, and reward/event/observation
+    terms here keep their per-step history by lazily setting private attributes
+    on the env (the standard mjlab idiom: ``if not hasattr(env, "_x"): env._x =
+    ...``). Declaring them here (annotations only, no ``__init__``, nothing is
+    ever instantiated) makes those reads/writes checkable instead of ~150 pyright
+    ``reportAttributeAccessIssue`` errors. Functions annotate ``env:
+    MicroduckEnv``; at runtime the real object is a plain ``ManagerBasedRlEnv``.
+    """
+
+    # Every task in this repo configures commands, so the env always ends up with
+    # the real CommandManager; the base class widens it with NullCommandManager
+    # (whose get_command returns None) only for command-less envs.
+    command_manager: CommandManager
+
+    _ball_kick_dir_w: torch.Tensor
+    _contact_change_count: torch.Tensor
+    _contact_change_timer: torch.Tensor
+    _fallen_tax_armed: torch.Tensor
+    _fallen_timer_s: torch.Tensor
+    _head_bias_ema: torch.Tensor
+    _head_pose_bl_ids: torch.Tensor
+    _head_pose_bl_mask: torch.Tensor
+    _head_pose_neck_ids: torch.Tensor
+    _heading_ref: torch.Tensor
+    _height_potential_prev: torch.Tensor
+    _imu_misalign_quat: torch.Tensor
+    _leg_sym_ids: tuple[torch.Tensor, torch.Tensor]
+    _mouth_payload_kg: torch.Tensor
+    _original_imu_quat: torch.Tensor
+    _original_mass_inertia: dict[str, torch.Tensor]
+    _prev_actuator_forces: torch.Tensor
+    _prev_contacts_for_freq: torch.Tensor
+    _prev_foot_forces: torch.Tensor
+    _prev_joint_vel: torch.Tensor
+    _prev_leg_actions: torch.Tensor
+    _prev_leg_actions_for_acc: torch.Tensor
+    _prev_neck_actions: torch.Tensor
+    _prev_neck_actions_for_acc: torch.Tensor
+    _prev_prev_leg_actions_for_acc: torch.Tensor
+    _prev_prev_neck_actions_for_acc: torch.Tensor
+    _prev_trunk_vz: torch.Tensor
+    _recovery_armed: torch.Tensor
+    _recovery_fallen_s: torch.Tensor
+    _roulade_accum: torch.Tensor
+    _roulade_head_body_id: int
+    _roulade_head_latch: torch.Tensor
+    _roulade_last_update_step: int
+    _roulade_max: torch.Tensor
+    _roulade_paid: torch.Tensor
+    _swing_accum: torch.Tensor
+    _upright_potential_prev: torch.Tensor
+
+
+def _first_id(ids: list[int] | slice, what: str) -> int:
+    """First resolved index out of a SceneEntityCfg ``*_ids`` field.
+
+    Those fields are ``list[int] | slice``: the slice is the "all of them"
+    default that survives when the cfg named no bodies/sites. Terms that index a
+    single specific body/site need the resolved list, so say so loudly.
+    """
+    assert not isinstance(ids, slice), f"asset_cfg must name a specific {what} (got the select-all default)"
+    return int(ids[0])
 
 
 _DEFAULT_ASSET_CFG = SceneEntityCfg("robot")
@@ -123,7 +198,7 @@ _DEFAULT_ASSET_CFG = SceneEntityCfg("robot")
 _NECK_JOINT_PATTERNS = [r".*neck_pitch.*", r".*head_pitch.*", r".*head_yaw.*", r".*head_roll.*"]
 
 
-def _servo_joint_ids(env: "ManagerBasedRlEnv", asset: Entity) -> list:
+def _servo_joint_ids(env: MicroduckEnv, asset: Entity) -> list:
     """Entity-local indices of the servo (non-``passive_``) joints, cached.
 
     All joint-index-based reward/event params in this module (``joint_indices``,
@@ -143,20 +218,20 @@ def _servo_joint_ids(env: "ManagerBasedRlEnv", asset: Entity) -> list:
     return ids
 
 
-def _servo_joint_pos(env: "ManagerBasedRlEnv", asset: Entity) -> torch.Tensor:
+def _servo_joint_pos(env: MicroduckEnv, asset: Entity) -> torch.Tensor:
     return asset.data.joint_pos[:, _servo_joint_ids(env, asset)]
 
 
-def _servo_joint_vel(env: "ManagerBasedRlEnv", asset: Entity) -> torch.Tensor:
+def _servo_joint_vel(env: MicroduckEnv, asset: Entity) -> torch.Tensor:
     return asset.data.joint_vel[:, _servo_joint_ids(env, asset)]
 
 
-def _servo_default_joint_pos(env: "ManagerBasedRlEnv", asset: Entity) -> torch.Tensor:
+def _servo_default_joint_pos(env: MicroduckEnv, asset: Entity) -> torch.Tensor:
     return asset.data.default_joint_pos[:, _servo_joint_ids(env, asset)]
 
 
 def reset_with_forward_velocity(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     env_ids: torch.Tensor,
     velocity_range: tuple[float, float] = (0.3, 0.8),
     fraction_stages: list[dict] | None = None,
@@ -227,7 +302,7 @@ def reset_with_forward_velocity(
 
 
 def reset_action_history(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     env_ids: torch.Tensor,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
 ):
@@ -248,26 +323,26 @@ def reset_action_history(
     asset: Entity = env.scene[asset_cfg.name]
 
     # Reset leg action rate cache
-    if hasattr(env, '_prev_leg_actions'):
+    if hasattr(env, "_prev_leg_actions"):
         # Set to current action (or zero if no action yet)
-        if hasattr(env, 'action_manager') and env.action_manager.action is not None:
-            leg_joint_indices = list(range(0, 5)) + list(range(9, 14))
+        if hasattr(env, "action_manager") and env.action_manager.action is not None:
+            leg_joint_indices = list(range(5)) + list(range(9, 14))
             env._prev_leg_actions[env_ids] = env.action_manager.action[env_ids][:, leg_joint_indices]
         else:
             env._prev_leg_actions[env_ids] = 0.0
 
     # Reset neck action rate cache
-    if hasattr(env, '_prev_neck_actions'):
-        if hasattr(env, 'action_manager') and env.action_manager.action is not None:
+    if hasattr(env, "_prev_neck_actions"):
+        if hasattr(env, "action_manager") and env.action_manager.action is not None:
             neck_joint_indices = list(range(5, 9))
             env._prev_neck_actions[env_ids] = env.action_manager.action[env_ids][:, neck_joint_indices]
         else:
             env._prev_neck_actions[env_ids] = 0.0
 
     # Reset leg action acceleration cache
-    if hasattr(env, '_prev_leg_actions_for_acc'):
-        if hasattr(env, 'action_manager') and env.action_manager.action is not None:
-            leg_joint_indices = list(range(0, 5)) + list(range(9, 14))
+    if hasattr(env, "_prev_leg_actions_for_acc"):
+        if hasattr(env, "action_manager") and env.action_manager.action is not None:
+            leg_joint_indices = list(range(5)) + list(range(9, 14))
             current_action = env.action_manager.action[env_ids][:, leg_joint_indices]
             env._prev_leg_actions_for_acc[env_ids] = current_action
             env._prev_prev_leg_actions_for_acc[env_ids] = current_action
@@ -276,8 +351,8 @@ def reset_action_history(
             env._prev_prev_leg_actions_for_acc[env_ids] = 0.0
 
     # Reset neck action acceleration cache
-    if hasattr(env, '_prev_neck_actions_for_acc'):
-        if hasattr(env, 'action_manager') and env.action_manager.action is not None:
+    if hasattr(env, "_prev_neck_actions_for_acc"):
+        if hasattr(env, "action_manager") and env.action_manager.action is not None:
             neck_joint_indices = list(range(5, 9))
             current_action = env.action_manager.action[env_ids][:, neck_joint_indices]
             env._prev_neck_actions_for_acc[env_ids] = current_action
@@ -287,35 +362,31 @@ def reset_action_history(
             env._prev_prev_neck_actions_for_acc[env_ids] = 0.0
 
     # Reset joint velocity cache for joint accelerations
-    if hasattr(asset.data, '_prev_joint_vel'):
+    if hasattr(env, "_prev_joint_vel"):
         # Get current joint velocities for reset environments
         joint_vel = asset.data.joint_vel[env_ids, :][:, asset_cfg.joint_ids]
-        asset.data._prev_joint_vel[env_ids] = joint_vel
+        env._prev_joint_vel[env_ids] = joint_vel
 
     # Reset contact frequency tracking
-    if hasattr(env, '_contact_change_count'):
+    if hasattr(env, "_contact_change_count"):
         env._contact_change_count[env_ids] = 0.0
-    if hasattr(env, '_contact_change_timer'):
+    if hasattr(env, "_contact_change_timer"):
         env._contact_change_timer[env_ids] = 0.0
-    if hasattr(env, '_prev_contacts_for_freq'):
-        if "feet_ground_contact" in env.scene.sensors:
-            contacts = env.scene.sensors["feet_ground_contact"].data.found[env_ids, :2]
-            env._prev_contacts_for_freq[env_ids] = contacts
+    if hasattr(env, "_prev_contacts_for_freq") and "feet_ground_contact" in env.scene.sensors:
+        contacts = env.scene.sensors["feet_ground_contact"].data.found[env_ids, :2]
+        env._prev_contacts_for_freq[env_ids] = contacts
 
     # Reset foot force smoothness tracking
-    if hasattr(env, '_prev_foot_forces'):
-        if "feet_ground_contact" in env.scene.sensors:
-            forces = env.scene.sensors["feet_ground_contact"].data.found[env_ids, :2].squeeze(-1)
-            env._prev_foot_forces[env_ids] = forces
+    if hasattr(env, "_prev_foot_forces") and "feet_ground_contact" in env.scene.sensors:
+        forces = env.scene.sensors["feet_ground_contact"].data.found[env_ids, :2].squeeze(-1)
+        env._prev_foot_forces[env_ids] = forces
 
     # Reset actuator torque rate tracking
-    if hasattr(env, '_prev_actuator_forces'):
+    if hasattr(env, "_prev_actuator_forces"):
         env._prev_actuator_forces[env_ids] = asset.data.actuator_force[env_ids].clone()
 
 
-def joint_accelerations_l2(
-    env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG
-) -> torch.Tensor:
+def joint_accelerations_l2(env: MicroduckEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
     """
     Penalize joint accelerations using L2 squared norm.
     Joint accelerations are computed using finite differences of joint velocities.
@@ -334,25 +405,23 @@ def joint_accelerations_l2(
 
     # Get previous joint velocities (stored in asset data)
     # Note: This assumes the environment stores previous joint velocities
-    if not hasattr(asset.data, '_prev_joint_vel'):
+    if not hasattr(env, "_prev_joint_vel"):
         # Initialize on first call
-        asset.data._prev_joint_vel = joint_vel.clone()
+        env._prev_joint_vel = joint_vel.clone()
         return torch.zeros(env.num_envs, device=env.device)
 
     # Compute joint accelerations using finite differences
     dt = env.step_dt
-    joint_acc = (joint_vel - asset.data._prev_joint_vel) / dt
+    joint_acc = (joint_vel - env._prev_joint_vel) / dt
 
     # Store current velocities for next step
-    asset.data._prev_joint_vel = joint_vel.clone()
+    env._prev_joint_vel = joint_vel.clone()
 
     # Return L2 squared norm
     return torch.sum(torch.square(joint_acc), dim=1)
 
 
-def leg_action_rate_l2(
-    env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG
-) -> torch.Tensor:
+def leg_action_rate_l2(env: MicroduckEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
     """
     Penalize the rate of change of leg actions (action_t - action_{t-1}).
     Leg joints are indices 0-4 and 9-13 (10 joints total).
@@ -365,11 +434,11 @@ def leg_action_rate_l2(
         Penalty tensor of shape (num_envs,)
     """
     # Get leg joint indices
-    leg_joint_indices = list(range(0, 5)) + list(range(9, 14))
+    leg_joint_indices = list(range(5)) + list(range(9, 14))
 
     # Get current and previous actions for leg joints only
     # Actions are stored in env (assuming the action is available)
-    if not hasattr(env, 'action_manager'):
+    if not hasattr(env, "action_manager"):
         return torch.zeros(env.num_envs, device=env.device)
 
     # Get the joint position action
@@ -379,7 +448,7 @@ def leg_action_rate_l2(
 
     leg_actions = actions[:, leg_joint_indices]
 
-    if not hasattr(env, '_prev_leg_actions'):
+    if not hasattr(env, "_prev_leg_actions"):
         env._prev_leg_actions = leg_actions.clone()
         return torch.zeros(env.num_envs, device=env.device)
 
@@ -389,9 +458,7 @@ def leg_action_rate_l2(
     return torch.sum(torch.square(action_rate), dim=1)
 
 
-def neck_action_rate_l2(
-    env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG
-) -> torch.Tensor:
+def neck_action_rate_l2(env: MicroduckEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
     """
     Penalize the rate of change of neck actions (action_t - action_{t-1}).
     Neck joints are indices 5-8 (4 joints total).
@@ -407,7 +474,7 @@ def neck_action_rate_l2(
     neck_joint_indices = list(range(5, 9))
 
     # Get current and previous actions for neck joints only
-    if not hasattr(env, 'action_manager'):
+    if not hasattr(env, "action_manager"):
         return torch.zeros(env.num_envs, device=env.device)
 
     actions = env.action_manager.action
@@ -416,7 +483,7 @@ def neck_action_rate_l2(
 
     neck_actions = actions[:, neck_joint_indices]
 
-    if not hasattr(env, '_prev_neck_actions'):
+    if not hasattr(env, "_prev_neck_actions"):
         env._prev_neck_actions = neck_actions.clone()
         return torch.zeros(env.num_envs, device=env.device)
 
@@ -426,9 +493,7 @@ def neck_action_rate_l2(
     return torch.sum(torch.square(action_rate), dim=1)
 
 
-def leg_action_acceleration_l2(
-    env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG
-) -> torch.Tensor:
+def leg_action_acceleration_l2(env: MicroduckEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
     """
     Penalize leg action accelerations (action_t - 2*action_{t-1} + action_{t-2}).
     Leg joints are indices 0-4 and 9-13 (10 joints total).
@@ -441,9 +506,9 @@ def leg_action_acceleration_l2(
         Penalty tensor of shape (num_envs,)
     """
     # Get leg joint indices
-    leg_joint_indices = list(range(0, 5)) + list(range(9, 14))
+    leg_joint_indices = list(range(5)) + list(range(9, 14))
 
-    if not hasattr(env, 'action_manager'):
+    if not hasattr(env, "action_manager"):
         return torch.zeros(env.num_envs, device=env.device)
 
     actions = env.action_manager.action
@@ -452,7 +517,7 @@ def leg_action_acceleration_l2(
 
     leg_actions = actions[:, leg_joint_indices]
 
-    if not hasattr(env, '_prev_leg_actions_for_acc'):
+    if not hasattr(env, "_prev_leg_actions_for_acc"):
         env._prev_leg_actions_for_acc = leg_actions.clone()
         env._prev_prev_leg_actions_for_acc = leg_actions.clone()
         return torch.zeros(env.num_envs, device=env.device)
@@ -465,9 +530,7 @@ def leg_action_acceleration_l2(
     return torch.sum(torch.square(action_acc), dim=1)
 
 
-def neck_action_acceleration_l2(
-    env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG
-) -> torch.Tensor:
+def neck_action_acceleration_l2(env: MicroduckEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
     """
     Penalize neck action accelerations (action_t - 2*action_{t-1} + action_{t-2}).
     Neck joints are indices 5-8 (4 joints total).
@@ -482,7 +545,7 @@ def neck_action_acceleration_l2(
     # Get neck joint indices
     neck_joint_indices = list(range(5, 9))
 
-    if not hasattr(env, 'action_manager'):
+    if not hasattr(env, "action_manager"):
         return torch.zeros(env.num_envs, device=env.device)
 
     actions = env.action_manager.action
@@ -491,7 +554,7 @@ def neck_action_acceleration_l2(
 
     neck_actions = actions[:, neck_joint_indices]
 
-    if not hasattr(env, '_prev_neck_actions_for_acc'):
+    if not hasattr(env, "_prev_neck_actions_for_acc"):
         env._prev_neck_actions_for_acc = neck_actions.clone()
         env._prev_prev_neck_actions_for_acc = neck_actions.clone()
         return torch.zeros(env.num_envs, device=env.device)
@@ -505,7 +568,7 @@ def neck_action_acceleration_l2(
 
 
 def _fallen_mask(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     asset,
     gate_z_below: float,
     gate_tilt_above_deg: float,
@@ -514,9 +577,7 @@ def _fallen_mask(
     below `gate_z_below` OR tilt beyond `gate_tilt_above_deg`. Used to gate the
     recovery rewards so they only steer while actually fallen and contribute
     exactly zero during clean walking (no walk tax / bounce farming)."""
-    z = torch.nan_to_num(
-        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
-    )
+    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2], nan=0.0)
     quat = asset.data.root_link_quat_w
     # cos(tilt) = R22 = 1 - 2(qx² + qy²)
     cos_tilt = 1.0 - 2.0 * (quat[:, 1] ** 2 + quat[:, 2] ** 2)
@@ -525,7 +586,7 @@ def _fallen_mask(
 
 
 def feet_air_time_upright(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     gate_tilt_above_deg: float = 40.0,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     **air_time_kwargs,
@@ -537,6 +598,7 @@ def feet_air_time_upright(
     exploit. Air time is only meaningful upright.
     """
     from mjlab.tasks.velocity.mdp import feet_air_time as _template_air_time
+
     reward = _template_air_time(env, **air_time_kwargs)
     asset: Entity = env.scene[asset_cfg.name]
     upright = 1.0 - _fallen_mask(env, asset, 0.0, gate_tilt_above_deg)
@@ -544,7 +606,7 @@ def feet_air_time_upright(
 
 
 def upright_progress(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
 ) -> torch.Tensor:
     """Potential-based upright shaping: Δcos(tilt) per step.
@@ -559,9 +621,7 @@ def upright_progress(
     """
     asset: Entity = env.scene[asset_cfg.name]
     quat = asset.data.root_link_quat_w
-    cos_tilt = torch.nan_to_num(
-        1.0 - 2.0 * (quat[:, 1] ** 2 + quat[:, 2] ** 2), nan=1.0
-    )
+    cos_tilt = torch.nan_to_num(1.0 - 2.0 * (quat[:, 1] ** 2 + quat[:, 2] ** 2), nan=1.0)
     if not hasattr(env, "_upright_potential_prev"):
         env._upright_potential_prev = cos_tilt.clone()
     # Freshly reset envs: no spurious delta from the previous episode's pose.
@@ -573,7 +633,7 @@ def upright_progress(
 
 
 def height_progress(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     ceiling: float = 0.115,
 ) -> torch.Tensor:
@@ -588,9 +648,7 @@ def height_progress(
     so hopping above stance height pays nothing extra.
     """
     asset: Entity = env.scene[asset_cfg.name]
-    z = torch.nan_to_num(
-        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
-    )
+    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2], nan=0.0)
     pot = torch.clamp(z, max=ceiling)
     if not hasattr(env, "_height_potential_prev"):
         env._height_potential_prev = pot.clone()
@@ -602,7 +660,7 @@ def height_progress(
 
 
 def fallen_state_penalty(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     gate_tilt_above_deg: float = 40.0,
     release_tilt_below_deg: float | None = None,
@@ -624,18 +682,14 @@ def fallen_state_penalty(
     fallen = _fallen_mask(env, asset, 0.0, gate_tilt_above_deg).bool()
     if release_tilt_below_deg is None:
         return fallen.float()
-    z = torch.nan_to_num(
-        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
-    )
+    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2], nan=0.0)
     quat = asset.data.root_link_quat_w
     cos_tilt = 1.0 - 2.0 * (quat[:, 1] ** 2 + quat[:, 2] ** 2)
     up = cos_tilt > math.cos(math.radians(release_tilt_below_deg))
     if release_z_above is not None:
         up &= z > release_z_above
     if not hasattr(env, "_fallen_tax_armed"):
-        env._fallen_tax_armed = torch.zeros(
-            env.num_envs, dtype=torch.bool, device=env.device
-        )
+        env._fallen_tax_armed = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
     fresh = env.episode_length_buf <= 1
     env._fallen_tax_armed[fresh] = False
     env._fallen_tax_armed |= fallen
@@ -644,7 +698,7 @@ def fallen_state_penalty(
 
 
 def recovery_success(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     fallen_tilt_deg: float = 40.0,
     min_fallen_s: float = 0.5,
@@ -658,9 +712,7 @@ def recovery_success(
     Gives the sparse-but-strong endpoint gradient the dense gated terms lack.
     """
     asset: Entity = env.scene[asset_cfg.name]
-    z = torch.nan_to_num(
-        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
-    )
+    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2], nan=0.0)
     quat = asset.data.root_link_quat_w
     cos_tilt = 1.0 - 2.0 * (quat[:, 1] ** 2 + quat[:, 2] ** 2)
     fallen = cos_tilt < math.cos(math.radians(fallen_tilt_deg))
@@ -671,9 +723,7 @@ def recovery_success(
     fresh = env.episode_length_buf <= 1
     env._recovery_fallen_s[fresh] = 0.0
     env._recovery_armed[fresh] = False
-    env._recovery_fallen_s = torch.where(
-        fallen, env._recovery_fallen_s + env.step_dt, torch.zeros_like(env._recovery_fallen_s)
-    )
+    env._recovery_fallen_s = torch.where(fallen, env._recovery_fallen_s + env.step_dt, torch.zeros_like(env._recovery_fallen_s))
     env._recovery_armed |= env._recovery_fallen_s >= min_fallen_s
     fired = env._recovery_armed & up
     env._recovery_armed &= ~fired
@@ -681,7 +731,7 @@ def recovery_success(
 
 
 def body_upright_linear(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     gate_z_below: float | None = None,
     gate_tilt_above_deg: float = 40.0,
@@ -708,7 +758,7 @@ def body_upright_linear(
 
 
 def body_upright_gaussian(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     std: float = 0.1,
 ) -> torch.Tensor:
@@ -732,7 +782,7 @@ def body_upright_gaussian(
 
 
 def upright_gaussian_at_height(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     std: float,
     height_low: float,
     height_high: float,
@@ -752,16 +802,14 @@ def upright_gaussian_at_height(
     qy = quat[:, 2]
     tilt_sq = 2.0 * (qx * qx + qy * qy)
     upright_g = torch.exp(-tilt_sq / (std * std))
-    z = torch.nan_to_num(
-        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
-    )
+    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2], nan=0.0)
     t = torch.clamp((z - height_low) / max(height_high - height_low, 1e-6), 0.0, 1.0)
     smooth = t * t * (3.0 - 2.0 * t)
     return upright_g * smooth
 
 
 def body_ang_vel_at_height(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     height_low: float,
     height_high: float,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
@@ -789,9 +837,7 @@ def body_ang_vel_at_height(
     asset = env.scene[asset_cfg.name]
     ang_vel = asset.data.body_link_ang_vel_w[:, asset_cfg.body_ids, :].squeeze(1)
     cost = torch.sum(torch.square(ang_vel[:, :2]), dim=1)
-    z = torch.nan_to_num(
-        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
-    )
+    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2], nan=0.0)
     t = torch.clamp((z - height_low) / max(height_high - height_low, 1e-6), 0.0, 1.0)
     gate = t * t * (3.0 - 2.0 * t)
     if tilt_full_deg is not None:
@@ -808,13 +854,13 @@ def body_ang_vel_at_height(
 
 
 def standing_composite_score(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     target_height: float,
     height_std: float,
     upright_std: float,
     pose_std: float,
     joint_indices: list,
-    target_overrides: Optional[dict] = None,
+    target_overrides: dict | None = None,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
 ) -> torch.Tensor:
     """Smooth multiplicative goal-state score (product of three Gaussians).
@@ -830,10 +876,8 @@ def standing_composite_score(
     """
     asset = env.scene[asset_cfg.name]
 
-    z = torch.nan_to_num(
-        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
-    )
-    height_score = torch.exp(-((z - target_height) / height_std) ** 2)
+    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2], nan=0.0)
+    height_score = torch.exp(-(((z - target_height) / height_std) ** 2))
 
     quat = asset.data.root_link_quat_w
     qx = quat[:, 1]
@@ -854,13 +898,13 @@ def standing_composite_score(
 
 
 def standing_success_bonus(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     target_height: float,
     height_tol: float,
     upright_threshold: float,
     pose_tol: float,
     joint_indices: list,
-    target_overrides: Optional[dict] = None,
+    target_overrides: dict | None = None,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
 ) -> torch.Tensor:
     """Binary bonus: 1.0 iff height, uprightness AND pose are all within tol.
@@ -874,9 +918,7 @@ def standing_success_bonus(
     """
     asset = env.scene[asset_cfg.name]
 
-    z = torch.nan_to_num(
-        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
-    )
+    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2], nan=0.0)
     height_ok = (z - target_height).abs() <= height_tol
 
     quat = asset.data.root_link_quat_w
@@ -898,7 +940,7 @@ def standing_success_bonus(
 
 
 def com_upward_velocity(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     max_height: float = 0.08,
     gate_z_below: float | None = None,
@@ -920,9 +962,7 @@ def com_upward_velocity(
     """
     asset: Entity = env.scene[asset_cfg.name]
     # nan_to_num: MuJoCo can produce NaN on contact instability; treat as z=0
-    com_z = torch.nan_to_num(
-        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
-    )
+    com_z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2], nan=0.0)
     vz = torch.nan_to_num(asset.data.root_link_lin_vel_w[:, 2], nan=0.0)
     below_target = (com_z < max_height).float()
     reward = torch.clamp(vz, min=0.0, max=max_vz) * below_target
@@ -934,7 +974,7 @@ def com_upward_velocity(
 
 
 def fallen_too_long(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     gate_z_below: float = 0.10,
     gate_tilt_above_deg: float = 40.0,
@@ -954,14 +994,12 @@ def fallen_too_long(
         env._fallen_timer_s = torch.zeros(env.num_envs, device=env.device)
     # Freshly reset envs start with a clean timer.
     env._fallen_timer_s[env.episode_length_buf <= 1] = 0.0
-    env._fallen_timer_s = torch.where(
-        fallen, env._fallen_timer_s + env.step_dt, torch.zeros_like(env._fallen_timer_s)
-    )
+    env._fallen_timer_s = torch.where(fallen, env._fallen_timer_s + env.step_dt, torch.zeros_like(env._fallen_timer_s))
     return env._fallen_timer_s >= max_duration_s
 
 
 def robot_state_is_nan(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     sensor_names: tuple[str, ...] = (),
 ) -> torch.Tensor:
@@ -1015,7 +1053,7 @@ def robot_state_is_nan(
 
 
 def root_height_below(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     min_height: float,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
 ) -> torch.Tensor:
@@ -1033,7 +1071,7 @@ def root_height_below(
 
 
 def descent_speed_reward(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     cap: float = 0.8,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
 ) -> torch.Tensor:
@@ -1046,14 +1084,12 @@ def descent_speed_reward(
     motionless and upright (the robot "brakes" instead of gliding). NaN-safe.
     """
     asset: Entity = env.scene[asset_cfg.name]
-    vx = torch.nan_to_num(
-        asset.data.root_link_lin_vel_w[:, 0], nan=0.0, posinf=0.0, neginf=0.0
-    )
+    vx = torch.nan_to_num(asset.data.root_link_lin_vel_w[:, 0], nan=0.0, posinf=0.0, neginf=0.0)
     return torch.clamp(vx, min=0.0, max=cap)
 
 
 def reset_rolling_entry(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     env_ids: torch.Tensor | None,
     speed_range: tuple = (0.25, 0.45),
     wheel_radius: float = 0.0175,
@@ -1091,7 +1127,7 @@ def reset_rolling_entry(
 
 
 def wheel_glide_reward(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     cap_speed: float = 0.35,
     wheel_radius: float = 0.0175,
 ) -> torch.Tensor:
@@ -1116,7 +1152,7 @@ def wheel_glide_reward(
     return torch.clamp(speed, min=0.0, max=cap_speed)
 
 
-def is_alive(env: ManagerBasedRlEnv) -> torch.Tensor:
+def is_alive(env: MicroduckEnv) -> torch.Tensor:
     """
     Reward for staying alive (not terminated)
 
@@ -1130,7 +1166,7 @@ def is_alive(env: ManagerBasedRlEnv) -> torch.Tensor:
 
 
 def com_height_target(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     target_height_min: float = 0.1,
     target_height_max: float = 0.15,
@@ -1154,9 +1190,7 @@ def com_height_target(
     # env_origins[:, 2] is 0 for flat ground, so this is safe unconditionally.
     # nan_to_num: MuJoCo can produce NaN on contact instability; treat as z=0
     # so the penalty is finite (small, since 0 is near the target range).
-    com_height = torch.nan_to_num(
-        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
-    )
+    com_height = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2], nan=0.0)
 
     # Reward when in range, penalty when outside
     # Use smooth penalty that increases quadratically with distance from range
@@ -1181,7 +1215,7 @@ def crouch_height_target(
     hold_lo: float = 0.375,
     hold_hi: float = 0.625,
 ) -> torch.Tensor:
-    """"Trapezoid" trunk height target along the phase [0,1).
+    """ "Trapezoid" trunk height target along the phase [0,1).
 
     phase ∈ [0, hold_lo)      : descent    height_high -> height_low
     phase ∈ [hold_lo, hold_hi): hold       height_low   (the crouched glide)
@@ -1226,11 +1260,11 @@ def crouch_glide_reward_from_values(
     """
     phase = (torch.atan2(cmd_sin, cmd_cos) / (2 * torch.pi)) % 1.0
     target = crouch_height_target(phase, height_low, height_high, hold_lo, hold_hi)
-    return torch.exp(-((com_height - target) / std) ** 2)
+    return torch.exp(-(((com_height - target) / std) ** 2))
 
 
 def crouch_glide_height_by_phase(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     command_name: str = "twist",
     height_low: float = 0.075,
     height_high: float = 0.11,
@@ -1245,18 +1279,22 @@ def crouch_glide_height_by_phase(
     the terrain origin, nan->0). The phase comes from the GroundPick command.
     """
     asset: Entity = env.scene[asset_cfg.name]
-    com_height = torch.nan_to_num(
-        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
-    )
+    com_height = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2], nan=0.0)
     cmd = env.command_manager.get_command(command_name)
     return crouch_glide_reward_from_values(
-        com_height, cmd[:, 0], cmd[:, 1],
-        height_low, height_high, hold_lo, hold_hi, std,
+        com_height,
+        cmd[:, 0],
+        cmd[:, 1],
+        height_low,
+        height_high,
+        hold_lo,
+        hold_hi,
+        std,
     )
 
 
 def forward_speed_reward(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     vel_ref: float = 0.2,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
 ) -> torch.Tensor:
@@ -1294,14 +1332,14 @@ def crouch_pose_blend(
 
 
 def _crouch_pose_error(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     asset_cfg: SceneEntityCfg,
     command_name: str,
     crouch_pose: dict,
     descent_end: float,
     hold_end: float,
     rise_end: float,
-    stand_pose: Optional[dict] = None,
+    stand_pose: dict | None = None,
 ):
     """(cur, target) joint tensors for the phase-interpolated crouch pose.
 
@@ -1313,31 +1351,29 @@ def _crouch_pose_error(
     asset: Entity = env.scene[asset_cfg.name]
     cmd = env.command_manager.get_command(command_name)
     phase = (torch.atan2(cmd[:, 1], cmd[:, 0]) / (2 * torch.pi)) % 1.0  # (B,)
-    blend = crouch_pose_blend(phase, descent_end, hold_end, rise_end)   # (B,) 0..1
+    blend = crouch_pose_blend(phase, descent_end, hold_end, rise_end)  # (B,) 0..1
 
     names = list(crouch_pose.keys())
     ids = [int(asset.find_joints([n])[0][0]) for n in names]
-    default = asset.data.default_joint_pos[:, ids]                     # (B,k)
+    default = asset.data.default_joint_pos[:, ids]  # (B,k)
 
-    stand = default.clone()                                            # source pose
+    stand = default.clone()  # source pose
     if stand_pose:
         for j, n in enumerate(names):
             if n in stand_pose:
                 stand[:, j] = stand_pose[n]
-    crouch = torch.tensor(
-        [crouch_pose[n] for n in names], device=env.device, dtype=default.dtype
-    ).unsqueeze(0)                                                     # (1,k)
+    crouch = torch.tensor([crouch_pose[n] for n in names], device=env.device, dtype=default.dtype).unsqueeze(0)  # (1,k)
 
-    target = stand + blend.unsqueeze(-1) * (crouch - stand)           # (B,k)
-    cur = asset.data.joint_pos[:, ids]                                # (B,k)
+    target = stand + blend.unsqueeze(-1) * (crouch - stand)  # (B,k)
+    cur = asset.data.joint_pos[:, ids]  # (B,k)
     return cur, target
 
 
 def crouch_glide_pose_by_phase(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     command_name: str = "twist",
-    crouch_pose: Optional[dict] = None,
-    stand_pose: Optional[dict] = None,
+    crouch_pose: dict | None = None,
+    stand_pose: dict | None = None,
     std: float = 0.4,
     descent_end: float = 0.10,
     hold_end: float = 0.50,
@@ -1351,17 +1387,23 @@ def crouch_glide_pose_by_phase(
     crouching (target = crouch_pose) — symmetric by construction.
     """
     cur, target = _crouch_pose_error(
-        env, asset_cfg, command_name, crouch_pose or {},
-        descent_end, hold_end, rise_end, stand_pose,
+        env,
+        asset_cfg,
+        command_name,
+        crouch_pose or {},
+        descent_end,
+        hold_end,
+        rise_end,
+        stand_pose,
     )
-    return torch.exp(-((cur - target) / std) ** 2).mean(dim=-1)
+    return torch.exp(-(((cur - target) / std) ** 2)).mean(dim=-1)
 
 
 def crouch_glide_pose_l1(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     command_name: str = "twist",
-    crouch_pose: Optional[dict] = None,
-    stand_pose: Optional[dict] = None,
+    crouch_pose: dict | None = None,
+    stand_pose: dict | None = None,
     descent_end: float = 0.10,
     hold_end: float = 0.50,
     rise_end: float = 0.60,
@@ -1373,14 +1415,20 @@ def crouch_glide_pose_l1(
     pose even when the Gaussian above has saturated to ~0 far from it.
     """
     cur, target = _crouch_pose_error(
-        env, asset_cfg, command_name, crouch_pose or {},
-        descent_end, hold_end, rise_end, stand_pose,
+        env,
+        asset_cfg,
+        command_name,
+        crouch_pose or {},
+        descent_end,
+        hold_end,
+        rise_end,
+        stand_pose,
     )
     return -(cur - target).abs().mean(dim=-1)
 
 
 def crouch_forward_lean(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     command_name: str = "twist",
     target_pitch: float = 0.08,
     std: float = 0.1,
@@ -1401,12 +1449,10 @@ def crouch_forward_lean(
     phase = (torch.atan2(cmd[:, 1], cmd[:, 0]) / (2 * torch.pi)) % 1.0
     gate = crouch_pose_blend(phase, descent_end, hold_end, rise_end)
     lean = asset.data.projected_gravity_b[:, 0]
-    return gate * torch.exp(-((lean - target_pitch) ** 2) / std ** 2)
+    return gate * torch.exp(-((lean - target_pitch) ** 2) / std**2)
 
 
-def neck_joint_vel_l2(
-    env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG
-) -> torch.Tensor:
+def neck_joint_vel_l2(env: MicroduckEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
     """
     Penalize neck joint velocities to keep head stable.
     Neck joints are indices 5-8 (4 joints total).
@@ -1430,9 +1476,7 @@ def neck_joint_vel_l2(
     return torch.sum(torch.square(neck_joint_vel), dim=1)
 
 
-def leg_joint_vel_l2(
-    env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG
-) -> torch.Tensor:
+def leg_joint_vel_l2(env: MicroduckEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
     """
     Penalize leg joint velocities to encourage smoother, less dynamic motion.
     Leg joints are indices 0-4 and 9-13 (10 joints total).
@@ -1448,12 +1492,13 @@ def leg_joint_vel_l2(
 
     # Get leg joint indices (left hip-ankle: 0-4, right hip-ankle: 9-13).
     # Servo view: passive_* joints (backlash, wheels) don't shift the indices.
-    leg_joint_indices = list(range(0, 5)) + list(range(9, 14))
+    leg_joint_indices = list(range(5)) + list(range(9, 14))
     joint_vel = _servo_joint_vel(env, asset)
     leg_joint_vel = joint_vel[:, leg_joint_indices]
 
     # Return L2 squared norm of leg joint velocities
     return torch.sum(torch.square(leg_joint_vel), dim=1)
+
 
 _NECK_JOINT_CFG = SceneEntityCfg("robot", joint_names=(r"^(?!passive_).*(neck|head).*",))
 _HIP_PITCH_KNEE_CFG = SceneEntityCfg("robot", joint_names=(r"^(?!passive_).*(hip_pitch|knee).*",))
@@ -1461,7 +1506,7 @@ _ROLLER_FEET_SITE_CFG = SceneEntityCfg("robot", site_names=("left_foot", "right_
 
 
 def feet_flat_penalty(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     asset_cfg: SceneEntityCfg = _ROLLER_FEET_SITE_CFG,
     sensor_name: str | None = None,
 ) -> torch.Tensor:
@@ -1486,8 +1531,8 @@ def feet_flat_penalty(
     without dim computes a scalar over all envs × 3 dims, making the vector
     ~1/sqrt(num_envs) in magnitude → penalty ~num_envs times too small.
     """
-    from mjlab.utils.lab_api.math import quat_apply_inverse
     import torch.nn.functional as F
+    from mjlab.utils.lab_api.math import quat_apply_inverse
 
     asset: Entity = env.scene[asset_cfg.name]
     gravity_w_n = F.normalize(asset.data.gravity_vec_w, dim=-1)  # (B, 3), unit vector per env
@@ -1500,6 +1545,7 @@ def feet_flat_penalty(
 
     if sensor_name is not None:
         from mjlab.sensor import ContactSensor
+
         sensor: ContactSensor = env.scene[sensor_name]
         contact_time = sensor.data.current_contact_time  # (B, N_feet)
         assert contact_time is not None
@@ -1509,7 +1555,7 @@ def feet_flat_penalty(
 
 
 def feet_tiptoe_alignment(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     asset_cfg: SceneEntityCfg = _ROLLER_FEET_SITE_CFG,
     command_name: str = "twist",
     command_threshold: float = 0.01,
@@ -1539,7 +1585,7 @@ def feet_tiptoe_alignment(
 
 
 def hip_pitch_knee_vel_l2(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     asset_cfg: SceneEntityCfg = _HIP_PITCH_KNEE_CFG,
 ) -> torch.Tensor:
     """Penalize hip_pitch and knee joint velocities (L2 squared).
@@ -1553,7 +1599,7 @@ def hip_pitch_knee_vel_l2(
 
 
 def neck_joint_pos_l2(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     asset_cfg: SceneEntityCfg = _NECK_JOINT_CFG,
     pattern: str = r".*(neck|head).*",
 ) -> torch.Tensor:
@@ -1576,9 +1622,7 @@ def neck_joint_pos_l2(
     return torch.sum(torch.square(error), dim=1)
 
 
-def joint_torques_l2(
-    env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG
-) -> torch.Tensor:
+def joint_torques_l2(env: MicroduckEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
     """
     Penalize actuator forces (torques) to encourage energy-efficient motion.
 
@@ -1599,7 +1643,7 @@ def joint_torques_l2(
 
 
 def joint_torque_rate_l2(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
 ) -> torch.Tensor:
     """Penalize rate of change in actuator torques (proxy for gearbox shock).
@@ -1613,7 +1657,7 @@ def joint_torque_rate_l2(
     asset: Entity = env.scene[asset_cfg.name]
     current = asset.data.actuator_force  # (num_envs, num_actuators)
 
-    if not hasattr(env, '_prev_actuator_forces'):
+    if not hasattr(env, "_prev_actuator_forces"):
         env._prev_actuator_forces = current.clone()
         return torch.zeros(env.num_envs, device=env.device)
 
@@ -1623,7 +1667,7 @@ def joint_torque_rate_l2(
 
 
 def feet_grounded_reward(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     sensor_name: str,
 ) -> torch.Tensor:
     """Positive reward for feet contacting the ground (0, +0.5, or +1.0).
@@ -1642,7 +1686,7 @@ def feet_grounded_reward(
 
 
 def body_impact_cost(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     sensor_name: str,
     threshold: float = 1.0,
 ) -> torch.Tensor:
@@ -1672,7 +1716,7 @@ def body_impact_cost(
 
 
 def wheel_speed_reward(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     command_name: str,
     wheel_radius: float = 0.0175,
     vel_scale: float = 0.5,
@@ -1710,7 +1754,7 @@ def wheel_speed_reward(
 
 
 def coasting_reward(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     command_name: str,
     vel_std: float = 0.3,
     stillness_std: float = 5.0,
@@ -1728,17 +1772,17 @@ def coasting_reward(
     cmd = env.command_manager.get_command(command_name)
     vel_b = env.scene["robot"].data.root_link_lin_vel_b[:, :2]
     vel_error = torch.sum(torch.square(cmd[:, :2] - vel_b), dim=1)
-    at_speed = torch.exp(-vel_error / vel_std ** 2)
+    at_speed = torch.exp(-vel_error / vel_std**2)
 
     asset: Entity = env.scene[asset_cfg.name]
     joint_vel_sq = torch.sum(torch.square(asset.data.joint_vel[:, asset_cfg.joint_ids]), dim=1)
-    stillness = torch.exp(-joint_vel_sq / stillness_std ** 2)
+    stillness = torch.exp(-joint_vel_sq / stillness_std**2)
 
     return at_speed * stillness
 
 
 def braking_reward(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     command_name: str,
     vel_std: float = 0.3,
 ) -> torch.Tensor:
@@ -1754,12 +1798,12 @@ def braking_reward(
     cmd_x = cmd[:, 0]
     braking_strength = torch.clamp(-cmd_x, min=0.0)
     fwd_vel = env.scene["robot"].data.root_link_lin_vel_b[:, 0]
-    stopped = torch.exp(-(fwd_vel.clamp(min=0.0) ** 2) / (vel_std ** 2))
+    stopped = torch.exp(-(fwd_vel.clamp(min=0.0) ** 2) / (vel_std**2))
     return braking_strength * stopped
 
 
 def contact_frequency_penalty(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     sensor_name: str = "feet_ground_contact",
     max_contact_changes_per_sec: float = 4.0,
     command_threshold: float = 0.01,
@@ -1793,7 +1837,7 @@ def contact_frequency_penalty(
     contacts = sensor.data.found[:, :2]  # (num_envs, 2)
 
     # Initialize tracking if needed
-    if not hasattr(env, '_contact_change_count'):
+    if not hasattr(env, "_contact_change_count"):
         env._contact_change_count = torch.zeros(env.num_envs, device=env.device)
         env._contact_change_timer = torch.zeros(env.num_envs, device=env.device)
         env._prev_contacts_for_freq = contacts.clone()
@@ -1835,9 +1879,10 @@ def contact_frequency_penalty(
 # Ground Pick Rewards
 # ==============================================================================
 
+
 def mouth_ground_proximity(
-    env: ManagerBasedRlEnv,
-    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot", site_names=["mouth_tip"]),
+    env: MicroduckEnv,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot", site_names=("mouth_tip",)),
     std: float = 0.03,
     target_height: float = 0.0,
     command_name: str = "twist",
@@ -1853,8 +1898,8 @@ def mouth_ground_proximity(
         target_height: Target z-height for the mouth tip (m). 0 = ground level.
     """
     asset = env.scene[asset_cfg.name]
-    mouth_z = asset.data.site_pos_w[:, asset_cfg.site_ids[0], 2]  # (num_envs,)
-    proximity = torch.exp(-((mouth_z - target_height) / std) ** 2)
+    mouth_z = asset.data.site_pos_w[:, _first_id(asset_cfg.site_ids, "site"), 2]  # (num_envs,)
+    proximity = torch.exp(-(((mouth_z - target_height) / std) ** 2))
 
     # Approach weight: max(0, sin(2π*phase)) — peaks at 1 at phase=0.25, zero at 0 and 0.5
     cmd = env.command_manager.get_command(command_name)
@@ -1864,8 +1909,8 @@ def mouth_ground_proximity(
 
 
 def mouth_perpendicular_to_ground(
-    env: ManagerBasedRlEnv,
-    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot", site_names=["mouth_tip"]),
+    env: MicroduckEnv,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot", site_names=("mouth_tip",)),
     command_name: str = "twist",
 ) -> torch.Tensor:
     """Reward the mouth tip x-axis being vertical (pointing down) during the approach phase.
@@ -1875,7 +1920,7 @@ def mouth_perpendicular_to_ground(
     """
     asset = env.scene[asset_cfg.name]
     # site_quat_w: (num_envs, num_sites, 4) as [w, x, y, z]
-    q = asset.data.site_quat_w[:, asset_cfg.site_ids[0], :]  # (num_envs, 4)
+    q = asset.data.site_quat_w[:, _first_id(asset_cfg.site_ids, "site"), :]  # (num_envs, 4)
     w, qx, qy, qz = q[:, 0], q[:, 1], q[:, 2], q[:, 3]
     # z-component of the site x-axis in world frame (first column of rotation matrix)
     x_axis_z = 2.0 * (qx * qz - w * qy)
@@ -1889,9 +1934,9 @@ def mouth_perpendicular_to_ground(
 
 
 def sit_grounded(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     sensor_name: str,
-    command_name: Optional[str] = None,
+    command_name: str | None = None,
     sin_threshold: float = 0.7,
     min_progress_frac: float = 0.0,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
@@ -1941,9 +1986,9 @@ def sit_grounded(
 
 
 def sit_stability(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
-    command_name: Optional[str] = None,
+    command_name: str | None = None,
     ang_vel_std: float = 0.5,
     sin_threshold: float = 0.7,
     min_progress_frac: float = 0.0,
@@ -1969,7 +2014,7 @@ def sit_stability(
 
 
 def joint_deviation_l1(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
 ) -> torch.Tensor:
     """L1 penalty for joint positions deviating from their default (HOME).
@@ -1987,7 +2032,7 @@ def joint_deviation_l1(
 
 
 def joint_pos_limit_proximity(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     margin: float = 0.15,
 ) -> torch.Tensor:
@@ -2027,7 +2072,7 @@ def joint_pos_limit_proximity(
 
 
 def phase_height_track(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     command_name: str,
     stand_z: float,
     sit_z: float,
@@ -2050,24 +2095,24 @@ def phase_height_track(
     sin_phase = cmd[:, 1]
     target_z = (stand_z + sit_z) * 0.5 - (stand_z - sit_z) * 0.5 * sin_phase
     asset = env.scene[asset_cfg.name]
-    z = torch.nan_to_num(
-        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
-    )
-    return torch.exp(-((z - target_z) / std) ** 2)
+    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2], nan=0.0)
+    return torch.exp(-(((z - target_z) / std) ** 2))
 
 
 def pose_target_match(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     std: float = 0.3,
-    joint_indices: Optional[list] = None,
-    target_overrides: Optional[dict] = None,
+    joint_indices: list | None = None,
+    target_overrides: dict | None = None,
 ) -> torch.Tensor:
     """Always-on Gaussian on joint positions vs a target pose.
 
     Non-phase analog of ``phase_pose_match``: useful for episodic tasks (e.g.
     the sit env) where there's no cyclic command to weight the reward by, and
-    the target pose is constant for the whole episode.
+    the target pose is constant for the whole episode. No waypoints, no
+    episode-progress interpolation — the same target is rewarded from t=0 to
+    the end of the episode. ``pose_l1_penalty`` is the L1 companion.
 
     Args:
         std: Gaussian std per joint (rad).
@@ -2084,16 +2129,16 @@ def pose_target_match(
     if joint_indices is not None:
         joint_pos = joint_pos[:, joint_indices]
         target = target[:, joint_indices]
-    return torch.exp(-((joint_pos - target) / std) ** 2).mean(dim=-1)
+    return torch.exp(-(((joint_pos - target) / std) ** 2)).mean(dim=-1)
 
 
 def interpolated_pose_target_match(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     std: float = 0.3,
-    joint_indices: Optional[list] = None,
-    source_overrides: Optional[dict] = None,
-    target_overrides: Optional[dict] = None,
+    joint_indices: list | None = None,
+    source_overrides: dict | None = None,
+    target_overrides: dict | None = None,
     ramp_start_frac: float = 0.0,
     ramp_end_frac: float = 1.0,
 ) -> torch.Tensor:
@@ -2136,15 +2181,15 @@ def interpolated_pose_target_match(
     if joint_indices is not None:
         joint_pos = joint_pos[:, joint_indices]
         interp = interp[:, joint_indices]
-    return torch.exp(-((joint_pos - interp) / std) ** 2).mean(dim=-1)
+    return torch.exp(-(((joint_pos - interp) / std) ** 2)).mean(dim=-1)
 
 
 def interpolated_pose_l1_penalty(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
-    joint_indices: Optional[list] = None,
-    source_overrides: Optional[dict] = None,
-    target_overrides: Optional[dict] = None,
+    joint_indices: list | None = None,
+    source_overrides: dict | None = None,
+    target_overrides: dict | None = None,
     ramp_start_frac: float = 0.0,
     ramp_end_frac: float = 1.0,
 ) -> torch.Tensor:
@@ -2179,7 +2224,7 @@ def interpolated_pose_l1_penalty(
 
 
 def interpolated_height_l1_penalty(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     start_height: float,
     end_height: float,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
@@ -2198,14 +2243,12 @@ def interpolated_height_l1_penalty(
     target_z = start_height * (1.0 - tau) + end_height * tau
 
     asset = env.scene[asset_cfg.name]
-    z = torch.nan_to_num(
-        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
-    )
+    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2], nan=0.0)
     return -torch.abs(z - target_z)
 
 
 def interpolated_height_target(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     start_height: float,
     end_height: float,
     std: float = 0.02,
@@ -2224,14 +2267,12 @@ def interpolated_height_target(
     target_z = start_height * (1.0 - tau) + end_height * tau
 
     asset = env.scene[asset_cfg.name]
-    z = torch.nan_to_num(
-        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
-    )
-    return torch.exp(-((z - target_z) / std) ** 2)
+    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2], nan=0.0)
+    return torch.exp(-(((z - target_z) / std) ** 2))
 
 
 def bilateral_symmetry_penalty(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     left_indices: list,
     right_indices: list,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
@@ -2260,7 +2301,7 @@ def bilateral_symmetry_penalty(
 
 
 def _multistage_target_pose(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     asset_cfg: SceneEntityCfg,
     waypoints,
 ) -> torch.Tensor:
@@ -2302,7 +2343,7 @@ def _multistage_target_pose(
 
 
 def _multistage_target_height(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     waypoints,
 ) -> torch.Tensor:
     """Same logic as _multistage_target_pose but for trunk z height.
@@ -2323,11 +2364,11 @@ def _multistage_target_height(
 
 
 def multistage_pose_target_match(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     waypoints: list,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     std: float = 0.3,
-    joint_indices: Optional[list] = None,
+    joint_indices: list | None = None,
 ) -> torch.Tensor:
     """Multi-waypoint variant of interpolated_pose_target_match.
 
@@ -2345,14 +2386,14 @@ def multistage_pose_target_match(
     if joint_indices is not None:
         joint_pos = joint_pos[:, joint_indices]
         target = target[:, joint_indices]
-    return torch.exp(-((joint_pos - target) / std) ** 2).mean(dim=-1)
+    return torch.exp(-(((joint_pos - target) / std) ** 2)).mean(dim=-1)
 
 
 def multistage_pose_l1_penalty(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     waypoints: list,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
-    joint_indices: Optional[list] = None,
+    joint_indices: list | None = None,
 ) -> torch.Tensor:
     """L1 companion to multistage_pose_target_match."""
     asset = env.scene[asset_cfg.name]
@@ -2365,7 +2406,7 @@ def multistage_pose_l1_penalty(
 
 
 def multistage_height_target(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     waypoints: list,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     std: float = 0.03,
@@ -2373,56 +2414,27 @@ def multistage_height_target(
     """Multi-waypoint Gaussian on trunk z."""
     target_z = _multistage_target_height(env, waypoints)
     asset = env.scene[asset_cfg.name]
-    z = torch.nan_to_num(
-        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
-    )
-    return torch.exp(-((z - target_z) / std) ** 2)
+    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2], nan=0.0)
+    return torch.exp(-(((z - target_z) / std) ** 2))
 
 
 def multistage_height_l1_penalty(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     waypoints: list,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
 ) -> torch.Tensor:
     """L1 companion to multistage_height_target."""
     target_z = _multistage_target_height(env, waypoints)
     asset = env.scene[asset_cfg.name]
-    z = torch.nan_to_num(
-        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
-    )
+    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2], nan=0.0)
     return -torch.abs(z - target_z)
 
 
-def pose_target_match(
-    env: ManagerBasedRlEnv,
-    target_overrides: Optional[dict] = None,
-    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
-    std: float = 0.3,
-    joint_indices: Optional[list] = None,
-) -> torch.Tensor:
-    """Gaussian pose-match against a single fixed target.
-
-    target = ``default_joint_pos`` with the per-index overrides applied. No
-    waypoints, no episode-progress interpolation — the same target is rewarded
-    from t=0 to the end of the episode.
-    """
-    asset = env.scene[asset_cfg.name]
-    target = _servo_default_joint_pos(env, asset).clone()
-    if target_overrides:
-        for idx, val in target_overrides.items():
-            target[:, idx] = val
-    joint_pos = _servo_joint_pos(env, asset)
-    if joint_indices is not None:
-        joint_pos = joint_pos[:, joint_indices]
-        target = target[:, joint_indices]
-    return torch.exp(-((joint_pos - target) / std) ** 2).mean(dim=-1)
-
-
 def pose_l1_penalty(
-    env: ManagerBasedRlEnv,
-    target_overrides: Optional[dict] = None,
+    env: MicroduckEnv,
+    target_overrides: dict | None = None,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
-    joint_indices: Optional[list] = None,
+    joint_indices: list | None = None,
 ) -> torch.Tensor:
     """L1 companion to ``pose_target_match`` (constant gradient toward target)."""
     asset = env.scene[asset_cfg.name]
@@ -2438,34 +2450,30 @@ def pose_l1_penalty(
 
 
 def height_target_gaussian(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     target_height: float,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     std: float = 0.02,
 ) -> torch.Tensor:
     """Gaussian on trunk z against a single fixed target."""
     asset = env.scene[asset_cfg.name]
-    z = torch.nan_to_num(
-        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
-    )
-    return torch.exp(-((z - target_height) / std) ** 2)
+    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2], nan=0.0)
+    return torch.exp(-(((z - target_height) / std) ** 2))
 
 
 def height_l1_penalty(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     target_height: float,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
 ) -> torch.Tensor:
     """L1 companion to ``height_target_gaussian``."""
     asset = env.scene[asset_cfg.name]
-    z = torch.nan_to_num(
-        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
-    )
+    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2], nan=0.0)
     return -torch.abs(z - target_height)
 
 
 def trunk_vertical_accel_penalty(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
 ) -> torch.Tensor:
     """Penalty proportional to ``|a_z|`` of the trunk (finite-diff of v_z).
@@ -2493,7 +2501,7 @@ def trunk_vertical_accel_penalty(
 
 
 def trunk_downward_velocity_penalty(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     max_down_vel: float = 0.05,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
 ) -> torch.Tensor:
@@ -2512,7 +2520,7 @@ def trunk_downward_velocity_penalty(
 
 
 def seated_stillness(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     height_full: float = 0.06,
     height_zero: float = 0.08,
     vel_std: float = 0.05,
@@ -2532,9 +2540,7 @@ def seated_stillness(
     """
     asset = env.scene[asset_cfg.name]
     v = torch.nan_to_num(asset.data.root_link_lin_vel_w, nan=0.0).norm(dim=-1)
-    z = torch.nan_to_num(
-        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
-    )
+    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2], nan=0.0)
     t = torch.clamp((height_zero - z) / max(height_zero - height_full, 1e-6), 0.0, 1.0)
     z_gate = t * t * (3.0 - 2.0 * t)
     quat = asset.data.root_link_quat_w
@@ -2547,7 +2553,7 @@ def seated_stillness(
 
 
 def upright_while_tall(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     height_low: float,
     height_high: float,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
@@ -2566,9 +2572,7 @@ def upright_while_tall(
     qx = quat[:, 1]
     qy = quat[:, 2]
     upright = 1.0 - 2.0 * (qx * qx + qy * qy)
-    z = torch.nan_to_num(
-        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
-    )
+    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2], nan=0.0)
     t = torch.clamp((z - height_low) / max(height_high - height_low, 1e-6), 0.0, 1.0)
     smooth = t * t * (3.0 - 2.0 * t)
     return upright * smooth
@@ -2635,7 +2639,7 @@ def kick_pose_target(
 
 
 def _kick_pose_error(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     asset_cfg: SceneEntityCfg,
     command_name: str,
     stand_pose: dict,
@@ -2644,7 +2648,7 @@ def _kick_pose_error(
     windup_end: float,
     kick_end: float,
     return_end: float,
-    joint_names: Optional[list] = None,
+    joint_names: list | None = None,
 ):
     """(cur, target) for the kicking gesture, joints resolved BY NAME.
 
@@ -2660,31 +2664,29 @@ def _kick_pose_error(
     ids = [int(asset.find_joints([n])[0][0]) for n in names]
 
     def vec(d):
-        return torch.tensor([d[n] for n in names], device=env.device,
-                            dtype=asset.data.joint_pos.dtype)
+        return torch.tensor([d[n] for n in names], device=env.device, dtype=asset.data.joint_pos.dtype)
 
     stand_v, back_v, fwd_v = vec(stand_pose), vec(back_pose), vec(forward_pose)
 
     cmd = env.command_manager.get_command(command_name)
     phase = (torch.atan2(cmd[:, 1], cmd[:, 0]) / (2 * torch.pi)) % 1.0  # (B,)
-    target = kick_pose_target(phase, stand_v, back_v, fwd_v,
-                              windup_end, kick_end, return_end)          # (B,k)
-    cur = asset.data.joint_pos[:, ids]                                   # (B,k)
+    target = kick_pose_target(phase, stand_v, back_v, fwd_v, windup_end, kick_end, return_end)  # (B,k)
+    cur = asset.data.joint_pos[:, ids]  # (B,k)
     return cur, target
 
 
 def kick_pose_track(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     command_name: str = "twist",
-    stand_pose: Optional[dict] = None,
-    back_pose: Optional[dict] = None,
-    forward_pose: Optional[dict] = None,
+    stand_pose: dict | None = None,
+    back_pose: dict | None = None,
+    forward_pose: dict | None = None,
     std: float = 0.4,
     windup_end: float = 0.35,
     kick_end: float = 0.45,
     return_end: float = 0.75,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
-    joint_names: Optional[list] = None,
+    joint_names: list | None = None,
 ) -> torch.Tensor:
     """Gaussian on the joint pose vs the interpolated kick target.
 
@@ -2694,28 +2696,44 @@ def kick_pose_track(
     tracked loosely to let it balance).
     """
     cur, target = _kick_pose_error(
-        env, asset_cfg, command_name, stand_pose or {}, back_pose or {},
-        forward_pose or {}, windup_end, kick_end, return_end, joint_names,
+        env,
+        asset_cfg,
+        command_name,
+        stand_pose or {},
+        back_pose or {},
+        forward_pose or {},
+        windup_end,
+        kick_end,
+        return_end,
+        joint_names,
     )
-    return torch.exp(-((cur - target) / std) ** 2).mean(dim=-1)
+    return torch.exp(-(((cur - target) / std) ** 2)).mean(dim=-1)
 
 
 def kick_pose_track_l1(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     command_name: str = "twist",
-    stand_pose: Optional[dict] = None,
-    back_pose: Optional[dict] = None,
-    forward_pose: Optional[dict] = None,
+    stand_pose: dict | None = None,
+    back_pose: dict | None = None,
+    forward_pose: dict | None = None,
     windup_end: float = 0.35,
     kick_end: float = 0.45,
     return_end: float = 0.75,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
-    joint_names: Optional[list] = None,
+    joint_names: list | None = None,
 ) -> torch.Tensor:
     """L1 bootstrap towards the interpolated target (constant gradient, penalty<=0)."""
     cur, target = _kick_pose_error(
-        env, asset_cfg, command_name, stand_pose or {}, back_pose or {},
-        forward_pose or {}, windup_end, kick_end, return_end, joint_names,
+        env,
+        asset_cfg,
+        command_name,
+        stand_pose or {},
+        back_pose or {},
+        forward_pose or {},
+        windup_end,
+        kick_end,
+        return_end,
+        joint_names,
     )
     return -(cur - target).abs().mean(dim=-1)
 
@@ -2741,7 +2759,7 @@ def kick_engagement(
 
 
 def com_over_support_foot(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     asset_cfg: SceneEntityCfg,
     command_name: str = "twist",
     std: float = 0.04,
@@ -2761,10 +2779,10 @@ def com_over_support_foot(
     """
     asset: Entity = env.scene[asset_cfg.name]
     com_xy = asset.data.root_com_pos_w[:, :2]
-    foot_id = asset_cfg.site_ids[0]
+    foot_id = _first_id(asset_cfg.site_ids, "site")
     foot_xy = asset.data.site_pos_w[:, foot_id, :2]
     dist2 = ((com_xy - foot_xy) ** 2).sum(dim=-1)
-    reward = torch.exp(-dist2 / (std ** 2))
+    reward = torch.exp(-dist2 / (std**2))
 
     cmd = env.command_manager.get_command(command_name)
     phase = (torch.atan2(cmd[:, 1], cmd[:, 0]) / (2 * torch.pi)) % 1.0
@@ -2773,14 +2791,14 @@ def com_over_support_foot(
 
 
 def _phase_pose_error(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     asset_cfg: SceneEntityCfg,
     command_name: str,
     target_pose: dict,
     descent_end: float,
     hold_end: float,
     rise_end: float,
-    source_pose: Optional[dict] = None,
+    source_pose: dict | None = None,
 ):
     """(cur, target) for the phase-interpolated pose, resolved BY NAME.
 
@@ -2794,31 +2812,29 @@ def _phase_pose_error(
     asset: Entity = env.scene[asset_cfg.name]
     cmd = env.command_manager.get_command(command_name)
     phase = (torch.atan2(cmd[:, 1], cmd[:, 0]) / (2 * torch.pi)) % 1.0  # (B,)
-    blend = phase_pose_blend(phase, descent_end, hold_end, rise_end)     # (B,)
+    blend = phase_pose_blend(phase, descent_end, hold_end, rise_end)  # (B,)
 
     names = list(target_pose.keys())
     ids = [int(asset.find_joints([n])[0][0]) for n in names]
-    default = asset.data.default_joint_pos[:, ids]                       # (B,k)
+    default = asset.data.default_joint_pos[:, ids]  # (B,k)
 
     source = default.clone()
     if source_pose:
         for j, n in enumerate(names):
             if n in source_pose:
                 source[:, j] = source_pose[n]
-    target_vec = torch.tensor(
-        [target_pose[n] for n in names], device=env.device, dtype=default.dtype
-    ).unsqueeze(0)                                                       # (1,k)
+    target_vec = torch.tensor([target_pose[n] for n in names], device=env.device, dtype=default.dtype).unsqueeze(0)  # (1,k)
 
-    target = source + blend.unsqueeze(-1) * (target_vec - source)        # (B,k)
-    cur = asset.data.joint_pos[:, ids]                                   # (B,k)
+    target = source + blend.unsqueeze(-1) * (target_vec - source)  # (B,k)
+    cur = asset.data.joint_pos[:, ids]  # (B,k)
     return cur, target
 
 
 def phase_pose_track(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     command_name: str = "twist",
-    target_pose: Optional[dict] = None,
-    source_pose: Optional[dict] = None,
+    target_pose: dict | None = None,
+    source_pose: dict | None = None,
     std: float = 0.3,
     descent_end: float = 0.15,
     hold_end: float = 0.50,
@@ -2832,17 +2848,23 @@ def phase_pose_track(
     DOWN) — symmetric by construction. Resolution BY NAME.
     """
     cur, target = _phase_pose_error(
-        env, asset_cfg, command_name, target_pose or {},
-        descent_end, hold_end, rise_end, source_pose,
+        env,
+        asset_cfg,
+        command_name,
+        target_pose or {},
+        descent_end,
+        hold_end,
+        rise_end,
+        source_pose,
     )
-    return torch.exp(-((cur - target) / std) ** 2).mean(dim=-1)
+    return torch.exp(-(((cur - target) / std) ** 2)).mean(dim=-1)
 
 
 def phase_pose_track_l1(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     command_name: str = "twist",
-    target_pose: Optional[dict] = None,
-    source_pose: Optional[dict] = None,
+    target_pose: dict | None = None,
+    source_pose: dict | None = None,
     descent_end: float = 0.15,
     hold_end: float = 0.50,
     rise_end: float = 0.65,
@@ -2854,19 +2876,25 @@ def phase_pose_track_l1(
     Gaussian above has saturated to ~0 far from the target.
     """
     cur, target = _phase_pose_error(
-        env, asset_cfg, command_name, target_pose or {},
-        descent_end, hold_end, rise_end, source_pose,
+        env,
+        asset_cfg,
+        command_name,
+        target_pose or {},
+        descent_end,
+        hold_end,
+        rise_end,
+        source_pose,
     )
     return -(cur - target).abs().mean(dim=-1)
 
 
 def phase_pose_match(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     std: float = 0.3,
     command_name: str = "twist",
-    joint_indices: Optional[list] = None,
-    target_overrides: Optional[dict] = None,
+    joint_indices: list | None = None,
+    target_overrides: dict | None = None,
     phase: str = "approach",
 ) -> torch.Tensor:
     """Reward matching a target pose, weighted by phase-cycle command.
@@ -2892,7 +2920,7 @@ def phase_pose_match(
     if joint_indices is not None:
         joint_pos = joint_pos[:, joint_indices]
         target = target[:, joint_indices]
-    pose_reward = torch.exp(-((joint_pos - target) / std) ** 2).mean(dim=-1)
+    pose_reward = torch.exp(-(((joint_pos - target) / std) ** 2)).mean(dim=-1)
 
     cmd = env.command_manager.get_command(command_name)
     if phase == "approach":
@@ -2903,11 +2931,11 @@ def phase_pose_match(
 
 
 def ground_pick_return_pose(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     std: float = 0.3,
     command_name: str = "twist",
-    joint_indices: Optional[list] = None,
+    joint_indices: list | None = None,
 ) -> torch.Tensor:
     """Reward for returning to the standing pose after ground pick, weighted by the return phase.
 
@@ -2920,14 +2948,14 @@ def ground_pick_return_pose(
             to leg joints vs neck/head joints (call this reward twice).
     """
     asset = env.scene[asset_cfg.name]
-    joint_pos  = _servo_joint_pos(env, asset)        # (num_envs, n_servo_joints)
+    joint_pos = _servo_joint_pos(env, asset)  # (num_envs, n_servo_joints)
     default_pos = _servo_default_joint_pos(env, asset)
 
     if joint_indices is not None:
-        joint_pos   = joint_pos[:, joint_indices]
+        joint_pos = joint_pos[:, joint_indices]
         default_pos = default_pos[:, joint_indices]
 
-    pose_reward = torch.exp(-((joint_pos - default_pos) / std) ** 2).mean(dim=-1)
+    pose_reward = torch.exp(-(((joint_pos - default_pos) / std) ** 2)).mean(dim=-1)
 
     # Return weight: max(0, -sin(2π*phase)) — peaks at 1 at phase=0.75, zero at 0.5 and 1
     cmd = env.command_manager.get_command(command_name)
@@ -2937,7 +2965,7 @@ def ground_pick_return_pose(
 
 
 def ground_pick_return_upright(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     std: float = 0.4,
     command_name: str = "twist",
@@ -2967,9 +2995,7 @@ def ground_pick_return_upright(
 #   up-gate    = phase_rise_gate(phase, hold_end, rise_end)                      #
 #               0 before the rise -> 0..1 (rise) -> 1 (standing rest)            #
 # --------------------------------------------------------------------------- #
-def phase_rise_gate(
-    phase: torch.Tensor, hold_end: float, rise_end: float
-) -> torch.Tensor:
+def phase_rise_gate(phase: torch.Tensor, hold_end: float, rise_end: float) -> torch.Tensor:
     """Rising gate for the RETURN: 0 before hold_end, 0->1 over [hold_end,
     rise_end), 1 after (standing rest)."""
     g = torch.zeros_like(phase)
@@ -2979,14 +3005,14 @@ def phase_rise_gate(
     return g
 
 
-def _gp_phase(env: ManagerBasedRlEnv, command_name: str) -> torch.Tensor:
+def _gp_phase(env: MicroduckEnv, command_name: str) -> torch.Tensor:
     cmd = env.command_manager.get_command(command_name)
     return (torch.atan2(cmd[:, 1], cmd[:, 0]) / (2 * torch.pi)) % 1.0
 
 
 def mouth_ground_proximity_phased(
-    env: ManagerBasedRlEnv,
-    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot", site_names=["mouth_tip"]),
+    env: MicroduckEnv,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot", site_names=("mouth_tip",)),
     std: float = 0.10,
     target_height: float = 0.0,
     command_name: str = "twist",
@@ -2996,15 +3022,15 @@ def mouth_ground_proximity_phased(
 ) -> torch.Tensor:
     """mouth_ground_proximity gated by the segmented down-gate (descent+hold)."""
     asset = env.scene[asset_cfg.name]
-    mouth_z = asset.data.site_pos_w[:, asset_cfg.site_ids[0], 2]
-    proximity = torch.exp(-((mouth_z - target_height) / std) ** 2)
+    mouth_z = asset.data.site_pos_w[:, _first_id(asset_cfg.site_ids, "site"), 2]
+    proximity = torch.exp(-(((mouth_z - target_height) / std) ** 2))
     gate = phase_pose_blend(_gp_phase(env, command_name), descent_end, hold_end, rise_end)
     return gate * proximity
 
 
 def mouth_perpendicular_phased(
-    env: ManagerBasedRlEnv,
-    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot", site_names=["mouth_tip"]),
+    env: MicroduckEnv,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot", site_names=("mouth_tip",)),
     command_name: str = "twist",
     descent_end: float = 0.25,
     hold_end: float = 0.35,
@@ -3012,7 +3038,7 @@ def mouth_perpendicular_phased(
 ) -> torch.Tensor:
     """mouth_perpendicular_to_ground gated by the segmented down-gate."""
     asset = env.scene[asset_cfg.name]
-    q = asset.data.site_quat_w[:, asset_cfg.site_ids[0], :]
+    q = asset.data.site_quat_w[:, _first_id(asset_cfg.site_ids, "site"), :]
     w, qx, qy, qz = q[:, 0], q[:, 1], q[:, 2], q[:, 3]
     x_axis_z = 2.0 * (qx * qz - w * qy)
     alignment = -x_axis_z  # 1 = mouth points straight down
@@ -3021,11 +3047,11 @@ def mouth_perpendicular_phased(
 
 
 def ground_pick_return_pose_phased(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     std: float = 0.3,
     command_name: str = "twist",
-    joint_indices: Optional[list] = None,
+    joint_indices: list | None = None,
     hold_end: float = 0.35,
     rise_end: float = 0.60,
 ) -> torch.Tensor:
@@ -3036,13 +3062,13 @@ def ground_pick_return_pose_phased(
     if joint_indices is not None:
         joint_pos = joint_pos[:, joint_indices]
         default_pos = default_pos[:, joint_indices]
-    pose_reward = torch.exp(-((joint_pos - default_pos) / std) ** 2).mean(dim=-1)
+    pose_reward = torch.exp(-(((joint_pos - default_pos) / std) ** 2)).mean(dim=-1)
     gate = phase_rise_gate(_gp_phase(env, command_name), hold_end, rise_end)
     return gate * pose_reward
 
 
 def ground_pick_return_upright_phased(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     std: float = 0.4,
     command_name: str = "twist",
@@ -3059,10 +3085,10 @@ def ground_pick_return_upright_phased(
 
 
 def neck_vel_descent_penalty(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     command_name: str = "twist",
-    joint_indices: Optional[list] = None,
+    joint_indices: list | None = None,
     hold_end: float = 0.35,
 ) -> torch.Tensor:
     """Penalizes neck joint velocity during the DESCENT+hold (slows the head's
@@ -3076,14 +3102,14 @@ def neck_vel_descent_penalty(
     vel = _servo_joint_vel(env, asset)
     if joint_indices is not None:
         vel = vel[:, joint_indices]
-    cost = (vel ** 2).mean(dim=-1)
+    cost = (vel**2).mean(dim=-1)
     phase = _gp_phase(env, command_name)
     gate = (phase < hold_end).to(vel.dtype)  # descent + low hold only
     return gate * cost
 
 
 def sample_mouth_payload(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     env_ids: torch.Tensor,
     min_kg: float = 0.01,
     max_kg: float = 0.04,
@@ -3100,10 +3126,8 @@ def sample_mouth_payload(
 
 
 def apply_mouth_payload_force(
-    env: ManagerBasedRlEnv,
-    asset_cfg: SceneEntityCfg = SceneEntityCfg(
-        "robot", body_names=["jaw_soft"], site_names=["mouth_tip"]
-    ),
+    env: MicroduckEnv,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot", body_names=("jaw_soft",), site_names=("mouth_tip",)),
     command_name: str = "twist",
     hold_end: float = 0.35,
     ramp: float = 0.05,
@@ -3123,17 +3147,19 @@ def apply_mouth_payload_force(
         return torch.zeros(env.num_envs, device=env.device)
     phase = _gp_phase(env, command_name)
     gate = ((phase - hold_end) / ramp).clamp(0.0, 1.0)  # 0 before grab -> 1 after
-    fz = -(gate * payload) * gravity                     # (N,) vertical force (down)
+    fz = -(gate * payload) * gravity  # (N,) vertical force (down)
 
-    bid = int(asset_cfg.body_ids[0])
-    sid = int(asset_cfg.site_ids[0])
-    p_mouth = asset.data.site_pos_w[:, sid, :]           # (N,3)
-    p_com = asset.data.body_com_pos_w[:, bid, :]         # (N,3)
+    bid = _first_id(asset_cfg.body_ids, "body")
+    sid = _first_id(asset_cfg.site_ids, "site")
+    p_mouth = asset.data.site_pos_w[:, sid, :]  # (N,3)
+    p_com = asset.data.body_com_pos_w[:, bid, :]  # (N,3)
     F = torch.zeros((env.num_envs, 3), device=env.device, dtype=p_mouth.dtype)
     F[:, 2] = fz
-    tau = torch.cross(p_mouth - p_com, F, dim=-1)        # applies F at mouth_tip
+    tau = torch.cross(p_mouth - p_com, F, dim=-1)  # applies F at mouth_tip
     asset.write_external_wrench_to_sim(
-        forces=F.unsqueeze(1), torques=tau.unsqueeze(1), body_ids=[bid],
+        forces=F.unsqueeze(1),
+        torques=tau.unsqueeze(1),
+        body_ids=[bid],
     )
     return torch.zeros(env.num_envs, device=env.device)
 
@@ -3144,7 +3170,7 @@ def apply_mouth_payload_force(
 
 
 def randomize_delayed_actuator_gains(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     env_ids: torch.Tensor,
     kp_range: tuple[float, float],
     kd_range: tuple[float, float],
@@ -3196,7 +3222,7 @@ def randomize_delayed_actuator_gains(
 
 @requires_model_fields("dof_frictionloss", "dof_damping")
 def expand_bam_friction_fields(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     env_ids: torch.Tensor,
 ):
     """No-op startup event whose only purpose is the decorator above.
@@ -3210,7 +3236,7 @@ def expand_bam_friction_fields(
 
 
 def randomize_bam_friction(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     env_ids: torch.Tensor,
     scale_range: tuple[float, float],
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
@@ -3241,7 +3267,7 @@ def randomize_bam_friction(
 
 
 def randomize_mass_and_inertia(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     env_ids: torch.Tensor,
     scale_range: tuple[float, float],
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
@@ -3276,16 +3302,16 @@ def randomize_mass_and_inertia(
     scales = torch.rand(num_envs, num_bodies, device=env.device) * (scale_range[1] - scale_range[0]) + scale_range[0]
 
     # Store original values on first call
-    if not hasattr(env, '_original_mass_inertia'):
+    if not hasattr(env, "_original_mass_inertia"):
         env._original_mass_inertia = {
-            'mass': env.sim.model.body_mass[0, body_indices].clone(),
-            'inertia': env.sim.model.body_inertia[0, body_indices].clone(),
+            "mass": env.sim.model.body_mass[0, body_indices].clone(),
+            "inertia": env.sim.model.body_inertia[0, body_indices].clone(),
         }
 
     # Reset to original first (to prevent accumulation)
     original = env._original_mass_inertia
-    env.sim.model.body_mass[env_ids[:, None], body_indices] = original['mass'].unsqueeze(0).expand(num_envs, -1)
-    env.sim.model.body_inertia[env_ids[:, None], body_indices] = original['inertia'].unsqueeze(0).expand(num_envs, -1, -1)
+    env.sim.model.body_mass[env_ids[:, None], body_indices] = original["mass"].unsqueeze(0).expand(num_envs, -1)
+    env.sim.model.body_inertia[env_ids[:, None], body_indices] = original["inertia"].unsqueeze(0).expand(num_envs, -1, -1)
 
     # Apply same scale to both mass and inertia
     env.sim.model.body_mass[env_ids[:, None], body_indices] *= scales
@@ -3293,7 +3319,7 @@ def randomize_mass_and_inertia(
 
 
 def standing_envs_curriculum(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     env_ids: torch.Tensor,
     command_name: str,
     standing_stages: list[dict],
@@ -3316,8 +3342,9 @@ def standing_envs_curriculum(
     """
     del env_ids  # Unused
 
-    from mjlab.tasks.velocity.mdp import UniformVelocityCommandCfg
     from typing import cast
+
+    from mjlab.tasks.velocity.mdp import UniformVelocityCommandCfg
 
     command_term = env.command_manager.get_term(command_name)
     assert command_term is not None, f"Command term '{command_name}' not found"
@@ -3333,7 +3360,7 @@ def standing_envs_curriculum(
 
 
 def velocity_tracking_std_curriculum(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     env_ids: torch.Tensor,
     reward_name: str,
     std_stages: list[dict],
@@ -3376,7 +3403,7 @@ def velocity_tracking_std_curriculum(
 
 
 def push_curriculum(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     env_ids: torch.Tensor,
     event_name: str,
     push_stages: list[dict],
@@ -3422,7 +3449,7 @@ def push_curriculum(
 
 
 def wheel_friction_curriculum(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     env_ids: torch.Tensor,
     event_name: str,
     ranges_stages: list[dict],
@@ -3440,7 +3467,7 @@ def wheel_friction_curriculum(
 
 
 def reward_weight(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     env_ids: torch.Tensor,
     reward_name: str,
     weight_stages: list[dict],
@@ -3462,7 +3489,7 @@ def reward_weight(
 
 
 def com_range_curriculum(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     env_ids: torch.Tensor,
     event_name: str,
     range_stages: list[dict],
@@ -3501,7 +3528,7 @@ def com_range_curriculum(
     return torch.tensor([current_range])
 
 
-def slope_move_masks(distance: "torch.Tensor", size_x: float):
+def slope_move_masks(distance: torch.Tensor, size_x: float):
     """Promotion/demotion masks of the slope curriculum.
 
     move_up   : traveled more than 40% of the tile → it went down the ramp,
@@ -3518,7 +3545,7 @@ def slope_move_masks(distance: "torch.Tensor", size_x: float):
     return move_up, move_down
 
 
-def terrain_levels_slope(env: ManagerBasedRlEnv, env_ids: torch.Tensor) -> torch.Tensor:
+def terrain_levels_slope(env: MicroduckEnv, env_ids: torch.Tensor) -> torch.Tensor:
     """Steepness curriculum for roller_slope (no commanded velocity).
 
     Progression based on the x distance traveled from the spawn origin.
@@ -3529,16 +3556,14 @@ def terrain_levels_slope(env: ManagerBasedRlEnv, env_ids: torch.Tensor) -> torch
     terrain_generator = terrain.cfg.terrain_generator
     assert terrain_generator is not None
 
-    distance = (
-        asset.data.root_link_pos_w[env_ids, 0] - env.scene.env_origins[env_ids, 0]
-    )
+    distance = asset.data.root_link_pos_w[env_ids, 0] - env.scene.env_origins[env_ids, 0]
     move_up, move_down = slope_move_masks(distance, terrain_generator.size[0])
     terrain.update_env_origins(env_ids, move_up, move_down)
     return torch.mean(terrain.terrain_levels.float())
 
 
 def velocity_command_ranges_curriculum(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     env_ids: torch.Tensor,
     command_name: str,
     velocity_stages: list[dict],
@@ -3568,8 +3593,9 @@ def velocity_command_ranges_curriculum(
     """
     del env_ids  # Unused
 
-    from mjlab.tasks.velocity.mdp import UniformVelocityCommandCfg
     from typing import cast
+
+    from mjlab.tasks.velocity.mdp import UniformVelocityCommandCfg
 
     command_term = env.command_manager.get_term(command_name)
     assert command_term is not None, f"Command term '{command_name}' not found"
@@ -3599,7 +3625,7 @@ def velocity_command_ranges_curriculum(
 
 
 def projected_gravity(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
 ) -> torch.Tensor:
     """Projected gravity vector in body frame.
@@ -3615,7 +3641,7 @@ def projected_gravity(
     return asset.data.projected_gravity_b
 
 
-def _imu_misalignment_quat(env: ManagerBasedRlEnv, max_angle_rad: float) -> torch.Tensor:
+def _imu_misalignment_quat(env: MicroduckEnv, max_angle_rad: float) -> torch.Tensor:
     """Per-env constant IMU mounting-misalignment rotation (sampled once).
 
     Models a fixed small mounting/calibration error of the IMU on each robot.
@@ -3639,7 +3665,7 @@ def _imu_misalignment_quat(env: ManagerBasedRlEnv, max_angle_rad: float) -> torc
 
 
 def projected_gravity_imu_misaligned(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     max_angle_deg: float = 1.0,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
 ) -> torch.Tensor:
@@ -3650,7 +3676,7 @@ def projected_gravity_imu_misaligned(
 
 
 def base_ang_vel_imu_misaligned(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     max_angle_deg: float = 1.0,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
 ) -> torch.Tensor:
@@ -3661,7 +3687,7 @@ def base_ang_vel_imu_misaligned(
 
 
 def raw_accelerometer(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
 ) -> torch.Tensor:
     """Raw accelerometer reading (includes gravity + linear acceleration).
@@ -3687,7 +3713,7 @@ def raw_accelerometer(
 
     # Read accelerometer data (specific force measured by sensor)
     # Shape: (num_envs, 3)
-    accel_raw = asset.data.data.sensordata[:, sensor_adr:sensor_adr+3]
+    accel_raw = asset.data.data.sensordata[:, sensor_adr : sensor_adr + 3]
 
     # MuJoCo accelerometer measures specific force (like real sensor)
     # Negate to match convention: when at rest upright, should point down
@@ -3698,22 +3724,23 @@ def raw_accelerometer(
     accel_normalized = torch.where(
         accel_norm > 0.1,
         accel_negated / accel_norm,
-        asset.data.projected_gravity_b  # Fallback to projected gravity
+        asset.data.projected_gravity_b,  # Fallback to projected gravity
     )
 
     return accel_normalized
 
+
 def randomize_imu_orientation(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     env_ids: torch.Tensor,
     max_angle_deg: float = 2.0,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
 ):
     """Randomize IMU sensor mounting orientation by small angles.
-    
+
     Simulates slight mounting errors or calibration offsets in the real robot.
     The IMU orientation is randomized by rotating around random axes by up to max_angle_deg.
-    
+
     Args:
         env: The environment
         env_ids: Environment IDs to randomize
@@ -3724,55 +3751,56 @@ def randomize_imu_orientation(
         env_ids = torch.arange(env.num_envs, device=env.device, dtype=torch.int)
     else:
         env_ids = env_ids.to(env.device, dtype=torch.int)
-    
-    asset: Entity = env.scene[asset_cfg.name]
 
     # IMU site is the first site (index 0) in robot.xml
     # Sites: imu (0), left_foot (1), right_foot (2)
     site_id = 0
-    
+
     # Store original orientation on first call
-    if not hasattr(env, '_original_imu_quat'):
+    if not hasattr(env, "_original_imu_quat"):
         env._original_imu_quat = env.sim.model.site_quat[0, site_id].clone()
-    
+
     # Generate random rotations for each environment
     num_envs = len(env_ids)
     max_angle_rad = max_angle_deg * torch.pi / 180.0
-    
+
     # Random rotation angles [-max_angle, +max_angle] for each axis
     angles = (torch.rand(num_envs, 3, device=env.device) * 2 - 1) * max_angle_rad
-    
+
     # Convert Euler angles to quaternions (small angle approximation for efficiency)
     # For small angles: quat ≈ [1, θx/2, θy/2, θz/2]
     half_angles = angles / 2.0
     quats_delta = torch.zeros(num_envs, 4, device=env.device)
     quats_delta[:, 0] = 1.0  # w component
     quats_delta[:, 1:] = half_angles  # x, y, z components
-    
+
     # Normalize the quaternion
     quats_delta = quats_delta / torch.norm(quats_delta, dim=1, keepdim=True)
-    
+
     # Get original quaternion and apply delta rotation
     original_quat = env._original_imu_quat.unsqueeze(0).expand(num_envs, -1)
-    
+
     # Quaternion multiplication: q_new = q_delta * q_original
     # q1 * q2 = [w1*w2 - dot(v1,v2), w1*v2 + w2*v1 + cross(v1,v2)]
     w1, x1, y1, z1 = quats_delta[:, 0], quats_delta[:, 1], quats_delta[:, 2], quats_delta[:, 3]
     w2, x2, y2, z2 = original_quat[:, 0], original_quat[:, 1], original_quat[:, 2], original_quat[:, 3]
-    
-    new_quat = torch.stack([
-        w1*w2 - x1*x2 - y1*y2 - z1*z2,  # w
-        w1*x2 + x1*w2 + y1*z2 - z1*y2,  # x
-        w1*y2 - x1*z2 + y1*w2 + z1*x2,  # y
-        w1*z2 + x1*y2 - y1*x2 + z1*w2,  # z
-    ], dim=1)
-    
+
+    new_quat = torch.stack(
+        [
+            w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,  # w
+            w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,  # x
+            w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,  # y
+            w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2,  # z
+        ],
+        dim=1,
+    )
+
     # Apply to the selected environments
     env.sim.model.site_quat[env_ids, site_id] = new_quat
 
 
 def standing_phase(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
 ) -> torch.Tensor:
     """Simple time-based phase for standing task.
@@ -3797,11 +3825,11 @@ def standing_phase(
 
 
 def air_time_adaptive(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     sensor_name: str,
     command_name: str = "twist",
-    command_threshold: float = 0.01,    # below this: no reward (standing)
-    running_threshold: float = 0.5,     # above this: use running air-time window
+    command_threshold: float = 0.01,  # below this: no reward (standing)
+    running_threshold: float = 0.5,  # above this: use running air-time window
     walk_threshold_min: float = 0.10,
     walk_threshold_max: float = 0.25,
     run_threshold_min: float = 0.05,
@@ -3839,7 +3867,7 @@ def air_time_adaptive(
 
 
 def stillness_at_zero_command(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     command_name: str = "twist",
     command_threshold: float = 0.01,
@@ -3859,13 +3887,13 @@ def stillness_at_zero_command(
     is_standing_cmd = (total_speed < command_threshold).float()
 
     body_vel = torch.norm(asset.data.root_link_vel_w[:, :2], dim=1)
-    stillness = torch.exp(-body_vel ** 2 / vel_std ** 2)
+    stillness = torch.exp(-(body_vel**2) / vel_std**2)
 
     return is_standing_cmd * stillness
 
 
 def joint_vel_l2_when_standing(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     command_name: str = "twist",
     command_threshold: float = 0.01,
@@ -3882,15 +3910,15 @@ def joint_vel_l2_when_standing(
     total_speed = torch.norm(command[:, :2], dim=1) + torch.abs(command[:, 2])
     is_standing_cmd = (total_speed < command_threshold).float()
 
-    leg_indices = list(range(0, 5)) + list(range(9, 14))
+    leg_indices = list(range(5)) + list(range(9, 14))
     joint_vel = asset.data.joint_vel[:, leg_indices]
-    vel_sq = torch.sum(joint_vel ** 2, dim=-1)
+    vel_sq = torch.sum(joint_vel**2, dim=-1)
 
     return is_standing_cmd * vel_sq
 
 
 def foot_step_penalty_when_standing(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     command_name: str = "twist",
     command_threshold: float = 0.01,
@@ -3929,7 +3957,7 @@ def foot_step_penalty_when_standing(
 
 
 def recovery_stepping_reward(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     command_name: str = "twist",
     command_threshold: float = 0.01,
@@ -3980,7 +4008,7 @@ def recovery_stepping_reward(
 
 
 def adaptive_pose_weight(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     base_pose_reward: torch.Tensor,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     velocity_threshold: float = 0.3,
@@ -4009,15 +4037,13 @@ def adaptive_pose_weight(
 
     # Compute weight: 1.0 when stationary, min_weight at high velocity
     # Use smooth transition via sigmoid-like function
-    weight = min_weight + (1.0 - min_weight) * torch.exp(
-        -((vel_magnitude - velocity_threshold) / velocity_threshold).clamp(min=0.0) ** 2
-    )
+    weight = min_weight + (1.0 - min_weight) * torch.exp(-(((vel_magnitude - velocity_threshold) / velocity_threshold).clamp(min=0.0) ** 2))
 
     return base_pose_reward * weight
 
 
 def randomize_base_orientation(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     env_ids: torch.Tensor,
     max_pitch_deg: float = 10.0,
     max_roll_deg: float = 5.0,
@@ -4041,7 +4067,6 @@ def randomize_base_orientation(
     else:
         env_ids = env_ids.to(env.device, dtype=torch.int)
 
-    asset: Entity = env.scene[asset_cfg.name]
     num_envs = len(env_ids)
 
     # Generate random pitch and roll angles
@@ -4076,11 +4101,11 @@ def randomize_base_orientation(
     root_quat_idx = 3  # Quaternion starts at index 3
 
     # Apply the randomized orientation to selected environments
-    env.sim.data.qpos[env_ids, root_quat_idx:root_quat_idx+4] = new_quat
+    env.sim.data.qpos[env_ids, root_quat_idx : root_quat_idx + 4] = new_quat
 
 
 def set_face_down_orientation(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     env_ids: torch.Tensor,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
 ):
@@ -4102,14 +4127,14 @@ def set_face_down_orientation(
     yaw = torch.rand(num, device=env.device) * 2 * np.pi - np.pi
     cy = torch.cos(yaw * 0.5)
     sy = torch.sin(yaw * 0.5)
-    s = 2.0 ** -0.5  # sqrt(2)/2
+    s = 2.0**-0.5  # sqrt(2)/2
 
     new_quat = torch.stack(
         [
-            s * cy,   # w
+            s * cy,  # w
             -s * sy,  # x
-            s * cy,   # y
-            s * sy,   # z
+            s * cy,  # y
+            s * sy,  # z
         ],
         dim=1,
     )
@@ -4120,7 +4145,7 @@ def set_face_down_orientation(
 
 
 def set_random_prone_orientation(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     env_ids: torch.Tensor,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     face_down_prob: float = 0.5,
@@ -4142,10 +4167,10 @@ def set_random_prone_orientation(
     yaw = torch.rand(num, device=env.device) * 2 * np.pi - np.pi
     cy = torch.cos(yaw * 0.5)
     sy = torch.sin(yaw * 0.5)
-    s = 2.0 ** -0.5  # sqrt(2)/2
+    s = 2.0**-0.5  # sqrt(2)/2
 
-    face_down = torch.stack([ s * cy, -s * sy,  s * cy,  s * sy], dim=1)
-    face_up   = torch.stack([ s * cy,  s * sy, -s * cy,  s * sy], dim=1)
+    face_down = torch.stack([s * cy, -s * sy, s * cy, s * sy], dim=1)
+    face_up = torch.stack([s * cy, s * sy, -s * cy, s * sy], dim=1)
 
     mask = torch.rand(num, device=env.device) < face_down_prob  # True → face-down
     new_quat = torch.where(mask.unsqueeze(1), face_down, face_up)
@@ -4155,7 +4180,7 @@ def set_random_prone_orientation(
 
 
 def set_random_ground_state(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     env_ids: torch.Tensor,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     face_down_prob: float = 0.4,
@@ -4168,7 +4193,7 @@ def set_random_ground_state(
     sitting_z_max: float = 0.09,
     standing_z_min: float = 0.11,
     standing_z_max: float = 0.12,
-    sitting_joint_overrides: Optional[dict] = None,
+    sitting_joint_overrides: dict | None = None,
     sitting_joint_noise_std: float = 0.0,
     sitting_tilt_max: float = 0.0,
     face_up_roll_max: float = 0.0,
@@ -4200,24 +4225,26 @@ def set_random_ground_state(
     num = len(env_ids)
 
     total = face_down_prob + face_up_prob + sitting_prob + standing_prob
-    p_fd  = face_down_prob / total
-    p_fu  = (face_down_prob + face_up_prob) / total
+    p_fd = face_down_prob / total
+    p_fu = (face_down_prob + face_up_prob) / total
     p_sit = (face_down_prob + face_up_prob + sitting_prob) / total
 
     yaw = torch.rand(num, device=env.device) * 2 * np.pi - np.pi
     cy = torch.cos(yaw * 0.5)
     sy = torch.sin(yaw * 0.5)
-    s = 2.0 ** -0.5  # sqrt(2)/2
+    s = 2.0**-0.5  # sqrt(2)/2
 
-    face_down = torch.stack([ s * cy, -s * sy,  s * cy,  s * sy], dim=1)
-    face_up   = torch.stack([ s * cy,  s * sy, -s * cy,  s * sy], dim=1)
+    face_down = torch.stack([s * cy, -s * sy, s * cy, s * sy], dim=1)
+    face_up = torch.stack([s * cy, s * sy, -s * cy, s * sy], dim=1)
     # Upright sitting: yaw-only by default, with optional ±sitting_tilt_max
     # pitch/roll noise so the policy doesn't overfit to perfectly-upright starts.
     if sitting_tilt_max > 0.0:
         pitch = (torch.rand(num, device=env.device) * 2 - 1) * sitting_tilt_max
-        roll  = (torch.rand(num, device=env.device) * 2 - 1) * sitting_tilt_max
-        cp = torch.cos(pitch * 0.5); sp = torch.sin(pitch * 0.5)
-        cr = torch.cos(roll  * 0.5); sr = torch.sin(roll  * 0.5)
+        roll = (torch.rand(num, device=env.device) * 2 - 1) * sitting_tilt_max
+        cp = torch.cos(pitch * 0.5)
+        sp = torch.sin(pitch * 0.5)
+        cr = torch.cos(roll * 0.5)
+        sr = torch.sin(roll * 0.5)
         # ZYX intrinsic Euler → quaternion (yaw * pitch * roll).
         sit_w = cr * cp * cy + sr * sp * sy
         sit_x = sr * cp * cy - cr * sp * sy
@@ -4228,9 +4255,8 @@ def set_random_ground_state(
         sitting = torch.stack([cy, torch.zeros_like(cy), torch.zeros_like(cy), sy], dim=1)
 
     u = torch.rand(num, device=env.device)
-    is_fd    = u < p_fd
-    is_fu    = (u >= p_fd) & (u < p_fu)
-    is_sit   = (u >= p_fu) & (u < p_sit)
+    is_fu = (u >= p_fd) & (u < p_fu)
+    is_sit = (u >= p_fu) & (u < p_sit)
     is_stand = u >= p_sit
 
     # Face-up partial-roll noise: rotate the supine pose about the body's long
@@ -4269,21 +4295,21 @@ def set_random_ground_state(
     # Sitting and standing share the same upright orientation (identity + optional
     # ±sitting_tilt_max); they differ only in trunk height and joint pose.
     new_quat = face_down.clone()
-    new_quat[is_fu]    = face_up[is_fu]
-    new_quat[is_sit]   = sitting[is_sit]
+    new_quat[is_fu] = face_up[is_fu]
+    new_quat[is_sit] = sitting[is_sit]
     new_quat[is_stand] = sitting[is_stand]
 
     # Random z per env: prone heights for face-down/up, low for sit, ~standing for stand.
     z_prone = torch.rand(num, device=env.device) * (prone_z_max - prone_z_min) + prone_z_min
-    z_sit   = torch.rand(num, device=env.device) * (sitting_z_max - sitting_z_min) + sitting_z_min
+    z_sit = torch.rand(num, device=env.device) * (sitting_z_max - sitting_z_min) + sitting_z_min
     z_stand = torch.rand(num, device=env.device) * (standing_z_max - standing_z_min) + standing_z_min
     new_z = z_prone.clone()
     new_z = torch.where(is_sit, z_sit, new_z)
     new_z = torch.where(is_stand, z_stand, new_z)
 
-    env.sim.data.qpos[env_ids, 2]   = new_z
+    env.sim.data.qpos[env_ids, 2] = new_z
     env.sim.data.qpos[env_ids, 3:7] = new_quat
-    env.sim.data.qvel[env_ids, :6]  = 0.0
+    env.sim.data.qvel[env_ids, :6] = 0.0
 
     # Sitting-bucket joint overrides (e.g. knee/ankle bent to keyframe).
     # Override keys are SERVO indices (14-joint layout); translate to entity
@@ -4330,7 +4356,7 @@ _CROUCH_ANCHOR_BY_NAME = {
 
 
 def set_random_crouch_state(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     env_ids: torch.Tensor,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     depth_min: float = 0.35,
@@ -4372,14 +4398,16 @@ def set_random_crouch_state(
 
     # Base orientation: forward pitch scaled with depth (the stuck basin is a
     # forward crouch from both fall directions), random yaw, small roll noise.
-    pitch = lam * math.radians(pitch_max_deg) \
-        + (torch.rand(num, device=env.device) * 2 - 1) * math.radians(10.0)
+    pitch = lam * math.radians(pitch_max_deg) + (torch.rand(num, device=env.device) * 2 - 1) * math.radians(10.0)
     pitch = torch.clamp(pitch, min=math.radians(5.0))
     roll = (torch.rand(num, device=env.device) * 2 - 1) * math.radians(8.0)
     yaw = torch.rand(num, device=env.device) * 2 * np.pi - np.pi
-    cy = torch.cos(yaw * 0.5); sy = torch.sin(yaw * 0.5)
-    cp = torch.cos(pitch * 0.5); sp = torch.sin(pitch * 0.5)
-    cr = torch.cos(roll * 0.5); sr = torch.sin(roll * 0.5)
+    cy = torch.cos(yaw * 0.5)
+    sy = torch.sin(yaw * 0.5)
+    cp = torch.cos(pitch * 0.5)
+    sp = torch.sin(pitch * 0.5)
+    cr = torch.cos(roll * 0.5)
+    sr = torch.sin(roll * 0.5)
     # ZYX intrinsic Euler → quaternion (yaw * pitch * roll), as in
     # set_random_ground_state's sitting branch.
     qw = cr * cp * cy + sr * sp * sy
@@ -4389,8 +4417,7 @@ def set_random_crouch_state(
     quat = torch.stack([qw, qx, qy, qz], dim=1)
 
     # Trunk height scaled with depth, small upward margin to settle cleanly.
-    z = z_stand + lam * (z_deep - z_stand) \
-        + torch.rand(num, device=env.device) * 0.01
+    z = z_stand + lam * (z_deep - z_stand) + torch.rand(num, device=env.device) * 0.01
 
     env.sim.data.qpos[env_ids, 2] = z
     env.sim.data.qpos[env_ids, 3:7] = quat
@@ -4399,7 +4426,7 @@ def set_random_crouch_state(
 
 
 def maybe_set_random_prone_orientation(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     env_ids: torch.Tensor,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     prone_prob: float = 0.0,
@@ -4440,9 +4467,7 @@ def maybe_set_random_prone_orientation(
     selected = env_ids_t[u < prone_prob]
     crouch_selected = env_ids_t[(u >= prone_prob) & (u < prone_prob + crouch_prob)]
     if len(selected) > 0:
-        set_random_prone_orientation(
-            env, selected, asset_cfg=asset_cfg, face_down_prob=face_down_prob
-        )
+        set_random_prone_orientation(env, selected, asset_cfg=asset_cfg, face_down_prob=face_down_prob)
         # Override z so the prone body has head/neck clearance when settling.
         z = torch.rand(len(selected), device=env.device) * (prone_z_max - prone_z_min) + prone_z_min
         env.sim.data.qpos[selected, 2] = z
@@ -4451,7 +4476,7 @@ def maybe_set_random_prone_orientation(
 
 
 def event_param_curriculum(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     env_ids: torch.Tensor,
     event_name: str,
     param_stages: list[dict],
@@ -4475,7 +4500,7 @@ def event_param_curriculum(
 
 
 def face_down_prob_curriculum(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     env_ids: torch.Tensor,
     event_name: str,
     prob_stages: list[dict],
@@ -4532,7 +4557,7 @@ class VelocityCommandCommandOnly(UniformVelocityCommand):
         self.is_standing_env[turn_ids] = False
         self.vel_command_w[turn_ids] = self.vel_command_b[turn_ids]
 
-    def _debug_vis_impl(self, visualizer: "DebugVisualizer") -> None:
+    def _debug_vis_impl(self, visualizer: DebugVisualizer) -> None:
         batch = visualizer.env_idx
         if batch >= self.num_envs:
             return
@@ -4557,10 +4582,22 @@ class VelocityCommandCommandOnly(UniformVelocityCommand):
 
         # Command linear velocity arrow (blue).
         cmd_lin_from = local_to_world(np.array([0, 0, z_offset]) * scale)
-        cmd_lin_to = local_to_world(
-            (np.array([0, 0, z_offset]) + np.array([cmd[0], cmd[1], 0])) * scale
-        )
+        cmd_lin_to = local_to_world((np.array([0, 0, z_offset]) + np.array([cmd[0], cmd[1], 0])) * scale)
         visualizer.add_arrow(cmd_lin_from, cmd_lin_to, color=(0.2, 0.2, 0.6, 0.6), width=0.015)
+
+
+def twist_command_cfg(cfg: ManagerBasedRlEnvCfg) -> UniformVelocityCommandCfg:
+    """The ``"twist"`` command cfg, narrowed to its real type.
+
+    ``ManagerBasedRlEnvCfg.commands`` is typed ``dict[str, CommandTermCfg]``, so
+    every ``.ranges`` / ``.rel_standing_envs`` touch on the twist slot is an
+    unchecked attribute access. Every task in this repo builds twist from
+    mjlab's velocity recipe, so the narrowing always holds; the assert makes it
+    a loud failure rather than an AttributeError deep inside a cfg factory.
+    """
+    command = cfg.commands["twist"]
+    assert isinstance(command, UniformVelocityCommandCfg), f"commands['twist'] is {type(command).__name__}, expected a UniformVelocityCommandCfg"
+    return command
 
 
 @_dataclass(kw_only=True)
@@ -4569,7 +4606,7 @@ class VelocityCommandCommandOnlyCfg(UniformVelocityCommandCfg):
     # [0.4·max, max]) each resample. 0 = disabled (base uniform sampling only).
     rel_turn_in_place_envs: float = 0.0
 
-    def build(self, env: ManagerBasedRlEnv) -> "VelocityCommandCommandOnly":
+    def build(self, env: ManagerBasedRlEnv) -> VelocityCommandCommandOnly:
         return VelocityCommandCommandOnly(self, env)
 
 
@@ -4604,9 +4641,7 @@ class RelativeHeadingVelocityCommand(VelocityCommandCommandOnly):
         super()._resample_command(env_ids)
         n = len(env_ids)
         # Sample random world-frame target heading uniformly in [-π, π]
-        self._target_heading_w[env_ids] = (
-            torch.rand(n, device=self.device) * 2.0 * math.pi - math.pi
-        )
+        self._target_heading_w[env_ids] = torch.rand(n, device=self.device) * 2.0 * math.pi - math.pi
         # Zero ang_vel slot; _update_command will fill it each step
         self.vel_command_b[env_ids, 2] = 0.0
 
@@ -4627,12 +4662,12 @@ class RelativeHeadingVelocityCommand(VelocityCommandCommandOnly):
 
 
 class RelativeHeadingVelocityCommandCfg(UniformVelocityCommandCfg):
-    def build(self, env: ManagerBasedRlEnv) -> "RelativeHeadingVelocityCommand":
+    def build(self, env: ManagerBasedRlEnv) -> RelativeHeadingVelocityCommand:
         return RelativeHeadingVelocityCommand(self, env)
 
 
 def heading_tracking_reward(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     command_name: str,
     std: float = 0.5,
 ) -> torch.Tensor:
@@ -4647,11 +4682,11 @@ def heading_tracking_reward(
     """
     cmd = env.command_manager.get_command(command_name)
     heading_error = cmd[:, 2]
-    return torch.exp(-(heading_error ** 2) / (std ** 2))
+    return torch.exp(-(heading_error**2) / (std**2))
 
 
 def skating_air_time_reward(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     sensor_name: str,
     command_name: str,
     threshold_min: float = 0.05,
@@ -4670,6 +4705,7 @@ def skating_air_time_reward(
     it to forbid a frantic high-cadence flutter.
     """
     from mjlab.sensor import ContactSensor
+
     sensor: ContactSensor = env.scene[sensor_name]
     current_air_time = sensor.data.current_air_time
     assert current_air_time is not None
@@ -4685,7 +4721,7 @@ def skating_air_time_reward(
     return reward
 
 
-def _forward_progress_gate(env: ManagerBasedRlEnv, v_ref: float) -> torch.Tensor | None:
+def _forward_progress_gate(env: MicroduckEnv, v_ref: float) -> torch.Tensor | None:
     """0→1 ramp in body forward speed: 0 when standing still, 1 at/above v_ref.
 
     Used to gate stride-shaping rewards so that stepping which does NOT propel
@@ -4699,7 +4735,7 @@ def _forward_progress_gate(env: ManagerBasedRlEnv, v_ref: float) -> torch.Tensor
 
 
 def single_support_reward(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     sensor_name: str,
     command_name: str,
     vel_gate_ref: float = 0.0,
@@ -4725,6 +4761,7 @@ def single_support_reward(
     anti-swizzle signal is skating_air_time — the swizzle never lifts a foot.
     """
     from mjlab.sensor import ContactSensor
+
     sensor: ContactSensor = env.scene[sensor_name]
     contact_time = sensor.data.current_contact_time  # (num_envs, num_feet)
     assert contact_time is not None
@@ -4742,14 +4779,12 @@ def single_support_reward(
 
 
 def glide_reward(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     sensor_name: str,
     command_name: str,
     vel_ref: float = 0.2,
     stillness_std: float = 5.0,
-    asset_cfg: SceneEntityCfg = SceneEntityCfg(
-        "robot", joint_names=(r".*(hip|knee|ankle).*",)
-    ),
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot", joint_names=(r".*(hip|knee|ankle).*",)),
 ) -> torch.Tensor:
     """Reward the GLIDE phase of a stride: coast on ONE blade with quiet legs.
 
@@ -4769,6 +4804,7 @@ def glide_reward(
     - active on push/coast only (cmd_x >= 0); silent on brake.
     """
     from mjlab.sensor import ContactSensor
+
     sensor: ContactSensor = env.scene[sensor_name]
     contact_time = sensor.data.current_contact_time  # (num_envs, num_feet)
     assert contact_time is not None
@@ -4779,10 +4815,8 @@ def glide_reward(
         forward_gate = torch.ones(env.num_envs, device=env.device)
 
     asset: Entity = env.scene[asset_cfg.name]
-    joint_vel_sq = torch.sum(
-        torch.square(asset.data.joint_vel[:, asset_cfg.joint_ids]), dim=1
-    )
-    stillness = torch.exp(-joint_vel_sq / stillness_std ** 2)
+    joint_vel_sq = torch.sum(torch.square(asset.data.joint_vel[:, asset_cfg.joint_ids]), dim=1)
+    stillness = torch.exp(-joint_vel_sq / stillness_std**2)
 
     cmd_x = env.command_manager.get_command(command_name)[:, 0]
     active = (cmd_x >= 0.0).float()
@@ -4790,7 +4824,7 @@ def glide_reward(
 
 
 def leg_symmetry_reward(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     joint_bases: tuple = ("hip_yaw", "hip_roll", "hip_pitch", "knee", "ankle"),
 ) -> torch.Tensor:
@@ -4820,7 +4854,7 @@ def leg_symmetry_reward(
 
 
 def grounded_reward(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     sensor_name: str,
     command_name: str,
 ) -> torch.Tensor:
@@ -4831,6 +4865,7 @@ def grounded_reward(
     backward — the swizzle env drives cmd_x < 0 as "go backward").
     """
     from mjlab.sensor import ContactSensor
+
     sensor: ContactSensor = env.scene[sensor_name]
     contact_time = sensor.data.current_contact_time  # (num_envs, num_feet)
     assert contact_time is not None
@@ -4841,7 +4876,7 @@ def grounded_reward(
 
 
 def gait_symmetry_penalty(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     sensor_name: str,
 ) -> torch.Tensor:
     """Penalize lopsided left/right foot usage (one blade doing most of the work).
@@ -4856,6 +4891,7 @@ def gait_symmetry_penalty(
     asymmetry of a real stride (one foot swinging now) is fine.
     """
     from mjlab.sensor import ContactSensor
+
     sensor: ContactSensor = env.scene[sensor_name]
     air = sensor.data.current_air_time  # (N, num_feet)
     assert air is not None
@@ -4872,7 +4908,7 @@ def gait_symmetry_penalty(
 
 
 def heading_hold_reward(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     std: float = 0.4,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
 ) -> torch.Tensor:
@@ -4903,11 +4939,11 @@ def heading_hold_reward(
 
     err = yaw - env._heading_ref
     err = torch.atan2(torch.sin(err), torch.cos(err))  # wrap to [-π, π]
-    return torch.exp(-(err ** 2) / std ** 2)
+    return torch.exp(-(err**2) / std**2)
 
 
 def action_over_limit_penalty(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     action_name: str = "joint_pos",
     overshoot: float = 0.3,
 ) -> torch.Tensor:
@@ -4932,6 +4968,7 @@ def action_over_limit_penalty(
     under load; only the wild over-drive past that is penalised.
     """
     term = env.action_manager.get_term(action_name)
+    assert isinstance(term, BaseAction), f"action term {action_name!r} is {type(term).__name__}, expected a joint BaseAction"
     target = term.raw_action * term.scale + term.offset  # (B, action_dim) abs targets
     jnt_ids = term.target_ids
     hard = env.scene["robot"].data.joint_pos_limits[:, jnt_ids]  # (B, action_dim, 2)
@@ -4942,7 +4979,7 @@ def action_over_limit_penalty(
 
 
 def forward_lean_reward(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     command_name: str,
     target_pitch: float = 0.08,
     std: float = 0.08,
@@ -4960,7 +4997,7 @@ def forward_lean_reward(
     cmd_x = env.command_manager.get_command(command_name)[:, 0]
     forward_lean = asset.data.projected_gravity_b[:, 0]
     push = torch.clamp(cmd_x, min=0.0)
-    return push * torch.exp(-((forward_lean - target_pitch) ** 2) / (std ** 2))
+    return push * torch.exp(-((forward_lean - target_pitch) ** 2) / (std**2))
 
 
 class GroundPickPhaseCommand(UniformVelocityCommand):
@@ -4999,8 +5036,8 @@ class GroundPickPhaseCommand(UniformVelocityCommand):
         self.vel_command_b[:, 1] = torch.sin(2 * torch.pi * self._gp_phase)
         self.vel_command_b[:, 2] = 0.0
 
-    def reset(self, env_ids: torch.Tensor | None) -> dict:
-        if env_ids is not None and len(env_ids) > 0:
+    def reset(self, env_ids: torch.Tensor | slice | None) -> dict[str, float]:
+        if env_ids is not None and not isinstance(env_ids, slice) and len(env_ids) > 0:
             if self._randomize_phase:
                 self._gp_phase[env_ids] = torch.rand(len(env_ids), device=self.device)
             else:
@@ -5019,13 +5056,14 @@ class GroundPickPhaseCommand(UniformVelocityCommand):
 
 from dataclasses import dataclass as _dataclass
 
+
 @_dataclass(kw_only=True)
 class GroundPickPhaseCommandCfg(UniformVelocityCommandCfg):
     class_type: type = GroundPickPhaseCommand
     period: float = 4.0  # cycle length in seconds; sitstand uses 8.0
     randomize_phase: bool = True  # False -> each episode starts at phase 0 (standing)
 
-    def build(self, env: ManagerBasedRlEnv) -> "GroundPickPhaseCommand":
+    def build(self, env: ManagerBasedRlEnv) -> GroundPickPhaseCommand:
         return GroundPickPhaseCommand(self, env)
 
 
@@ -5055,7 +5093,7 @@ class GroundPickPhaseCommandCfg(UniformVelocityCommandCfg):
 # --------------------------------------------------------------------------- #
 
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 class UniformPoseCommand(CommandTerm):
@@ -5066,9 +5104,9 @@ class UniformPoseCommand(CommandTerm):
     since we have many of these.
     """
 
-    cfg: "UniformPoseCommandCfg"
+    cfg: UniformPoseCommandCfg
 
-    def __init__(self, cfg: "UniformPoseCommandCfg", env: ManagerBasedRlEnv):
+    def __init__(self, cfg: UniformPoseCommandCfg, env: ManagerBasedRlEnv):
         super().__init__(cfg, env)
         self.dim = len(cfg.ranges)
         self._command = torch.zeros(self.num_envs, self.dim, device=self.device)
@@ -5103,17 +5141,18 @@ class UniformPoseCommand(CommandTerm):
 @dataclass(kw_only=True)
 class UniformPoseCommandCfg(CommandTermCfg):
     """Per-dim uniform ranges; builds a UniformPoseCommand."""
+
     # Tuple of (lo, hi) per dim. Length defines the command dim.
     ranges: tuple[tuple[float, float], ...] = ()
     # Probability that a resample yields the exact all-zero command.
     zero_command_prob: float = 0.0
 
-    def build(self, env: ManagerBasedRlEnv) -> "UniformPoseCommand":
+    def build(self, env: ManagerBasedRlEnv) -> UniformPoseCommand:
         return UniformPoseCommand(self, env)
 
 
 def zero_command_padding(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     dim: int,
 ) -> torch.Tensor:
     """Constant-zero obs term of width `dim`.
@@ -5126,7 +5165,7 @@ def zero_command_padding(
 
 
 def head_pose_tracking(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     command_name: str = "head_pose",
     std: float = 0.5,
     fine_std: float | None = None,
@@ -5169,26 +5208,17 @@ def head_pose_tracking(
         env._head_pose_neck_ids = torch.tensor(ids, device=env.device, dtype=torch.long)
         name_to_id = {n: i for i, n in enumerate(asset.joint_names)}
         bl = [name_to_id.get(f"passive_{n}_backlash") for n in names]
-        env._head_pose_bl_ids = torch.tensor(
-            [0 if b is None else b for b in bl], device=env.device, dtype=torch.long
-        )
-        env._head_pose_bl_mask = torch.tensor(
-            [0.0 if b is None else 1.0 for b in bl], device=env.device
-        )
+        env._head_pose_bl_ids = torch.tensor([0 if b is None else b for b in bl], device=env.device, dtype=torch.long)
+        env._head_pose_bl_mask = torch.tensor([0.0 if b is None else 1.0 for b in bl], device=env.device)
 
     neck_ids = env._head_pose_neck_ids
     joint_pos = asset.data.joint_pos
-    measured = (
-        joint_pos[:, neck_ids]
-        + joint_pos[:, env._head_pose_bl_ids] * env._head_pose_bl_mask
-    )
+    measured = joint_pos[:, neck_ids] + joint_pos[:, env._head_pose_bl_ids] * env._head_pose_bl_mask
     actual = measured - asset.data.default_joint_pos[:, neck_ids]
     err = actual - cmd
-    per_joint = torch.exp(-(err / std) ** 2)
+    per_joint = torch.exp(-((err / std) ** 2))
     if fine_std is not None:
-        per_joint = (1.0 - fine_weight) * per_joint + fine_weight * torch.exp(
-            -(err / fine_std) ** 2
-        )
+        per_joint = (1.0 - fine_weight) * per_joint + fine_weight * torch.exp(-((err / fine_std) ** 2))
     return per_joint.mean(dim=-1)
 
 
@@ -5211,23 +5241,23 @@ def _finite(x: torch.Tensor) -> torch.Tensor:
     return torch.nan_to_num(x, nan=0.0, posinf=0.0, neginf=0.0)
 
 
-def foot_contact_forces_safe(env: ManagerBasedRlEnv, sensor_name: str) -> torch.Tensor:
+def foot_contact_forces_safe(env: MicroduckEnv, sensor_name: str) -> torch.Tensor:
     """NaN-safe `foot_contact_forces` (see note above)."""
     return _finite(_velocity_obs.foot_contact_forces(env, sensor_name))
 
 
-def foot_height_safe(env: ManagerBasedRlEnv, sensor_name: str) -> torch.Tensor:
+def foot_height_safe(env: MicroduckEnv, sensor_name: str) -> torch.Tensor:
     """NaN-safe `foot_height` (see note above)."""
     return _finite(_velocity_obs.foot_height(env, sensor_name))
 
 
-def foot_air_time_safe(env: ManagerBasedRlEnv, sensor_name: str) -> torch.Tensor:
+def foot_air_time_safe(env: MicroduckEnv, sensor_name: str) -> torch.Tensor:
     """NaN-safe `foot_air_time` (see note above)."""
     return _finite(_velocity_obs.foot_air_time(env, sensor_name))
 
 
 def head_pose_bias_penalty(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     command_name: str = "head_pose",
     tau_s: float = 1.0,
     gate_height_low: float | None = None,
@@ -5274,29 +5304,27 @@ def head_pose_bias_penalty(
 
     neck_ids = env._head_pose_neck_ids
     joint_pos = asset.data.joint_pos
-    measured = (
-        joint_pos[:, neck_ids]
-        + joint_pos[:, env._head_pose_bl_ids] * env._head_pose_bl_mask
-    )
+    measured = joint_pos[:, neck_ids] + joint_pos[:, env._head_pose_bl_ids] * env._head_pose_bl_mask
     err = (measured - asset.data.default_joint_pos[:, neck_ids]) - cmd
 
     if gate_height_low is not None:
         z = torch.nan_to_num(
-            asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2],
+            asset.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2],
             nan=0.0,
         )
         t = torch.clamp(
             (z - gate_height_low) / max(gate_height_high - gate_height_low, 1e-6),
-            0.0, 1.0,
+            0.0,
+            1.0,
         )
         gate = t * t * (3.0 - 2.0 * t)
         quat = asset.data.root_link_quat_w
         cos_tilt = 1.0 - 2.0 * (quat[:, 1] ** 2 + quat[:, 2] ** 2)
         tilt_deg = torch.rad2deg(torch.acos(cos_tilt.clamp(-1.0, 1.0)))
         st = torch.clamp(
-            (gate_tilt_zero_deg - tilt_deg)
-            / max(gate_tilt_zero_deg - gate_tilt_full_deg, 1e-6),
-            0.0, 1.0,
+            (gate_tilt_zero_deg - tilt_deg) / max(gate_tilt_zero_deg - gate_tilt_full_deg, 1e-6),
+            0.0,
+            1.0,
         )
         gate = gate * (st * st * (3.0 - 2.0 * st))
         err = err * gate.unsqueeze(-1)
@@ -5318,7 +5346,7 @@ def head_pose_bias_penalty(
 
 
 def body_pose_tracking_6d(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     command_name: str = "body_pose",
     nominal_height: float = 0.095,
     xy_std: float = 0.02,
@@ -5340,7 +5368,7 @@ def body_pose_tracking_6d(
     # Position relative to env spawn origin. nan_to_num because MuJoCo can
     # produce NaN on contact instability and we don't want to taint the reward.
     pos_w = asset.data.root_link_pos_w
-    origin = env.scene.terrain.env_origins
+    origin = env.scene.env_origins
     rel = torch.nan_to_num(pos_w - origin, nan=0.0)
     x_err = rel[:, 0] - dx
     y_err = rel[:, 1] - dy
@@ -5349,26 +5377,26 @@ def body_pose_tracking_6d(
     # ZYX Euler from quat.
     quat = asset.data.root_link_quat_w
     qw, qx, qy, qz = quat[:, 0], quat[:, 1], quat[:, 2], quat[:, 3]
-    roll  = torch.atan2(2.0 * (qw * qx + qy * qz), 1.0 - 2.0 * (qx * qx + qy * qy))
+    roll = torch.atan2(2.0 * (qw * qx + qy * qz), 1.0 - 2.0 * (qx * qx + qy * qy))
     pitch = torch.asin(torch.clamp(2.0 * (qw * qy - qz * qx), -1.0, 1.0))
-    yaw   = torch.atan2(2.0 * (qw * qz + qx * qy), 1.0 - 2.0 * (qy * qy + qz * qz))
+    yaw = torch.atan2(2.0 * (qw * qz + qx * qy), 1.0 - 2.0 * (qy * qy + qz * qz))
 
-    roll_err  = roll  - droll
+    roll_err = roll - droll
     pitch_err = pitch - dpitch
-    yaw_err   = wrap_to_pi(yaw - dyaw)
+    yaw_err = wrap_to_pi(yaw - dyaw)
 
-    r_x = torch.exp(-(x_err / xy_std) ** 2)
-    r_y = torch.exp(-(y_err / xy_std) ** 2)
-    r_z = torch.exp(-(z_err / z_std) ** 2)
-    r_r = torch.exp(-(roll_err  / angle_std) ** 2)
-    r_p = torch.exp(-(pitch_err / angle_std) ** 2)
-    r_w = torch.exp(-(yaw_err   / angle_std) ** 2)
+    r_x = torch.exp(-((x_err / xy_std) ** 2))
+    r_y = torch.exp(-((y_err / xy_std) ** 2))
+    r_z = torch.exp(-((z_err / z_std) ** 2))
+    r_r = torch.exp(-((roll_err / angle_std) ** 2))
+    r_p = torch.exp(-((pitch_err / angle_std) ** 2))
+    r_w = torch.exp(-((yaw_err / angle_std) ** 2))
 
     return (r_x + r_y + r_z + r_r + r_p + r_w) / 6.0
 
 
 def termination_param_curriculum(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     env_ids: torch.Tensor,
     term_name: str,
     param_stages: list[dict],
@@ -5403,7 +5431,7 @@ def termination_param_curriculum(
 
 
 def body_pose_tracking_locomotion(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     command_name: str = "body_pose",
     nominal_height: float = 0.105,
     xy_std: float = 0.02,
@@ -5442,24 +5470,24 @@ def body_pose_tracking_locomotion(
     quat = asset.data.root_link_quat_w
     qw, qx, qy, qz = quat[:, 0], quat[:, 1], quat[:, 2], quat[:, 3]
     trunk_yaw = torch.atan2(2.0 * (qw * qz + qx * qy), 1.0 - 2.0 * (qy * qy + qz * qz))
-    roll  = torch.atan2(2.0 * (qw * qx + qy * qz), 1.0 - 2.0 * (qx * qx + qy * qy))
+    roll = torch.atan2(2.0 * (qw * qx + qy * qz), 1.0 - 2.0 * (qx * qx + qy * qy))
     pitch = torch.asin(torch.clamp(2.0 * (qw * qy - qz * qx), -1.0, 1.0))
 
     # Feet centroid in world frame.
-    foot_pos = asset.data.site_pos_w[:, feet_cfg.site_ids]   # (N, 2, 3)
-    foot_quat = asset.data.site_quat_w[:, feet_cfg.site_ids] # (N, 2, 4)
-    feet_centroid = foot_pos.mean(dim=1)                     # (N, 3)
+    foot_pos = asset.data.site_pos_w[:, feet_cfg.site_ids]  # (N, 2, 3)
+    foot_quat = asset.data.site_quat_w[:, feet_cfg.site_ids]  # (N, 2, 4)
+    feet_centroid = foot_pos.mean(dim=1)  # (N, 3)
 
     # Trunk xy in body frame relative to feet centroid (rotate world Δxy by −yaw).
     dx_w = pos_w[:, 0] - feet_centroid[:, 0]
     dy_w = pos_w[:, 1] - feet_centroid[:, 1]
     cos_y = torch.cos(trunk_yaw)
     sin_y = torch.sin(trunk_yaw)
-    x_body =  cos_y * dx_w + sin_y * dy_w
+    x_body = cos_y * dx_w + sin_y * dy_w
     y_body = -sin_y * dx_w + cos_y * dy_w
 
     # Z relative to spawn-origin terrain height (still in world).
-    origin = env.scene.terrain.env_origins
+    origin = env.scene.env_origins
     z_world = torch.nan_to_num(pos_w[:, 2] - origin[:, 2], nan=0.0)
 
     # Feet yaws → circular mean. NOTE: this depends on the site orientation
@@ -5470,19 +5498,19 @@ def body_pose_tracking_locomotion(
     foot_yaws = torch.atan2(2.0 * (fqw * fqz + fqx * fqy), 1.0 - 2.0 * (fqy * fqy + fqz * fqz))  # (N, 2)
     mean_foot_yaw = torch.atan2(torch.sin(foot_yaws).mean(dim=1), torch.cos(foot_yaws).mean(dim=1))
 
-    x_err     = x_body - dx
-    y_err     = y_body - dy
-    z_err     = z_world - (nominal_height + dz)
-    roll_err  = roll  - droll
+    x_err = x_body - dx
+    y_err = y_body - dy
+    z_err = z_world - (nominal_height + dz)
+    roll_err = roll - droll
     pitch_err = pitch - dpitch
-    yaw_err   = wrap_to_pi(trunk_yaw - mean_foot_yaw - dyaw)
+    yaw_err = wrap_to_pi(trunk_yaw - mean_foot_yaw - dyaw)
 
-    r_x = torch.exp(-(x_err / xy_std) ** 2)
-    r_y = torch.exp(-(y_err / xy_std) ** 2)
-    r_z = torch.exp(-(z_err / z_std) ** 2)
-    r_r = torch.exp(-(roll_err  / angle_std) ** 2)
-    r_p = torch.exp(-(pitch_err / angle_std) ** 2)
-    r_w = torch.exp(-(yaw_err   / angle_std) ** 2)
+    r_x = torch.exp(-((x_err / xy_std) ** 2))
+    r_y = torch.exp(-((y_err / xy_std) ** 2))
+    r_z = torch.exp(-((z_err / z_std) ** 2))
+    r_r = torch.exp(-((roll_err / angle_std) ** 2))
+    r_p = torch.exp(-((pitch_err / angle_std) ** 2))
+    r_w = torch.exp(-((yaw_err / angle_std) ** 2))
 
     # Per-axis weighted mean. Pass axis_weights=(0,0,1,1,1,1) to disable xy
     # tracking — useful when xy lean is mechanically coupled to pitch/roll on
@@ -5490,7 +5518,7 @@ def body_pose_tracking_locomotion(
     # learnable objective.
     wx, wy, wz, wr, wp, wyaw = axis_weights
     total_w = wx + wy + wz + wr + wp + wyaw
-    reward = (wx*r_x + wy*r_y + wz*r_z + wr*r_r + wp*r_p + wyaw*r_w) / max(total_w, 1e-6)
+    reward = (wx * r_x + wy * r_y + wz * r_z + wr * r_r + wp * r_p + wyaw * r_w) / max(total_w, 1e-6)
 
     # Optional gate: when vel_gate_command_name is set, scale the reward by a
     # Gaussian on the velocity command's magnitude. With vel_gate_std ≈ 0.1,
@@ -5503,14 +5531,14 @@ def body_pose_tracking_locomotion(
         # leaves body pose meaningful, but walking forward/sideways doesn't.
         vel_cmd = env.command_manager.get_command(vel_gate_command_name)  # (N, 3)
         vel_mag = torch.linalg.vector_norm(vel_cmd[:, :2], dim=-1)
-        gate = torch.exp(-(vel_mag / vel_gate_std) ** 2)
+        gate = torch.exp(-((vel_mag / vel_gate_std) ** 2))
         reward = reward * gate
 
     return reward
 
 
 def pose_command_range_curriculum(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     env_ids: torch.Tensor,
     command_name: str,
     range_stages: list[dict],
@@ -5527,7 +5555,8 @@ def pose_command_range_curriculum(
 
     term = env.command_manager.get_term(command_name)
     assert term is not None, f"Command term '{command_name}' not found"
-    cfg = term.cfg  # type: ignore[assignment]
+    cfg = term.cfg
+    assert isinstance(cfg, UniformPoseCommandCfg), f"command '{command_name}' is {type(cfg).__name__}, expected a UniformPoseCommandCfg"
 
     current = range_stages[0]["ranges"]
     for stage in range_stages:
@@ -5544,7 +5573,7 @@ def pose_command_range_curriculum(
 # Gait-shaping penalties ported from mjlab_microban (microban velocity recipe).
 # ─────────────────────────────────────────────────────────────────────────────
 def no_stepping_penalty(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     sensor_name: str,
     command_name: str = "twist",
     command_threshold: float = 0.01,
@@ -5569,7 +5598,7 @@ def no_stepping_penalty(
 
 
 def feet_distance_penalty(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     min_dist: float,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
 ) -> torch.Tensor:
@@ -5600,7 +5629,7 @@ def feet_distance_penalty(
 # so it is re-sampled per episode but never accumulates.
 # ─────────────────────────────────────────────────────────────────────────────
 def randomize_com(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     env_ids: torch.Tensor,
     ranges: tuple[float, float],
     field: str = "body_ipos",
@@ -5648,7 +5677,7 @@ def randomize_com(
 
 
 def randomize_dof_field_scaled(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     env_ids: torch.Tensor,
     field: str,
     scale_range: tuple[float, float],
@@ -5694,7 +5723,7 @@ def randomize_dof_field_scaled(
 # =============================================================================
 
 
-def _ball_kick_dir(env: ManagerBasedRlEnv) -> torch.Tensor:
+def _ball_kick_dir(env: MicroduckEnv) -> torch.Tensor:
     """Per-env world-frame kick direction (XY unit vector), lazily allocated.
 
     Set by ``reset_ball_in_front_of_foot`` to the robot's forward direction at
@@ -5708,7 +5737,7 @@ def _ball_kick_dir(env: ManagerBasedRlEnv) -> torch.Tensor:
 
 
 def reset_ball_in_front_of_foot(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     env_ids: torch.Tensor,
     offset: tuple = (0.09, -0.042),
     noise_xy: float = 0.015,
@@ -5746,12 +5775,10 @@ def reset_ball_in_front_of_foot(
     pose = torch.zeros(n, 7, device=env.device)
     pose[:, 0] = root[:, 0] + cos_y * off[:, 0] - sin_y * off[:, 1]
     pose[:, 1] = root[:, 1] + sin_y * off[:, 0] + cos_y * off[:, 1]
-    pose[:, 2] = env.scene.terrain.env_origins[env_ids, 2] + ball_radius
+    pose[:, 2] = env.scene.env_origins[env_ids, 2] + ball_radius
     pose[:, 3] = 1.0  # identity quat
     ball.write_root_link_pose_to_sim(pose, env_ids)
-    ball.write_root_link_velocity_to_sim(
-        torch.zeros(n, 6, device=env.device), env_ids
-    )
+    ball.write_root_link_velocity_to_sim(torch.zeros(n, 6, device=env.device), env_ids)
 
     kick_dir = _ball_kick_dir(env)
     kick_dir[env_ids, 0] = cos_y
@@ -5759,7 +5786,7 @@ def reset_ball_in_front_of_foot(
 
 
 def ball_forward_velocity(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     asset_name: str = "ball",
     max_speed: float = 5.0,
 ) -> torch.Tensor:
@@ -5785,7 +5812,7 @@ def ball_forward_velocity(
 
 
 def ball_speed_overshoot_penalty(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     asset_name: str = "ball",
     target_speed: float = 1.0,
     max_penalty: float = 5.0,
@@ -5807,7 +5834,7 @@ def ball_speed_overshoot_penalty(
 
 
 def single_foot_grounded_reward(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     sensor_name: str,
 ) -> torch.Tensor:
     """Binary reward: 1 while the sensed foot touches the terrain.
@@ -5825,7 +5852,7 @@ def single_foot_grounded_reward(
 
 
 def ball_pos_in_base(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     asset_name: str = "ball",
 ) -> torch.Tensor:
     """Ball position relative to the robot root, in the robot's base frame.
@@ -5842,7 +5869,7 @@ def ball_pos_in_base(
 
 
 def ball_vel_in_base(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     asset_name: str = "ball",
 ) -> torch.Tensor:
     """Ball linear velocity in the robot's base frame. CRITIC-ONLY (see above)."""
@@ -5885,9 +5912,7 @@ def spin_rate_by_phase(
     hold = (phase >= accel_end) & (phase < hold_end)
     w = torch.where(hold, torch.full_like(phase, rate_max), w)
     brake = (phase >= hold_end) & (phase < brake_end)
-    w = torch.where(
-        brake, rate_max * (1.0 - (phase - hold_end) / (brake_end - hold_end)), w
-    )
+    w = torch.where(brake, rate_max * (1.0 - (phase - hold_end) / (brake_end - hold_end)), w)
     return w
 
 
@@ -5913,7 +5938,7 @@ def spin_phase_from_command(cmd: torch.Tensor) -> torch.Tensor:
 
 
 def _spin_target_rate(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     command_name: str,
     rate_max: float,
     accel_end: float,
@@ -5925,7 +5950,7 @@ def _spin_target_rate(
 
 
 def _spin_gate(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     command_name: str,
     rate_max: float,
     accel_end: float,
@@ -5936,15 +5961,13 @@ def _spin_gate(
     return spin_gate_by_phase(phase, rate_max, accel_end, hold_end, brake_end)
 
 
-def spin_rate_reward_from_values(
-    omega_z: torch.Tensor, omega_target: torch.Tensor, std: float
-) -> torch.Tensor:
+def spin_rate_reward_from_values(omega_z: torch.Tensor, omega_target: torch.Tensor, std: float) -> torch.Tensor:
     """Gaussian on the yaw rate error (pure, testable function)."""
     return torch.exp(-(((omega_z - omega_target) / std) ** 2))
 
 
 def spin_rate_track(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     command_name: str = "twist",
     std: float = 1.5,
     rate_max: float = SPIN_RATE_MAX,
@@ -5966,7 +5989,7 @@ def spin_rate_track(
 
 
 def spin_rate_l1(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     command_name: str = "twist",
     rate_max: float = SPIN_RATE_MAX,
     accel_end: float = SPIN_ACCEL_END,
@@ -5987,7 +6010,7 @@ SPIN_LAUNCH_DRIFT_SCALE = 0.2  # attenuation of the drift cost during the launch
 
 
 def spin_stay_in_place(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     command_name: str = "twist",
     launch_scale: float = SPIN_LAUNCH_DRIFT_SCALE,
     accel_end: float = SPIN_ACCEL_END,
@@ -6034,15 +6057,13 @@ def spin_stay_in_place(
 SPIN_WHEEL_OMEGA_SCALE = 17.0  # rad/s; recalibrated on the measured half-track and SPIN_RATE_MAX = 3.0
 
 
-def spin_wheel_differential_from_values(
-    diff: torch.Tensor, gate: torch.Tensor, omega_scale: float
-) -> torch.Tensor:
+def spin_wheel_differential_from_values(diff: torch.Tensor, gate: torch.Tensor, omega_scale: float) -> torch.Tensor:
     """Pure function: tanh of the wheel differential, scaled by gate, clamped ≥ 0."""
     return gate * torch.tanh(torch.clamp(diff, min=0.0) / omega_scale)
 
 
 def spin_wheel_differential(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     command_name: str = "twist",
     omega_scale: float = SPIN_WHEEL_OMEGA_SCALE,
     rate_max: float = SPIN_RATE_MAX,
@@ -6066,13 +6087,11 @@ def spin_wheel_differential(
     omega_left = (vel[:, lf_ids[0]] + vel[:, lr_ids[0]]) / 2.0
     omega_right = (vel[:, rf_ids[0]] + vel[:, rr_ids[0]]) / 2.0
     gate = _spin_gate(env, command_name, rate_max, accel_end, hold_end, brake_end)
-    return spin_wheel_differential_from_values(
-        omega_right - omega_left, gate, omega_scale
-    )
+    return spin_wheel_differential_from_values(omega_right - omega_left, gate, omega_scale)
 
 
 def spin_grounded(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     sensor_name: str,
     command_name: str = "twist",
     rate_max: float = SPIN_RATE_MAX,
@@ -6097,7 +6116,7 @@ def spin_grounded(
 
 
 def leg_antisymmetry(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     command_name: str = "twist",
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     joint_bases: tuple = ("hip_pitch", "knee"),
@@ -6143,7 +6162,7 @@ def leg_antisymmetry(
 
 
 def _backlash_encoder_ids(
-    env: "ManagerBasedRlEnv",
+    env: MicroduckEnv,
     asset: Entity,
     asset_cfg: SceneEntityCfg,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -6182,7 +6201,7 @@ def _backlash_encoder_ids(
 
 
 def joint_pos_rel_backlash(
-    env: "ManagerBasedRlEnv",
+    env: MicroduckEnv,
     biased: bool = False,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
 ) -> torch.Tensor:
@@ -6202,7 +6221,7 @@ def joint_pos_rel_backlash(
 
 
 def joint_vel_rel_backlash(
-    env: "ManagerBasedRlEnv",
+    env: MicroduckEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
 ) -> torch.Tensor:
     """joint_vel_rel where the encoder reads through the backlash hinge.
@@ -6286,13 +6305,10 @@ class SitStandCommand(UniformVelocityCommand):
 
     def _alpha_from_height(self) -> torch.Tensor:
         z = torch.nan_to_num(
-            self.robot.data.root_link_pos_w[:, 2]
-            - self._env_ref.scene.terrain.env_origins[:, 2],
+            self.robot.data.root_link_pos_w[:, 2] - self._env_ref.scene.env_origins[:, 2],
             nan=self._stand_z,
         )
-        return torch.clamp(
-            (self._stand_z - z) / max(self._stand_z - self._sit_z, 1e-6), 0.0, 1.0
-        )
+        return torch.clamp((self._stand_z - z) / max(self._stand_z - self._sit_z, 1e-6), 0.0, 1.0)
 
     def compute(self, dt: float) -> None:
         super().compute(dt)
@@ -6327,11 +6343,11 @@ class SitStandCommandCfg(UniformVelocityCommandCfg):
     sit_z: float = 0.060
     stand_z: float = 0.115
 
-    def build(self, env: ManagerBasedRlEnv) -> "SitStandCommand":
+    def build(self, env: ManagerBasedRlEnv) -> SitStandCommand:
         return SitStandCommand(self, env)
 
 
-def _posture_blend(env: ManagerBasedRlEnv, command_name: str) -> torch.Tensor:
+def _posture_blend(env: MicroduckEnv, command_name: str) -> torch.Tensor:
     """Target blend ∈ [0, 1] (0 = STAND, 1 = SIT) for the posture rewards.
 
     Uses the SitStandCommand's slewed ``alpha`` (the moving setpoint) when the
@@ -6345,7 +6361,7 @@ def _posture_blend(env: ManagerBasedRlEnv, command_name: str) -> torch.Tensor:
 
 
 def _posture_targets(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     asset: Entity,
     command_name: str,
     sit_overrides: dict,
@@ -6366,7 +6382,7 @@ def _posture_targets(
 
 
 def _posture_height(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     command_name: str,
     sit_z: float,
     stand_z: float,
@@ -6375,14 +6391,12 @@ def _posture_height(
     blend = _posture_blend(env, command_name)
     target_z = stand_z + blend * (sit_z - stand_z)
     asset = env.scene["robot"]
-    z = torch.nan_to_num(
-        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
-    )
+    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2], nan=0.0)
     return target_z, z
 
 
 def posture_pose_match(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     command_name: str,
     sit_overrides: dict,
     joint_indices: list,
@@ -6394,11 +6408,11 @@ def posture_pose_match(
     _, target = _posture_targets(env, asset, command_name, sit_overrides)
     joint_pos = _servo_joint_pos(env, asset)[:, joint_indices]
     target = target[:, joint_indices]
-    return torch.exp(-((joint_pos - target) / std) ** 2).mean(dim=-1)
+    return torch.exp(-(((joint_pos - target) / std) ** 2)).mean(dim=-1)
 
 
 def posture_pose_l1(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     command_name: str,
     sit_overrides: dict,
     joint_indices: list,
@@ -6413,7 +6427,7 @@ def posture_pose_l1(
 
 
 def posture_height_gaussian(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     command_name: str,
     sit_z: float,
     stand_z: float,
@@ -6423,11 +6437,11 @@ def posture_height_gaussian(
     """Gaussian on trunk z against the commanded posture's target height."""
     del asset_cfg  # trunk z read via _posture_height
     target_z, z = _posture_height(env, command_name, sit_z, stand_z)
-    return torch.exp(-((z - target_z) / std) ** 2)
+    return torch.exp(-(((z - target_z) / std) ** 2))
 
 
 def posture_height_l1(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     command_name: str,
     sit_z: float,
     stand_z: float,
@@ -6445,7 +6459,7 @@ def posture_height_l1(
 
 
 def posture_composite(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     command_name: str,
     sit_overrides: dict,
     joint_indices: list,
@@ -6479,7 +6493,7 @@ def posture_composite(
     _, target = _posture_targets(env, asset, command_name, sit_overrides)
     target_z, z = _posture_height(env, command_name, sit_z, stand_z)
 
-    height_score = torch.exp(-((z - target_z) / height_std) ** 2)
+    height_score = torch.exp(-(((z - target_z) / height_std) ** 2))
 
     quat = asset.data.root_link_quat_w
     tilt_sq = 2.0 * (quat[:, 1] ** 2 + quat[:, 2] ** 2)
@@ -6505,7 +6519,7 @@ def posture_composite(
 
 
 def posture_stillness(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     command_name: str,
     sit_z: float,
     stand_z: float,
@@ -6549,7 +6563,7 @@ def posture_stillness(
 
 
 def posture_rise_bootstrap(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     command_name: str,
     max_height: float,
     max_vz: float | None = None,
@@ -6568,15 +6582,13 @@ def posture_rise_bootstrap(
     """
     asset = env.scene[asset_cfg.name]
     sit = env.command_manager.get_command(command_name)[:, 0]
-    z = torch.nan_to_num(
-        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
-    )
+    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2], nan=0.0)
     vz = torch.nan_to_num(asset.data.root_link_lin_vel_w[:, 2], nan=0.0)
     return torch.clamp(vz, min=0.0, max=max_vz) * (z < max_height).float() * (1.0 - sit)
 
 
 def trunk_upward_velocity_penalty(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     max_up_vel: float = 0.08,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
 ) -> torch.Tensor:
@@ -6591,6 +6603,8 @@ def trunk_upward_velocity_penalty(
     asset = env.scene[asset_cfg.name]
     vz = torch.nan_to_num(asset.data.root_link_lin_vel_w[:, 2], nan=0.0)
     return -torch.clamp(vz - max_up_vel, min=0.0)
+
+
 # ==============================================================================
 # Roulade (forward roll) task — episodic dynamic maneuver
 # ==============================================================================
@@ -6675,7 +6689,7 @@ _HEAD_TOP_DOWN_MIN = 0.3
 # credit while the lateral axis is within ~30° of horizontal, zero beyond
 # ~60°: a side roll does not count as rotation, earns no progress, and never
 # opens the landing gate.
-_FLAT_FULL = 0.5    # |lateral_axis_z| = sin(30°): full credit below
+_FLAT_FULL = 0.5  # |lateral_axis_z| = sin(30°): full credit below
 _FLAT_ZERO = 0.866  # sin(60°): zero credit above
 
 
@@ -6684,7 +6698,7 @@ def _lateral_axis_z(quat: torch.Tensor) -> torch.Tensor:
     return 2.0 * (quat[:, 2] * quat[:, 3] + quat[:, 0] * quat[:, 1])
 
 
-def _head_top_down(env: ManagerBasedRlEnv, asset: Entity) -> torch.Tensor:
+def _head_top_down(env: MicroduckEnv, asset: Entity) -> torch.Tensor:
     """True where the head-top axis points at the floor (dot with -z > min)."""
     if not hasattr(env, "_roulade_head_body_id"):
         ids, _ = asset.find_bodies("jaw_soft")
@@ -6693,20 +6707,18 @@ def _head_top_down(env: ManagerBasedRlEnv, asset: Entity) -> torch.Tensor:
     w, x, y, z = q[:, 0], q[:, 1], q[:, 2], q[:, 3]
     a, b, c = _HEAD_TOP_AXIS
     # z-component of R(q) @ axis_local
-    axis_world_z = (
-        2.0 * (x * z - w * y) * a + 2.0 * (y * z + w * x) * b + (1.0 - 2.0 * (x * x + y * y)) * c
-    )
+    axis_world_z = 2.0 * (x * z - w * y) * a + 2.0 * (y * z + w * x) * b + (1.0 - 2.0 * (x * x + y * y)) * c
     return axis_world_z < -_HEAD_TOP_DOWN_MIN
 
 
-def _sensor_any_contact(env: ManagerBasedRlEnv, name: str) -> torch.Tensor | None:
+def _sensor_any_contact(env: MicroduckEnv, name: str) -> torch.Tensor | None:
     if name not in env.scene.sensors:
         return None
     found = env.scene.sensors[name].data.found
     return (found.view(found.shape[0], -1) > 0).any(dim=-1)
 
 
-def _roulade_state(env: ManagerBasedRlEnv) -> tuple:
+def _roulade_state(env: MicroduckEnv) -> tuple:
     if not hasattr(env, "_roulade_accum"):
         z = torch.zeros(env.num_envs, device=env.device)
         env._roulade_accum = z.clone()
@@ -6717,7 +6729,7 @@ def _roulade_state(env: ManagerBasedRlEnv) -> tuple:
     return env._roulade_accum, env._roulade_max, env._roulade_paid
 
 
-def _update_roulade_accum(env: ManagerBasedRlEnv, asset: Entity) -> None:
+def _update_roulade_accum(env: MicroduckEnv, asset: Entity) -> None:
     """Integrate forward pitch rate into the per-env rotation accumulator.
 
     Step-guarded so that multiple reward terms reading the accumulator in the
@@ -6749,19 +6761,15 @@ def _update_roulade_accum(env: ManagerBasedRlEnv, asset: Entity) -> None:
 
         head_contact = _sensor_any_contact(env, _ROULADE_HEAD_SENSOR)
         if head_contact is not None:
-            in_window = (env._roulade_accum > _HEAD_LATCH_LO) & (
-                env._roulade_accum < _HEAD_LATCH_HI
-            )
+            in_window = (env._roulade_accum > _HEAD_LATCH_LO) & (env._roulade_accum < _HEAD_LATCH_HI)
             # Run-5: contact must be with the FLAT TOP of the head (top axis
             # pointing at the floor) — face/side shell contacts don't latch.
-            env._roulade_head_latch = env._roulade_head_latch | (
-                head_contact & in_window & _head_top_down(env, asset)
-            )
+            env._roulade_head_latch = env._roulade_head_latch | (head_contact & in_window & _head_top_down(env, asset))
         env._roulade_last_update_step = step
 
 
 def _roulade_completion_gate(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     gate_lo: float,
     gate_hi: float,
     require_head: bool = False,
@@ -6783,7 +6791,7 @@ def _roulade_completion_gate(
 
 
 def reset_roulade_state(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     env_ids: torch.Tensor,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     standing_prob: float = 0.5,
@@ -6797,7 +6805,7 @@ def reset_roulade_state(
     midroll_z_min: float = 0.05,
     midroll_z_max: float = 0.10,
     midroll_omega_range: tuple = (0.0, 0.0),
-    tuck_overrides: Optional[dict] = None,
+    tuck_overrides: dict | None = None,
     tuck_factor_range: tuple = (0.3, 1.0),
     joint_noise_std: float = 0.0,
 ):
@@ -6833,15 +6841,14 @@ def reset_roulade_state(
 
     # Pitch per bucket: small noise for standing, mid-roll angle otherwise.
     pitch = (torch.rand(num, device=env.device) * 2 - 1) * standing_tilt_max
-    mid_pitch = (
-        torch.rand(num, device=env.device) * (midroll_pitch_max - midroll_pitch_min)
-        + midroll_pitch_min
-    )
+    mid_pitch = torch.rand(num, device=env.device) * (midroll_pitch_max - midroll_pitch_min) + midroll_pitch_min
     pitch = torch.where(is_mid, mid_pitch, pitch)
     roll = (torch.rand(num, device=env.device) * 2 - 1) * max(standing_tilt_max, math.radians(5.0))
 
-    cp = torch.cos(pitch * 0.5); sp = torch.sin(pitch * 0.5)
-    cr = torch.cos(roll * 0.5); sr = torch.sin(roll * 0.5)
+    cp = torch.cos(pitch * 0.5)
+    sp = torch.sin(pitch * 0.5)
+    cr = torch.cos(roll * 0.5)
+    sr = torch.sin(roll * 0.5)
     # ZYX intrinsic Euler → quaternion (yaw * pitch * roll), as in
     # set_random_ground_state.
     qw = cr * cp * cy + sr * sp * sy
@@ -6864,11 +6871,7 @@ def reset_roulade_state(
     # servo joints (passive_* backlash hinges must stay at 0).
     mid_env_ids = env_ids[is_mid]
     if len(mid_env_ids) > 0 and tuck_overrides:
-        u = (
-            torch.rand(len(mid_env_ids), device=env.device)
-            * (tuck_factor_range[1] - tuck_factor_range[0])
-            + tuck_factor_range[0]
-        )
+        u = torch.rand(len(mid_env_ids), device=env.device) * (tuck_factor_range[1] - tuck_factor_range[0]) + tuck_factor_range[0]
         for jnt_idx, angle in tuck_overrides.items():
             col = 7 + servo_ids[jnt_idx]
             home = env.sim.data.qpos[mid_env_ids, col]
@@ -6883,22 +6886,14 @@ def reset_roulade_state(
     # is the forward-roll axis regardless of spawn yaw (verified in the smoke
     # test — a yawed spawn still rolls straight ahead in its own frame).
     if len(mid_env_ids) > 0 and midroll_omega_range[1] > 0.0:
-        omega = (
-            torch.rand(len(mid_env_ids), device=env.device)
-            * (midroll_omega_range[1] - midroll_omega_range[0])
-            + midroll_omega_range[0]
-        )
+        omega = torch.rand(len(mid_env_ids), device=env.device) * (midroll_omega_range[1] - midroll_omega_range[0]) + midroll_omega_range[0]
         env.sim.data.qvel[mid_env_ids, 4] = _ROULADE_FWD_SIGN * omega
 
     # Run-up hook: forward base velocity for STANDING spawns, body x → world xy
     # through the spawn yaw. (0, 0) = standstill start, disabled.
     stand_env_ids = env_ids[~is_mid]
     if len(stand_env_ids) > 0 and forward_vel_range[1] > 0.0:
-        vx = (
-            torch.rand(len(stand_env_ids), device=env.device)
-            * (forward_vel_range[1] - forward_vel_range[0])
-            + forward_vel_range[0]
-        )
+        vx = torch.rand(len(stand_env_ids), device=env.device) * (forward_vel_range[1] - forward_vel_range[0]) + forward_vel_range[0]
         yaw_s = yaw[~is_mid]
         env.sim.data.qvel[stand_env_ids, 0] = vx * torch.cos(yaw_s)
         env.sim.data.qvel[stand_env_ids, 1] = vx * torch.sin(yaw_s)
@@ -6916,7 +6911,7 @@ def reset_roulade_state(
 
 
 def roulade_progress(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     target_angle: float = 2 * math.pi,
     max_paid_rate: float = 3.0,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
@@ -6945,7 +6940,7 @@ def roulade_progress(
 
 
 def roulade_head_pivot(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     sensor_name: str = "head_ground_contact",
     angle_lo: float = math.radians(30.0),
     angle_hi: float = math.radians(240.0),
@@ -6979,7 +6974,7 @@ def roulade_head_pivot(
 
 
 def roulade_landing_composite(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     target_height: float,
     height_std: float,
     upright_std: float,
@@ -6987,7 +6982,7 @@ def roulade_landing_composite(
     joint_indices: list,
     gate_lo: float = math.radians(260.0),
     gate_hi: float = math.radians(330.0),
-    target_overrides: Optional[dict] = None,
+    target_overrides: dict | None = None,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
 ) -> torch.Tensor:
     """standing_composite_score × completion gate.
@@ -7013,7 +7008,7 @@ def roulade_landing_composite(
 
 
 def roulade_upright_after_roll(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     gate_lo: float = math.radians(260.0),
     gate_hi: float = math.radians(330.0),
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
@@ -7028,13 +7023,11 @@ def roulade_upright_after_roll(
     _update_roulade_accum(env, asset)
     quat = asset.data.root_link_quat_w
     upright = 1.0 - 2.0 * (quat[:, 1].pow(2) + quat[:, 2].pow(2))
-    return torch.clamp(upright, min=0.0) * _roulade_completion_gate(
-        env, gate_lo, gate_hi, require_head=True
-    )
+    return torch.clamp(upright, min=0.0) * _roulade_completion_gate(env, gate_lo, gate_hi, require_head=True)
 
 
 def roulade_height_after_roll(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     target_height: float,
     std: float = 0.04,
     gate_lo: float = math.radians(260.0),
@@ -7044,15 +7037,13 @@ def roulade_height_after_roll(
     """Broad height Gaussian × completion gate — pull up to standing height."""
     asset: Entity = env.scene[asset_cfg.name]
     _update_roulade_accum(env, asset)
-    z = torch.nan_to_num(
-        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
-    )
-    g = torch.exp(-((z - target_height) / std) ** 2)
+    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2], nan=0.0)
+    g = torch.exp(-(((z - target_height) / std) ** 2))
     return g * _roulade_completion_gate(env, gate_lo, gate_hi, require_head=True)
 
 
 def roulade_landing_sharp(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     target_height: float,
     height_std: float = 0.015,
     upright_std: float = 0.3,
@@ -7073,16 +7064,14 @@ def roulade_landing_sharp(
     quat = asset.data.root_link_quat_w
     tilt_sq = 2.0 * (quat[:, 1].pow(2) + quat[:, 2].pow(2))
     upright_g = torch.exp(-tilt_sq / (upright_std * upright_std))
-    z = torch.nan_to_num(
-        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
-    )
-    height_g = torch.exp(-((z - target_height) / height_std) ** 2)
+    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2], nan=0.0)
+    height_g = torch.exp(-(((z - target_height) / height_std) ** 2))
     gate = _roulade_completion_gate(env, gate_lo, gate_hi, require_head=True)
     return upright_g * height_g * gate
 
 
 def roulade_stand_tax(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     target_height: float,
     gate_lo: float = math.radians(260.0),
     gate_hi: float = math.radians(330.0),
@@ -7101,15 +7090,13 @@ def roulade_stand_tax(
     """
     asset: Entity = env.scene[asset_cfg.name]
     _update_roulade_accum(env, asset)
-    z = torch.nan_to_num(
-        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
-    )
+    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2], nan=0.0)
     shortfall = torch.clamp(target_height - z, min=0.0)
     return -shortfall * _roulade_completion_gate(env, gate_lo, gate_hi, require_head=True)
 
 
 def roulade_rise_velocity(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     max_height: float = 0.125,
     gate_lo: float = math.radians(180.0),
     gate_hi: float = math.radians(260.0),
@@ -7125,16 +7112,14 @@ def roulade_rise_velocity(
     """
     asset: Entity = env.scene[asset_cfg.name]
     _update_roulade_accum(env, asset)
-    z = torch.nan_to_num(
-        asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0
-    )
+    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2], nan=0.0)
     vz = torch.nan_to_num(asset.data.root_link_lin_vel_w[:, 2], nan=0.0)
     reward = torch.clamp(vz, min=0.0) * (z < max_height).float()
     return reward * _roulade_completion_gate(env, gate_lo, gate_hi, require_head=True)
 
 
 def roulade_overspeed_penalty(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     omega_max: float = 4.0,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
 ) -> torch.Tensor:
@@ -7153,7 +7138,7 @@ def roulade_overspeed_penalty(
 
 
 def roulade_flatness_penalty(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
 ) -> torch.Tensor:
     """(lateral-axis world-z)² — dense gradient toward a sagittal roll.
@@ -7169,7 +7154,7 @@ def roulade_flatness_penalty(
 
 
 def roulade_sagittal_penalty(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
 ) -> torch.Tensor:
     """Rotation out of the sagittal plane: body-frame ω_x² + ω_z² (positive;
@@ -7180,7 +7165,7 @@ def roulade_sagittal_penalty(
 
 
 def roulade_lateral_velocity_penalty(
-    env: ManagerBasedRlEnv,
+    env: MicroduckEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
 ) -> torch.Tensor:
     """Body-frame lateral (y) linear velocity² — keeps the roll straight."""

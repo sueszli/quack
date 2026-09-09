@@ -81,16 +81,16 @@ from mjlab.managers import (
 )
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.rl import (
-    RslRlOnPolicyRunnerCfg,
     RslRlModelCfg,
+    RslRlOnPolicyRunnerCfg,
 )
 
-from .robot import MICRODUCK_STANDUP_ROBOT_CFG
 from . import task_mdp as microduck_mdp
+from .robot import MICRODUCK_STANDUP_ROBOT_CFG
+from .task_symmetry import PpoWithSymmetryCfg
 from .task_velocity import (
     make_microduck_velocity_env_cfg,
 )
-from .task_symmetry import PpoWithSymmetryCfg
 
 # Phase boundaries (PPO iterations; env step counter scales by num_steps_per_env=24)
 FELL_OVER_DISABLE_ITER = 500
@@ -104,12 +104,12 @@ NUM_STEPS_PER_ENV = 24
 # the state. Tilt>40° can't be farmed from a comfortable pose — you're
 # genuinely toppled. The TERMINATION keeps the z-condition so sitters and
 # stuck-low envs get recycled (terminated) rather than paid.
-REWARD_GATE_TILT_DEG = 40.0   # recovery rewards: fallen = tilt > 40° ONLY
+REWARD_GATE_TILT_DEG = 40.0  # recovery rewards: fallen = tilt > 40° ONLY
 # TERM z-gate at 0.08, NOT 0.10 (run-3 lesson): a normally wobbling upright
 # robot dips to z=0.084-0.096 — 0.10 sits inside the early-learning envelope
 # and recycled crouch-walking explorers every 5 s. 0.08 still catches sitting
 # (z≈0.07) and prone (z≈0.05).
-TERM_GATE_Z = 0.08            # fallen_too_long: z < 0.08 OR tilt > 40°
+TERM_GATE_Z = 0.08  # fallen_too_long: z < 0.08 OR tilt > 40°
 TERM_GATE_TILT_DEG = 40.0
 
 # "Recovery COMPLETE" definition — shared by the recovery_success bounty and
@@ -151,8 +151,8 @@ FALLEN_TIMEOUT_S = 8.0
 # Crouch slice alone starts at 800: near-upright states, tax-free until econ,
 # and it doubles as full-stand posture data (run 6 stood truly vertical).
 PRONE_RAMP_STAGES = [
-    {"step": 0,                        "params": {"prone_prob": 0.00, "face_down_prob": 1.0,  "crouch_prob": 0.00}},
-    {"step": 800 * NUM_STEPS_PER_ENV,  "params": {"prone_prob": 0.00, "face_down_prob": 1.0,  "crouch_prob": 0.15}},
+    {"step": 0, "params": {"prone_prob": 0.00, "face_down_prob": 1.0, "crouch_prob": 0.00}},
+    {"step": 800 * NUM_STEPS_PER_ENV, "params": {"prone_prob": 0.00, "face_down_prob": 1.0, "crouch_prob": 0.15}},
     {"step": 1500 * NUM_STEPS_PER_ENV, "params": {"prone_prob": 0.15, "face_down_prob": 0.80, "crouch_prob": 0.15}},
     {"step": 2000 * NUM_STEPS_PER_ENV, "params": {"prone_prob": 0.30, "face_down_prob": 0.65, "crouch_prob": 0.15}},
     {"step": 2500 * NUM_STEPS_PER_ENV, "params": {"prone_prob": 0.45, "face_down_prob": 0.50, "crouch_prob": 0.15}},
@@ -180,12 +180,14 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
     # EMA below z=0.09 / beyond 40° tilt (matching REWARD_GATE_TILT_DEG), so
     # the term prices exactly what it does in the velocity env — sustained droop while
     # actually standing/walking — and nothing during recovery.
-    cfg.rewards["head_pose_bias"].params.update({
-        "gate_height_low":    0.09,
-        "gate_height_high":   0.11,
-        "gate_tilt_full_deg": 20.0,
-        "gate_tilt_zero_deg": REWARD_GATE_TILT_DEG,
-    })
+    cfg.rewards["head_pose_bias"].params.update(
+        {
+            "gate_height_low": 0.09,
+            "gate_height_high": 0.11,
+            "gate_tilt_full_deg": 20.0,
+            "gate_tilt_zero_deg": REWARD_GATE_TILT_DEG,
+        }
+    )
 
     # ── Recovery reward layer ─────────────────────────────────────────────────
     # LESSON (runs 1/2/4 — sitting, lying, head-tripod): ANY positive reward for
@@ -294,11 +296,11 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
         func=microduck_mdp.maybe_set_random_prone_orientation,
         mode="reset",
         params={
-            "prone_prob": 0.0,        # ramped by the prone_init_prob curriculum
+            "prone_prob": 0.0,  # ramped by the prone_init_prob curriculum
             "face_down_prob": 1.0,
             "prone_z_min": 0.05,
             "prone_z_max": 0.09,
-            "crouch_prob": 0.0,       # ramped by the prone_init_prob curriculum
+            "crouch_prob": 0.0,  # ramped by the prone_init_prob curriculum
         },
     )
 
@@ -323,10 +325,8 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
             params={
                 "term_name": "fell_over",
                 "param_stages": [
-                    {"step": 0,
-                     "params": {"limit_angle": math.radians(70.0)}},
-                    {"step": FELL_OVER_DISABLE_ITER * NUM_STEPS_PER_ENV,
-                     "params": {"limit_angle": math.pi}},
+                    {"step": 0, "params": {"limit_angle": math.radians(70.0)}},
+                    {"step": FELL_OVER_DISABLE_ITER * NUM_STEPS_PER_ENV, "params": {"limit_angle": math.pi}},
                 ],
             },
         )

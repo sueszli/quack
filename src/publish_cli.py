@@ -113,6 +113,7 @@ def _resolve_weights(cfg: PublishConfig, workdir: Path) -> tuple[Path, dict]:
 
     # Heavy imports only on this path: the ONNX path must work without a GPU or mjlab's registry.
     import mjlab.tasks  # noqa: F401  (populates the registry)
+
     from .export import ExportConfig, run_export
 
     out = workdir / m.POLICY_FILE
@@ -192,10 +193,7 @@ def run(cfg: PublishConfig) -> int:
         existing = set(api.list_repo_files(cfg.repo))
         onnx_files = {f for f in existing if f.endswith(".onnx")}
         if onnx_files and not cfg.force:
-            _fail(
-                f"{cfg.repo} already carries {sorted(onnx_files)}; --force overwrites. "
-                "A repo carries exactly one .onnx, so a second name is a new repo."
-            )
+            _fail(f"{cfg.repo} already carries {sorted(onnx_files)}; --force overwrites. A repo carries exactly one .onnx, so a second name is a new repo.")
         stale = onnx_files - {m.POLICY_FILE}
         commit = api.upload_folder(
             repo_id=cfg.repo,

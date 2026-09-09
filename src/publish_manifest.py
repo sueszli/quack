@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 import subprocess
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
@@ -62,7 +62,7 @@ class Provenance:
 
 
 def _now_utc() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def git_provenance(repo_root: Path | None = None) -> dict[str, Any]:
@@ -71,9 +71,7 @@ def git_provenance(repo_root: Path | None = None) -> dict[str, Any]:
 
     def git(*args: str) -> str | None:
         try:
-            out = subprocess.run(
-                ["git", "-C", root, *args], capture_output=True, text=True, check=True, timeout=10
-            )
+            out = subprocess.run(["git", "-C", root, *args], capture_output=True, text=True, check=True, timeout=10)
         except (OSError, subprocess.SubprocessError):
             return None
         return out.stdout.strip()
@@ -114,23 +112,16 @@ def build_manifest(
         raise ManifestError(f"name must be a bare word a client can ask for, not {name!r}")
     if kind == "episodic":
         if duration_s is None or duration_s <= 0:
-            raise ManifestError(
-                "an episodic policy ends itself: say how long it runs with duration_s > 0"
-            )
+            raise ManifestError("an episodic policy ends itself: say how long it runs with duration_s > 0")
         if unwind_s:
-            raise ManifestError(
-                "an episodic policy is already back when duration_s is up; unwind_s is for perpetual"
-            )
+            raise ManifestError("an episodic policy is already back when duration_s is up; unwind_s is for perpetual")
     else:
         # Two things are perpetual: a gait, which lives in a slot (`policy load walk <repo>`) and
         # needs nothing here, and a held pose like the flamingo, which the owner runs as a
         # one-shot with `policy add --hold` and which then needs `unwind_s` so the robot is not
         # let go of on one foot. `unwind_s` is what says which.
         if duration_s is not None:
-            raise ManifestError(
-                "a perpetual policy has no length of its own; leave duration_s unset "
-                "(a gait runs until told otherwise; a held pose gets --hold when added as a skill)"
-            )
+            raise ManifestError("a perpetual policy has no length of its own; leave duration_s unset (a gait runs until told otherwise; a held pose gets --hold when added as a skill)")
         if unwind_s is not None and unwind_s <= 0:
             raise ManifestError("unwind_s must be > 0 when given")
         if chain:
@@ -239,10 +230,7 @@ def inspect_onnx(path: Path) -> OnnxShape:
     initializers = {i.name for i in graph.initializer}
     inputs = [i for i in graph.input if i.name not in initializers]
     if len(inputs) != 1 or len(graph.output) != 1:
-        raise ManifestError(
-            f"{path.name}: expected one input and one output, found "
-            f"{[i.name for i in inputs]} -> {[o.name for o in graph.output]}"
-        )
+        raise ManifestError(f"{path.name}: expected one input and one output, found {[i.name for i in inputs]} -> {[o.name for o in graph.output]}")
 
     def last_dim(value) -> int:
         dims = value.type.tensor_type.shape.dim
@@ -267,10 +255,7 @@ def check_onnx(path: Path) -> OnnxShape:
         raise ManifestError(f"{path}: no such file")
     shape = inspect_onnx(path)
     if shape.obs_len != OBS_LEN:
-        raise ManifestError(
-            f"{path.name}: observation width is {shape.obs_len}, the robot builds {OBS_LEN} "
-            "(a 51-D policy is the legacy 3-value-command family, which the daemon refuses)"
-        )
+        raise ManifestError(f"{path.name}: observation width is {shape.obs_len}, the robot builds {OBS_LEN} (a 51-D policy is the legacy 3-value-command family, which the daemon refuses)")
     if shape.action_len != ACTION_LEN:
         raise ManifestError(f"{path.name}: {shape.action_len} actions, the robot has {ACTION_LEN}")
     return shape
@@ -292,7 +277,8 @@ def smoke_run_onnx(path: Path, steps: int = 50, seed: int = 0) -> None:
     obs = np.zeros((1, shape.obs_len), dtype=np.float32)
     outputs = []
     for _ in range(steps):
-        (out,) = session.run([shape.output_name], {shape.input_name: obs})
+        (raw_out,) = session.run([shape.output_name], {shape.input_name: obs})
+        out = np.asarray(raw_out)
         if not np.all(np.isfinite(out)):
             raise ManifestError(f"{path.name}: the network produced a non-finite action")
         outputs.append(out)
@@ -336,15 +322,10 @@ def render_readme(manifest: dict[str, Any], repo_id: str) -> str:
         if manifest.get("chain"):
             timing += " Holding the button chains another run."
     elif manifest.get("unwind_s") is not None:
-        timing = (
-            f"Holds until told otherwise; the daemon drives `command.idle` for "
-            f"{manifest['unwind_s']} s before handing back to the gait."
-        )
+        timing = f"Holds until told otherwise; the daemon drives `command.idle` for {manifest['unwind_s']} s before handing back to the gait."
     else:
         slot = manifest.get("slot")
-        timing = "Runs until told otherwise" + (
-            f" — a gait for the `{slot}` slot." if slot else " — a gait, loaded into a policy slot."
-        )
+        timing = "Runs until told otherwise" + (f" — a gait for the `{slot}` slot." if slot else " — a gait, loaded into a policy slot.")
     lines = [
         "---",
         "tags:",
@@ -359,8 +340,7 @@ def render_readme(manifest: dict[str, Any], repo_id: str) -> str:
         "",
         description,
         "",
-        f"A **{kind}** policy for the [microduck](https://github.com/pollen-robotics/microduck) "
-        f"({OBS_LEN}-D observation, {ACTION_LEN} actions, {ROBOT['control_hz']} Hz). {timing}",
+        f"A **{kind}** policy for the [microduck](https://github.com/pollen-robotics/microduck) ({OBS_LEN}-D observation, {ACTION_LEN} actions, {ROBOT['control_hz']} Hz). {timing}",
         "",
         "## Run it on a robot",
         "",
@@ -369,8 +349,7 @@ def render_readme(manifest: dict[str, Any], repo_id: str) -> str:
         "```",
         "",
         "The observation normalizer is baked into `policy.onnx`; feed raw observations.",
-        "`manifest.json` follows schema 2 of the microduck policy manifest "
-        "(`docs/policy-manifest.md` in the daemon repo).",
+        "`manifest.json` follows schema 2 of the microduck policy manifest (`docs/policy-manifest.md` in the daemon repo).",
     ]
     if training:
         lines += ["", "## Training", ""]

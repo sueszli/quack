@@ -1,7 +1,7 @@
 from src import task_mdp as microduck_mdp
 from src.task_spin import (
-    make_microduck_spin_env_cfg,
     MicroduckSpinRlCfg,
+    make_microduck_spin_env_cfg,
 )
 
 
@@ -105,6 +105,4 @@ def test_obs_parity_with_roller_crouch():
     spin = make_microduck_spin_env_cfg()
     crouch = make_microduck_roller_crouch_env_cfg()
     for grp in ("actor", "critic"):
-        assert list(spin.observations[grp].terms.keys()) == list(
-            crouch.observations[grp].terms.keys()
-        ), f"observation layout diverges on group {grp}"
+        assert list(spin.observations[grp].terms.keys()) == list(crouch.observations[grp].terms.keys()), f"observation layout diverges on group {grp}"

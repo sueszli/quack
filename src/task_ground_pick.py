@@ -36,32 +36,32 @@ from copy import deepcopy
 ENABLE_SYMMETRY = False
 
 # ── Domain randomisation toggles (matched to the velocity env) ────────────────
-ENABLE_COM_RANDOMIZATION             = True
-ENABLE_HEAD_COM_RANDOMIZATION        = True
-ENABLE_KP_RANDOMIZATION              = False  # off, like velocity
-ENABLE_KD_RANDOMIZATION              = False
-ENABLE_MASS_INERTIA_RANDOMIZATION    = True
-ENABLE_JOINT_FRICTION_RANDOMIZATION  = True   # scales BAM friction budget per-env
-ENABLE_JOINT_DAMPING_RANDOMIZATION   = False
-ENABLE_ARMATURE_RANDOMIZATION        = True   # reflected rotor inertia (affects BAM)
-ENABLE_VELOCITY_PUSHES               = True
-ENABLE_IMU_ORIENTATION_RANDOMIZATION = True   # applied at obs level (per-env rotation)
-ENABLE_ENCODER_BIAS                  = True   # actor obs sees joint_pos + per-env bias
+ENABLE_COM_RANDOMIZATION = True
+ENABLE_HEAD_COM_RANDOMIZATION = True
+ENABLE_KP_RANDOMIZATION = False  # off, like velocity
+ENABLE_KD_RANDOMIZATION = False
+ENABLE_MASS_INERTIA_RANDOMIZATION = True
+ENABLE_JOINT_FRICTION_RANDOMIZATION = True  # scales BAM friction budget per-env
+ENABLE_JOINT_DAMPING_RANDOMIZATION = False
+ENABLE_ARMATURE_RANDOMIZATION = True  # reflected rotor inertia (affects BAM)
+ENABLE_VELOCITY_PUSHES = True
+ENABLE_IMU_ORIENTATION_RANDOMIZATION = True  # applied at obs level (per-env rotation)
+ENABLE_ENCODER_BIAS = True  # actor obs sees joint_pos + per-env bias
 ENABLE_BASE_ORIENTATION_RANDOMIZATION = False
-ENABLE_NECK_OFFSET_RANDOMIZATION     = False  # disabled — head is used for the task
+ENABLE_NECK_OFFSET_RANDOMIZATION = False  # disabled — head is used for the task
 
 # ── Ranges (matched to the velocity env) ──────────────────────────────────────
-COM_RANDOMIZATION_RANGE          = 0.003  # ±3mm initial, ramped via curriculum
-HEAD_COM_RANDOMIZATION_RANGE     = 0.003  # ±3mm initial, ramped via curriculum
+COM_RANDOMIZATION_RANGE = 0.003  # ±3mm initial, ramped via curriculum
+HEAD_COM_RANDOMIZATION_RANGE = 0.003  # ±3mm initial, ramped via curriculum
 MASS_INERTIA_RANDOMIZATION_RANGE = (0.95, 1.05)
-KP_RANDOMIZATION_RANGE           = (0.85, 1.15)
-KD_RANDOMIZATION_RANGE           = (0.9, 1.1)
+KP_RANDOMIZATION_RANGE = (0.85, 1.15)
+KD_RANDOMIZATION_RANGE = (0.9, 1.1)
 JOINT_FRICTION_RANDOMIZATION_RANGE = (0.9, 1.1)
-ARMATURE_RANDOMIZATION_RANGE     = (0.9, 1.1)
-VELOCITY_PUSH_INTERVAL_S         = (3.0, 6.0)
-VELOCITY_PUSH_RANGE              = (-0.15, 0.15)  # quasi-static gesture -> gentle pushes (±0.3 made it fall even when upright)
-IMU_ORIENTATION_RANDOMIZATION_ANGLE = 6.0       # match velocity (was 1.0)
-ENCODER_BIAS_RANGE               = (-0.015, 0.015)
+ARMATURE_RANDOMIZATION_RANGE = (0.9, 1.1)
+VELOCITY_PUSH_INTERVAL_S = (3.0, 6.0)
+VELOCITY_PUSH_RANGE = (-0.15, 0.15)  # quasi-static gesture -> gentle pushes (±0.3 made it fall even when upright)
+IMU_ORIENTATION_RANDOMIZATION_ANGLE = 6.0  # match velocity (was 1.0)
+ENCODER_BIAS_RANGE = (-0.015, 0.015)
 
 from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.envs.mdp import dr
@@ -75,23 +75,21 @@ from mjlab.managers import (
 )
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.rl import (
-    RslRlOnPolicyRunnerCfg,
     RslRlModelCfg,
+    RslRlOnPolicyRunnerCfg,
 )
 from mjlab.sensor import ContactMatch, ContactSensorCfg
 from mjlab.tasks.velocity import mdp
-from mjlab.tasks.velocity.mdp import UniformVelocityCommandCfg
 from mjlab.tasks.velocity.velocity_env_cfg import make_velocity_env_cfg
 from mjlab.utils.noise import UniformNoiseCfg as Unoise
 
-from .robot import MICRODUCK_GROUND_PICK_ROBOT_CFG
 from . import task_mdp as microduck_mdp
+from .robot import MICRODUCK_GROUND_PICK_ROBOT_CFG
+from .task_symmetry import SYMMETRY_CFG, PpoWithSymmetryCfg
 from .task_velocity import (
-    MICRODUCK_ROUGH_TERRAINS_CFG,
     HEAD_BODY_NAMES,
+    MICRODUCK_ROUGH_TERRAINS_CFG,
 )
-from .task_symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
-
 
 # ── SEGMENTED phase profile (independent durations) ───────────────────────────
 # Instead of the sinusoidal weighting (which couples descent/hold/rise),
@@ -105,10 +103,10 @@ from .task_symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
 # ⚠️ RISE_END=0.80 > the φ=0.7 cutoff of the infer script: the rise is
 # only complete if the slot plays up to φ~1.0 (the whole period). Check the
 # actual runtime window.  ⚠️ --ground-pick-period at deployment = 4.0.
-GP_PERIOD    = 4.0
-DESCENT_END  = 0.375
-HOLD_END     = 0.425
-RISE_END     = 0.80
+GP_PERIOD = 4.0
+DESCENT_END = 0.375
+HOLD_END = 0.425
+RISE_END = 0.80
 
 
 def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) -> ManagerBasedRlEnvCfg:
@@ -155,7 +153,7 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     cfg = make_velocity_env_cfg()
 
     cfg.scene.entities = {"robot": MICRODUCK_GROUND_PICK_ROBOT_CFG}
-    cfg.scene.sensors  = (feet_ground_cfg, self_collision_cfg, head_impact_cfg)
+    cfg.scene.sensors = (feet_ground_cfg, self_collision_cfg, head_impact_cfg)
     cfg.viewer.body_name = "trunk_base"
 
     # ── Actions ───────────────────────────────────────────────────────────────
@@ -172,7 +170,7 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
         "foot_clearance",
         "foot_swing_height",
         "foot_slip",
-        "pose",           # replaced by phase-conditioned ground_pick_return_pose
+        "pose",  # replaced by phase-conditioned ground_pick_return_pose
     ]:
         if name in cfg.rewards:
             del cfg.rewards[name]
@@ -188,7 +186,7 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
         func=microduck_mdp.mouth_ground_proximity_phased,
         weight=3.0,
         params={
-            "asset_cfg": SceneEntityCfg("robot", site_names=["mouth_tip"]),
+            "asset_cfg": SceneEntityCfg("robot", site_names=("mouth_tip",)),
             "std": 0.10,
             "target_height": 0.0,
             "command_name": "twist",
@@ -206,7 +204,7 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
         func=microduck_mdp.mouth_perpendicular_phased,
         weight=2.0,
         params={
-            "asset_cfg": SceneEntityCfg("robot", site_names=["mouth_tip"]),
+            "asset_cfg": SceneEntityCfg("robot", site_names=("mouth_tip",)),
             "command_name": "twist",
             "descent_end": DESCENT_END,
             "hold_end": HOLD_END,
@@ -285,9 +283,7 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
         func=microduck_mdp.apply_mouth_payload_force,
         weight=0.0,
         params={
-            "asset_cfg": SceneEntityCfg(
-                "robot", body_names=["jaw_soft"], site_names=["mouth_tip"]
-            ),
+            "asset_cfg": SceneEntityCfg("robot", body_names=("jaw_soft",), site_names=("mouth_tip",)),
             "command_name": "twist",
             "hold_end": HOLD_END,
         },
@@ -325,7 +321,7 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
         func=microduck_mdp.feet_flat_penalty,
         weight=-2.0,
         params={
-            "asset_cfg": SceneEntityCfg("robot", site_names=["left_foot", "right_foot"]),
+            "asset_cfg": SceneEntityCfg("robot", site_names=("left_foot", "right_foot")),
         },
     )
 
@@ -336,19 +332,13 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
 
     # Action smoothness — flat heavy weight (ramped in via the curriculum below,
     # which ends at -2.0 rather than velocity's -1.0).
-    cfg.rewards["action_rate_l2"] = RewardTermCfg(
-        func=mdp.action_rate_l2, weight=-2.0
-    )
+    cfg.rewards["action_rate_l2"] = RewardTermCfg(func=mdp.action_rate_l2, weight=-2.0)
 
     # Neck/head smoothness — higher weight because head is heavily used.
-    cfg.rewards["neck_action_rate_l2"] = RewardTermCfg(
-        func=microduck_mdp.neck_action_rate_l2, weight=-1.0
-    )
+    cfg.rewards["neck_action_rate_l2"] = RewardTermCfg(func=microduck_mdp.neck_action_rate_l2, weight=-1.0)
 
     # Joint torque penalty — increased to further penalise fast/forceful moves.
-    cfg.rewards["joint_torques_l2"] = RewardTermCfg(
-        func=microduck_mdp.joint_torques_l2, weight=-5e-3
-    )
+    cfg.rewards["joint_torques_l2"] = RewardTermCfg(func=microduck_mdp.joint_torques_l2, weight=-5e-3)
 
     # Self-collision — head and neck could clip the legs during deep crouch.
     cfg.rewards["self_collisions"] = RewardTermCfg(
@@ -371,7 +361,8 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     del cfg.observations["actor"].terms["base_lin_vel"]
 
     cfg.observations["critic"].terms["base_lin_vel"] = ObservationTermCfg(
-        func=mdp.base_lin_vel, scale=1.0,
+        func=mdp.base_lin_vel,
+        scale=1.0,
     )
     # mjlab 1.3.0 base template adds sensor-based foot_height + height_scan obs.
     # Ground-pick has no terrain-height sensor (and drops the walking foot
@@ -381,12 +372,8 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     del cfg.observations["critic"].terms["height_scan"]
 
     gravity_term_name = "projected_gravity"
-    cfg.observations["actor"].terms[gravity_term_name] = deepcopy(
-        cfg.observations["actor"].terms[gravity_term_name]
-    )
-    cfg.observations["actor"].terms["base_ang_vel"] = deepcopy(
-        cfg.observations["actor"].terms["base_ang_vel"]
-    )
+    cfg.observations["actor"].terms[gravity_term_name] = deepcopy(cfg.observations["actor"].terms[gravity_term_name])
+    cfg.observations["actor"].terms["base_ang_vel"] = deepcopy(cfg.observations["actor"].terms["base_ang_vel"])
 
     # Sensor delay — matches velocity env
     cfg.observations["actor"].terms["base_ang_vel"].delay_min_lag = 0
@@ -397,10 +384,10 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     cfg.observations["actor"].terms[gravity_term_name].delay_update_period = 64
 
     # Observation noise — matches velocity env
-    cfg.observations["actor"].terms["base_ang_vel"].noise   = Unoise(n_min=-0.03, n_max=0.03)
+    cfg.observations["actor"].terms["base_ang_vel"].noise = Unoise(n_min=-0.03, n_max=0.03)
     cfg.observations["actor"].terms[gravity_term_name].noise = Unoise(n_min=-0.01, n_max=0.01)
-    cfg.observations["actor"].terms["joint_pos"].noise      = Unoise(n_min=-0.001, n_max=0.001)
-    cfg.observations["actor"].terms["joint_vel"].noise      = Unoise(n_min=-0.25, n_max=0.25)
+    cfg.observations["actor"].terms["joint_pos"].noise = Unoise(n_min=-0.001, n_max=0.001)
+    cfg.observations["actor"].terms["joint_vel"].noise = Unoise(n_min=-0.25, n_max=0.25)
 
     # IMU mounting-misalignment DR (match velocity): per-env constant rotation of
     # the IMU-derived actor obs; critic keeps the true values. Replaces the old
@@ -416,9 +403,7 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     # 1-ctrl-step lag on joint_vel: the Dynamixel firmware computes
     # present_velocity via a moving-average over the previous position-sample
     # window, so the value the policy actually reads is ~1 control period old.
-    cfg.observations["actor"].terms["joint_vel"] = deepcopy(
-        cfg.observations["actor"].terms["joint_vel"]
-    )
+    cfg.observations["actor"].terms["joint_vel"] = deepcopy(cfg.observations["actor"].terms["joint_vel"])
     cfg.observations["actor"].terms["joint_vel"].delay_min_lag = 1
     cfg.observations["actor"].terms["joint_vel"].delay_max_lag = 1
     cfg.observations["actor"].terms["joint_vel"].delay_update_period = 0
@@ -449,22 +434,22 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     # slots (head 4 + body 6) are constant zero.
     for group in ("actor", "critic"):
         cfg.observations[group].terms["head_command"] = ObservationTermCfg(
-            func=microduck_mdp.zero_command_padding, params={"dim": 4},
+            func=microduck_mdp.zero_command_padding,
+            params={"dim": 4},
         )
         cfg.observations[group].terms["body_command"] = ObservationTermCfg(
-            func=microduck_mdp.zero_command_padding, params={"dim": 6},
+            func=microduck_mdp.zero_command_padding,
+            params={"dim": 6},
         )
 
     # ── Command: cyclic phase encoding ────────────────────────────────────────
-    command: UniformVelocityCommandCfg = cfg.commands["twist"]
+    command = microduck_mdp.twist_command_cfg(cfg)
     command.rel_standing_envs = 0.0
-    command.rel_heading_envs  = 0.0
+    command.rel_heading_envs = 0.0
     # Period = GP_PERIOD (6 s). The segmented profile (constants at the top of the file)
     # decouples descent/hold/rise/rest: descent & rise ~1.5 s
     # (slow -> no loss of balance), low hold ~0.6 s (short), rest ~2.4 s.
-    cfg.commands["twist"] = microduck_mdp.GroundPickPhaseCommandCfg(
-        **{**vars(command), "class_type": microduck_mdp.GroundPickPhaseCommand, "period": GP_PERIOD}
-    )
+    cfg.commands["twist"] = microduck_mdp.GroundPickPhaseCommandCfg(**{**vars(command), "class_type": microduck_mdp.GroundPickPhaseCommand, "period": GP_PERIOD})
 
     # ── Terminations ──────────────────────────────────────────────────────────
     # Terminate on NaN physics (extreme contact impulses) before it corrupts obs.
@@ -600,16 +585,18 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     # site_quat, a no-op under mjlab 1.3.0.
 
     # ── Terrain ───────────────────────────────────────────────────────────────
+    terrain = cfg.scene.terrain
+    assert terrain is not None
     if not rough:
-        cfg.scene.terrain.terrain_type = "plane"
-        cfg.scene.terrain.terrain_generator = None
+        terrain.terrain_type = "plane"
+        terrain.terrain_generator = None
     else:
-        cfg.scene.terrain.terrain_type = "generator"
-        cfg.scene.terrain.terrain_generator = MICRODUCK_ROUGH_TERRAINS_CFG
+        terrain.terrain_type = "generator"
+        terrain.terrain_generator = MICRODUCK_ROUGH_TERRAINS_CFG
         if play:
-            cfg.scene.terrain.terrain_generator.curriculum = False
-            cfg.scene.terrain.terrain_generator.num_cols = 5
-            cfg.scene.terrain.terrain_generator.num_rows = 5
+            terrain.terrain_generator.curriculum = False
+            terrain.terrain_generator.num_cols = 5
+            terrain.terrain_generator.num_rows = 5
 
     # ── Curriculum ────────────────────────────────────────────────────────────
     # Remove base curriculum terms not applicable here
@@ -624,9 +611,9 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
         params={
             "reward_name": "action_rate_l2",
             "weight_stages": [
-                {"step": 0,          "weight": -0.8},
-                {"step": 250 * 24,   "weight": -1.5},
-                {"step": 500 * 24,   "weight": -2.0},
+                {"step": 0, "weight": -0.8},
+                {"step": 250 * 24, "weight": -1.5},
+                {"step": 500 * 24, "weight": -2.0},
             ],
         },
     )
@@ -639,8 +626,8 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
             params={
                 "event_name": "randomize_com",
                 "range_stages": [
-                    {"step": 0,         "range": 0.003},
-                    {"step": 500 * 24,  "range": 0.005},
+                    {"step": 0, "range": 0.003},
+                    {"step": 500 * 24, "range": 0.005},
                     {"step": 1000 * 24, "range": 0.01},
                     {"step": 1500 * 24, "range": 0.015},
                     {"step": 2000 * 24, "range": 0.02},
@@ -654,8 +641,8 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
             params={
                 "event_name": "randomize_head_com",
                 "range_stages": [
-                    {"step": 0,         "range": 0.003},
-                    {"step": 500 * 24,  "range": 0.005},
+                    {"step": 0, "range": 0.003},
+                    {"step": 500 * 24, "range": 0.005},
                     {"step": 1000 * 24, "range": 0.01},
                 ],
             },

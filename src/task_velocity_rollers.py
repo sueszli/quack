@@ -34,26 +34,26 @@ from copy import deepcopy
 ENABLE_SYMMETRY = False
 
 # ── Domain randomisation toggles (matched to the velocity env) ────────────────
-ENABLE_COM_RANDOMIZATION             = True
-ENABLE_HEAD_COM_RANDOMIZATION        = True
-ENABLE_MASS_INERTIA_RANDOMIZATION    = True
-ENABLE_JOINT_FRICTION_RANDOMIZATION  = True   # BAM friction budget per-env (legs)
-ENABLE_ARMATURE_RANDOMIZATION        = True   # legs only — NOT the wheel bearings
-ENABLE_WHEEL_FRICTION_RANDOMIZATION  = True   # bearing frictionloss on passive wheels
-ENABLE_VELOCITY_PUSHES               = True
-ENABLE_IMU_ORIENTATION_RANDOMIZATION = True   # obs-level per-env rotation
-ENABLE_ENCODER_BIAS                  = True
+ENABLE_COM_RANDOMIZATION = True
+ENABLE_HEAD_COM_RANDOMIZATION = True
+ENABLE_MASS_INERTIA_RANDOMIZATION = True
+ENABLE_JOINT_FRICTION_RANDOMIZATION = True  # BAM friction budget per-env (legs)
+ENABLE_ARMATURE_RANDOMIZATION = True  # legs only — NOT the wheel bearings
+ENABLE_WHEEL_FRICTION_RANDOMIZATION = True  # bearing frictionloss on passive wheels
+ENABLE_VELOCITY_PUSHES = True
+ENABLE_IMU_ORIENTATION_RANDOMIZATION = True  # obs-level per-env rotation
+ENABLE_ENCODER_BIAS = True
 
 # ── Ranges (matched to the velocity env unless roller-specific) ───────────────
-COM_RANDOMIZATION_RANGE          = 0.003   # ±3mm initial, ramped via curriculum
-HEAD_COM_RANDOMIZATION_RANGE     = 0.003
+COM_RANDOMIZATION_RANGE = 0.003  # ±3mm initial, ramped via curriculum
+HEAD_COM_RANDOMIZATION_RANGE = 0.003
 MASS_INERTIA_RANDOMIZATION_RANGE = (0.95, 1.05)
 JOINT_FRICTION_RANDOMIZATION_RANGE = (0.9, 1.1)
-ARMATURE_RANDOMIZATION_RANGE     = (0.9, 1.1)
-VELOCITY_PUSH_INTERVAL_S         = (3.0, 6.0)
-VELOCITY_PUSH_RANGE              = (-0.2, 0.2)  # roller-specific: gentler than walk ±0.3
+ARMATURE_RANDOMIZATION_RANGE = (0.9, 1.1)
+VELOCITY_PUSH_INTERVAL_S = (3.0, 6.0)
+VELOCITY_PUSH_RANGE = (-0.2, 0.2)  # roller-specific: gentler than walk ±0.3
 IMU_ORIENTATION_RANDOMIZATION_ANGLE = 6.0
-ENCODER_BIAS_RANGE               = (-0.015, 0.015)
+ENCODER_BIAS_RANGE = (-0.015, 0.015)
 
 from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.envs.mdp import dr
@@ -67,19 +67,18 @@ from mjlab.managers import (
 )
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.rl import (
-    RslRlOnPolicyRunnerCfg,
     RslRlModelCfg,
+    RslRlOnPolicyRunnerCfg,
 )
 from mjlab.sensor import ContactMatch, ContactSensorCfg
 from mjlab.tasks.velocity import mdp
-from mjlab.tasks.velocity.mdp import UniformVelocityCommandCfg
 from mjlab.tasks.velocity.velocity_env_cfg import make_velocity_env_cfg
 from mjlab.utils.noise import UniformNoiseCfg as Unoise
 
-from .robot import MICRODUCK_WALK_ROLLERS_ROBOT_CFG
 from . import task_mdp as microduck_mdp
+from .robot import MICRODUCK_WALK_ROLLERS_ROBOT_CFG
+from .task_symmetry import SYMMETRY_CFG, PpoWithSymmetryCfg
 from .task_velocity import HEAD_BODY_NAMES
-from .task_symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
 
 
 def make_microduck_velocity_rollers_env_cfg(
@@ -208,15 +207,9 @@ def make_microduck_velocity_rollers_env_cfg(
             "sensor_name": "feet_ground_contact",
         },
     )
-    cfg.rewards["neck_action_rate_l2"] = RewardTermCfg(
-        func=microduck_mdp.neck_action_rate_l2, weight=-0.5
-    )
-    cfg.rewards["neck_joint_pos_l2"] = RewardTermCfg(
-        func=microduck_mdp.neck_joint_pos_l2, weight=-0.5
-    )
-    cfg.rewards["joint_torques_l2"] = RewardTermCfg(
-        func=microduck_mdp.joint_torques_l2, weight=-1e-3
-    )
+    cfg.rewards["neck_action_rate_l2"] = RewardTermCfg(func=microduck_mdp.neck_action_rate_l2, weight=-0.5)
+    cfg.rewards["neck_joint_pos_l2"] = RewardTermCfg(func=microduck_mdp.neck_joint_pos_l2, weight=-0.5)
+    cfg.rewards["joint_torques_l2"] = RewardTermCfg(func=microduck_mdp.joint_torques_l2, weight=-1e-3)
     # Deter OVER-COMMANDING a joint past its hard stop (policy-side, transfers via
     # the ONNX). hip_roll's ±0.38 rad limit vs the ±10 rad ctrlrange let the low-kp
     # servo be commanded far past the stop and slam it with max torque — a fragile
@@ -239,9 +232,9 @@ def make_microduck_velocity_rollers_env_cfg(
     cfg.rewards["hip_roll_neutral"] = RewardTermCfg(
         func=microduck_mdp.joint_deviation_l1,
         weight=-2.0,  # -1.0 -> -2.0: stronger centring pull. Sim already keeps hip_roll
-                      # narrow, but a stronger corrective may help the REAL robot resist
-                      # whatever spreads the legs (deployment/disturbance). Lower if it
-                      # flattens the push.
+        # narrow, but a stronger corrective may help the REAL robot resist
+        # whatever spreads the legs (deployment/disturbance). Lower if it
+        # flattens the push.
         params={"asset_cfg": SceneEntityCfg("robot", joint_names=(r".*hip_roll.*",))},
     )
     # Sole positive task reward — robot must spin wheels to get anything
@@ -466,12 +459,8 @@ def make_microduck_velocity_rollers_env_cfg(
     )
 
     gravity_term_name = "projected_gravity"
-    cfg.observations["actor"].terms[gravity_term_name] = deepcopy(
-        cfg.observations["actor"].terms[gravity_term_name]
-    )
-    cfg.observations["actor"].terms["base_ang_vel"] = deepcopy(
-        cfg.observations["actor"].terms["base_ang_vel"]
-    )
+    cfg.observations["actor"].terms[gravity_term_name] = deepcopy(cfg.observations["actor"].terms[gravity_term_name])
+    cfg.observations["actor"].terms["base_ang_vel"] = deepcopy(cfg.observations["actor"].terms["base_ang_vel"])
     # IMU delay 0-1 control steps (matches velocity: the real dxl IMU path is fast)
     cfg.observations["actor"].terms["base_ang_vel"].delay_min_lag = 0
     cfg.observations["actor"].terms["base_ang_vel"].delay_max_lag = 1
@@ -496,9 +485,7 @@ def make_microduck_velocity_rollers_env_cfg(
         g.params = {"max_angle_deg": IMU_ORIENTATION_RANDOMIZATION_ANGLE}
 
     # 1-ctrl-step lag on joint_vel (Dynamixel present_velocity moving average)
-    cfg.observations["actor"].terms["joint_vel"] = deepcopy(
-        cfg.observations["actor"].terms["joint_vel"]
-    )
+    cfg.observations["actor"].terms["joint_vel"] = deepcopy(cfg.observations["actor"].terms["joint_vel"])
     cfg.observations["actor"].terms["joint_vel"].delay_min_lag = 1
     cfg.observations["actor"].terms["joint_vel"].delay_max_lag = 1
     cfg.observations["actor"].terms["joint_vel"].delay_update_period = 0
@@ -531,18 +518,20 @@ def make_microduck_velocity_rollers_env_cfg(
     # (the roller task drives heading through the twist slot instead).
     for group in ("actor", "critic"):
         cfg.observations[group].terms["head_command"] = ObservationTermCfg(
-            func=microduck_mdp.zero_command_padding, params={"dim": 4},
+            func=microduck_mdp.zero_command_padding,
+            params={"dim": 4},
         )
         cfg.observations[group].terms["body_command"] = ObservationTermCfg(
-            func=microduck_mdp.zero_command_padding, params={"dim": 6},
+            func=microduck_mdp.zero_command_padding,
+            params={"dim": 6},
         )
 
     # === COMMANDS ===
-    command: UniformVelocityCommandCfg = cfg.commands["twist"]
+    command = microduck_mdp.twist_command_cfg(cfg)
     command.rel_standing_envs = 0.0
     command.rel_heading_envs = 0.0
     command.heading_command = False  # RelativeHeadingVelocityCommand handles heading internally
-    command.ranges.heading = None    # must be None when heading_command=False
+    command.ranges.heading = None  # must be None when heading_command=False
     # cmd_x semantics: 0=coast, >0=push to accelerate, <0=brake to stop
     command.ranges.lin_vel_x = (-0.5, 0.6)
     command.ranges.lin_vel_y = (0.0, 0.0)
@@ -552,8 +541,10 @@ def make_microduck_velocity_rollers_env_cfg(
     command.viz.z_offset = 0.5
     cfg.commands["twist"] = microduck_mdp.RelativeHeadingVelocityCommandCfg(**vars(command))
 
-    cfg.scene.terrain.terrain_type = "plane"
-    cfg.scene.terrain.terrain_generator = None
+    terrain = cfg.scene.terrain
+    assert terrain is not None
+    terrain.terrain_type = "plane"
+    terrain.terrain_generator = None
 
     # === CURRICULUM ===
     del cfg.curriculum["terrain_levels"]
@@ -587,10 +578,10 @@ def make_microduck_velocity_rollers_env_cfg(
             params={
                 "event_name": "randomize_wheel_friction",
                 "ranges_stages": [
-                    {"step":    0 * 24,  "ranges": (0.0000, 0.0000)},
-                    {"step": 2000 * 24,  "ranges": (0.0005, 0.0005)},
-                    {"step": 3500 * 24,  "ranges": (0.0010, 0.0010)},
-                    {"step": 5000 * 24,  "ranges": (0.0015, 0.0015)},
+                    {"step": 0 * 24, "ranges": (0.0000, 0.0000)},
+                    {"step": 2000 * 24, "ranges": (0.0005, 0.0005)},
+                    {"step": 3500 * 24, "ranges": (0.0010, 0.0010)},
+                    {"step": 5000 * 24, "ranges": (0.0015, 0.0015)},
                 ],
             },
         )
@@ -607,8 +598,8 @@ def make_microduck_velocity_rollers_env_cfg(
             params={
                 "event_name": "randomize_com",
                 "range_stages": [
-                    {"step": 0,         "range": 0.003},
-                    {"step": 500 * 24,  "range": 0.005},
+                    {"step": 0, "range": 0.003},
+                    {"step": 500 * 24, "range": 0.005},
                     {"step": 1000 * 24, "range": 0.01},
                 ],
             },
@@ -619,8 +610,8 @@ def make_microduck_velocity_rollers_env_cfg(
             params={
                 "event_name": "randomize_head_com",
                 "range_stages": [
-                    {"step": 0,         "range": 0.003},
-                    {"step": 500 * 24,  "range": 0.005},
+                    {"step": 0, "range": 0.003},
+                    {"step": 500 * 24, "range": 0.005},
                     {"step": 1000 * 24, "range": 0.01},
                 ],
             },

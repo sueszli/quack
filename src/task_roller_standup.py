@@ -42,10 +42,10 @@ from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.rl import RslRlModelCfg, RslRlOnPolicyRunnerCfg
 
 from . import task_mdp as microduck_mdp
+from .task_symmetry import PpoWithSymmetryCfg
 from .task_velocity_rollers import (
     make_microduck_velocity_rollers_env_cfg,
 )
-from .task_symmetry import PpoWithSymmetryCfg
 
 # ── Trunk heights (m) ─────────────────────────────────────────────────────────
 # Measured by exact kinematics (minimum of the mesh vertices of the colliding
@@ -57,7 +57,7 @@ from .task_symmetry import PpoWithSymmetryCfg
 ROLLER_STAND_Z = 0.138
 ROLLER_PRONE_Z = 0.075
 
-EPISODE_LENGTH_S  = 6.0   # rise + stabilize, like standup
+EPISODE_LENGTH_S = 6.0  # rise + stabilize, like standup
 NUM_STEPS_PER_ENV = 24
 
 # ── Play override: force the proportion of FACE-UP starts ─────────────────────
@@ -91,6 +91,7 @@ def _resolve_play_face_up():
         print(f"[roller_standup] STANDUP_PLAY_FACE_UP='{raw}' invalid -> default {PLAY_FACE_UP}")
         return PLAY_FACE_UP
 
+
 # ── Joint indices — the passive wheels are INTERLEAVED ────────────────────────
 # Actual order of the rollers model (18 joints after the free-joint), verified in
 # MuJoCo via get_walk_rollers_spec().compile():
@@ -106,8 +107,8 @@ def _resolve_play_face_up():
 # _WHEEL_JOINTS serve documentation and the index test: the neck is
 # resolved by NAME (neck_joint_pos_l2 calls find_joints(r".*(neck|head).*") at
 # every step) and the wheels by the ^passive_.* regex.
-_LEG_JOINTS   = [0, 1, 2, 3, 4, 11, 12, 13, 14, 15]
-_NECK_JOINTS  = [7, 8, 9, 10]
+_LEG_JOINTS = [0, 1, 2, 3, 4, 11, 12, 13, 14, 15]
+_NECK_JOINTS = [7, 8, 9, 10]
 _WHEEL_JOINTS = [5, 6, 16, 17]
 
 # SKATING rewards of the roller env: meaningless when on the ground.
@@ -133,7 +134,7 @@ _SKATING_REWARDS = (
 
 
 def make_microduck_roller_standup_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
-    """"Getting up on rollers" env: start on the ground, target = standing on wheels."""
+    """ "Getting up on rollers" env: start on the ground, target = standing on wheels."""
     cfg = make_microduck_velocity_rollers_env_cfg(play=play)
 
     cfg.episode_length_s = EPISODE_LENGTH_S
@@ -147,11 +148,11 @@ def make_microduck_roller_standup_env_cfg(play: bool = False) -> ManagerBasedRlE
     # error computed internally). Here nothing is steered: we go back to the
     # neutralized command-only, like standup. The head_pose (4) and
     # body_pose (6) slots stay zero-padded → 61D obs parity preserved.
-    command = cfg.commands["twist"]
+    command = microduck_mdp.twist_command_cfg(cfg)
     command.rel_standing_envs = 0.0
-    command.rel_heading_envs  = 0.0
-    command.heading_command   = False
-    command.ranges.heading    = None
+    command.rel_heading_envs = 0.0
+    command.heading_command = False
+    command.ranges.heading = None
     command.resampling_time_range = (EPISODE_LENGTH_S, EPISODE_LENGTH_S * 2)
     command.debug_vis = False
     command.ranges.lin_vel_x = (-0.01, 0.01)
@@ -358,10 +359,10 @@ def make_microduck_roller_standup_env_cfg(play: bool = False) -> ManagerBasedRlE
         func=microduck_mdp.set_random_ground_state,
         mode="reset",
         params={
-            "face_down_prob": 0.50,   # face down (+90° of pitch)
-            "face_up_prob":   0.00,   # face up — the hardest, introduced late
-            "sitting_prob":   0.00,
-            "standing_prob":  0.50,
+            "face_down_prob": 0.50,  # face down (+90° of pitch)
+            "face_up_prob": 0.00,  # face up — the hardest, introduced late
+            "sitting_prob": 0.00,
+            "standing_prob": 0.50,
             "sitting_joint_overrides": None,
             # The two starting poses (face down/face up) share a SINGLE z range,
             # yet their contacts have nothing in common: the belly only lifts off the ground
@@ -370,8 +371,8 @@ def make_microduck_roller_standup_env_cfg(play: bool = False) -> ManagerBasedRlE
             # any interpenetration on the belly side (measured: at 0.05, +25 mm into the
             # ground), at the cost of a back that starts 28–42 mm above its rest —
             # a much gentler artifact than a contact pushout.
-            "prone_z_min":    0.076,
-            "prone_z_max":    0.09,
+            "prone_z_min": 0.076,
+            "prone_z_max": 0.09,
             # Standing on wheels: ROLLER_STAND_Z = 0.138 (vs 0.11–0.12 without wheels).
             "standing_z_min": 0.134,
             "standing_z_max": 0.144,
@@ -397,18 +398,10 @@ def make_microduck_roller_standup_env_cfg(play: bool = False) -> ManagerBasedRlE
         params={
             "event_name": "set_ground_state",
             "param_stages": [
-                {"step": 0, "params": {
-                    "standing_prob": 0.50, "sitting_prob": 0.00,
-                    "face_down_prob": 0.50, "face_up_prob": 0.00}},
-                {"step": 600 * NUM_STEPS_PER_ENV, "params": {
-                    "standing_prob": 0.35, "sitting_prob": 0.00,
-                    "face_down_prob": 0.45, "face_up_prob": 0.20}},
-                {"step": 1500 * NUM_STEPS_PER_ENV, "params": {
-                    "standing_prob": 0.25, "sitting_prob": 0.00,
-                    "face_down_prob": 0.40, "face_up_prob": 0.35}},
-                {"step": 2500 * NUM_STEPS_PER_ENV, "params": {
-                    "standing_prob": 0.20, "sitting_prob": 0.00,
-                    "face_down_prob": 0.40, "face_up_prob": 0.40}},
+                {"step": 0, "params": {"standing_prob": 0.50, "sitting_prob": 0.00, "face_down_prob": 0.50, "face_up_prob": 0.00}},
+                {"step": 600 * NUM_STEPS_PER_ENV, "params": {"standing_prob": 0.35, "sitting_prob": 0.00, "face_down_prob": 0.45, "face_up_prob": 0.20}},
+                {"step": 1500 * NUM_STEPS_PER_ENV, "params": {"standing_prob": 0.25, "sitting_prob": 0.00, "face_down_prob": 0.40, "face_up_prob": 0.35}},
+                {"step": 2500 * NUM_STEPS_PER_ENV, "params": {"standing_prob": 0.20, "sitting_prob": 0.00, "face_down_prob": 0.40, "face_up_prob": 0.40}},
             ],
         },
     )
@@ -422,12 +415,14 @@ def make_microduck_roller_standup_env_cfg(play: bool = False) -> ManagerBasedRlE
         play_face_up = _resolve_play_face_up()
         if play_face_up is not None:
             remainder = 1.0 - play_face_up
-            cfg.events["set_ground_state"].params.update({
-                "face_up_prob":    play_face_up,
-                "face_down_prob":  remainder * _PLAY_FACE_DOWN_SHARE,
-                "standing_prob":   remainder * (1.0 - _PLAY_FACE_DOWN_SHARE),
-                "sitting_prob":    0.00,
-            })
+            cfg.events["set_ground_state"].params.update(
+                {
+                    "face_up_prob": play_face_up,
+                    "face_down_prob": remainder * _PLAY_FACE_DOWN_SHARE,
+                    "standing_prob": remainder * (1.0 - _PLAY_FACE_DOWN_SHARE),
+                    "sitting_prob": 0.00,
+                }
+            )
             del cfg.curriculum["ground_state_mix"]
 
     # ── INVERTED rolling friction: braked → free ─────────────────────────────
@@ -452,7 +447,7 @@ def make_microduck_roller_standup_env_cfg(play: bool = False) -> ManagerBasedRlE
         params={
             "event_name": "randomize_wheel_friction",
             "ranges_stages": [
-                {"step": 0,                        "ranges": _WHEEL_FRICTION_STAGE0},
+                {"step": 0, "ranges": _WHEEL_FRICTION_STAGE0},
                 {"step": 1000 * NUM_STEPS_PER_ENV, "ranges": (0.0200, 0.0200)},
                 {"step": 2000 * NUM_STEPS_PER_ENV, "ranges": (0.0080, 0.0080)},
                 {"step": 3000 * NUM_STEPS_PER_ENV, "ranges": (0.0030, 0.0030)},
@@ -479,7 +474,7 @@ def make_microduck_roller_standup_env_cfg(play: bool = False) -> ManagerBasedRlE
         params={
             "reward_name": "action_rate_l2",
             "weight_stages": [
-                {"step": 0,                       "weight": -0.4},
+                {"step": 0, "weight": -0.4},
                 {"step": 250 * NUM_STEPS_PER_ENV, "weight": -0.8},
                 {"step": 500 * NUM_STEPS_PER_ENV, "weight": -1.0},
             ],
@@ -495,12 +490,9 @@ def make_microduck_roller_standup_env_cfg(play: bool = False) -> ManagerBasedRlE
         params={
             "event_name": "push_robot",
             "push_stages": [
-                {"step": 0, "velocity_range": {
-                    "x": (0.0, 0.0), "y": (0.0, 0.0)}},
-                {"step": 500 * NUM_STEPS_PER_ENV, "velocity_range": {
-                    "x": (-0.08, 0.08), "y": (-0.08, 0.08)}},
-                {"step": 1000 * NUM_STEPS_PER_ENV, "velocity_range": {
-                    "x": (-0.2, 0.2), "y": (-0.2, 0.2)}},
+                {"step": 0, "velocity_range": {"x": (0.0, 0.0), "y": (0.0, 0.0)}},
+                {"step": 500 * NUM_STEPS_PER_ENV, "velocity_range": {"x": (-0.08, 0.08), "y": (-0.08, 0.08)}},
+                {"step": 1000 * NUM_STEPS_PER_ENV, "velocity_range": {"x": (-0.2, 0.2), "y": (-0.2, 0.2)}},
             ],
         },
     )

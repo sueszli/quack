@@ -1,0 +1,13 @@
+from .model import Model as Model
+from _typeshed import Incomplete
+
+class Simulator:
+    screen: Incomplete
+    model: Incomplete
+    def __init__(self, model: Model) -> None: ...
+    q: Incomplete
+    dq: Incomplete
+    t: float
+    def reset(self, q: float = 0.0, dq: float = 0.0): ...
+    def step(self, control: None | float, torque_enable: bool, dt: float): ...
+    def rollout_log(self, log: dict, reset_period: float = None, simulate_control: bool = False): ...

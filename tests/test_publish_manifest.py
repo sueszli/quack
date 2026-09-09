@@ -53,11 +53,8 @@ OFFICIAL_SET = {
     "robot": {"model": "microduck", "hw_rev": 1, "servos": "xl330", "control_hz": 50},
     "policies": [
         {"file": "alpha_walking.onnx", "kind": "perpetual"},
-        {"file": "alpha_sitstand.onnx", "name": "sitstand", "kind": "scripted",
-         "command": {"encoding": "posture_flag", "sit": 1.0, "stand": 0.0, "idle": [0, 0, 0]},
-         "ramp_s": 2.0, "unwind_s": 1.0},
-        {"file": "alpha_ground_pick.onnx", "name": "ground_pick", "kind": "episodic",
-         "duration_s": 2.8, "command": {"encoding": "phase", "period_s": 4.0, "end_phase": 0.7}},
+        {"file": "alpha_sitstand.onnx", "name": "sitstand", "kind": "scripted", "command": {"encoding": "posture_flag", "sit": 1.0, "stand": 0.0, "idle": [0, 0, 0]}, "ramp_s": 2.0, "unwind_s": 1.0},
+        {"file": "alpha_ground_pick.onnx", "name": "ground_pick", "kind": "episodic", "duration_s": 2.8, "command": {"encoding": "phase", "period_s": 4.0, "end_phase": 0.7}},
         {"file": "roulade.onnx", "kind": "episodic", "duration_s": 1.0, "chain": True},
     ],
 }
@@ -69,7 +66,8 @@ def _tiny_policy(path: Path, obs_len: int = m.OBS_LEN, action_len: int = m.ACTIO
     w = numpy_helper.from_array(rng.normal(0, 0.1, (obs_len, action_len)).astype(np.float32), "W")
     node = helper.make_node("MatMul", ["obs", "W"], ["actions"])
     graph = helper.make_graph(
-        [node], "policy",
+        [node],
+        "policy",
         [helper.make_tensor_value_info("obs", TensorProto.FLOAT, [1, obs_len])],
         [helper.make_tensor_value_info("actions", TensorProto.FLOAT, [1, action_len])],
         initializer=[w],
@@ -138,7 +136,10 @@ def test_absence_is_not_evidence():
 
 def test_an_episodic_manifest_is_a_loadable_skill():
     built = m.build_manifest(
-        name="polite-bow", kind="episodic", description="Bows.", duration_s=4.0,
+        name="polite-bow",
+        kind="episodic",
+        description="Bows.",
+        duration_s=4.0,
         training={"task_id": "Mjlab-PoliteBow-Flat-MicroDuck", "commit": "abc"},
     )
     m.validate_manifest(built)
@@ -154,8 +155,12 @@ def test_an_episodic_manifest_is_a_loadable_skill():
 
 def test_a_perpetual_manifest_says_how_to_come_back():
     built = m.build_manifest(
-        name="flamingo", kind="perpetual", description="One foot.", unwind_s=1.5,
-        idle=(0.0, 1.0, 0.0), command_help={"twist": "[flag, side, 0]"},
+        name="flamingo",
+        kind="perpetual",
+        description="One foot.",
+        unwind_s=1.5,
+        idle=(0.0, 1.0, 0.0),
+        command_help={"twist": "[flag, side, 0]"},
     )
     m.validate_manifest(built)
     assert built["duration_s"] is None
@@ -167,15 +172,15 @@ def test_a_perpetual_manifest_says_how_to_come_back():
 @pytest.mark.parametrize(
     "kwargs, why",
     [
-        (dict(kind="episodic"), "duration_s"),
-        (dict(kind="episodic", duration_s=0.0), "duration_s"),
-        (dict(kind="episodic", duration_s=1.0, unwind_s=2.0), "unwind_s"),
-        (dict(kind="perpetual", unwind_s=0.0), "unwind_s"),
-        (dict(kind="perpetual", slot="jetpack"), "slot"),
-        (dict(kind="perpetual", unwind_s=1.0, duration_s=3.0), "duration_s"),
-        (dict(kind="perpetual", unwind_s=1.0, chain=True), "chain"),
-        (dict(kind="scripted", duration_s=1.0), "kind"),
-        (dict(kind="episodic", duration_s=1.0, action_scale=5.0), "action_scale"),
+        ({"kind": "episodic"}, "duration_s"),
+        ({"kind": "episodic", "duration_s": 0.0}, "duration_s"),
+        ({"kind": "episodic", "duration_s": 1.0, "unwind_s": 2.0}, "unwind_s"),
+        ({"kind": "perpetual", "unwind_s": 0.0}, "unwind_s"),
+        ({"kind": "perpetual", "slot": "jetpack"}, "slot"),
+        ({"kind": "perpetual", "unwind_s": 1.0, "duration_s": 3.0}, "duration_s"),
+        ({"kind": "perpetual", "unwind_s": 1.0, "chain": True}, "chain"),
+        ({"kind": "scripted", "duration_s": 1.0}, "kind"),
+        ({"kind": "episodic", "duration_s": 1.0, "action_scale": 5.0}, "action_scale"),
     ],
 )
 def test_the_builder_refuses_what_the_kind_cannot_mean(kwargs, why):
@@ -233,7 +238,8 @@ def test_a_constant_network_fails_the_smoke_run(tmp_path):
     """A graph that ignores its input is not a policy — the shape gate alone would pass it."""
     zero = numpy_helper.from_array(np.zeros((m.OBS_LEN, m.ACTION_LEN), np.float32), "W")
     graph = helper.make_graph(
-        [helper.make_node("MatMul", ["obs", "W"], ["actions"])], "dead",
+        [helper.make_node("MatMul", ["obs", "W"], ["actions"])],
+        "dead",
         [helper.make_tensor_value_info("obs", TensorProto.FLOAT, [1, m.OBS_LEN])],
         [helper.make_tensor_value_info("actions", TensorProto.FLOAT, [1, m.ACTION_LEN])],
         initializer=[zero],
@@ -252,10 +258,16 @@ def test_the_cli_dry_run_writes_a_repo(tmp_path, monkeypatch):
 
     policy = _tiny_policy(tmp_path / "out.onnx")
     monkeypatch.chdir(tmp_path)
-    code = run(PublishConfig(
-        repo="someone/microduck-bow", kind="episodic", onnx=str(policy),
-        duration_s=4.0, description="Bows.", dry_run=True,
-    ))
+    code = run(
+        PublishConfig(
+            repo="someone/microduck-bow",
+            kind="episodic",
+            onnx=str(policy),
+            duration_s=4.0,
+            description="Bows.",
+            dry_run=True,
+        )
+    )
     assert code == 0
     out = tmp_path / "publish-bow"
     assert (out / "policy.onnx").exists()

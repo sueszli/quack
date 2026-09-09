@@ -123,9 +123,11 @@ class Camera:
 class FrameHandler(socketserver.BaseRequestHandler):
     """Length-prefixed frames, at the camera's rate, until the reader goes away."""
 
+    server: FrameServer  # type: ignore[assignment]  # narrows BaseServer to the concrete server run() builds
+
     def handle(self) -> None:
-        camera: Camera = self.server.camera
-        fps: int = self.server.fps
+        camera = self.server.camera
+        fps = self.server.fps
         self.request.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         print(f"== camera: a reader connected from {self.client_address}", flush=True)
         period = 1.0 / max(1, fps)
@@ -151,3 +153,7 @@ class FrameHandler(socketserver.BaseRequestHandler):
 class FrameServer(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
     daemon_threads = True
+
+    # Set by run() right after construction; the handler reads them per connection.
+    camera: Camera
+    fps: int

@@ -31,7 +31,7 @@ class _Scene:
         self._asset = asset
 
     def __getitem__(self, key):
-        return self.sensors[key] if key in self.sensors else self._asset
+        return self.sensors.get(key, self._asset)
 
 
 class _AssetData:
@@ -103,9 +103,7 @@ def test_safe_obs_wrappers_are_wired_into_the_critic():
     cfg = make_microduck_velocity_env_cfg(rough=True)
     terms = cfg.observations["critic"].terms
     for name in ("foot_contact_forces", "foot_height", "foot_air_time"):
-        assert terms[name].func.__name__.endswith("_safe"), (
-            f"critic/{name} lost its NaN guard"
-        )
+        assert terms[name].func.__name__.endswith("_safe"), f"critic/{name} lost its NaN guard"
 
 
 def test_nan_state_termination_watches_the_contact_sensor():
@@ -129,9 +127,5 @@ def test_standup_env_is_also_guarded():
     cfg = make_microduck_standup_env_cfg()
     terms = cfg.observations["critic"].terms
     for name in ("foot_contact_forces", "foot_air_time"):
-        assert terms[name].func.__name__.endswith("_safe"), (
-            f"standup critic/{name} lost its NaN guard"
-        )
-    assert cfg.terminations["nan_state"].params.get("sensor_names"), (
-        "standup nan_state no longer watches contact forces"
-    )
+        assert terms[name].func.__name__.endswith("_safe"), f"standup critic/{name} lost its NaN guard"
+    assert cfg.terminations["nan_state"].params.get("sensor_names"), "standup nan_state no longer watches contact forces"

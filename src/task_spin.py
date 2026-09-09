@@ -24,25 +24,25 @@ from copy import deepcopy
 ENABLE_SYMMETRY = False
 
 # DR — taken from the roller env
-ENABLE_COM_RANDOMIZATION             = True
-ENABLE_HEAD_COM_RANDOMIZATION        = True
-ENABLE_MASS_INERTIA_RANDOMIZATION    = True
-ENABLE_JOINT_FRICTION_RANDOMIZATION  = True
-ENABLE_ARMATURE_RANDOMIZATION        = True
-ENABLE_WHEEL_FRICTION_RANDOMIZATION  = True
-ENABLE_VELOCITY_PUSHES               = True
+ENABLE_COM_RANDOMIZATION = True
+ENABLE_HEAD_COM_RANDOMIZATION = True
+ENABLE_MASS_INERTIA_RANDOMIZATION = True
+ENABLE_JOINT_FRICTION_RANDOMIZATION = True
+ENABLE_ARMATURE_RANDOMIZATION = True
+ENABLE_WHEEL_FRICTION_RANDOMIZATION = True
+ENABLE_VELOCITY_PUSHES = True
 ENABLE_IMU_ORIENTATION_RANDOMIZATION = True
-ENABLE_ENCODER_BIAS                  = True
+ENABLE_ENCODER_BIAS = True
 
-COM_RANDOMIZATION_RANGE          = 0.003
-HEAD_COM_RANDOMIZATION_RANGE     = 0.003
+COM_RANDOMIZATION_RANGE = 0.003
+HEAD_COM_RANDOMIZATION_RANGE = 0.003
 MASS_INERTIA_RANDOMIZATION_RANGE = (0.95, 1.05)
 JOINT_FRICTION_RANDOMIZATION_RANGE = (0.9, 1.1)
-ARMATURE_RANDOMIZATION_RANGE     = (0.9, 1.1)
-VELOCITY_PUSH_INTERVAL_S         = (3.0, 6.0)
-VELOCITY_PUSH_RANGE              = (-0.2, 0.2)
+ARMATURE_RANDOMIZATION_RANGE = (0.9, 1.1)
+VELOCITY_PUSH_INTERVAL_S = (3.0, 6.0)
+VELOCITY_PUSH_RANGE = (-0.2, 0.2)
 IMU_ORIENTATION_RANDOMIZATION_ANGLE = 6.0
-ENCODER_BIAS_RANGE               = (-0.015, 0.015)
+ENCODER_BIAS_RANGE = (-0.015, 0.015)
 
 # The button can be pressed at rest OR while rolling slowly: the policy learns
 # to kill the residual momentum before/during the launch of the rotation.
@@ -59,17 +59,16 @@ from mjlab.managers import (
     TerminationTermCfg,
 )
 from mjlab.managers.scene_entity_config import SceneEntityCfg
-from mjlab.rl import RslRlOnPolicyRunnerCfg, RslRlModelCfg
+from mjlab.rl import RslRlModelCfg, RslRlOnPolicyRunnerCfg
 from mjlab.sensor import ContactMatch, ContactSensorCfg
 from mjlab.tasks.velocity import mdp
-from mjlab.tasks.velocity.mdp import UniformVelocityCommandCfg
 from mjlab.tasks.velocity.velocity_env_cfg import make_velocity_env_cfg
 from mjlab.utils.noise import UniformNoiseCfg as Unoise
 
-from .robot import MICRODUCK_WALK_ROLLERS_ROBOT_CFG
 from . import task_mdp as microduck_mdp
+from .robot import MICRODUCK_WALK_ROLLERS_ROBOT_CFG
+from .task_symmetry import SYMMETRY_CFG, PpoWithSymmetryCfg
 from .task_velocity import HEAD_BODY_NAMES
-from .task_symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
 
 # Phase envelope: canonical constants defined in task_mdp.py.
 SPIN_PERIOD = microduck_mdp.SPIN_PERIOD
@@ -207,26 +206,24 @@ def make_microduck_spin_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
         weight=-1.0,
         params={"sensor_name": "self_collision"},
     )
-    cfg.rewards["neck_action_rate_l2"] = RewardTermCfg(
-        func=microduck_mdp.neck_action_rate_l2, weight=-0.5
-    )
+    cfg.rewards["neck_action_rate_l2"] = RewardTermCfg(func=microduck_mdp.neck_action_rate_l2, weight=-0.5)
     cfg.rewards["neck_joint_pos_l2"] = RewardTermCfg(
         func=microduck_mdp.neck_joint_pos_l2,
         weight=-0.2,
         params={"pattern": NECK_PATTERN_NO_YAW},
     )
-    cfg.rewards["joint_torques_l2"] = RewardTermCfg(
-        func=microduck_mdp.joint_torques_l2, weight=-1e-3
-    )
+    cfg.rewards["joint_torques_l2"] = RewardTermCfg(func=microduck_mdp.joint_torques_l2, weight=-1e-3)
 
     # === TERMINATIONS ===
     cfg.terminations["nan_state"] = TerminationTermCfg(
-        func=microduck_mdp.robot_state_is_nan, time_out=False,
+        func=microduck_mdp.robot_state_is_nan,
+        time_out=False,
     )
 
     # === EVENTS ===
     cfg.events["reset_action_history"] = EventTermCfg(
-        func=microduck_mdp.reset_action_history, mode="reset",
+        func=microduck_mdp.reset_action_history,
+        mode="reset",
     )
     del cfg.events["foot_friction"]
 
@@ -260,7 +257,8 @@ def make_microduck_spin_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
         )
     if ENABLE_COM_RANDOMIZATION:
         cfg.events["randomize_com"] = EventTermCfg(
-            func=dr.body_ipos, mode="reset",
+            func=dr.body_ipos,
+            mode="reset",
             params={
                 "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
                 "operation": "add",
@@ -269,7 +267,8 @@ def make_microduck_spin_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
         )
     if ENABLE_HEAD_COM_RANDOMIZATION:
         cfg.events["randomize_head_com"] = EventTermCfg(
-            func=dr.body_ipos, mode="reset",
+            func=dr.body_ipos,
+            mode="reset",
             params={
                 "asset_cfg": SceneEntityCfg("robot", body_names=HEAD_BODY_NAMES),
                 "operation": "add",
@@ -279,7 +278,8 @@ def make_microduck_spin_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     if ENABLE_MASS_INERTIA_RANDOMIZATION:
         _mi_lo, _mi_hi = MASS_INERTIA_RANDOMIZATION_RANGE
         cfg.events["randomize_mass_inertia"] = EventTermCfg(
-            func=dr.pseudo_inertia, mode="startup",
+            func=dr.pseudo_inertia,
+            mode="startup",
             params={
                 "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
                 "alpha_range": (math.log(_mi_lo) / 2.0, math.log(_mi_hi) / 2.0),
@@ -287,7 +287,8 @@ def make_microduck_spin_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
         )
     if ENABLE_JOINT_FRICTION_RANDOMIZATION:
         cfg.events["randomize_joint_friction"] = EventTermCfg(
-            func=microduck_mdp.randomize_bam_friction, mode="reset",
+            func=microduck_mdp.randomize_bam_friction,
+            mode="reset",
             params={
                 "asset_cfg": SceneEntityCfg("robot"),
                 "scale_range": JOINT_FRICTION_RANDOMIZATION_RANGE,
@@ -295,7 +296,8 @@ def make_microduck_spin_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
         )
     if ENABLE_ARMATURE_RANDOMIZATION:
         cfg.events["randomize_armature"] = EventTermCfg(
-            func=dr.joint_armature, mode="reset",
+            func=dr.joint_armature,
+            mode="reset",
             params={
                 "asset_cfg": SceneEntityCfg("robot", joint_names=(r"^(?!passive_).*",)),
                 "operation": "scale",
@@ -309,16 +311,13 @@ def make_microduck_spin_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     del cfg.observations["actor"].terms["height_scan"]
     del cfg.observations["critic"].terms["height_scan"]
     cfg.observations["critic"].terms["base_lin_vel"] = ObservationTermCfg(
-        func=mdp.base_lin_vel, scale=1.0,
+        func=mdp.base_lin_vel,
+        scale=1.0,
     )
 
     gravity_term_name = "projected_gravity"
-    cfg.observations["actor"].terms[gravity_term_name] = deepcopy(
-        cfg.observations["actor"].terms[gravity_term_name]
-    )
-    cfg.observations["actor"].terms["base_ang_vel"] = deepcopy(
-        cfg.observations["actor"].terms["base_ang_vel"]
-    )
+    cfg.observations["actor"].terms[gravity_term_name] = deepcopy(cfg.observations["actor"].terms[gravity_term_name])
+    cfg.observations["actor"].terms["base_ang_vel"] = deepcopy(cfg.observations["actor"].terms["base_ang_vel"])
     cfg.observations["actor"].terms["base_ang_vel"].delay_min_lag = 0
     cfg.observations["actor"].terms["base_ang_vel"].delay_max_lag = 1
     cfg.observations["actor"].terms["base_ang_vel"].delay_update_period = 64
@@ -338,9 +337,7 @@ def make_microduck_spin_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
         g.func = microduck_mdp.projected_gravity_imu_misaligned
         g.params = {"max_angle_deg": IMU_ORIENTATION_RANDOMIZATION_ANGLE}
 
-    cfg.observations["actor"].terms["joint_vel"] = deepcopy(
-        cfg.observations["actor"].terms["joint_vel"]
-    )
+    cfg.observations["actor"].terms["joint_vel"] = deepcopy(cfg.observations["actor"].terms["joint_vel"])
     cfg.observations["actor"].terms["joint_vel"].delay_min_lag = 1
     cfg.observations["actor"].terms["joint_vel"].delay_max_lag = 1
     cfg.observations["actor"].terms["joint_vel"].delay_update_period = 0
@@ -360,19 +357,23 @@ def make_microduck_spin_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
 
     wheel_cfg = SceneEntityCfg("robot", joint_names=(r"^passive_.*",))
     cfg.observations["critic"].terms["wheel_vel"] = ObservationTermCfg(
-        func=mdp.joint_vel_rel, scale=1.0, params={"asset_cfg": wheel_cfg},
+        func=mdp.joint_vel_rel,
+        scale=1.0,
+        params={"asset_cfg": wheel_cfg},
     )
 
     for group in ("actor", "critic"):
         cfg.observations[group].terms["head_command"] = ObservationTermCfg(
-            func=microduck_mdp.zero_command_padding, params={"dim": 4},
+            func=microduck_mdp.zero_command_padding,
+            params={"dim": 4},
         )
         cfg.observations[group].terms["body_command"] = ObservationTermCfg(
-            func=microduck_mdp.zero_command_padding, params={"dim": 6},
+            func=microduck_mdp.zero_command_padding,
+            params={"dim": 6},
         )
 
     # === COMMAND: phase (like ground_pick / roller_crouch) ===
-    command: UniformVelocityCommandCfg = cfg.commands["twist"]
+    command = microduck_mdp.twist_command_cfg(cfg)
     command.rel_standing_envs = 0.0
     command.rel_heading_envs = 0.0
     # period=4.0 = default of --ground-pick-period (nothing to pass to the runtime);
@@ -387,8 +388,10 @@ def make_microduck_spin_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
         }
     )
 
-    cfg.scene.terrain.terrain_type = "plane"
-    cfg.scene.terrain.terrain_generator = None
+    terrain = cfg.scene.terrain
+    assert terrain is not None
+    terrain.terrain_type = "plane"
+    terrain.terrain_generator = None
 
     # === CURRICULUM ===
     del cfg.curriculum["terrain_levels"]

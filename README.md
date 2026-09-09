@@ -242,9 +242,16 @@ itself and live in the official set, `pollen-robotics/microduck-policies`.
 ## Development
 
 ```bash
-make fmt        # ruff format over src/ tests/ (ruff check is TODO, see Makefile)
-make lint       # vulture + pyright — disabled until the backlog is cleared (see Makefile)
+make fmt        # ruff check --fix + ruff format over src/ tests/
+make lint       # ruff check + vulture + pyright (all clean; keep them that way)
 make tests      # CPU-only cfg-invariant and reward-function regression tests
 make precommit  # uv sync + all of the above; also installs itself as a pre-push hook
 make smoke      # 5-iteration / 64-env training run on a GPU — run before any long run
+make stubs      # regenerate typings/ after a mujoco or bam version bump
 ```
+
+`typings/` holds checked-in stubs for `mujoco` and `bam`, which ship no type
+information (mujoco is a C extension). Without them pyright sees `object` for
+`MjModel` and `Incomplete` for the BAM actuator. They are stubgen output plus a
+few hand-applied fixes, each marked with a comment in the `.pyi` — re-apply
+those after running `make stubs`.

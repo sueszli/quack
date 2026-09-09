@@ -45,28 +45,28 @@ assert KICK_FOOT in ("right", "left")
 ENABLE_SYMMETRY = False
 
 # ── Domain randomisation (matched to velocity / standup) ─────────────────────
-ENABLE_COM_RANDOMIZATION             = True
-ENABLE_HEAD_COM_RANDOMIZATION        = True
-ENABLE_KP_RANDOMIZATION              = False
-ENABLE_KD_RANDOMIZATION              = False
-ENABLE_MASS_INERTIA_RANDOMIZATION    = True
-ENABLE_JOINT_FRICTION_RANDOMIZATION  = True
-ENABLE_ARMATURE_RANDOMIZATION        = True
-ENABLE_VELOCITY_PUSHES               = True
+ENABLE_COM_RANDOMIZATION = True
+ENABLE_HEAD_COM_RANDOMIZATION = True
+ENABLE_KP_RANDOMIZATION = False
+ENABLE_KD_RANDOMIZATION = False
+ENABLE_MASS_INERTIA_RANDOMIZATION = True
+ENABLE_JOINT_FRICTION_RANDOMIZATION = True
+ENABLE_ARMATURE_RANDOMIZATION = True
+ENABLE_VELOCITY_PUSHES = True
 ENABLE_IMU_ORIENTATION_RANDOMIZATION = True
-ENABLE_ENCODER_BIAS                  = True
+ENABLE_ENCODER_BIAS = True
 
 # ── Ranges (matched to velocity / standup) ───────────────────────────────────
-COM_RANDOMIZATION_RANGE             = 0.003           # ramped to 0.015 via curriculum
-HEAD_COM_RANDOMIZATION_RANGE        = 0.003           # ramped to 0.01 via curriculum
-MASS_INERTIA_RANDOMIZATION_RANGE    = (0.95, 1.05)
-ARMATURE_RANDOMIZATION_RANGE        = (0.9, 1.1)
-JOINT_FRICTION_RANDOMIZATION_RANGE  = (0.9, 1.1)
-ENCODER_BIAS_RANGE                  = (-0.015, 0.015)
-KP_RANDOMIZATION_RANGE              = (0.85, 1.15)    # unused (kp DR off)
-KD_RANDOMIZATION_RANGE              = (0.9, 1.1)      # unused (kd DR off)
-VELOCITY_PUSH_INTERVAL_S            = (3.0, 6.0)
-VELOCITY_PUSH_RANGE                 = (-0.3, 0.3)     # ramped in via push curriculum
+COM_RANDOMIZATION_RANGE = 0.003  # ramped to 0.015 via curriculum
+HEAD_COM_RANDOMIZATION_RANGE = 0.003  # ramped to 0.01 via curriculum
+MASS_INERTIA_RANDOMIZATION_RANGE = (0.95, 1.05)
+ARMATURE_RANDOMIZATION_RANGE = (0.9, 1.1)
+JOINT_FRICTION_RANDOMIZATION_RANGE = (0.9, 1.1)
+ENCODER_BIAS_RANGE = (-0.015, 0.015)
+KP_RANDOMIZATION_RANGE = (0.85, 1.15)  # unused (kp DR off)
+KD_RANDOMIZATION_RANGE = (0.9, 1.1)  # unused (kd DR off)
+VELOCITY_PUSH_INTERVAL_S = (3.0, 6.0)
+VELOCITY_PUSH_RANGE = (-0.3, 0.3)  # ramped in via push curriculum
 IMU_ORIENTATION_RANDOMIZATION_ANGLE = 6.0
 
 # ── Task constants ────────────────────────────────────────────────────────────
@@ -81,7 +81,7 @@ BALL_RADIUS = 0.035
 # (0.08 ± 0.02 allowed spawn-penetration with the toe: the solver ejected the
 # ball at reset — free "kick" reward with no kick.)
 # The lateral sign follows the kicking foot (right = -y, left = +y).
-BALL_OFFSET_X     = 0.09
+BALL_OFFSET_X = 0.09
 BALL_OFFSET_ABS_Y = 0.042
 # Uniform ± placement noise per axis. This is the DR that makes the BLIND
 # policy's swing robust to real-world aiming error.
@@ -97,7 +97,7 @@ BALL_TARGET_SPEED = 1.0
 # Trunk standing height (measured natural equilibrium at HOME — see standup env).
 STAND_Z = 0.115
 
-_LEG_JOINTS  = [0, 1, 2, 3, 4, 9, 10, 11, 12, 13]
+_LEG_JOINTS = [0, 1, 2, 3, 4, 9, 10, 11, 12, 13]
 _NECK_JOINTS = [5, 6, 7, 8]
 
 from mjlab.envs import ManagerBasedRlEnvCfg
@@ -112,21 +112,21 @@ from mjlab.managers import (
 )
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.rl import (
-    RslRlOnPolicyRunnerCfg,
     RslRlModelCfg,
+    RslRlOnPolicyRunnerCfg,
 )
 from mjlab.sensor import ContactMatch, ContactSensorCfg
 from mjlab.tasks.velocity import mdp
 from mjlab.tasks.velocity.velocity_env_cfg import make_velocity_env_cfg
 from mjlab.utils.noise import UniformNoiseCfg as Unoise
 
+from . import task_mdp as microduck_mdp
 from .robot import (
     MICRODUCK_BALL_CFG,
     MICRODUCK_STANDUP_ROBOT_CFG,
 )
-from . import task_mdp as microduck_mdp
+from .task_symmetry import SYMMETRY_CFG, PpoWithSymmetryCfg
 from .task_velocity import HEAD_BODY_NAMES
-from .task_symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
 
 
 def make_microduck_ball_kick_env_cfg(
@@ -190,7 +190,7 @@ def make_microduck_ball_kick_env_cfg(
     # reset events write robot root state at qpos[:, 0:7]).
     cfg.scene.entities = {
         "robot": MICRODUCK_STANDUP_ROBOT_CFG,
-        "ball":  MICRODUCK_BALL_CFG,
+        "ball": MICRODUCK_BALL_CFG,
     }
     cfg.scene.sensors = (feet_ground_cfg, support_foot_ground_cfg, self_collision_cfg)
     cfg.viewer.body_name = "trunk_base"
@@ -214,8 +214,8 @@ def make_microduck_ball_kick_env_cfg(
         "foot_clearance",
         "foot_swing_height",
         "foot_slip",
-        "pose",           # gait-conditioned; replaced by pose_target_match below
-        "soft_landing",   # velocity removes it
+        "pose",  # gait-conditioned; replaced by pose_target_match below
+        "soft_landing",  # velocity removes it
     ]:
         if name in cfg.rewards:
             del cfg.rewards[name]
@@ -265,7 +265,7 @@ def make_microduck_ball_kick_env_cfg(
         params={
             "std": 0.5,
             "joint_indices": _LEG_JOINTS,
-            "target_overrides": None,   # HOME = standing
+            "target_overrides": None,  # HOME = standing
         },
     )
 
@@ -291,9 +291,9 @@ def make_microduck_ball_kick_env_cfg(
         func=microduck_mdp.height_target_gaussian,
         weight=1.0,
         params={
-            "std":           0.04,
+            "std": 0.04,
             "target_height": STAND_Z,
-            "asset_cfg":     SceneEntityCfg("robot", body_names=("trunk_base",)),
+            "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
         },
     )
 
@@ -313,7 +313,8 @@ def make_microduck_ball_kick_env_cfg(
     del cfg.observations["actor"].terms["base_lin_vel"]
 
     cfg.observations["critic"].terms["base_lin_vel"] = ObservationTermCfg(
-        func=mdp.base_lin_vel, scale=1.0,
+        func=mdp.base_lin_vel,
+        scale=1.0,
     )
     # No terrain-height sensor in this env (flat only) — drop the base
     # template's sensor-backed terms, like standup/ground-pick do.
@@ -322,12 +323,8 @@ def make_microduck_ball_kick_env_cfg(
     del cfg.observations["critic"].terms["height_scan"]
 
     gravity_term_name = "projected_gravity"
-    cfg.observations["actor"].terms[gravity_term_name] = deepcopy(
-        cfg.observations["actor"].terms[gravity_term_name]
-    )
-    cfg.observations["actor"].terms["base_ang_vel"] = deepcopy(
-        cfg.observations["actor"].terms["base_ang_vel"]
-    )
+    cfg.observations["actor"].terms[gravity_term_name] = deepcopy(cfg.observations["actor"].terms[gravity_term_name])
+    cfg.observations["actor"].terms["base_ang_vel"] = deepcopy(cfg.observations["actor"].terms["base_ang_vel"])
 
     # IMU obs delay — match velocity's 2026-07 audit values.
     cfg.observations["actor"].terms["base_ang_vel"].delay_min_lag = 0
@@ -338,10 +335,10 @@ def make_microduck_ball_kick_env_cfg(
     cfg.observations["actor"].terms[gravity_term_name].delay_update_period = 64
 
     # Obs noise — matched to the velocity env.
-    cfg.observations["actor"].terms["base_ang_vel"].noise    = Unoise(n_min=-0.03, n_max=0.03)
+    cfg.observations["actor"].terms["base_ang_vel"].noise = Unoise(n_min=-0.03, n_max=0.03)
     cfg.observations["actor"].terms[gravity_term_name].noise = Unoise(n_min=-0.01, n_max=0.01)
-    cfg.observations["actor"].terms["joint_pos"].noise       = Unoise(n_min=-0.001, n_max=0.001)
-    cfg.observations["actor"].terms["joint_vel"].noise       = Unoise(n_min=-0.25, n_max=0.25)
+    cfg.observations["actor"].terms["joint_pos"].noise = Unoise(n_min=-0.001, n_max=0.001)
+    cfg.observations["actor"].terms["joint_vel"].noise = Unoise(n_min=-0.25, n_max=0.25)
 
     # IMU mounting-misalignment DR (obs-level, actor only).
     if ENABLE_IMU_ORIENTATION_RANDOMIZATION:
@@ -353,9 +350,7 @@ def make_microduck_ball_kick_env_cfg(
         g.params = {"max_angle_deg": IMU_ORIENTATION_RANDOMIZATION_ANGLE}
 
     # 1-ctrl-step lag on joint_vel (Dynamixel moving-average, see velocity env).
-    cfg.observations["actor"].terms["joint_vel"] = deepcopy(
-        cfg.observations["actor"].terms["joint_vel"]
-    )
+    cfg.observations["actor"].terms["joint_vel"] = deepcopy(cfg.observations["actor"].terms["joint_vel"])
     cfg.observations["actor"].terms["joint_vel"].delay_min_lag = 1
     cfg.observations["actor"].terms["joint_vel"].delay_max_lag = 1
     cfg.observations["actor"].terms["joint_vel"].delay_update_period = 0
@@ -379,28 +374,32 @@ def make_microduck_ball_kick_env_cfg(
     # head/body zero-padded (no head/body pose control in this task).
     for group in ("actor", "critic"):
         cfg.observations[group].terms["head_command"] = ObservationTermCfg(
-            func=microduck_mdp.zero_command_padding, params={"dim": 4},
+            func=microduck_mdp.zero_command_padding,
+            params={"dim": 4},
         )
         cfg.observations[group].terms["body_command"] = ObservationTermCfg(
-            func=microduck_mdp.zero_command_padding, params={"dim": 6},
+            func=microduck_mdp.zero_command_padding,
+            params={"dim": 6},
         )
 
     # CRITIC-ONLY ball state (asymmetric actor-critic): the actor stays blind
     # to the ball (no ball sensing on the real robot), the critic uses it to
     # predict the kick payoff.
     cfg.observations["critic"].terms["ball_position"] = ObservationTermCfg(
-        func=microduck_mdp.ball_pos_in_base, params={"asset_name": "ball"},
+        func=microduck_mdp.ball_pos_in_base,
+        params={"asset_name": "ball"},
     )
     cfg.observations["critic"].terms["ball_velocity"] = ObservationTermCfg(
-        func=microduck_mdp.ball_vel_in_base, params={"asset_name": "ball"},
+        func=microduck_mdp.ball_vel_in_base,
+        params={"asset_name": "ball"},
     )
 
     # ── Command: tiny noise around zero (obs-shape parity only) ───────────────
-    command = cfg.commands["twist"]
+    command = microduck_mdp.twist_command_cfg(cfg)
     command.rel_standing_envs = 0.0
-    command.rel_heading_envs  = 0.0
-    command.heading_command   = False
-    command.ranges.heading    = None
+    command.rel_heading_envs = 0.0
+    command.heading_command = False
+    command.ranges.heading = None
     command.resampling_time_range = (EPISODE_LENGTH_S, EPISODE_LENGTH_S * 2)
     command.debug_vis = False
     command.ranges.lin_vel_x = (-0.01, 0.01)
@@ -438,13 +437,13 @@ def make_microduck_ball_kick_env_cfg(
         func=microduck_mdp.set_random_ground_state,
         mode="reset",
         params={
-            "face_down_prob":   0.0,
-            "face_up_prob":     0.0,
-            "sitting_prob":     0.0,
-            "standing_prob":    1.0,
+            "face_down_prob": 0.0,
+            "face_up_prob": 0.0,
+            "sitting_prob": 0.0,
+            "standing_prob": 1.0,
             "sitting_tilt_max": math.radians(5),  # ±5° pitch/roll on the stand
-            "standing_z_min":   0.11,
-            "standing_z_max":   0.12,
+            "standing_z_min": 0.11,
+            "standing_z_max": 0.12,
         },
     )
 
@@ -456,10 +455,10 @@ def make_microduck_ball_kick_env_cfg(
         func=microduck_mdp.reset_ball_in_front_of_foot,
         mode="reset",
         params={
-            "offset":      (BALL_OFFSET_X, ball_offset_y),
-            "noise_xy":    BALL_POS_NOISE_XY,
+            "offset": (BALL_OFFSET_X, ball_offset_y),
+            "noise_xy": BALL_POS_NOISE_XY,
             "ball_radius": BALL_RADIUS,
-            "asset_name":  "ball",
+            "asset_name": "ball",
         },
     )
 
@@ -547,8 +546,10 @@ def make_microduck_ball_kick_env_cfg(
         )
 
     # ── Terrain: flat only (a ball on rough terrain is a different task) ──────
-    cfg.scene.terrain.terrain_type = "plane"
-    cfg.scene.terrain.terrain_generator = None
+    terrain = cfg.scene.terrain
+    assert terrain is not None
+    terrain.terrain_type = "plane"
+    terrain.terrain_generator = None
 
     # ── Curriculum ────────────────────────────────────────────────────────────
     del cfg.curriculum["terrain_levels"]
@@ -561,14 +562,14 @@ def make_microduck_ball_kick_env_cfg(
     cfg.curriculum["action_rate_weight"] = CurriculumTermCfg(
         func=microduck_mdp.reward_weight,
         params={
-            "reward_name":   "action_rate_l2",
+            "reward_name": "action_rate_l2",
             "weight_stages": [
-                {"step": 0,          "weight": -0.1},
-                {"step": 500 * 24,   "weight": -0.2},
-                {"step": 750 * 24,   "weight": -0.4},
-                {"step": 1000 * 24,  "weight": -0.6},
-                {"step": 1250 * 24,  "weight": -0.8},
-                {"step": 1500 * 24,  "weight": -1.0},
+                {"step": 0, "weight": -0.1},
+                {"step": 500 * 24, "weight": -0.2},
+                {"step": 750 * 24, "weight": -0.4},
+                {"step": 1000 * 24, "weight": -0.6},
+                {"step": 1250 * 24, "weight": -0.8},
+                {"step": 1500 * 24, "weight": -1.0},
             ],
         },
     )
@@ -579,8 +580,8 @@ def make_microduck_ball_kick_env_cfg(
             params={
                 "event_name": "randomize_com",
                 "range_stages": [
-                    {"step": 0,         "range": 0.003},
-                    {"step": 500 * 24,  "range": 0.005},
+                    {"step": 0, "range": 0.003},
+                    {"step": 500 * 24, "range": 0.005},
                     {"step": 1000 * 24, "range": 0.01},
                     {"step": 1500 * 24, "range": 0.015},
                 ],
@@ -593,8 +594,8 @@ def make_microduck_ball_kick_env_cfg(
             params={
                 "event_name": "randomize_head_com",
                 "range_stages": [
-                    {"step": 0,         "range": 0.003},
-                    {"step": 500 * 24,  "range": 0.005},
+                    {"step": 0, "range": 0.003},
+                    {"step": 500 * 24, "range": 0.005},
                     {"step": 1000 * 24, "range": 0.01},
                 ],
             },
@@ -609,8 +610,8 @@ def make_microduck_ball_kick_env_cfg(
             params={
                 "event_name": "push_robot",
                 "push_stages": [
-                    {"step": 0,         "velocity_range": {"x": (0.0, 0.0),    "y": (0.0, 0.0)}},
-                    {"step": 500 * 24,  "velocity_range": {"x": (-0.08, 0.08), "y": (-0.08, 0.08)}},
+                    {"step": 0, "velocity_range": {"x": (0.0, 0.0), "y": (0.0, 0.0)}},
+                    {"step": 500 * 24, "velocity_range": {"x": (-0.08, 0.08), "y": (-0.08, 0.08)}},
                     {"step": 1000 * 24, "velocity_range": {"x": VELOCITY_PUSH_RANGE, "y": VELOCITY_PUSH_RANGE}},
                 ],
             },

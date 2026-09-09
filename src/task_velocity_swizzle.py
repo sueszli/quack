@@ -61,7 +61,7 @@ def make_microduck_velocity_swizzle_env_cfg(play: bool = False) -> ManagerBasedR
     cfg.rewards["wheel_speed"].params["bidirectional"] = True
     if "braking" in cfg.rewards:
         del cfg.rewards["braking"]
-    cfg.commands["twist"].ranges.lin_vel_x = (-0.6, 0.6)
+    microduck_mdp.twist_command_cfg(cfg).ranges.lin_vel_x = (-0.6, 0.6)
 
     # --- Heading curriculum: go STRAIGHT first, then FOLLOW a commanded direction ---
     # The stride env disabled heading (ang_vel_z=(0,0), heading_hold, no heading_tracking).
@@ -74,7 +74,7 @@ def make_microduck_velocity_swizzle_env_cfg(play: bool = False) -> ManagerBasedR
     # violently — had to run --max-angular-vel 0.3 to tame it). It can still reach any
     # heading (the error just saturates at 0.5), so it turns fully but smoothly, and
     # the heading_tracking weight stays 3.0 so it still follows direction well.
-    cfg.commands["twist"].ranges.ang_vel_z = (-0.5, 0.5)
+    microduck_mdp.twist_command_cfg(cfg).ranges.ang_vel_z = (-0.5, 0.5)
 
     cfg.rewards["heading_tracking"] = RewardTermCfg(
         func=microduck_mdp.heading_tracking_reward,
@@ -87,10 +87,10 @@ def make_microduck_velocity_swizzle_env_cfg(play: bool = False) -> ManagerBasedR
         params={
             "reward_name": "heading_hold",
             "weight_stages": [
-                {"step": 0,          "weight": 1.0},   # must match heading_hold's initial weight
-                {"step": 1000 * 24,  "weight": 1.0},   # hold straight while the swizzle solidifies
-                {"step": 1750 * 24,  "weight": 0.5},
-                {"step": 2500 * 24,  "weight": 0.0},
+                {"step": 0, "weight": 1.0},  # must match heading_hold's initial weight
+                {"step": 1000 * 24, "weight": 1.0},  # hold straight while the swizzle solidifies
+                {"step": 1750 * 24, "weight": 0.5},
+                {"step": 2500 * 24, "weight": 0.0},
             ],
         },
     )
@@ -99,10 +99,10 @@ def make_microduck_velocity_swizzle_env_cfg(play: bool = False) -> ManagerBasedR
         params={
             "reward_name": "heading_tracking",
             "weight_stages": [
-                {"step": 0,          "weight": 0.0},
-                {"step": 1000 * 24,  "weight": 0.0},   # straight-only until here
-                {"step": 1750 * 24,  "weight": 1.5},
-                {"step": 2500 * 24,  "weight": 3.0},
+                {"step": 0, "weight": 0.0},
+                {"step": 1000 * 24, "weight": 0.0},  # straight-only until here
+                {"step": 1750 * 24, "weight": 1.5},
+                {"step": 2500 * 24, "weight": 3.0},
             ],
         },
     )
@@ -114,9 +114,9 @@ def make_microduck_velocity_swizzle_env_cfg(play: bool = False) -> ManagerBasedR
     cfg.commands["head_pose"] = microduck_mdp.UniformPoseCommandCfg(
         resampling_time_range=(2.0, 5.0),
         ranges=(
-            (-0.05, 0.05),    # neck_pitch
-            (-0.05, 0.05),    # head_pitch
-            (-0.07, 0.07),    # head_yaw
+            (-0.05, 0.05),  # neck_pitch
+            (-0.05, 0.05),  # head_pitch
+            (-0.07, 0.07),  # head_yaw
             (-0.015, 0.015),  # head_roll (tighter — small mechanical range)
         ),
     )
@@ -147,14 +147,9 @@ def make_microduck_velocity_swizzle_env_cfg(play: bool = False) -> ManagerBasedR
         if std_key in cfg.rewards["pose"].params:
             std_dict = cfg.rewards["pose"].params[std_key]
             # Keep only leg joint patterns (filter out neck, head, passive)
-            cfg.rewards["pose"].params[std_key] = {
-                k: v for k, v in std_dict.items()
-                if "neck" not in k and "head" not in k and "passive" not in k
-            }
+            cfg.rewards["pose"].params[std_key] = {k: v for k, v in std_dict.items() if "neck" not in k and "head" not in k and "passive" not in k}
     # Scope asset_cfg to LEG joints only (excludes neck, head, passive wheels)
-    cfg.rewards["pose"].params["asset_cfg"] = SceneEntityCfg(
-        "robot", joint_names=(r"^(?!passive_|.*neck.*|.*head.*).*",)
-    )
+    cfg.rewards["pose"].params["asset_cfg"] = SceneEntityCfg("robot", joint_names=(r"^(?!passive_|.*neck.*|.*head.*).*",))
 
     # head_pose_tracking ramps 0 -> 4.0, staying 0 until ~1500 it. (swizzle solid),
     # so head control is added on top of a stable swizzle.
@@ -163,10 +158,10 @@ def make_microduck_velocity_swizzle_env_cfg(play: bool = False) -> ManagerBasedR
         params={
             "reward_name": "head_pose_tracking",
             "weight_stages": [
-                {"step": 0,          "weight": 0.0},   # must match initial weight
-                {"step": 1500 * 24,  "weight": 0.0},   # head off while swizzle solidifies
-                {"step": 2250 * 24,  "weight": 2.0},
-                {"step": 3000 * 24,  "weight": 4.0},
+                {"step": 0, "weight": 0.0},  # must match initial weight
+                {"step": 1500 * 24, "weight": 0.0},  # head off while swizzle solidifies
+                {"step": 2250 * 24, "weight": 2.0},
+                {"step": 3000 * 24, "weight": 4.0},
             ],
         },
     )
@@ -179,10 +174,10 @@ def make_microduck_velocity_swizzle_env_cfg(play: bool = False) -> ManagerBasedR
             "command_name": "head_pose",
             "range_stages": [
                 # step,               ((neck_pitch), (head_pitch), (head_yaw),  (head_roll))
-                {"step": 0,          "ranges": ((-0.05, 0.05), (-0.05, 0.05), (-0.07, 0.07), (-0.015, 0.015))},
-                {"step": 1500 * 24,  "ranges": ((-0.05, 0.05), (-0.05, 0.05), (-0.07, 0.07), (-0.015, 0.015))},
-                {"step": 2250 * 24,  "ranges": ((-0.55, 0.55), (-0.55, 0.55), (-0.70, 0.70), (-0.15, 0.15))},
-                {"step": 3000 * 24,  "ranges": ((-1.10, 1.10), (-1.10, 1.10), (-1.40, 1.40), (-0.31, 0.31))},
+                {"step": 0, "ranges": ((-0.05, 0.05), (-0.05, 0.05), (-0.07, 0.07), (-0.015, 0.015))},
+                {"step": 1500 * 24, "ranges": ((-0.05, 0.05), (-0.05, 0.05), (-0.07, 0.07), (-0.015, 0.015))},
+                {"step": 2250 * 24, "ranges": ((-0.55, 0.55), (-0.55, 0.55), (-0.70, 0.70), (-0.15, 0.15))},
+                {"step": 3000 * 24, "ranges": ((-1.10, 1.10), (-1.10, 1.10), (-1.40, 1.40), (-0.31, 0.31))},
             ],
         },
     )
