@@ -6,7 +6,7 @@ wheels/
 *.egg-info
 .python-version
 .venv
-# `--agent.logger wandb` is still selectable (wandb ships with mjlab) and writes ./wandb/.
+# `--agent.logger wandb` still works and writes ./wandb/.
 wandb
 logs
 agents
