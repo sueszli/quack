@@ -48,8 +48,7 @@ wheels; export UV_HTTP_TIMEOUT=600 so uv's 30 s default does not abort it.
         --kind episodic --duration-s 4.0
     # drive the exported policy in CPU MuJoCo with the keyboard
     uv run infer --walking out.onnx
-    # CPU-only test suite
-    uv run --with pytest pytest tests/
+    uv run --with pytest pytest tests/            # CPU-only test suite (see TESTS)
 
 Smoke test before every long run (64 envs / 5 iters catches ~95% of cfg errors):
 
@@ -64,8 +63,6 @@ Remote GPU viewer: `ssh -L 8080:localhost:8080 USER@HOST`, then
 `uv run play ... --viewer viser --num-envs 1`, open http://localhost:8080
 locally and keep the SSH session open.
 
-Make targets: `make fmt` (ruff format), `make lint`, `make tests`,
-`make smoke`, `make precommit` (sync + pre-push hook + tests).
 
 
 ================================================================================
@@ -273,6 +270,23 @@ existing .onnx in the repo without --force. Repos are created private;
 Only constant-command policies are publishable this way. Phase-driven moves
 (the ground pick) and the posture-flag sit<->stand are driven by the daemon
 itself and live in the official set, pollen-robotics/microduck-policies.
+
+
+================================================================================
+TESTS
+================================================================================
+
+CPU-only cfg-invariant and reward regression tests; no GPU needed.
+
+    uv run --with pytest pytest tests/
+
+Make targets:
+
+    make fmt        ruff format
+    make lint       ruff check
+    make tests      the test suite
+    make smoke      64-env / 5-iter smoke test
+    make precommit  sync + pre-push hook + tests
 
 
 ================================================================================
