@@ -53,6 +53,38 @@ target-version = "py312"
 # a collection wraps only when it genuinely cannot fit on one line.
 skip-magic-trailing-comma = true
 
+[tool.ruff.lint]
+# Rules switched off deliberately, with the reason. Everything not listed here
+# is expected to pass, so `make lint` can gate.
+ignore = [
+    # mjlab's config idiom: `asset_cfg: SceneEntityCfg = SceneEntityCfg("robot", ...)`
+    # as a parameter default. Every mdp function in task_mdp.py is written this
+    # way (see also _DEFAULT_ASSET_CFG, aliased by 121 functions), so this is
+    # the framework's shape, not something to refactor per-function.
+    #
+    # NB these defaults ARE mutable and mjlab DOES mutate them: SceneEntityCfg
+    # is a non-frozen dataclass, and ManagerBase._resolve_common_term_cfg calls
+    # `value.resolve(scene)` on every SceneEntityCfg in a term's params, filling
+    # in joint/body ids in place. In practice mjlab resolves the cfg objects
+    # held in term params rather than the function defaults, and resolution is
+    # idempotent per scene. Ignoring B008 is a decision to live with mjlab's
+    # idiom, NOT a claim that these defaults are immutable.
+    "B008",
+    # `except Exception` around optional monkey-patches and hardware/IO paths
+    # (task_mdp.py Patch 4, infer.py, sim_body_server.py). These are deliberate
+    # best-effort guards: narrowing them changes runtime failure modes on the
+    # robot for no correctness gain.
+    "BLE001",
+    "S110",
+    # Nested `if hasattr(env, "_x"): if "sensor" in env.scene.sensors:` reads as
+    # two distinct preconditions (state exists / sensor is wired). Collapsing
+    # them into one `and` obscures that.
+    "SIM102",
+    # Class-level constant lookup tables (e.g. infer.py `_ARROWS`) are never
+    # mutated; ClassVar annotations everywhere would be noise.
+    "RUF012",
+]
+
 [tool.ruff.lint.isort]
 # Must match format.skip-magic-trailing-comma, else isort and the formatter
 # disagree about trailing commas in import blocks.
