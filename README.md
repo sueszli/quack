@@ -239,9 +239,12 @@ Only constant-command policies are publishable this way. Phase-driven moves
 (the ground pick) and the posture-flag sit↔stand are driven by the daemon
 itself and live in the official set, `pollen-robotics/microduck-policies`.
 
-## Tests
+## Development
 
 ```bash
-uv run --with pytest pytest tests/
+make fmt        # ruff format over src/ tests/ (ruff check is TODO, see Makefile)
+make lint       # vulture + pyright — disabled until the backlog is cleared (see Makefile)
+make tests      # CPU-only cfg-invariant and reward-function regression tests
+make precommit  # uv sync + all of the above; also installs itself as a pre-push hook
+make smoke      # 5-iteration / 64-env training run on a GPU — run before any long run
 ```
-
