@@ -41,16 +41,17 @@
 
 from __future__ import annotations
 
-import argparse
 import json
 import socket
 import socketserver
 import threading
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 import mujoco
 import numpy as np
+import tyro
 
 from .robot import MJCF_DIR
 from .sim_camera import FPS as CAMERA_FPS
@@ -467,19 +468,34 @@ def run(world: World, headless: bool) -> None:
             viewer.close()
 
 
+@dataclass(frozen=True)
+class ServerConfig:
+    """A microduck body in MuJoCo, served to the real `robotd` over TCP."""
+
+    # the scene XML to load
+    scene: Path = DEFAULT_SCENE
+    # how many, sharing one world
+    ducks: int = 1
+    # address the duck servers bind on
+    host: str = "127.0.0.1"
+    # the first duck's port; +1 each
+    port: int = 7801
+    # no viewer window
+    headless: bool = False
+    # which ducks render a head camera, by letter — `a`, `a,c`, or `all`. Opt in, because a rendered frame costs 12 ms and four cameras is most of a core; four ducks without them is nothing. Each becomes a frame port at --frame-port + its index
+    cameras: str = ""
+    # the first camera's port
+    frame_port: int = 7901
+    # frames a second each camera serves
+    camera_fps: int = CAMERA_FPS
+    # start with no torque, so a duck collapses where it stands — a robot found on the floor, which is what `robotd`'s seated-boot path is for
+    limp: bool = False
+    # where to start. SIT is a duck folded on the floor, which is stable while it waits and which the standing policy rises from on its own. HOME is infer.py's placement — home pose, trunk 0.125 m, upright — and STAND and FOLD are the scene's other poses
+    keyframe: str = "SIT"
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="A microduck body in MuJoCo, served to the real `robotd` over TCP.")
-    parser.add_argument("--scene", type=Path, default=DEFAULT_SCENE)
-    parser.add_argument("--ducks", type=int, default=1, help="how many, sharing one world")
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=7801, help="the first duck's port; +1 each")
-    parser.add_argument("--headless", action="store_true", help="no viewer window")
-    parser.add_argument("--cameras", default="", help="which ducks render a head camera, by letter — `a`, `a,c`, or `all`. Opt in, because a rendered frame costs 12 ms and four cameras is most of a core; four ducks without them is nothing. Each becomes a frame port at --frame-port + its index")
-    parser.add_argument("--frame-port", type=int, default=7901, help="the first camera's port")
-    parser.add_argument("--camera-fps", type=int, default=CAMERA_FPS)
-    parser.add_argument("--limp", action="store_true", help="start with no torque, so a duck collapses where it stands — a robot found on the floor, which is what `robotd`'s seated-boot path is for")
-    parser.add_argument("--keyframe", default="SIT", help="where to start. SIT is a duck folded on the floor, which is stable while it waits and which the standing policy rises from on its own. HOME is infer.py's placement — home pose, trunk 0.125 m, upright — and STAND and FOLD are the scene's other poses")
-    args = parser.parse_args()
+    args = tyro.cli(ServerConfig)
 
     if not args.scene.exists():
         raise SystemExit(f"no scene at {args.scene}. Available:\n  " + "\n  ".join(sorted(p.name for p in SCENES.glob("scene*.xml"))))

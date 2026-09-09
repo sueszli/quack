@@ -1,6 +1,5 @@
 # Run ONNX policy inference in CPU MuJoCo with rendering (`uv run infer`).
 
-import argparse
 import csv
 import math
 import os
@@ -12,12 +11,15 @@ import termios
 import threading
 import time
 import tty
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Annotated
 
 import mujoco
 import mujoco.viewer
 import numpy as np
 import onnxruntime as ort
+import tyro
 
 import src.utils  # noqa: F401
 
@@ -853,50 +855,87 @@ class PolicyInference:
             self.data.ctrl[:] = target_positions
 
 
+@dataclass(frozen=True)
+class InferConfig:
+    """Run ONNX policy inference in CPU MuJoCo with rendering."""
+
+    # Use roller skate robot XML (robot_walk_rollers.xml)
+    roller: bool = False
+    # Path to a scene XML, overriding the default pick (e.g. assets/mjcf/scene_allcollisions.xml)
+    scene: str | None = None
+    # Path to walking policy ONNX file
+    walking: str | None = None
+    # Path to standing policy ONNX file
+    standing: Annotated[str | None, tyro.conf.arg(aliases=["-s"])] = None
+    # Path to ground pick policy ONNX file (press G to activate)
+    ground_pick: str | None = None
+    # Path to OLD one-way sitting policy ONNX file (press Y to sit, Y again switches back to standing/walking policy)
+    sit: str | None = None
+    # Path to sitstand policy ONNX (commanded sit<->stand; press Y to sit, Y again the SAME policy stands back up). Requires --new-cmd-obs. Can run standalone.
+    sitstand: str | None = None
+    # Path to slope policy ONNX file (press Y to toggle)
+    slope: str | None = None
+    # Path to LEFT-foot ball kick policy ONNX (press K to trigger). Requires --new-cmd-obs. Loads a scene with a ball.
+    kick_left: str | None = None
+    # Path to RIGHT-foot ball kick policy ONNX (press L to trigger). Requires --new-cmd-obs. Loads a scene with a ball.
+    kick_right: str | None = None
+    # Path to roulade (forward roll) policy ONNX (press R to trigger). Requires --new-cmd-obs.
+    roulade: str | None = None
+    # Seconds a kick policy stays active before handing back to standing/walking
+    kick_duration: float = 3.0
+    # Seconds the roulade policy stays active before handing back to standing/walking
+    roulade_duration: float = 2.0
+    # Initial linear velocity X command (m/s)
+    lin_vel_x: float = 0.0
+    # Initial linear velocity Y command (m/s)
+    lin_vel_y: float = 0.0
+    # Initial angular velocity Z command (rad/s)
+    ang_vel_z: float = 0.0
+    # Action scale
+    action_scale: float = 1.0
+    # Use raw accelerometer instead of projected gravity
+    raw_accelerometer: bool = False
+    # Enable actuator delay: --delay MIN MAX or --delay LAG
+    delay: list[int] | None = None
+    # Print observations and actions
+    debug: bool = False
+    # Save observations and actions to CSV file
+    save_csv: str | None = None
+    # Enable recording mode: save observations to pickle file on Ctrl+C
+    record: str | None = None
+    # Vel command magnitude threshold for walking/standing switch
+    switch_threshold: float = 0.05
+    # Ground pick phase period in seconds
+    ground_pick_period: float = 4.0
+    # Use the unified 13D command obs layout (twist+head_pose+body_pose). Required for policies trained with the new pose-command-tracking setup. Old policies (51D obs, head_offset added to ctrl) need this flag OFF.
+    new_cmd_obs: bool = False
+    # Use the XML MuJoCo position actuators instead of the BAM M6 voltage/friction model the policies are trained against.
+    no_bam: bool = False
+    # BAM battery voltage [V]. Training samples per-env in BAM_VIN_RANGE; 7.4 = nominal 2S LiPo.
+    vin: float = 7.4
+    # BAM load-dependent voltage sag gain [V/Nm], V = vin - gain*sum|tau|. Training samples per-env in BAM_VIN_DROP_GAIN_RANGE. 0 disables.
+    vin_drop_gain: float = 0.1
+    # BAM firmware P-gain (training uses this default).
+    kp_fw: float = BAM_KP_FW
+    # XL330 firmware current limit [A]. With BAM this is the duty-cycle limiter of the voltage model (as bam models it); with --no-bam the actuator force is clipped to +/- current_limit * kt. Training runs WITHOUT a current limit, so the default is off (<=0).
+    current_limit: float = 0.0
+    # Override the foot sliding friction (mu) to emulate the real grippy PU sole. Training used mu~1.0 (range 0.7-1.3); real PU is likely ~1.5-2.5. e.g. --foot-friction 2.0
+    foot_friction: float | None = None
+    # Soften foot contact: solref time constant (s) for the foot geoms (default sim ~0.02 = stiff/rigid). Larger = softer, to emulate the compliant PU sole. e.g. --foot-solref 0.04
+    foot_solref: float | None = None
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Run ONNX policy in MuJoCo")
-    parser.add_argument("--roller", action="store_true", help="Use roller skate robot XML (robot_walk_rollers.xml)")
-    parser.add_argument("--scene", type=str, default=None, help="Path to a scene XML, overriding the default pick (e.g. assets/mjcf/scene_allcollisions.xml)")
-    parser.add_argument("--walking", type=str, default=None, help="Path to walking policy ONNX file")
-    parser.add_argument("--standing", "-s", type=str, default=None, help="Path to standing policy ONNX file")
-    parser.add_argument("--ground-pick", type=str, default=None, help="Path to ground pick policy ONNX file (press G to activate)")
-    parser.add_argument("--sit", type=str, default=None, help="Path to OLD one-way sitting policy ONNX file (press Y to sit, Y again switches back to standing/walking policy)")
-    parser.add_argument("--sitstand", type=str, default=None, help="Path to sitstand policy ONNX (commanded sit<->stand; press Y to sit, Y again the SAME policy stands back up). Requires --new-cmd-obs. Can run standalone.")
-    parser.add_argument("--slope", type=str, default=None, help="Path to slope policy ONNX file (press Y to toggle)")
-    parser.add_argument("--kick-left", type=str, default=None, help="Path to LEFT-foot ball kick policy ONNX (press K to trigger). Requires --new-cmd-obs. Loads a scene with a ball.")
-    parser.add_argument("--kick-right", type=str, default=None, help="Path to RIGHT-foot ball kick policy ONNX (press L to trigger). Requires --new-cmd-obs. Loads a scene with a ball.")
-    parser.add_argument("--roulade", type=str, default=None, help="Path to roulade (forward roll) policy ONNX (press R to trigger). Requires --new-cmd-obs.")
-    parser.add_argument("--kick-duration", type=float, default=3.0, help="Seconds a kick policy stays active before handing back to standing/walking (default: 3.0)")
-    parser.add_argument("--roulade-duration", type=float, default=2.0, help="Seconds the roulade policy stays active before handing back to standing/walking (default: 2.0, ~the roll itself; the standing/walking policy takes over for the settle)")
-    parser.add_argument("--lin-vel-x", type=float, default=0.0, help="Initial linear velocity X command (m/s)")
-    parser.add_argument("--lin-vel-y", type=float, default=0.0, help="Initial linear velocity Y command (m/s)")
-    parser.add_argument("--ang-vel-z", type=float, default=0.0, help="Initial angular velocity Z command (rad/s)")
-    parser.add_argument("--action-scale", type=float, default=1.0, help="Action scale (default: 1.0)")
-    parser.add_argument("--raw-accelerometer", action="store_true", help="Use raw accelerometer instead of projected gravity")
-    parser.add_argument("--delay", type=int, nargs="*", default=None, help="Enable actuator delay: --delay MIN MAX or --delay LAG")
-    parser.add_argument("--debug", action="store_true", help="Print observations and actions")
-    parser.add_argument("--save-csv", type=str, default=None, help="Save observations and actions to CSV file")
-    parser.add_argument("--record", type=str, default=None, help="Enable recording mode: save observations to pickle file on Ctrl+C")
-    parser.add_argument("--switch-threshold", type=float, default=0.05, help="Vel command magnitude threshold for walking/standing switch (default: 0.05)")
-    parser.add_argument("--ground-pick-period", type=float, default=4.0, help="Ground pick phase period in seconds (default: 4.0)")
-    parser.add_argument("--new-cmd-obs", action="store_true", help="Use the unified 13D command obs layout (twist+head_pose+body_pose). Required for policies trained with the new pose-command-tracking setup. Old policies (51D obs, head_offset added to ctrl) need this flag OFF.")
-    parser.add_argument("--no-bam", action="store_true", help="Use the XML MuJoCo position actuators instead of the BAM M6 voltage/friction model the policies are trained against.")
-    parser.add_argument("--vin", type=float, default=7.4, help=f"BAM battery voltage [V]. Training samples per-env in {BAM_VIN_RANGE}; 7.4 = nominal 2S LiPo.")
-    parser.add_argument("--vin-drop-gain", type=float, default=0.1, help=f"BAM load-dependent voltage sag gain [V/Nm], V = vin - gain*sum|tau|. Training samples per-env in {BAM_VIN_DROP_GAIN_RANGE}. 0 disables.")
-    parser.add_argument("--kp-fw", type=float, default=BAM_KP_FW, help="BAM firmware P-gain (training uses %(default)s).")
-    parser.add_argument("--current-limit", type=float, default=0.0, help="XL330 firmware current limit [A]. With BAM this is the duty-cycle limiter of the voltage model (as bam models it); with --no-bam the actuator force is clipped to +/- current_limit * kt. Training runs WITHOUT a current limit, so the default is off (<=0).")
-    parser.add_argument("--foot-friction", type=float, default=None, help="Override the foot sliding friction (mu) to emulate the real grippy PU sole. Training used mu~1.0 (range 0.7-1.3); real PU is likely ~1.5-2.5. e.g. --foot-friction 2.0")
-    parser.add_argument("--foot-solref", type=float, default=None, help="Soften foot contact: solref time constant (s) for the foot geoms (default sim ~0.02 = stiff/rigid). Larger = softer, to emulate the compliant PU sole. e.g. --foot-solref 0.04")
-    args = parser.parse_args()
+    args = tyro.cli(InferConfig)
 
     if not args.walking and not args.standing and not args.sitstand:
-        parser.error("At least one of --walking, --standing or --sitstand must be provided")
+        raise SystemExit("At least one of --walking, --standing or --sitstand must be provided")
     if args.sitstand and not args.new_cmd_obs:
-        parser.error("--sitstand policies use the unified 13D command obs (61D); add --new-cmd-obs")
+        raise SystemExit("--sitstand policies use the unified 13D command obs (61D); add --new-cmd-obs")
     if (args.kick_left or args.kick_right or args.roulade) and not args.new_cmd_obs:
-        parser.error("--kick-left/--kick-right/--roulade policies use the unified 13D command obs (61D); add --new-cmd-obs")
+        raise SystemExit("--kick-left/--kick-right/--roulade policies use the unified 13D command obs (61D); add --new-cmd-obs")
     if (args.kick_left or args.kick_right or args.roulade) and args.roller:
-        parser.error("kick/roulade policies are trained on the walking robot, not the roller model")
+        raise SystemExit("kick/roulade policies are trained on the walking robot, not the roller model")
 
     # Parse delay arguments
     delay_min_lag = 0
