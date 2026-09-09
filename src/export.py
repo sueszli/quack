@@ -31,7 +31,7 @@ from rsl_rl.runners import OnPolicyRunner
 @dataclass(frozen=True)
 class ExportConfig:
     onnx_file: str = "output.onnx"
-    agent: Literal["zero", "random", "trained"] = "trained"
+    agent: Literal["untrained", "trained"] = "trained"
     registry_name: str | None = None
     wandb_run_path: str | None = None
     checkpoint: int | None = None  # Select checkpoint by iteration number (e.g. 3000)
@@ -75,7 +75,7 @@ def run_export(task_id: str, cfg: ExportConfig) -> ExportResult:
     env_cfg = load_env_cfg(task_id, play=True)
     agent_cfg = load_rl_cfg(task_id)
 
-    DUMMY_MODE = cfg.agent in {"zero", "random"}
+    DUMMY_MODE = cfg.agent == "untrained"
     TRAINED_MODE = not DUMMY_MODE
 
     # Check if this is a motion tracking task.
@@ -189,29 +189,12 @@ def run_export(task_id: str, cfg: ExportConfig) -> ExportResult:
         env = VideoRecorder(env, video_folder=log_dir / "videos" / "play", step_trigger=lambda step: step == 0, video_length=cfg.video_length, disable_logger=True)
 
     env = RslRlVecEnvWrapper(env, clip_actions=agent_cfg.clip_actions)
-    if DUMMY_MODE:
-        action_shape: tuple[int, ...] = env.unwrapped.action_space.shape  # type: ignore
-        if cfg.agent == "zero":
-
-            class PolicyZero:
-                def __call__(self, obs) -> torch.Tensor:
-                    del obs
-                    return torch.zeros(action_shape, device=env.unwrapped.device)
-
-            policy = PolicyZero()
-        else:
-
-            class PolicyRandom:
-                def __call__(self, obs) -> torch.Tensor:
-                    del obs
-                    return 2 * torch.rand(action_shape, device=env.unwrapped.device) - 1
-
-            policy = PolicyRandom()
-    else:
-        runner_cls = load_runner_cls(task_id) or OnPolicyRunner
-        runner = runner_cls(env, asdict(agent_cfg), device=device)
+    runner_cls = load_runner_cls(task_id) or OnPolicyRunner
+    runner = runner_cls(env, asdict(agent_cfg), device=device)
+    if TRAINED_MODE:
         runner.load(str(resume_path), map_location=device)
-        policy = runner.get_inference_policy(device=device)
+    else:
+        print("[WARN] --agent untrained: random-init weights. A shape fixture only — NOT deployable, and `publish` will refuse it.")
 
     # mjlab 1.3.0: ONNX export + metadata moved to mjlab.rl.exporter_utils and
     # the runner's built-in export_policy_to_onnx. Observation normalization is
@@ -228,6 +211,8 @@ def run_export(task_id: str, cfg: ExportConfig) -> ExportResult:
     runner.export_policy_to_onnx(path, filename)
 
     metadata = get_base_metadata(runner.env.unwrapped, run_path=cfg.checkpoint_file)
+    if DUMMY_MODE:
+        metadata["untrained"] = "true"
     attach_metadata_to_onnx(onnx_path, metadata)
 
     print(f"Written {onnx_path}")

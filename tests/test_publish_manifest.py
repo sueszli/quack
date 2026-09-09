@@ -41,6 +41,23 @@ def _tiny_policy(path: Path, obs_len: int = m.OBS_LEN, action_len: int = m.ACTIO
     return path
 
 
+def test_an_untrained_export_is_refused(tmp_path):
+    path = _tiny_policy(tmp_path / "policy.onnx")
+    model = onnx.load(str(path))
+    model.metadata_props.append(onnx.StringStringEntryProto(key="untrained", value="true"))
+    onnx.save(model, str(path))
+
+    assert m.is_untrained_onnx(path)
+    with pytest.raises(m.ManifestError, match="untrained"):
+        m.check_onnx(path)
+
+
+def test_a_normal_export_is_not_flagged_untrained(tmp_path):
+    path = _tiny_policy(tmp_path / "policy.onnx")
+    assert not m.is_untrained_onnx(path)
+    assert m.check_onnx(path).obs_len == m.OBS_LEN
+
+
 # -- the numbers the daemon refuses on -------------------------------------------------------
 
 
