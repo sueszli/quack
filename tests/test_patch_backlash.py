@@ -1,19 +1,3 @@
-"""``assets/mjcf/patch_backlash.py`` generates the committed
-``robot_*_backlash.xml`` models by patching the onshape-to-robot export.
-
-The models are committed, so nothing normally re-runs the script — a regression
-would only surface on the next Onshape re-export, months later. These tests
-pin the generator against those committed artifacts.
-
-The input is the NON-backlash sibling export (``robot_walk.xml`` for
-``robot_walk_backlash.xml``). That is a genuinely independent input: each
-``config_mjcf_<m>_backlash.json`` is identical to ``config_mjcf_<m>.json``
-apart from appending the patch_backlash.py post_import_command, so the sibling
-is exactly what the backlash pipeline feeds to the script. Reconstructing an
-input by stripping backlash artifacts out of the committed output instead would
-be self-confirming.
-"""
-
 import math
 import re
 import shutil
@@ -25,7 +9,6 @@ import pytest
 from src.robot import MJCF_DIR
 
 SCRIPT = MJCF_DIR / "patch_backlash.py"
-# (backlash model, non-backlash sibling used as the pipeline input)
 MODELS = [("robot_walk_backlash.xml", "robot_walk.xml"), ("robot_groundcontact_backlash.xml", "robot_groundcontact.xml"), ("robot_groundcontact_rollers_backlash.xml", "robot_groundcontact_rollers.xml")]
 SERVO_COUNT = 14
 
@@ -35,8 +18,7 @@ def run_script(target, *args):
 
 
 @pytest.mark.parametrize("committed,sibling", MODELS)
-def test_regenerates_committed_model_byte_identically(committed, sibling, tmp_path):
-    """Patching the non-backlash sibling must reproduce the committed model exactly."""
+def test_patching_the_non_backlash_sibling_regenerates_the_committed_model_byte_identically(committed, sibling, tmp_path):
     target = tmp_path / committed
     shutil.copy(MJCF_DIR / sibling, target)
 
@@ -47,12 +29,7 @@ def test_regenerates_committed_model_byte_identically(committed, sibling, tmp_pa
 
 
 @pytest.mark.parametrize("committed,sibling", MODELS)
-def test_one_backlash_hinge_per_servo(committed, sibling):
-    """Every servo gets exactly one hinge, on the same body/axis.
-
-    A silently-skipped servo yields a model with fewer hinges than servos,
-    which is a physics change no other test would catch.
-    """
+def test_every_servo_has_exactly_one_backlash_hinge_on_the_same_axis(committed, sibling):
     text = (MJCF_DIR / committed).read_text()
     servos = re.findall(r'<joint\b[^>]*name="([^"]+)"[^>]*class="chosen_actuator"', text)
     hinges = re.findall(r'<joint\b[^>]*name="passive_([^"]+)_backlash"', text)
@@ -60,20 +37,14 @@ def test_one_backlash_hinge_per_servo(committed, sibling):
     assert len(servos) == SERVO_COUNT, f"{committed}: expected {SERVO_COUNT} servos, got {len(servos)}"
     assert hinges == servos, f"{committed}: hinge/servo mismatch"
 
-    # Each hinge must share its servo's axis, else the play is on the wrong DOF.
     for name in servos:
         servo_axis = re.search(rf'<joint axis="([^"]*)"[^>]*name="{re.escape(name)}"', text)
         hinge_axis = re.search(rf'<joint axis="([^"]*)"[^>]*name="passive_{re.escape(name)}_backlash"', text)
         assert servo_axis and hinge_axis, f"{committed}: could not read axes for {name}"
-        assert servo_axis.group(1) == hinge_axis.group(1), f"{committed}: axis mismatch on {name}"
+        assert servo_axis.group(1) == hinge_axis.group(1), f"{committed}: play is on the wrong DOF for {name}"
 
 
-def test_multiline_joint_aborts_instead_of_skipping(tmp_path):
-    """A joint split across lines must fail loudly, not emit a short model.
-
-    The scanner is line-based; before this guard such an export produced 13
-    hinges for 14 servos and still exited 0.
-    """
+def test_a_joint_spanning_multiple_lines_aborts_instead_of_emitting_a_short_model(tmp_path):
     target = tmp_path / "robot_walk_backlash.xml"
     text = (MJCF_DIR / "robot_walk.xml").read_text()
     m = re.search(r'^(\s*)<joint ([^>]*class="chosen_actuator"[^>]*)/>$', text, re.MULTILINE)
@@ -88,9 +59,7 @@ def test_multiline_joint_aborts_instead_of_skipping(tmp_path):
     assert "spanning multiple lines" in proc.stdout
 
 
-def test_refuses_to_run_twice(tmp_path):
-    """The pipeline re-exports from Onshape each time; a second pass means
-    something is wired wrong, and would double the modeled play."""
+def test_running_twice_refuses_rather_than_doubling_the_modeled_play(tmp_path):
     target = tmp_path / "robot_walk_backlash.xml"
     shutil.copy(MJCF_DIR / "robot_walk.xml", target)
 
@@ -103,7 +72,7 @@ def test_refuses_to_run_twice(tmp_path):
     assert target.read_bytes() == after_first
 
 
-def test_non_mjcf_input_is_not_written(tmp_path):
+def test_non_mjcf_input_is_rejected_without_being_written(tmp_path):
     target = tmp_path / "notmjcf.xml"
     target.write_text("<mujoco/>\n")
 
@@ -114,8 +83,7 @@ def test_non_mjcf_input_is_not_written(tmp_path):
     assert target.read_text() == "<mujoco/>\n"
 
 
-def test_backlash_deg_scales_the_hinge_range(tmp_path):
-    """--backlash-deg is TOTAL peak-to-peak play; the range is symmetric +/-deg/2."""
+def test_backlash_deg_is_total_play_so_the_hinge_range_is_half_of_it_each_way(tmp_path):
     target = tmp_path / "robot_walk_backlash.xml"
     shutil.copy(MJCF_DIR / "robot_walk.xml", target)
 
