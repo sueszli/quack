@@ -52,7 +52,6 @@ class Provenance:
     commit: str | None = None
     branch: str | None = None
     dirty: bool | None = None
-    run: str | None = None
     checkpoint: int | None = None
     source_file: str | None = None
     exported: str = field(default_factory=lambda: _now_utc())
@@ -298,7 +297,7 @@ def render_readme(manifest: dict[str, Any], repo_id: str) -> str:
     lines = ["---", "tags:", "- microduck", "- robotics", "- reinforcement-learning", "- onnx", "library_name: onnx", "---", "", f"# {name}", "", description, "", f"A **{kind}** policy for the [microduck](https://github.com/pollen-robotics/microduck) ({OBS_LEN}-D observation, {ACTION_LEN} actions, {ROBOT['control_hz']} Hz). {timing}", "", "## Run it on a robot", "", "```bash", run, "```", "", "The observation normalizer is baked into `policy.onnx`; feed raw observations.", "`manifest.json` follows schema 2 of the microduck policy manifest (`docs/policy-manifest.md` in the daemon repo)."]
     if training:
         lines += ["", "## Training", ""]
-        for key in ("task_id", "repo", "branch", "commit", "run", "checkpoint", "exported"):
+        for key in ("task_id", "repo", "branch", "commit", "checkpoint", "exported"):
             if key in training:
                 lines.append(f"- **{key}**: `{training[key]}`")
         if training.get("dirty"):
