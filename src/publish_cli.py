@@ -19,53 +19,53 @@ from .utils import data_path
 
 @dataclass(frozen=True)
 class PublishConfig:
+    # Hub repo id, `<user-or-org>/microduck-<name>`. Created (private) if it does not exist.
     repo: str
-    """Hub repo id, `<user-or-org>/microduck-<name>`. Created (private) if it does not exist."""
+    # episodic: runs `duration_s` and comes back on its own. perpetual: holds until told.
     kind: Literal["episodic", "perpetual"]
-    """episodic: runs `duration_s` and comes back on its own. perpetual: holds until told."""
 
+    # Task id to export from, e.g. Mjlab-PoliteBow-Flat-MicroDuck. Needs a checkpoint.
     task: str | None = None
-    """Task id to export from, e.g. Mjlab-PoliteBow-Flat-MicroDuck. Needs a checkpoint."""
+    # Checkpoint iteration (model_<N>.pt) under logs/rsl_rl/<experiment_name>/. Default: the latest.
     checkpoint: int | None = None
-    """Checkpoint iteration (model_<N>.pt) under logs/rsl_rl/<experiment_name>/. Default: the latest."""
+    # An explicit path to a model_<N>.pt.
     checkpoint_file: str | None = None
-    """An explicit path to a model_<N>.pt."""
+    # An already-exported ONNX. Validated, not re-exported.
     onnx: str | None = None
-    """An already-exported ONNX. Validated, not re-exported."""
 
+    # What a client asks for (`robotctl robot do <name>`). Default: the repo's stem minus `microduck-`.
     name: str | None = None
-    """What a client asks for (`robotctl robot do <name>`). Default: the repo's stem minus `microduck-`."""
+    # One line. Default: the task id.
     description: str | None = None
-    """One line. Default: the task id."""
+    # episodic only: seconds it runs.
     duration_s: float | None = None
-    """episodic only: seconds it runs."""
+    # episodic only: a held button chains another run (roulade does, a kick does not).
     chain: bool = False
-    """episodic only: a held button chains another run (roulade does, a kick does not)."""
+    # perpetual held pose (flamingo): seconds the daemon drives `idle` before handing back. Leave unset for a gait.
     unwind_s: float | None = None
-    """perpetual held pose (flamingo): seconds the daemon drives `idle` before handing back. Leave unset for a gait."""
+    # perpetual gait: which slot it is for (walk, stand, ...). Display-only; drives the install hint.
     slot: Literal["walk", "stand", "sitstand", "ground_pick", "kick_left", "kick_right", "roulade"] | None = None
-    """perpetual gait: which slot it is for (walk, stand, ...). Display-only; drives the install hint."""
+    # The twist that means 'stop doing the thing'. Zeros for every one-shot published so far.
     idle: tuple[float, float, float] = (0.0, 0.0, 0.0)
-    """The twist that means 'stop doing the thing'. Zeros for every one-shot published so far."""
+    # The policy's own output scale, if it wants one. Default: the gait's.
     action_scale: float | None = None
-    """The policy's own output scale, if it wants one. Default: the gait's."""
+    # The pose the policy expects to start from.
     entry_pose: str = "standing"
-    """The pose the policy expects to start from."""
+    # Prose for `command.twist` when the slots mean something (flamingo: '[flag, side, 0]').
     twist_help: str | None = None
-    """Prose for `command.twist` when the slots mean something (flamingo: '[flag, side, 0]')."""
 
+    # Create the repo private (--no-private for public). Existing repos keep their visibility.
     private: bool = True
-    """Create the repo private (--no-private for public). Existing repos keep their visibility."""
+    # Overwrite an existing policy.onnx in the repo.
     force: bool = False
-    """Overwrite an existing policy.onnx in the repo."""
+    # Tag the resulting revision, e.g. v1.
     tag: str | None = None
-    """Tag the resulting revision, e.g. v1."""
+    # Run the network on plausible inputs and refuse NaNs before uploading.
     smoke: bool = True
-    """Run the network on plausible inputs and refuse NaNs before uploading."""
+    # Write policy.onnx, manifest.json and README.md to ./publish-<name>/ and stop.
     dry_run: bool = False
-    """Write policy.onnx, manifest.json and README.md to ./publish-<name>/ and stop."""
+    # Export device. Default: cuda:0 if available, else cpu.
     device: str | None = None
-    """Export device. Default: cuda:0 if available, else cpu."""
 
 
 def _fail(msg: str) -> NoReturn:
