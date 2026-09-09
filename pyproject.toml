@@ -27,26 +27,23 @@ dependencies = [
 ]
 
 [project.entry-points."mjlab.tasks"]
-mjlab_microduck = "mjlab_microduck.registry"
+mjlab_microduck = "src.registry"
 
 [project.scripts]
 # Serve a simulated body to the real `robotd` — see body_server.py.
-duck-body = "mjlab_microduck.body_server:main"
-publish = "mjlab_microduck.publish_cli:main"
-export = "mjlab_microduck.export:main"
-infer = "mjlab_microduck.infer_policy:main"
+duck-body = "src.body_server:main"
+publish = "src.publish_cli:main"
+export = "src.export:main"
+infer = "src.infer_policy:main"
 
 [tool.uv.build-backend]
-# No __init__.py files: package implicit namespace directories.
+# The package IS the src/ directory (import as `src.*`); flat, no __init__.py files.
+module-name = "src"
+module-root = ""
 namespace = true
 
 [tool.ruff]
-src = ["src"]
 indent-width = 4
-exclude = [
-  "src/mjlab/third_party",
-  "typings",
-]
 
 [tool.uv]
 override-dependencies = [

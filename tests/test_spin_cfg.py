@@ -1,5 +1,5 @@
-from mjlab_microduck import mdp as microduck_mdp
-from mjlab_microduck.microduck_spin_env_cfg import (
+from src import mdp as microduck_mdp
+from src.microduck_spin_env_cfg import (
     make_microduck_spin_env_cfg,
     MicroduckSpinRlCfg,
 )
@@ -98,7 +98,7 @@ def test_obs_parity_with_roller_crouch():
     # Layout parity is mandatory: otherwise the exported ONNX does not load into the
     # runtime slot. Unlike the structure test above, this one compares the EXACT
     # order of the terms, group by group.
-    from mjlab_microduck.microduck_roller_crouch_env_cfg import (
+    from src.microduck_roller_crouch_env_cfg import (
         make_microduck_roller_crouch_env_cfg,
     )
 

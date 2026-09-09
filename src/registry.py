@@ -15,59 +15,59 @@ class MicroduckOnPolicyRunner(VelocityOnPolicyRunner):
             alg["symmetry_cfg"] = {k: v for k, v in sym.items() if k != "_env"}
 
 
-from mjlab_microduck.microduck_velocity_env_cfg import (
+from .microduck_velocity_env_cfg import (
     make_microduck_velocity_env_cfg,
     MicroduckRlCfg,
 )
-from mjlab_microduck.microduck_standup_env_cfg import (
+from .microduck_standup_env_cfg import (
     make_microduck_standup_env_cfg,
     MicroduckStandUpRlCfg,
 )
-from mjlab_microduck.microduck_velstand_env_cfg import (
+from .microduck_velstand_env_cfg import (
     make_microduck_velstand_env_cfg,
     MicroduckVelStandRlCfg,
 )
-from mjlab_microduck.microduck_ground_pick_env_cfg import (
+from .microduck_ground_pick_env_cfg import (
     make_microduck_ground_pick_env_cfg,
     MicroduckGroundPickRlCfg,
 )
-from mjlab_microduck.microduck_ball_kick_env_cfg import (
+from .microduck_ball_kick_env_cfg import (
     make_microduck_ball_kick_env_cfg,
     MicroduckBallKickRlCfg,
 )
-from mjlab_microduck.microduck_sitstand_env_cfg import (
+from .microduck_sitstand_env_cfg import (
     make_microduck_sitstand_env_cfg,
     MicroduckSitStandRlCfg,
 )
-from mjlab_microduck.microduck_velocity_rollers_env_cfg import (
+from .microduck_velocity_rollers_env_cfg import (
     make_microduck_velocity_rollers_env_cfg,
     MicroduckRollersRlCfg,
 )
-from mjlab_microduck.microduck_velocity_swizzle_env_cfg import (
+from .microduck_velocity_swizzle_env_cfg import (
     make_microduck_velocity_swizzle_env_cfg,
     MicroduckSwizzleRlCfg,
 )
-from mjlab_microduck.microduck_roller_crouch_env_cfg import (
+from .microduck_roller_crouch_env_cfg import (
     make_microduck_roller_crouch_env_cfg,
     MicroduckRollerCrouchRlCfg,
 )
-from mjlab_microduck.microduck_roller_slope_env_cfg import (
+from .microduck_roller_slope_env_cfg import (
     make_microduck_roller_slope_env_cfg,
     MicroduckRollerSlopeRlCfg,
 )
-from mjlab_microduck.microduck_roller_standup_env_cfg import (
+from .microduck_roller_standup_env_cfg import (
     make_microduck_roller_standup_env_cfg,
     MicroduckRollerStandUpRlCfg,
 )
-from mjlab_microduck.microduck_spin_env_cfg import (
+from .microduck_spin_env_cfg import (
     make_microduck_spin_env_cfg,
     MicroduckSpinRlCfg,
 )
-from mjlab_microduck.microduck_roulade_env_cfg import (
+from .microduck_roulade_env_cfg import (
     make_microduck_roulade_env_cfg,
     MicroduckRouladeRlCfg,
 )
-from mjlab_microduck.backlash import make_backlash_variant
+from .backlash import make_backlash_variant
 
 # Standard velocity task
 register_mjlab_task(
@@ -230,7 +230,7 @@ register_mjlab_task(
 # base task's collision model: Velocity → robot_walk_backlash.xml,
 # VelStand/StandUp → robot_groundcontact_backlash.xml. Obs/action dims are
 # unchanged vs the base tasks.
-from mjlab_microduck.microduck_constants import (
+from .microduck_constants import (
     MICRODUCK_BACKLASH_ROBOT_CFG,
     MICRODUCK_ROLLERS_BACKLASH_ROBOT_CFG,
     MICRODUCK_WALK_BACKLASH_ROBOT_CFG,

@@ -6,7 +6,7 @@ training via rsl_rl's global check_nan.
 
 import torch
 
-from mjlab_microduck.mdp import robot_state_is_nan
+from src.mdp import robot_state_is_nan
 
 
 class _Data:

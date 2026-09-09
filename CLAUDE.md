@@ -27,23 +27,23 @@ Never launch a long run without one.
 
 ## Repo map
 
-- `src/mjlab_microduck/mdp.py` — ALL custom MDP functions (rewards, events,
+- `src/mdp.py` — ALL custom MDP functions (rewards, events,
   observations, commands, curricula). Add new functions here, grouped by task.
-- `src/mjlab_microduck/microduck_*_env_cfg.py` — one cfg module per task
+- `src/microduck_*_env_cfg.py` — one cfg module per task
   family. `microduck_velocity_env_cfg.py` is the main walking recipe AND the
   shared base (robot, DR, obs, commands) other envs build on or mirror.
-- `src/mjlab_microduck/registry.py` — task registration (base + `-Backlash-` variants; the `mjlab.tasks` entry point).
-- No `__init__.py` files and no sub-packages: `src/mjlab_microduck` is a flat namespace package
+- `src/registry.py` — task registration (base + `-Backlash-` variants; the `mjlab.tasks` entry point).
+- No `__init__.py` files and no sub-packages: `src` is a flat namespace package
   (`[tool.uv.build-backend] namespace = true`).
-- `src/mjlab_microduck/backlash.py` — wraps any env cfg into its backlash twin.
-- `src/mjlab_microduck/microduck_constants.py` — robot cfgs, HOME frame, BAM actuator cfg.
+- `src/backlash.py` — wraps any env cfg into its backlash twin.
+- `src/microduck_constants.py` — robot cfgs, HOME frame, BAM actuator cfg.
 - `assets/mjcf/` (`MJCF_DIR` in `microduck_constants.py`) — MJCF exports from Onshape
   (onshape-to-robot, one `config_mjcf_*.json` per model) and scenes; `add_backlash.py` generates
   the backlash variants. Meshes in `assets/meshes/`.
-- `src/mjlab_microduck/friction_dr_bam.py` — BAM actuator + friction DR + backlash encoder.
-- `src/mjlab_microduck/export.py` — the ONNX export (normalizer baked in) behind `uv run export`.
-- `src/mjlab_microduck/infer_policy.py` — `uv run infer`: CPU MuJoCo deployment rehearsal.
-- `src/mjlab_microduck/publish_cli.py` + `publish_manifest.py` — `uv run publish`: schema-2 manifest builder + ONNX shape/smoke
+- `src/friction_dr_bam.py` — BAM actuator + friction DR + backlash encoder.
+- `src/export.py` — the ONNX export (normalizer baked in) behind `uv run export`.
+- `src/infer_policy.py` — `uv run infer`: CPU MuJoCo deployment rehearsal.
+- `src/publish_cli.py` + `publish_manifest.py` — `uv run publish`: schema-2 manifest builder + ONNX shape/smoke
   gate + Hub upload. Contract = `docs/policy-manifest.md` in the `microduck` repo; only
   constant-command episodic/perpetual policies are publishable (phase/posture-flag are the set's).
 - `tests/` — cfg-invariant and mdp-function regression tests (CPU, no GPU needed).
