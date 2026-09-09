@@ -45,7 +45,7 @@ def bam_sim(ip):
 
 
 def test_actuators_converted_like_warp(bam_sim):
-    ip, bam_model, model, data, ctrl, names = bam_sim
+    ip, bam_model, model, _data, _ctrl, names = bam_sim
     kt, R = bam_model.kt.value, bam_model.R.value
     assert len(names) == 14 and model.nu == 14
     assert not any(n.startswith("passive_") for n in names)
@@ -66,7 +66,7 @@ def test_actuators_converted_like_warp(bam_sim):
 
 
 def test_bam_step_loop_runs_with_live_friction(bam_sim):
-    ip, bam_model, model, data, ctrl, names = bam_sim
+    ip, bam_model, model, data, ctrl, _names = bam_sim
     fj = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "trunk_base_freejoint")
     qa = model.jnt_qposadr[fj]
     mujoco.mj_resetData(model, data)
