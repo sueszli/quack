@@ -90,12 +90,6 @@ def test_task_is_registered():
 
 
 def test_joint_indices_match_actual_roller_model():
-    """Lock: the passive wheels are interleaved in the joint order.
-
-    Reusing the standup indices ([0-4, 9-13]) would give rewards that point at
-    wheels. This test compiles the real MjSpec of the rollers robot and checks
-    the names at the indices used. Pure CPU, no sim.
-    """
     import mujoco
 
     from src.robot import get_walk_rollers_spec
@@ -164,9 +158,6 @@ def test_pose_rewards_target_legs_only_at_roller_indices():
 
 
 def test_trunk_asset_cfgs_are_distinct_objects():
-    """mjlab resolves and MUTATES SceneEntityCfg in place: an object shared between
-    several terms causes stale indices. Each term must have its own.
-    """
     cfg = make_microduck_roller_standup_env_cfg()
     names = ("height_stand", "height_stand_sharp", "height_stand_l1", "com_upward_velocity", "gentle_rise", "upright_linear", "upright_sharp", "standing_composite")
     seen = [id(cfg.rewards[n].params["asset_cfg"]) for n in names]
@@ -246,13 +237,6 @@ def test_ground_state_curriculum_ramps_easy_to_hard():
 
 
 def test_wheel_friction_curriculum_is_decreasing():
-    """The new piece: wheels BRAKED → FREE.
-
-    The wheels roll, so there is no longitudinal grip to push on the floor.
-    We bootstrap with nearly locked bearings (the stand-up is done as if with
-    feet) then ramp toward the true value. The roller env, by contrast, RAISES
-    this friction (0 → 0.0015): the direction is indeed reversed here.
-    """
     cfg = make_microduck_roller_standup_env_cfg()
     stages = cfg.curriculum["wheel_friction"].params["ranges_stages"]
     assert cfg.curriculum["wheel_friction"].params["event_name"] == "randomize_wheel_friction"
@@ -389,15 +373,6 @@ def test_play_face_up_override_none_keyword_disables(monkeypatch):
 
 
 def test_already_negative_penalties_use_positive_weights():
-    """Lock on the bug class that made the policy violent.
-
-    task_mdp.py mixes TWO sign conventions: some penalty functions return a positive
-    magnitude (to be multiplied by a negative weight), others already return a
-    negative value (to be multiplied by a POSITIVE weight).
-    trunk_vertical_accel_penalty returns -|a_z|: with the -0.02 weight inherited
-    from standup, the double negative REWARDED vertical acceleration — measured at
-    Episode_Reward/gentle_rise = +0.0118, the only penalty term logged positive.
-    """
     cfg = make_microduck_roller_standup_env_cfg()
     # These three terms call functions that already return a negative value
     # (height_l1_penalty, pose_l1_penalty, trunk_vertical_accel_penalty).
@@ -409,22 +384,6 @@ def test_already_negative_penalties_use_positive_weights():
 
 
 def test_no_ungated_head_impact_penalty():
-    """NO ungated head impact penalty — it froze the policy.
-
-    Tried at -1.0 (velstand values): the policy converged to staying lying
-    down, inert. Measured on run d8rnko6p: head_impact_penalty -1.01/step,
-    the largest negative term, while standing_composite collapsed from
-    +14.3 to +3.3.
-
-    The reasoning error was believing that a "targeted" penalty does not
-    restrain motion. Wrong here: to get up from the back, this robot PIVOTS on its
-    head and shoulders. The head is the fulcrum of the roll-over, not collateral
-    damage — penalizing it is penalizing the only mechanism available.
-
-    If the slam comes back once the gentle_rise sign is fixed, the replacement must
-    be a HEIGHT-GATED penalty (as upright_sharp is), which spares the
-    roll-over phase on the floor. Not this one.
-    """
     cfg = make_microduck_roller_standup_env_cfg()
     assert "head_impact_penalty" not in cfg.rewards
     assert "head_impact_contact" not in [s.name for s in cfg.scene.sensors]
@@ -440,29 +399,12 @@ def test_inherited_sensors_intact():
 
 
 def test_lazy_prone_optimum_is_documented_risk():
-    """The freeze comes from a lazy optimum: lying down, legs at HOME, it pays.
-
-    pose_stand_legs stayed at +7.72 out of 8 while the robot was lying down — the
-    legs are at HOME in the lying position, so the pose reward is collected
-    almost for free. That is the counterweight that makes "do nothing" viable as
-    soon as a motion cost is added. height_stand_l1 (weight +30) is the term
-    meant to make "stay on the floor" net negative: it must stay strong.
-    """
     cfg = make_microduck_roller_standup_env_cfg()
     assert cfg.rewards["height_stand_l1"].weight >= 30.0
     assert cfg.rewards["com_upward_velocity"].weight > 0.0
 
 
 def test_damping_terms_are_not_numerically_negligible():
-    """The dedicated dampers literally weighed nothing.
-
-    Measured at convergence: joint_torque_rate_l2 -0.0002/step and joint_torques_l2
-    -0.0001/step, against ~+41.6 of task reward (ratio ~35:1 for all dampers
-    combined). joint_torque_rate_l2 is the SAFE lever to raise: it penalizes the
-    VARIATION of torque, not the motion, so it does not act as a motion blocker —
-    standup documents that body_ang_vel and action_rate, by contrast, froze
-    getting up from the back.
-    """
     cfg = make_microduck_roller_standup_env_cfg()
     assert abs(cfg.rewards["joint_torque_rate_l2"].weight) >= 0.1
     # The motion blockers stay at their "gets up from anywhere" values.

@@ -1,11 +1,3 @@
-"""`uv run publish` writes what the microduck daemon loads — schema 2, checked before upload.
-
-The daemon (`pollen-robotics/microduck`) refuses a policy whose manifest disagrees with its
-`duck_ipc_proto` constants, refuses at load a graph that is not 61 -> 14, and turns only a
-constant-command `episodic` entry into a skill. These tests pin that this side writes exactly
-that, on CPU, without mjlab.
-"""
-
 from __future__ import annotations
 
 import json
@@ -30,7 +22,6 @@ OFFICIAL_SET = {"schema_version": 2, "model_api": 1, "obs_len": 61, "action_len"
 
 
 def _tiny_policy(path: Path, obs_len: int = m.OBS_LEN, action_len: int = m.ACTION_LEN) -> Path:
-    """A one-layer 'policy' with the daemon's shape, so the ONNX checks run without torch."""
     rng = np.random.default_rng(0)
     w = numpy_helper.from_array(rng.normal(0, 0.1, (obs_len, action_len)).astype(np.float32), "W")
     node = helper.make_node("MatMul", ["obs", "W"], ["actions"])
@@ -62,8 +53,6 @@ def test_a_normal_export_is_not_flagged_untrained(tmp_path):
 
 
 def test_constants_are_the_daemons():
-    """`duck_ipc_proto`: POLICY_OBS_LEN 61, POLICY_ACTION_LEN 14, ROBOT_MODEL microduck. A drift
-    here is a refusal on every robot, before the download."""
     assert (m.OBS_LEN, m.ACTION_LEN) == (61, 14)
     assert m.ROBOT["model"] == "microduck"
     assert m.MODEL_API == 1
@@ -138,7 +127,6 @@ def test_a_name_is_a_bare_word():
 
 
 def test_a_gait_is_perpetual_with_nothing_to_unwind():
-    """A walking policy is perpetual too, and goes in a slot — no hold, no unwind, no skill."""
     gait = m.build_manifest(name="my-walk", kind="perpetual", description="Walks.", slot="walk")
     m.validate_manifest(gait)
     assert gait["duration_s"] is None and "unwind_s" not in gait and gait["slot"] == "walk"
@@ -179,7 +167,6 @@ def test_a_wrong_action_width_is_refused(tmp_path):
 
 
 def test_a_constant_network_fails_the_smoke_run(tmp_path):
-    """A graph that ignores its input is not a policy — the shape gate alone would pass it."""
     zero = numpy_helper.from_array(np.zeros((m.OBS_LEN, m.ACTION_LEN), np.float32), "W")
     graph = helper.make_graph([helper.make_node("MatMul", ["obs", "W"], ["actions"])], "dead", [helper.make_tensor_value_info("obs", TensorProto.FLOAT, [1, m.OBS_LEN])], [helper.make_tensor_value_info("actions", TensorProto.FLOAT, [1, m.ACTION_LEN])], initializer=[zero])
     model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)])
@@ -191,7 +178,6 @@ def test_a_constant_network_fails_the_smoke_run(tmp_path):
 
 
 def test_the_cli_dry_run_writes_a_repo(tmp_path, monkeypatch):
-    """End to end without the Hub or a GPU: an ONNX in, the three repo files out."""
     from src.publish_cli import PublishConfig, run
 
     policy = _tiny_policy(tmp_path / "out.onnx")

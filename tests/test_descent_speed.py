@@ -1,7 +1,3 @@
-"""descent_speed_reward: rewards forward speed down the slope
-(world +x), capped at `cap`, zero if the robot goes backward/uphill, NaN-safe.
-"""
-
 import torch
 
 from src.task_mdp import descent_speed_reward

@@ -1,14 +1,3 @@
-"""The critic obs must survive a non-finite sensor reading.
-
-Regression for the 2026-08-21 crash: rsl_rl's check_nan killed a
-Velocity2-Rough-Backlash run with "observation group 'critic' contains NaN".
-`nan_state` (robot_state_is_nan) only covered joint + root state, but the
-critic also carries three SENSOR-derived terms (raycast heights, contact
-air-time, contact forces). MuJoCo can return a non-finite contact force while
-the integrated robot state is still clean, so the env was never reset and the
-NaN reached the runner.
-"""
-
 import torch
 
 from src import task_mdp as microduck_mdp
