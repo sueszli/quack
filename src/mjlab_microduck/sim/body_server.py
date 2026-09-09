@@ -87,7 +87,7 @@ HOME_POSE = (
     0.0, 0.0873, 0.4579, 0.0049, -0.4530,
 )
 
-SCENES = Path(__file__).resolve().parents[1] / "robot" / "microduck"
+SCENES = Path(__file__).resolve().parents[1] / "mjcf"
 # `scene.xml`, not `scene_walk.xml`: the walking scene includes the model the RL work trains
 # against, whose actuator default classes carry `contype="0" conaffinity="0"`, so the robot collides
 # with nothing and sinks through a floor the scene really does contain.

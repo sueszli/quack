@@ -18,7 +18,7 @@ import mujoco
 import mujoco.viewer
 import onnxruntime as ort
 
-_ROBOT_DIR = Path(__file__).resolve().parent / "robot" / "microduck"
+_ROBOT_DIR = Path(__file__).resolve().parent / "mjcf"
 MICRODUCK_XML = str(_ROBOT_DIR / "scene.xml")
 MICRODUCK_ROLLERS_XML = str(_ROBOT_DIR / "scene_rollers.xml")
 MICRODUCK_BALL_XML = str(_ROBOT_DIR / "scene_ball.xml")
@@ -894,7 +894,7 @@ class PolicyInference:
 def main():
     parser = argparse.ArgumentParser(description="Run ONNX policy in MuJoCo")
     parser.add_argument("--roller", action="store_true", help="Use roller skate robot XML (robot_walk_rollers.xml)")
-    parser.add_argument("--scene", type=str, default=None, help="Path to a scene XML, overriding the default pick (e.g. src/mjlab_microduck/robot/microduck/scene_allcollisions.xml)")
+    parser.add_argument("--scene", type=str, default=None, help="Path to a scene XML, overriding the default pick (e.g. src/mjlab_microduck/mjcf/scene_allcollisions.xml)")
     parser.add_argument("--walking", type=str, default=None, help="Path to walking policy ONNX file")
     parser.add_argument("--standing", "-s", type=str, default=None, help="Path to standing policy ONNX file")
     parser.add_argument("--ground-pick", type=str, default=None, help="Path to ground pick policy ONNX file (press G to activate)")
