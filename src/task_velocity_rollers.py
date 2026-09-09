@@ -69,7 +69,7 @@ from mjlab.utils.noise import UniformNoiseCfg as Unoise
 from . import task_mdp as microduck_mdp
 from .robot import MICRODUCK_WALK_ROLLERS_ROBOT_CFG
 from .task_symmetry import SYMMETRY_CFG, PpoWithSymmetryCfg
-from .task_velocity import HEAD_BODY_NAMES
+from .task_velocity import HEAD_BODY_NAMES, LOCAL_CHECKPOINTS_ONLY
 
 
 def make_microduck_velocity_rollers_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
@@ -428,7 +428,7 @@ MicroduckRollersRlCfg = RslRlOnPolicyRunnerCfg(
         max_grad_norm=1.0,
         symmetry_cfg=SYMMETRY_CFG if ENABLE_SYMMETRY else None,
     ),
-    logger="tensorboard",
+    logger=LOCAL_CHECKPOINTS_ONLY,
     experiment_name="velocity_rollers",
     run_name="velocity_rollers",
     save_interval=250,

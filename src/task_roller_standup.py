@@ -38,6 +38,7 @@ from mjlab.rl import RslRlModelCfg, RslRlOnPolicyRunnerCfg
 
 from . import task_mdp as microduck_mdp
 from .task_symmetry import PpoWithSymmetryCfg
+from .task_velocity import LOCAL_CHECKPOINTS_ONLY
 from .task_velocity_rollers import make_microduck_velocity_rollers_env_cfg
 
 # ── Trunk heights (m) ─────────────────────────────────────────────────────────
@@ -378,7 +379,7 @@ MicroduckRollerStandUpRlCfg = RslRlOnPolicyRunnerCfg(
         # on the 61D (same situation as all v1.5+ envs).
         symmetry_cfg=None,
     ),
-    logger="tensorboard",
+    logger=LOCAL_CHECKPOINTS_ONLY,
     experiment_name="roller_standup",
     run_name="roller_standup",
     save_interval=250,
