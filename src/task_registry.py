@@ -1,6 +1,8 @@
 from mjlab.tasks.registry import register_mjlab_task
 from mjlab.tasks.velocity.rl import VelocityOnPolicyRunner
 
+import src.utils  # noqa: F401
+
 
 class MicroduckOnPolicyRunner(VelocityOnPolicyRunner):
     def __init__(self, env, train_cfg: dict, log_dir=None, device="cpu", **kwargs):

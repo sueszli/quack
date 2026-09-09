@@ -41,6 +41,8 @@ Never launch a long run without one.
   (onshape-to-robot, one `config_mjcf_*.json` per model) and scenes; `patch_backlash.py` generates
   the backlash variants. Meshes in `assets/meshes/`.
 - `src/robot_actuator.py` — BAM actuator + friction DR + backlash encoder.
+- `src/utils.py` — importing it applies `use_local_storage()` + `set_seed()` (SEED=41);
+  also exports `weights_path()` / `data_path()`.
 - `src/export.py` — the ONNX export (normalizer baked in) behind `uv run export`.
 - `src/infer.py` — `uv run infer`: CPU MuJoCo deployment rehearsal.
 - `src/publish_cli.py` + `publish_manifest.py` — `uv run publish`: schema-2 manifest builder + ONNX shape/smoke
@@ -49,6 +51,11 @@ Never launch a long run without one.
 - `tests/` — cfg-invariant and mdp-function regression tests (CPU, no GPU needed).
 
 ## Invariants — do not break these
+
+- **All project artifacts stay in the working dir**: `weights/` (exported ONNX,
+  downloaded weights) and `data/` (caches, publish staging). New outputs go
+  through `weights_path()` / `data_path()`; new entry points `import src.utils`,
+  which seeds and routes storage as an import side effect.
 
 - **Obs layout is 61D (actor) and shared across the whole policy family** so
   policies are hot-swappable in the runtime: 48 base proprioception +
