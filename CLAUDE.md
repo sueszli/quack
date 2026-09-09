@@ -38,7 +38,7 @@ Never launch a long run without one.
 - `src/task_backlash.py` — wraps any env cfg into its backlash twin.
 - `src/robot.py` — robot cfgs, HOME frame, BAM actuator cfg.
 - `assets/mjcf/` (`MJCF_DIR` in `robot.py`) — MJCF exports from Onshape
-  (onshape-to-robot, one `config_mjcf_*.json` per model) and scenes; `add_backlash.py` generates
+  (onshape-to-robot, one `config_mjcf_*.json` per model) and scenes; `patch_backlash.py` generates
   the backlash variants. Meshes in `assets/meshes/`.
 - `src/robot_actuator.py` — BAM actuator + friction DR + backlash encoder.
 - `src/export.py` — the ONNX export (normalizer baked in) behind `uv run export`.
