@@ -13,46 +13,36 @@ https://github.com/user-attachments/assets/50c3d537-8db2-4005-9d9c-3472faeec4d0
 The repo encodes the full sim2real recipe: [BAM](https://github.com/Rhoban/bam)
 actuator physics, domain randomization, backlash simulation, and the
 reward-design lessons that made it work
-(see [AGENTS.md](AGENTS.md) for the distilled playbook).
+(see [CLAUDE.md](CLAUDE.md) for the distilled playbook).
 
 ## Quickstart
 
-Requires a CUDA GPU (training runs through MuJoCo Warp) and [uv](https://docs.astral.sh/uv/).
-
-> **On ARM boxes (DGX Spark / GB10, Jetson):** `uv sync` pulls ~2 GB of CUDA
-> wheels on first run and uv's default 30 s HTTP timeout can abort mid-download.
-> Export `UV_HTTP_TIMEOUT=600` for the first sync.
+Requires a CUDA GPU (training runs through MuJoCo Warp), [uv](https://docs.astral.sh/uv/),
+and `make`. `make help` lists every target; each takes variables
+(`TASK`, `ENVS`, `RUN`, `ONNX`, ..., plus `ARGS` for extra CLI flags).
 
 ```bash
 git clone https://github.com/pollen-robotics/microduck_rl
 cd microduck_rl
+make sync                       # install (raises uv's HTTP timeout; ARM boxes pull ~2 GB of CUDA wheels)
 
-# train the walking policy (uses your GPU; ~1-2 h for a usable gait at 4096 envs)
-uv run train Mjlab-Velocity-Flat-MicroDuck --env.scene.num-envs 4096
+make smoke                      # 64 envs, 5 iters — always run this before a long run
+make train TASK=Mjlab-Velocity-Flat-MicroDuck ENVS=4096   # ~1-2 h for a usable gait
+make resume CHECKPOINT=model_29999.pt
 
-# watch a trained policy in the viewer
-uv run play Mjlab-Velocity-Flat-MicroDuck --wandb-run-path <entity/project/run_id>
-# remote GPU box: `ssh -L 8080:localhost:8080 USER@HOST`, then `uv run play ... --viewer viser --num-envs 1`
-# there and open http://localhost:8080 locally (keep the SSH session open)
-
-# export to ONNX for deployment
-uv run export Mjlab-Velocity-Flat-MicroDuck --wandb-run-path <...>
-uv run publish --onnx output.onnx --repo <user>/microduck-<name> --kind episodic --duration-s 4.0   # share it (see "Publishing a policy")
-
-# drive the exported policy in CPU MuJoCo with the keyboard
-uv run infer --walking output.onnx
+make play RUN=<entity/project/run_id>       # viewer
+make export RUN=<entity/project/run_id>     # -> ONNX, obs normalizer baked in
+make infer ONNX=output.onnx                 # CPU MuJoCo, keyboard-driven
+make publish RUN=<...> REPO=<user>/microduck-<name> KIND=episodic DURATION=4.0
 ```
 
-Resume from a checkpoint:
-
-```bash
-uv run train Mjlab-Velocity-Flat-MicroDuck --env.scene.num-envs 4096 \
-    --agent.run-name resume --agent.load-checkpoint model_29999.pt --agent.resume True
-```
+On a remote GPU box, tunnel the viewer: `ssh -L 8080:localhost:8080 USER@HOST`,
+then `make play RUN=... VIEWER=viser ARGS="--num-envs 1"` and open
+http://localhost:8080 locally (keep the SSH session open).
 
 ## Tasks
 
-`uv run list-envs` prints the live registry. Flat/Rough variants exist where noted.
+`make envs` prints the live registry.
 
 <!-- SHOWCASE GRID — one short GIF per task family (sim or real), 3 per row.
      Priority order if you only record a few: Velocity, VelStand (fall+recover),
@@ -76,19 +66,18 @@ uv run train Mjlab-Velocity-Flat-MicroDuck --env.scene.num-envs 4096 \
 
 At deployment the runtime hot-swaps these policies (walk / recover / trick)
 behind a shared 61-dimensional observation contract, so any of them can take
-over the robot at any moment. `uv run infer` rehearses exactly that:
+over the robot at any moment. `make infer` rehearses exactly that — load one
+ONNX per slot and trigger them from the keyboard:
 
 ```bash
-uv run infer --walking walk.onnx --standing stand.onnx \
-    --sitstand sitstand.onnx --roulade roulade.onnx --new-cmd-obs
+make infer ONNX=walk.onnx ARGS="--standing stand.onnx --sitstand sitstand.onnx --roulade roulade.onnx --new-cmd-obs"
 ```
 
-Keyboard-driven (velocity commands, `G` ground pick, `Y` sit/stand, `R` roulade,
-`K`/`L` kicks); `--debug`, `--save-csv`, `--record` support sim2real comparisons.
 The servos are simulated with the same BAM M6 XL330 model the policies are
 trained against (voltage control + load-dependent friction, via
-`bam.mujoco.MujocoController`); `--vin` / `--vin-drop-gain` / `--kp-fw` pin the
-training DR ranges to one value, `--no-bam` falls back to the XML PD actuators.
+`bam.mujoco.MujocoController`); `uv run infer --help` lists the flags that pin
+the training DR ranges to one value or fall back to the XML PD actuators, plus
+the debug/CSV/record options used for sim2real comparisons.
 
 ### Backlash variants
 
@@ -136,29 +125,11 @@ for quick viewing and for `infer.py`.
 <!-- IMAGE — side-by-side render: walk model vs rollers model (or a collision-geom
      visualization). One image here makes the model-variant story instant. -->
 
-## Project structure
+## Conventions
 
-```
-assets/
-├── mjcf/                  # MJCF robot models, scenes, onshape-to-robot configs, add_backlash.py
-└── meshes/                # STL meshes referenced by the models
-tests/                     # CPU-only cfg-invariant and reward regression tests
-src/                       # the package: flat, relative imports, no __init__.py; files are prefixed by role
-├── robot.py               # the robot: MJCF paths, entity cfgs, HOME frame, BAM actuator cfg
-├── robot_actuator.py      # BAM actuator + friction DR + backlash encoder feedback
-├── task_registry.py       # task registration (base + backlash variants) — the mjlab.tasks entry point
-├── task_mdp.py            # rewards, events, observations, commands shared by all tasks
-├── task_backlash.py       # make_backlash_variant() env-cfg wrapper
-├── task_symmetry.py       # 61D mirror table for the symmetry loss
-├── task_slope_terrain.py  # slope heightfield
-├── task_<name>.py         # one env + RL cfg module per task (velocity, standup, roulade, spin, ...)
-├── export.py              # uv run export  — ONNX with the obs normalizer baked in
-├── publish_cli.py         # uv run publish — Hub upload (+ publish_manifest.py)
-├── infer.py               # uv run infer   — CPU MuJoCo deployment rehearsal
-└── sim_*.py               # uv run duck-body — simulated body for robotd (body_server, camera, tof)
-```
-
-Conventions worth knowing:
+`src/` is a flat namespace package (no `__init__.py`); file names are prefixed
+by role (`robot_*`, `task_*`) and one `task_<name>.py` holds each env + RL cfg.
+The rules that are not obvious from the code:
 
 - The observation layout is shared across every policy (61-dim actor obs:
   48 proprioception + commands `[twist(3), head_pose(4), body_pose(6)]`), which
@@ -167,22 +138,22 @@ Conventions worth knowing:
 - Unactuated joints are all named `passive_*` (roller wheels, backlash
   hinges); actuators, joint observations and pose rewards select servo joints
   with `^(?!passive_).*`.
-- Domain-randomization toggles are `ENABLE_*` booleans at the top of each
-  env cfg file.
 - Joint layout (14 servos): 0–4 left leg (hip_yaw, hip_roll, hip_pitch, knee,
   ankle), 5–8 neck/head (neck_pitch, head_pitch, head_yaw, head_roll),
   9–13 right leg.
+- Domain-randomization toggles are `ENABLE_*` booleans at the top of each
+  env cfg file.
 - The exporter bakes the observation normalizer into the ONNX graph — always
-  deploy ONNX produced by `uv run export`, never a hand-converted
-  checkpoint, or the policy sees unnormalized observations at runtime.
+  deploy ONNX produced by `make export`, never a hand-converted checkpoint, or
+  the policy sees unnormalized observations at runtime.
 
-[AGENTS.md](AGENTS.md) documents the env-building workflow and the reward-design
+[CLAUDE.md](CLAUDE.md) documents the env-building workflow and the reward-design
 rules learned across the project (also aimed at AI coding agents working in
 this repo).
 
 ## Publishing a policy
 
-`uv run publish` puts a policy on the Hugging Face Hub in the shape the robot's
+`make publish` puts a policy on the Hugging Face Hub in the shape the robot's
 daemon loads: one `policy.onnx` with the observation normalizer baked in, a
 `manifest.json` following schema 2 of the
 [microduck policy manifest](https://github.com/pollen-robotics/microduck/blob/main/docs/policy-manifest.md),
@@ -190,50 +161,33 @@ and a README saying how to run it. Anyone with a microduck can then install it
 with one command, no daemon release needed.
 
 ```bash
-# From a wandb run — exports through the one safe path, then uploads
-uv run publish --task Mjlab-PoliteBow-Flat-MicroDuck \
-    --wandb-run-path <entity/project/run_id> --checkpoint 3000 \
-    --repo <user>/microduck-polite-bow --kind episodic --duration-s 4.0 \
-    --description "Bows from a two-foot stand and comes back up."
-
-# From an ONNX you already exported (validated, not re-exported)
-uv run publish --onnx output.onnx --repo <user>/microduck-flamingo \
-    --kind perpetual --unwind-s 1.5 --twist-help "[flag, side, 0]"
-
-# A new gait for a slot
-uv run publish --onnx output.onnx --repo <user>/microduck-my-walk --kind perpetual --slot walk
-
-# See what would be uploaded without touching the Hub
-uv run publish --onnx output.onnx --repo <user>/microduck-bow --kind episodic --duration-s 4.0 --dry-run
+make publish RUN=<entity/project/run_id> CHECKPOINT=3000 \
+    TASK=Mjlab-PoliteBow-Flat-MicroDuck REPO=<user>/microduck-polite-bow \
+    KIND=episodic DURATION=4.0 ARGS='--description "Bows and comes back up."'
+make publish-dry RUN=<...> REPO=<...> KIND=episodic DURATION=4.0   # show, don't upload
 ```
 
-Then on a robot:
+`uv run publish --help` covers the rest (uploading an already-exported
+`--onnx`, `--force`, `--no-private`, `--tag`, `--chain`, `--idle`).
 
-```bash
-sudo robotctl policy add polite-bow <user>/microduck-polite-bow   # episodic: length comes from the manifest
-sudo robotctl policy add flamingo <user>/microduck-flamingo --hold 5   # held pose: you pick how long
-sudo robotctl policy load walk <user>/microduck-my-walk                # gait: into the walk slot
-robotctl robot do polite-bow
-```
+What `KIND` means, and what each needs:
 
-What `--kind` means, and what each needs:
-
-- **episodic** — runs for `--duration-s` and returns itself to a standing pose
-  (kicks, roulade, a bow). Add `--chain` if holding the button should repeat it.
+- **episodic** — runs for `DURATION` seconds and returns itself to a standing
+  pose (kicks, roulade, a bow). Add `ARGS=--chain` if holding the button should
+  repeat it.
 - **perpetual** — runs until told otherwise. Two shapes:
-  - a **gait** (a new walk or stand): add `--slot walk` (or `stand`) and
-    nothing else; the owner installs it with `robotctl policy load walk <repo>`.
-  - a **held pose** (the flamingo): give `--unwind-s`, how long the daemon
-    drives the idle twist (`--idle`, zeros by default) before handing back to
-    the gait, so the robot is not let go of on one foot. The owner runs it as a
-    one-shot with `policy add ... --hold <seconds>`.
+  - a **gait** (a new walk or stand): add `SLOT=walk` (or `stand`) and nothing
+    else; the owner installs it with `robotctl policy load walk <repo>`.
+  - a **held pose** (a flamingo): give `UNWIND=1.5`, how long the daemon drives
+    the idle twist before handing back to the gait, so the robot is not let go
+    of on one foot. The owner runs it as a one-shot with
+    `robotctl policy add ... --hold <seconds>`.
 
 Before anything is uploaded, `publish` checks the graph is `[1,61] -> [1,14]`
 (a 51-D legacy policy is refused with a message), runs it on plausible inputs
 and refuses NaNs or a constant output, fills the `training` block from git and
 wandb (task, commit, branch, dirty flag, run, checkpoint), and refuses to
-overwrite an existing `.onnx` in the repo without `--force`. Repos are created
-private; `--no-private` for public, `--tag v1` to tag the revision.
+overwrite an existing `.onnx` in the repo without `--force`.
 
 Only constant-command policies are publishable this way. Phase-driven moves
 (the ground pick) and the posture-flag sit↔stand are driven by the daemon
@@ -242,6 +196,6 @@ itself and live in the official set, `pollen-robotics/microduck-policies`.
 ## Tests
 
 ```bash
-uv run --with pytest pytest tests/
+make tests      # CPU-only cfg-invariant and reward regression tests
+make fmt lint
 ```
-
