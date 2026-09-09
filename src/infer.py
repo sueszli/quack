@@ -275,16 +275,14 @@ class PolicyInference:
         self.sit_session = None
         self.sit_mode = False
         self.is_sitstand = False
-        if sit_onnx_path and sitstand_onnx_path:
-            raise ValueError("Provide only one of --sit / --sitstand")
+        assert not (sit_onnx_path and sitstand_onnx_path), "--sit and --sitstand are mutually exclusive"
         if sit_onnx_path:
             print(f"\nLoading sit policy from: {sit_onnx_path}")
             self.sit_session = ort.InferenceSession(sit_onnx_path)
             sit_input_shape = self.sit_session.get_inputs()[0].shape
             print(f"Sit policy input shape: {sit_input_shape}")
         elif sitstand_onnx_path:
-            if not self.new_cmd_obs:
-                raise ValueError("--sitstand policies use the unified 13D command obs (61D); run with --new-cmd-obs")
+            assert self.new_cmd_obs, "--sitstand is 61D (13D command block); add --new-cmd-obs"
             print(f"\nLoading sitstand policy from: {sitstand_onnx_path}")
             self.sit_session = ort.InferenceSession(sitstand_onnx_path)
             self.is_sitstand = True
@@ -312,8 +310,7 @@ class PolicyInference:
         for name, path, duration in (("kick_left", kick_left_onnx_path, kick_duration), ("kick_right", kick_right_onnx_path, kick_duration), ("roulade", roulade_onnx_path, roulade_duration)):
             if not path:
                 continue
-            if not self.new_cmd_obs:
-                raise ValueError(f"--{name.replace('_', '-')} policies use the unified 13D command obs (61D); run with --new-cmd-obs")
+            assert self.new_cmd_obs, f"--{name.replace('_', '-')} is 61D (13D command block); add --new-cmd-obs"
             print(f"\nLoading {name} policy from: {path}")
             self.behavior_sessions[name] = ort.InferenceSession(path)
             self.behavior_durations[name] = duration
@@ -321,8 +318,7 @@ class PolicyInference:
 
         # Validate at least one policy loaded. A sitstand policy can run alone
         # (it holds the stand at flag=0), unlike the old one-way sit policy.
-        if not self.walking_session and not self.standing_session and not self.is_sitstand:
-            raise ValueError("At least one of --walking, --standing or --sitstand must be provided")
+        assert self.walking_session or self.standing_session or self.is_sitstand, "need one of --walking, --standing, --sitstand"
 
         # Determine initial active session and policy
         if self.walking_session:
@@ -582,8 +578,7 @@ class PolicyInference:
     def get_raw_accelerometer(self):
         # Get raw accelerometer reading from MuJoCo sensor.
         sensor_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SENSOR, "imu_accel")
-        if sensor_id < 0:
-            raise ValueError("Sensor 'imu_accel' not found in model")
+        assert sensor_id >= 0, "model has no sensor 'imu_accel'"
 
         sensor_adr = self.model.sensor_adr[sensor_id]
         accel_raw = self.data.sensordata[sensor_adr : sensor_adr + 3].copy().astype(np.float32)

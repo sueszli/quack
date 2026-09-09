@@ -65,8 +65,7 @@ class Camera:
 
     def __init__(self, model: mujoco.MjModel, name: str, width: int = WIDTH, height: int = HEIGHT):
         self.camera = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_CAMERA, name)
-        if self.camera < 0:
-            raise SystemExit(f"the model has no camera {name!r}")
+        assert self.camera >= 0, f"model has no camera {name!r}"
 
         # **The model's head camera faces backwards.** Measured against the duck's own forward axis
         # and the ToF site's: the camera's view direction is -x where both of those are +x, exactly

@@ -131,8 +131,7 @@ def pose_table(scene: Path, keyframe: str) -> tuple[dict[str, float] | None, flo
         return None, HOME_TRUNK_Z
     model = mujoco.MjModel.from_xml_path(str(scene))
     names = [mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_KEY, i) for i in range(model.nkey)]
-    if keyframe not in names:
-        raise SystemExit(f"no keyframe {keyframe!r} in {scene.name}. It has: {', '.join(n for n in names if n)}")
+    assert keyframe in names, f"no keyframe {keyframe!r} in {scene.name}; have {', '.join(n for n in names if n)}"
     qpos = model.key_qpos[names.index(keyframe)]
     table = {}
     for joint in range(model.njnt):
@@ -198,8 +197,7 @@ class Body:
 
         def ident(kind, name):
             found = mujoco.mj_name2id(model, kind, self.prefix + name)
-            if found < 0:
-                raise SystemExit(f"the model has no {name!r} for duck {index}")
+            assert found >= 0, f"model has no {name!r} for duck {index}"
             return found
 
         # By name, never by index: an MJCF edit reorders silently.
@@ -210,8 +208,7 @@ class Body:
             if found >= 0:
                 self.actuators.append(found)
                 self.to_wire.append(wire_index)
-        if not self.actuators:
-            raise SystemExit(f"no actuated joints for duck {index} (prefix {self.prefix!r})")
+        assert self.actuators, f"no actuated joints for duck {index} (prefix {self.prefix!r})"
 
         self.qpos_adr = np.array([model.jnt_qposadr[model.actuator_trnid[a, 0]] for a in self.actuators])
         self.qvel_adr = np.array([model.jnt_dofadr[model.actuator_trnid[a, 0]] for a in self.actuators])
@@ -327,8 +324,7 @@ class Body:
     # ── what the daemon commands ──────────────────────────────────────────
 
     def set_targets(self, wire_targets: list[float]) -> None:
-        if len(wire_targets) != len(JOINT_NAMES):
-            raise ValueError(f"expected {len(JOINT_NAMES)} targets, got {len(wire_targets)}")
+        assert len(wire_targets) == len(JOINT_NAMES), f"want {len(JOINT_NAMES)} targets, got {len(wire_targets)}"
         with self.world.lock:
             for slot, wire_index in enumerate(self.to_wire):
                 self.world.data.ctrl[self.actuators[slot]] = wire_targets[wire_index]
@@ -380,8 +376,7 @@ class Handler(socketserver.StreamRequestHandler):
         op = request.get("op")
         if op == "hello":
             asked = request.get("protocol")
-            if asked != PROTOCOL:
-                raise ValueError(f"the daemon speaks protocol {asked} and this simulator speaks {PROTOCOL}")
+            assert asked == PROTOCOL, f"protocol mismatch: daemon {asked}, simulator {PROTOCOL}"
             return {"protocol": PROTOCOL}
         if op == "read":
             return body.sensors()
@@ -398,7 +393,7 @@ class Handler(socketserver.StreamRequestHandler):
             return body.slow_sensors()
         if op == "tof":
             return body.depth()
-        raise ValueError(f"unknown op {op!r}")
+        raise AssertionError(f"unknown op {op!r}")
 
 
 class Server(socketserver.ThreadingTCPServer):
@@ -481,10 +476,8 @@ def main() -> None:
     parser.add_argument("--keyframe", default="SIT", help="where to start. SIT is a duck folded on the floor, which is stable while it waits and which the standing policy rises from on its own. HOME is infer.py's placement — home pose, trunk 0.125 m, upright — and STAND and FOLD are the scene's other poses")
     args = parser.parse_args()
 
-    if not args.scene.exists():
-        raise SystemExit(f"no scene at {args.scene}. Available:\n  " + "\n  ".join(sorted(p.name for p in SCENES.glob("scene*.xml"))))
-    if args.ducks < 1:
-        raise SystemExit("--ducks needs at least one duck")
+    assert args.scene.exists(), f"no scene at {args.scene}; have {', '.join(sorted(p.name for p in SCENES.glob('scene*.xml')))}"
+    assert args.ducks >= 1, "--ducks must be >= 1"
 
     world = World(args.scene, args.ducks)
     pose, trunk_z = pose_table(args.scene, args.keyframe)

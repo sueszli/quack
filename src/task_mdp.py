@@ -1202,8 +1202,7 @@ def _phase_pose_error(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg, command
     # Target = source + blend(phase)·(target_pose - source), source = STAND
     # (`source_pose` if provided, otherwise the model DEFAULT/HOME). blend ∈ [0,1]
     # (0 = STAND, 1 = target_pose) via `phase_pose_blend`.
-    if not target_pose:
-        raise ValueError("_phase_pose_error requires a non-empty target_pose dict")
+    assert target_pose, "_phase_pose_error: target_pose is empty"
 
     asset: Entity = env.scene[asset_cfg.name]
     cmd = env.command_manager.get_command(command_name)

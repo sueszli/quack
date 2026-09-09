@@ -98,24 +98,21 @@ def run_export(task_id: str, cfg: ExportConfig) -> ExportResult:
         # Check if motion file is already set and exists
         motion_file_already_set = hasattr(motion_cmd, "motion_file") and motion_cmd.motion_file is not None and Path(motion_cmd.motion_file).exists()
 
+        assert cfg.motion_file is not None or motion_file_already_set, "tracking task needs a motion file: pass --motion-file <path/to/motion.npz> (no remote artifact store)"
         if cfg.motion_file is not None:
             print(f"[INFO]: Using motion file from CLI: {cfg.motion_file}")
             motion_cmd.motion_file = cfg.motion_file
-        elif motion_file_already_set:
-            print(f"[INFO]: Using motion file from env config: {motion_cmd.motion_file}")
         else:
-            raise ValueError("Tracking tasks require `motion_file`: pass `--motion-file <path/to/motion.npz>` (there is no remote artifact store).")
+            print(f"[INFO]: Using motion file from env config: {motion_cmd.motion_file}")
 
     log_dir: Path | None = None
     resume_path: Path | None = None
     if TRAINED_MODE:
         log_root_path = (Path("logs") / "rsl_rl" / agent_cfg.experiment_name).resolve()
-        if cfg.checkpoint_file is None and not log_root_path.exists():
-            raise FileNotFoundError(f"No local runs for this task: {log_root_path} does not exist. Train it first, or point at a checkpoint you copied over with `--checkpoint-file <path/to/model_N.pt>`.")
+        assert cfg.checkpoint_file is not None or log_root_path.exists(), f"{log_root_path}: no local runs for this task; train it first or pass --checkpoint-file <path/to/model_N.pt>"
         if cfg.checkpoint_file is not None:
             resume_path = Path(cfg.checkpoint_file)
-            if not resume_path.exists():
-                raise FileNotFoundError(f"Checkpoint file not found: {resume_path}")
+            assert resume_path.exists(), f"{resume_path}: no such checkpoint"
             print(f"[INFO]: Loading checkpoint: {resume_path.name}")
         elif cfg.checkpoint is not None:
             checkpoint_filename = f"model_{cfg.checkpoint}.pt"
