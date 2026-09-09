@@ -45,12 +45,8 @@ def _tiny_policy(path: Path, obs_len: int = m.OBS_LEN, action_len: int = m.ACTIO
 
 
 def test_an_untrained_export_is_refused(tmp_path):
-    """`export --agent untrained` stamps the ONNX; publish must refuse it.
-
-    It has the right widths and passes the smoke run by construction (random
-    weights still emit finite actions), so this stamp is the ONLY thing standing
-    between a shape fixture and a robot loading random weights.
-    """
+    """The stamp is the only signal separating a fixture from a real policy: the
+    widths are right and random weights still smoke-run finite."""
     path = _tiny_policy(tmp_path / "policy.onnx")
     model = onnx.load(str(path))
     model.metadata_props.append(onnx.StringStringEntryProto(key="untrained", value="true"))
