@@ -85,12 +85,12 @@ from mjlab.rl import (
     RslRlModelCfg,
 )
 
-from mjlab_microduck.microduck_constants import MICRODUCK_STANDUP_ROBOT_CFG
-from mjlab_microduck import mdp as microduck_mdp
-from mjlab_microduck.microduck_velocity_env_cfg import (
+from .microduck_constants import MICRODUCK_STANDUP_ROBOT_CFG
+from . import mdp as microduck_mdp
+from .microduck_velocity_env_cfg import (
     make_microduck_velocity_env_cfg,
 )
-from mjlab_microduck.symmetry import PpoWithSymmetryCfg
+from .symmetry import PpoWithSymmetryCfg
 
 # Phase boundaries (PPO iterations; env step counter scales by num_steps_per_env=24)
 FELL_OVER_DISABLE_ITER = 500

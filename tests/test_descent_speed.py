@@ -4,7 +4,7 @@
 
 import torch
 
-from mjlab_microduck.mdp import descent_speed_reward
+from src.mdp import descent_speed_reward
 
 
 class _Data:
