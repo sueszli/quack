@@ -270,27 +270,3 @@ existing .onnx in the repo without --force. Repos are created private;
 Only constant-command policies are publishable this way. Phase-driven moves
 (the ground pick) and the posture-flag sit<->stand are driven by the daemon
 itself and live in the official set, pollen-robotics/microduck-policies.
-
-
-================================================================================
-TESTS
-================================================================================
-
-CPU-only cfg-invariant and reward regression tests; no GPU needed.
-
-    uv run --with pytest pytest tests/
-
-Make targets:
-
-    make fmt        ruff format
-    make lint       ruff check
-    make tests      the test suite
-    make smoke      64-env / 5-iter smoke test
-    make precommit  sync + pre-push hook + tests
-
-
-================================================================================
-LICENSE
-================================================================================
-
-Apache-2.0. See LICENSE.
