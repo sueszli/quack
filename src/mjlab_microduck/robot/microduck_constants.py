@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 
 import mujoco
@@ -11,7 +10,7 @@ from mjlab.entity import EntityArticulationInfoCfg, EntityCfg
 from mjlab.utils.spec_config import CollisionCfg
 
 
-_ROBOT_DIR: Path = Path(os.path.dirname(__file__)) / "microduck"
+_ROBOT_DIR: Path = Path(__file__).resolve().parents[1] / "mjcf"
 
 MICRODUCK_WALK_XML: Path = _ROBOT_DIR / "robot_walk.xml"
 # Ground-contact model (formerly "allcollisions"): curated collision set for
