@@ -1,12 +1,3 @@
-"""head_pose_bias_penalty: prices sustained standing droop, never the recovery.
-
-The velocity-env lesson (run 5yay13u4): instantaneous posture precision is an
-unescapable tax on motion. The standup lesson (retired head_impact_penalty):
-any head cost active during the ground phase blocks the head-pivot flip. So
-this term must (a) charge only the DC bias, (b) accumulate NOTHING while
-fallen, and (c) start the clock from ~zero on arrival upright.
-"""
-
 import math
 
 import torch

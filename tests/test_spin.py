@@ -70,8 +70,6 @@ class _FakeData:
 
 
 class _FakeEntity:
-    """Minimal entity: find_joints() resolves by name from a {name: index} dict."""
-
     def __init__(self, data, joint_ids=None):
         self.data = data
         self._joint_ids = joint_ids or {}
@@ -114,7 +112,6 @@ class _FakeEnv:
 
 
 def _phase_cmd(phases):
-    """Slot command as the policy sees it: [cos(2*pi*phi), sin(...), 0]."""
     p = torch.as_tensor(phases, dtype=torch.float32)
     return torch.stack([torch.cos(2 * math.pi * p), torch.sin(2 * math.pi * p), torch.zeros_like(p)], dim=-1)
 

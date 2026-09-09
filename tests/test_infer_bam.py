@@ -1,14 +1,3 @@
-"""infer.py drives the CPU MuJoCo rehearsal with the SAME BAM M6 actuator
-the policies are trained against in warp (bam.mujoco.MujocoController on a
-motor-converted model). These tests lock the two halves together:
-
-* the script's hardcoded BAM constants mirror ``_BAM_ACTUATOR_KWARGS`` in
-  robot.py (not imported there to keep the script torch/warp-free);
-* the motor conversion matches what ``bam.mjlab.BamActuator.edit_spec`` does
-  (torque motors, voltage-bounded forcerange, armature, zeroed XML friction,
-  stiff friction constraint) and a step loop runs with a live friction budget.
-"""
-
 import mujoco
 import numpy as np
 import pytest

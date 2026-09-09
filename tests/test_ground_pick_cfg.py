@@ -3,7 +3,6 @@ from src.task_mdp import GroundPickPhaseCommand
 
 
 def test_ground_pick_cfg_task_space_rewards():
-    """Task-space objective: mouth near the floor (without touching) + oriented."""
     cfg = make_microduck_ground_pick_env_cfg()
     r = cfg.rewards
     assert "mouth_ground_proximity" in r
