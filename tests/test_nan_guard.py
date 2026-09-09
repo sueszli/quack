@@ -1,9 +1,3 @@
-"""robot_state_is_nan must catch a non-finite state anywhere (joints OR base
-OR wheels), not only in joint_pos — otherwise a free joint diverging to NaN
-escapes the reset and corrupts the critic obs (base_lin_vel/wheel_vel), which kills
-training via rsl_rl's global check_nan.
-"""
-
 import torch
 
 from src.task_mdp import robot_state_is_nan

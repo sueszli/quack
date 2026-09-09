@@ -1,8 +1,3 @@
-"""wheel_glide_reward: rewards forward ROLLING of the wheels (gliding under
-gravity), capped at cap_speed, zero if the wheels roll backward, NaN-safe.
-Independent of any command (the slope task has a zero command).
-"""
-
 import re
 
 import torch
