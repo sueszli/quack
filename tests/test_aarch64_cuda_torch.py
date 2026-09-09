@@ -94,7 +94,7 @@ def test_torch_version_identical_across_platforms():
 
 
 def _on_spark():
-    return sys.platform == "linux" and platform.machine() == "aarch64" and shutil.which("nvidia-smi") is not None and subprocess.run(["nvidia-smi"], capture_output=True).returncode == 0
+    return sys.platform == "linux" and platform.machine() == "aarch64" and shutil.which("nvidia-smi") is not None and subprocess.run(["nvidia-smi"], capture_output=True, check=False).returncode == 0
 
 
 @pytest.mark.skipif(not _on_spark(), reason="not a linux-aarch64 machine with a GPU")

@@ -64,7 +64,7 @@ class _Env:
         self._head_pose_bl_mask = torch.zeros(4)
 
 
-GATE = dict(gate_height_low=0.09, gate_height_high=0.11, gate_tilt_full_deg=20.0, gate_tilt_zero_deg=45.0)
+GATE = {"gate_height_low": 0.09, "gate_height_high": 0.11, "gate_tilt_full_deg": 20.0, "gate_tilt_zero_deg": 45.0}
 
 
 def _set_pose(env, z, pitch_deg):
