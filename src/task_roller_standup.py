@@ -378,7 +378,7 @@ MicroduckRollerStandUpRlCfg = RslRlOnPolicyRunnerCfg(
         # on the 61D (same situation as all v1.5+ envs).
         symmetry_cfg=None,
     ),
-    wandb_project="mjlab_microduck",
+    logger="tensorboard",
     experiment_name="roller_standup",
     run_name="roller_standup",
     save_interval=250,

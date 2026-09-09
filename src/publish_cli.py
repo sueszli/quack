@@ -1,7 +1,7 @@
 # `uv run publish` — put a policy on the Hub in the shape the microduck daemon loads.
 #
-#     # From a wandb run (exports with the normalizer baked in — the only safe path from a checkpoint)
-#     uv run publish --task Mjlab-PoliteBow-Flat-MicroDuck --wandb-run-path ent/proj/run --checkpoint 3000 \
+#     # From a local checkpoint (exports with the normalizer baked in — the only safe path from a checkpoint)
+#     uv run publish --task Mjlab-PoliteBow-Flat-MicroDuck --checkpoint 3000 \
 #         --repo <user>/microduck-polite-bow --kind episodic --duration-s 4.0
 #
 #     # From an ONNX file you already exported
@@ -40,12 +40,10 @@ class PublishConfig:
     # -- where the weights come from: exactly one of (--task + checkpoint) or --onnx
     task: str | None = None
     """Task id to export from, e.g. Mjlab-PoliteBow-Flat-MicroDuck. Needs a checkpoint."""
-    wandb_run_path: str | None = None
-    """`entity/project/run_id`. With --task, the checkpoint source."""
     checkpoint: int | None = None
-    """Checkpoint iteration (model_<N>.pt). Default: the run's latest."""
+    """Checkpoint iteration (model_<N>.pt) under logs/rsl_rl/<experiment_name>/. Default: the latest."""
     checkpoint_file: str | None = None
-    """A local model_<N>.pt instead of wandb."""
+    """An explicit path to a model_<N>.pt."""
     onnx: str | None = None
     """An already-exported ONNX. Validated, not re-exported."""
 
@@ -95,7 +93,7 @@ def _resolve_weights(cfg: PublishConfig, workdir: Path) -> tuple[Path, dict]:
     # The ONNX to publish and the provenance it carries. Exports when given a checkpoint.
     from_checkpoint = cfg.task is not None or cfg.checkpoint_file is not None
     if (cfg.onnx is None) == (not from_checkpoint):
-        _fail("give exactly one source: --onnx <file>, or --task <id> with --wandb-run-path/--checkpoint-file")
+        _fail("give exactly one source: --onnx <file>, or --task <id> with --checkpoint/--checkpoint-file")
 
     training: dict = {"repo": "pollen-robotics/microduck_rl", **m.git_provenance()}
     if cfg.onnx is not None:
@@ -107,8 +105,6 @@ def _resolve_weights(cfg: PublishConfig, workdir: Path) -> tuple[Path, dict]:
 
     if cfg.task is None:
         _fail("--checkpoint-file needs --task <id> to build the env it was trained in")
-    if cfg.wandb_run_path is None and cfg.checkpoint_file is None:
-        _fail("--task needs --wandb-run-path (and optionally --checkpoint) or --checkpoint-file")
 
     # Heavy imports only on this path: the ONNX path must work without a GPU or mjlab's registry.
     import mjlab.tasks  # noqa: F401  (populates the registry)
@@ -116,10 +112,8 @@ def _resolve_weights(cfg: PublishConfig, workdir: Path) -> tuple[Path, dict]:
     from .export import ExportConfig, run_export
 
     out = workdir / m.POLICY_FILE
-    result = run_export(cfg.task, ExportConfig(onnx_file=str(out), wandb_run_path=cfg.wandb_run_path, checkpoint=cfg.checkpoint, checkpoint_file=cfg.checkpoint_file, num_envs=1, device=cfg.device))
+    result = run_export(cfg.task, ExportConfig(onnx_file=str(out), checkpoint=cfg.checkpoint, checkpoint_file=cfg.checkpoint_file, num_envs=1, device=cfg.device))
     training["task_id"] = cfg.task
-    if result.wandb_run_path:
-        training["run"] = result.wandb_run_path
     if result.checkpoint_iteration is not None:
         training["checkpoint"] = result.checkpoint_iteration
     return result.onnx_path, training

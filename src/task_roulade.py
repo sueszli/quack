@@ -84,7 +84,7 @@ ROULADE_FORWARD_VEL_RANGE = (0.0, 0.0)
 # ── Mid-roll spawn (reverse curriculum) ───────────────────────────────────────
 # 90° = balanced on the head, 180° = on the back, 270° = supine, ~340° = seated
 # leaning back, >260° opens the landing gate. Run-3 change: MAX widened
-# 185° → 340° — run-2 wandb showed the second half of the roll (supine →
+# 185° → 340° — run-2 logs showed the second half of the roll (supine →
 # seated → rise) was never spawned and never learned; spawns past ~300° open
 # the landing gate at birth, giving dense on-policy data on the crouch→stand
 # last mile (the velstand run-5 crouch-basin lesson).
@@ -445,7 +445,7 @@ MicroduckRouladeRlCfg = RslRlOnPolicyRunnerCfg(
     ),
     critic=RslRlModelCfg(hidden_dims=(512, 256, 128), activation="elu", obs_normalization=True),
     algorithm=PpoWithSymmetryCfg(value_loss_coef=1.0, use_clipped_value_loss=True, clip_param=0.2, entropy_coef=0.01, num_learning_epochs=5, num_mini_batches=4, learning_rate=1.0e-3, schedule="adaptive", gamma=0.99, lam=0.95, desired_kl=0.01, max_grad_norm=1.0, symmetry_cfg=SYMMETRY_CFG if ENABLE_SYMMETRY else None),
-    wandb_project="mjlab_microduck",
+    logger="tensorboard",
     experiment_name="microduck_roulade",
     run_name="microduck_roulade",
     save_interval=250,

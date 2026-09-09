@@ -6,7 +6,6 @@ wheels/
 *.egg-info
 .python-version
 .venv
-wandb
 logs
 agents
 *.pch

@@ -4126,7 +4126,7 @@ def head_pose_tracking(env: ManagerBasedRlEnv, command_name: str = "head_pose", 
 # policy nothing, whereas letting the value through kills the entire run via
 # rsl_rl's check_nan. Sanitizing here does not hide real physics blowups —
 # those still terminate through nan_state and show up as
-# Episode_Termination/nan_state in wandb.
+# Episode_Termination/nan_state in the training logs.
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -4158,7 +4158,7 @@ def head_pose_bias_penalty(env: ManagerBasedRlEnv, command_name: str = "head_pos
     # instantaneous tight-tolerance term is a permanent tax on walking that no
     # policy can escape — measured at ~0.77/step against an air_time reward of
     # ~1.01/step, which is exactly what made velocity run 2026-08-20 abandon
-    # stepping altogether (wandb 5yay13u4). The steady-state droop IS escapable:
+    # stepping altogether (run 5yay13u4). The steady-state droop IS escapable:
     # the policy can bias its neck command up to cancel gravity sag. Averaging
     # over ``tau_s`` lets the oscillation cancel and prices only the bias.
     #
@@ -4401,7 +4401,7 @@ def pose_command_range_curriculum(env: ManagerBasedRlEnv, env_ids: torch.Tensor,
             current = stage["ranges"]
 
     cfg.ranges = tuple(current)
-    # Return the max abs range as a scalar for wandb visibility.
+    # Return the max abs range as a scalar for logging visibility.
     max_abs = max((max(abs(lo), abs(hi)) for lo, hi in current), default=0.0)
     return torch.tensor(max_abs)
 

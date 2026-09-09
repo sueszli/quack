@@ -261,7 +261,7 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
     # NO max_vz cap (reverted 2026-07-24, second broken run): capping the
     # rewarded rise speed — even at a generous 0.30 — shrinks the payoff of
     # noisy recovery ATTEMPTS during the discovery phase, and face-up/face-down
-    # recovery never got learned. Both broken runs shared the same wandb
+    # recovery never got learned. Both broken runs shared the same logged
     # signature regardless of cap value (0.15 or 0.30) and gate tuning:
     # standing metrics drop at the ground_state_mix stages (1500/2500) instead
     # of recovering like the reference run. Smoothing is now done by the
@@ -766,7 +766,7 @@ MicroduckStandUpRlCfg = RslRlOnPolicyRunnerCfg(
     ),
     critic=RslRlModelCfg(hidden_dims=(512, 256, 128), activation="elu", obs_normalization=True),
     algorithm=PpoWithSymmetryCfg(value_loss_coef=1.0, use_clipped_value_loss=True, clip_param=0.2, entropy_coef=0.01, num_learning_epochs=5, num_mini_batches=4, learning_rate=1.0e-3, schedule="adaptive", gamma=0.99, lam=0.95, desired_kl=0.01, max_grad_norm=1.0, symmetry_cfg=SYMMETRY_CFG if ENABLE_SYMMETRY else None),
-    wandb_project="mjlab_microduck",
+    logger="tensorboard",
     experiment_name="microduck_stand",
     run_name="microduck_stand",
     save_interval=250,
