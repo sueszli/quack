@@ -15,7 +15,7 @@ from mjlab.managers.reward_manager import RewardManager as _RewardManager
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.tasks.velocity.mdp import observations as _velocity_obs
 from mjlab.tasks.velocity.mdp.velocity_command import UniformVelocityCommand, UniformVelocityCommandCfg
-from mjlab.utils.lab_api.math import matrix_from_quat, quat_apply, quat_from_angle_axis, wrap_to_pi
+from mjlab.utils.lab_api.math import euler_xyz_from_quat, matrix_from_quat, quat_apply, quat_from_angle_axis, wrap_to_pi
 from rsl_rl.algorithms.ppo import PPO as _PPO
 
 # ---------------------------------------------------------------------------
@@ -2763,12 +2763,7 @@ def body_pose_tracking_6d(env: ManagerBasedRlEnv, command_name: str = "body_pose
     y_err = rel[:, 1] - dy
     z_err = rel[:, 2] - (nominal_height + dz)
 
-    # ZYX Euler from quat.
-    quat = asset.data.root_link_quat_w
-    qw, qx, qy, qz = quat[:, 0], quat[:, 1], quat[:, 2], quat[:, 3]
-    roll = torch.atan2(2.0 * (qw * qx + qy * qz), 1.0 - 2.0 * (qx * qx + qy * qy))
-    pitch = torch.asin(torch.clamp(2.0 * (qw * qy - qz * qx), -1.0, 1.0))
-    yaw = torch.atan2(2.0 * (qw * qz + qx * qy), 1.0 - 2.0 * (qy * qy + qz * qz))
+    roll, pitch, yaw = euler_xyz_from_quat(asset.data.root_link_quat_w)
 
     roll_err = roll - droll
     pitch_err = pitch - dpitch
@@ -2837,11 +2832,7 @@ def body_pose_tracking_locomotion(env: ManagerBasedRlEnv, command_name: str = "b
     droll, dpitch, dyaw = cmd[:, 3], cmd[:, 4], cmd[:, 5]
 
     pos_w = asset.data.root_link_pos_w
-    quat = asset.data.root_link_quat_w
-    qw, qx, qy, qz = quat[:, 0], quat[:, 1], quat[:, 2], quat[:, 3]
-    trunk_yaw = torch.atan2(2.0 * (qw * qz + qx * qy), 1.0 - 2.0 * (qy * qy + qz * qz))
-    roll = torch.atan2(2.0 * (qw * qx + qy * qz), 1.0 - 2.0 * (qx * qx + qy * qy))
-    pitch = torch.asin(torch.clamp(2.0 * (qw * qy - qz * qx), -1.0, 1.0))
+    roll, pitch, trunk_yaw = euler_xyz_from_quat(asset.data.root_link_quat_w)
 
     # Feet centroid in world frame.
     foot_pos = asset.data.site_pos_w[:, feet_cfg.site_ids]  # (N, 2, 3)
