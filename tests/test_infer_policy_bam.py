@@ -9,23 +9,15 @@ motor-converted model). These tests lock the two halves together:
   stiff friction constraint) and a step loop runs with a live friction budget.
 """
 
-import importlib.util
-from pathlib import Path
-
 import mujoco
 import numpy as np
 import pytest
 
-REPO = Path(__file__).resolve().parents[1]
-
 
 @pytest.fixture(scope="module")
 def ip():
-    spec = importlib.util.spec_from_file_location(
-        "infer_policy", REPO / "scripts" / "infer_policy.py"
-    )
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
+    import mjlab_microduck.infer_policy as mod
+
     return mod
 
 
@@ -48,7 +40,7 @@ def test_cpu_bam_constants_mirror_training_cfg(ip):
 def bam_sim(ip):
     bam_model = ip.load_bam_model(ip.BAM_KP_FW, 7.4, ip.BAM_MAX_CURRENT)
     model, data, ctrl, names = ip.load_mujoco_with_bam(
-        str(REPO / ip.MICRODUCK_XML), bam_model, 0.005, 0.1, ip.BAM_VIN_MIN
+        ip.MICRODUCK_XML, bam_model, 0.005, 0.1, ip.BAM_VIN_MIN
     )
     return ip, bam_model, model, data, ctrl, names
 

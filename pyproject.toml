@@ -33,6 +33,8 @@ mjlab_microduck = "mjlab_microduck.tasks.registry"
 # Serve a simulated body to the real `robotd` — see sim/body_server.py.
 duck-body = "mjlab_microduck.sim.body_server:main"
 publish = "mjlab_microduck.publish.cli:main"
+export = "mjlab_microduck.export:main"
+infer = "mjlab_microduck.infer_policy:main"
 
 [tool.uv.build-backend]
 # No __init__.py files: package implicit namespace directories.
