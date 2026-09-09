@@ -1,29 +1,29 @@
-"""Microduck SPIN task — rotation rapide sur place, sur rollers.
+"""Microduck SPIN task — fast in-place rotation, on rollers.
 
-Geste cyclique déclenché au bouton A via le slot --ground-pick du runtime :
-~1 tour anti-horaire à ~3 rad/s puis arrêt propre debout.
+Cyclic gesture triggered by button A via the runtime's --ground-pick slot:
+~1 counter-clockwise turn at ~3 rad/s then a clean stop, standing.
 
-Hybride :
-  - physique / robot roller  ← microduck_velocity_rollers_env_cfg.py
-  - machinerie phase cyclique ← microduck_roller_crouch_env_cfg.py
-    (commande GroundPickPhaseCommand : [cos(2πφ), sin(2πφ), 0], période 4 s)
+Hybrid:
+  - physics / roller robot  ← microduck_velocity_rollers_env_cfg.py
+  - cyclic phase machinery ← microduck_roller_crouch_env_cfg.py
+    (GroundPickPhaseCommand command: [cos(2πφ), sin(2πφ), 0], period 4 s)
 
-Différence de fond avec le crouch : la phase pilote une VITESSE DE LACET cible
-(objectif de résultat) et non une pose articulaire. Deux amorces décroissantes
-poussent vers le roulement différentiel — le seul mécanisme physique certain sur
-4 roues passives : patin gauche vers l'arrière, patin droit vers l'avant.
+Fundamental difference from the crouch: the phase drives a target YAW RATE
+(outcome objective) and not a joint pose. Two decaying primers
+push towards differential rolling — the only certain physical mechanism on
+4 passive wheels: left skate backwards, right skate forwards.
 
-Obs 61D unifié → interchangeable au runtime avec roller / ground_pick / crouch.
-Voir docs/design-notes
+Unified 61D obs → interchangeable at runtime with roller / ground_pick / crouch.
+See docs/design-notes
 """
 
 import math
 from copy import deepcopy
 
-# La symétrie G/D transformerait un spin à gauche en spin à droite : interdit ici.
+# L/R symmetry would turn a left spin into a right spin: forbidden here.
 ENABLE_SYMMETRY = False
 
-# DR — repris du roller env
+# DR — taken from the roller env
 ENABLE_COM_RANDOMIZATION             = True
 ENABLE_HEAD_COM_RANDOMIZATION        = True
 ENABLE_MASS_INERTIA_RANDOMIZATION    = True
@@ -44,8 +44,8 @@ VELOCITY_PUSH_RANGE              = (-0.2, 0.2)
 IMU_ORIENTATION_RANDOMIZATION_ANGLE = 6.0
 ENCODER_BIAS_RANGE               = (-0.015, 0.015)
 
-# Le bouton peut être pressé à l'arrêt OU en roulement lent : la policy apprend
-# à tuer l'élan résiduel avant/pendant le lancement de la rotation.
+# The button can be pressed at rest OR while rolling slowly: the policy learns
+# to kill the residual momentum before/during the launch of the rotation.
 ENTRY_VELOCITY_X = (0.0, 0.3)
 
 from mjlab.envs import ManagerBasedRlEnvCfg
@@ -71,7 +71,7 @@ from mjlab_microduck.tasks import mdp as microduck_mdp
 from mjlab_microduck.tasks.microduck_velocity_env_cfg import HEAD_BODY_NAMES
 from mjlab_microduck.tasks.symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
 
-# Enveloppe de phase : constantes canoniques définies dans mdp.py.
+# Phase envelope: canonical constants defined in mdp.py.
 SPIN_PERIOD = microduck_mdp.SPIN_PERIOD
 _ENVELOPE = {
     "rate_max": microduck_mdp.SPIN_RATE_MAX,
@@ -79,13 +79,13 @@ _ENVELOPE = {
     "hold_end": microduck_mdp.SPIN_HOLD_END,
     "brake_end": microduck_mdp.SPIN_BRAKE_END,
 }
-# Nuque/tête tenues près du neutre SAUF head_yaw, laissé libre : il peut servir
-# de volant d'inertie pour lancer la rotation.
+# Neck/head held near neutral EXCEPT head_yaw, left free: it can serve
+# as a flywheel to launch the rotation.
 NECK_PATTERN_NO_YAW = r"^(neck_pitch|head_pitch|head_roll)$"
 
 
 def make_microduck_spin_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
-    """Env spin sur rollers, piloté par la phase du slot ground-pick."""
+    """Spin env on rollers, driven by the phase of the ground-pick slot."""
 
     feet_ground_cfg = ContactSensorCfg(
         name="feet_ground_contact",
@@ -119,10 +119,10 @@ def make_microduck_spin_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     joint_pos_action.scale = 1.0
 
     # === REWARDS ===
-    # ⚠️ angular_momentum n'est PAS gardée : elle pénalise la norme 3D du moment
-    # angulaire, donc elle combattrait directement le spin. body_ang_vel, elle,
-    # ne pénalise que x/y (« Don't penalize z-angular velocity » dans mjlab) →
-    # gardée, elle mate le ballant roulis/tangage sans gêner la rotation.
+    # ⚠️ angular_momentum is NOT kept: it penalizes the 3D norm of the angular
+    # momentum, so it would directly fight the spin. body_ang_vel, on the other hand,
+    # only penalizes x/y ("Don't penalize z-angular velocity" in mjlab) →
+    # kept, it tames the roll/pitch sway without hindering the rotation.
     keep = {"upright", "body_ang_vel", "action_rate_l2"}
     for name in list(cfg.rewards.keys()):
         if name not in keep:
@@ -134,26 +134,26 @@ def make_microduck_spin_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     cfg.rewards["body_ang_vel"].weight = -0.05
     cfg.rewards["action_rate_l2"].weight = -1.0
 
-    # Objectif principal : suivre la vitesse de lacet cible ω*(φ) (trapèze).
+    # Main objective: track the target yaw rate ω*(φ) (trapezoid).
     cfg.rewards["spin_rate_track"] = RewardTermCfg(
         func=microduck_mdp.spin_rate_track,
         weight=6.0,
         params={"command_name": "twist", "std": 1.5, **_ENVELOPE},
     )
-    # Bootstrap L1 : gradient constant quand la gaussienne sature loin de la cible.
+    # L1 bootstrap: constant gradient when the Gaussian saturates far from the target.
     cfg.rewards["spin_rate_l1"] = RewardTermCfg(
         func=microduck_mdp.spin_rate_l1,
         weight=0.5,
         params={"command_name": "twist", **_ENVELOPE},
     )
-    # Tourner SUR PLACE, et tuer l'élan d'entrée. Renforcé -1.0 -> -3.0 : au run de
-    # calibrage à 500 it. le tronc translatait à ~0.35 m/s (~ω·demi-voie), signature
-    # d'un pivot sur un seul patin plutôt qu'un spin centré sur le corps — c'est le
-    # seul terme qui distingue un spin centré d'un pivot excentré.
-    # Atténué pendant la rampe de lancement [0, ACCEL_END) : c'est le moment où le
-    # robot doit pousser au sol pour s'injecter du moment angulaire, et où l'élan
-    # d'entrée (jusqu'à 0.3 m/s) doit être CONVERTI en rotation — le facturer plein
-    # tarif là s'opposerait au lancement. Plein tarif sur régime/freinage/repos.
+    # Turn IN PLACE, and kill the entry momentum. Strengthened -1.0 -> -3.0: in the
+    # calibration run at 500 it. the trunk translated at ~0.35 m/s (~ω·half-track), the
+    # signature of a pivot on a single skate rather than a spin centered on the body — this is
+    # the only term that distinguishes a centered spin from an off-center pivot.
+    # Attenuated during the launch ramp [0, ACCEL_END): this is when the
+    # robot must push on the ground to inject angular momentum, and when the entry
+    # momentum (up to 0.3 m/s) must be CONVERTED into rotation — charging it full
+    # price there would oppose the launch. Full price on cruise/braking/rest.
     cfg.rewards["spin_stay_in_place"] = RewardTermCfg(
         func=microduck_mdp.spin_stay_in_place,
         weight=-3.0,
@@ -163,7 +163,7 @@ def make_microduck_spin_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
             "accel_end": microduck_mdp.SPIN_ACCEL_END,
         },
     )
-    # Amorce 1 : tourner EN ROULEMENT (patins en sens opposés), pas en patinage.
+    # Primer 1: turn BY ROLLING (skates in opposite directions), not by skidding.
     cfg.rewards["spin_wheel_differential"] = RewardTermCfg(
         func=microduck_mdp.spin_wheel_differential,
         weight=1.0,
@@ -173,7 +173,7 @@ def make_microduck_spin_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
             **_ENVELOPE,
         },
     )
-    # Amorce 2 : ciseau des jambes (décroît par curriculum, voir plus bas).
+    # Primer 2: leg scissoring (decays via curriculum, see below).
     cfg.rewards["leg_antisymmetry"] = RewardTermCfg(
         func=microduck_mdp.leg_antisymmetry,
         weight=1.0,
@@ -183,7 +183,7 @@ def make_microduck_spin_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
             **_ENVELOPE,
         },
     )
-    # Les deux lames au sol pendant le spin (pas de vrille en l'air).
+    # Both blades on the ground during the spin (no airborne twirl).
     cfg.rewards["spin_grounded"] = RewardTermCfg(
         func=microduck_mdp.spin_grounded,
         weight=0.5,
@@ -193,7 +193,7 @@ def make_microduck_spin_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
             **_ENVELOPE,
         },
     )
-    # Stabilité / sim2real
+    # Stability / sim2real
     cfg.rewards["feet_flat"] = RewardTermCfg(
         func=microduck_mdp.feet_flat_penalty,
         weight=-2.0,
@@ -242,10 +242,10 @@ def make_microduck_spin_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
         )
 
     cfg.events["reset_base"].params["pose_range"]["z"] = (0.1335, 0.1435)
-    # Élan d'entrée : injecté via reset_root_state_uniform (état par défaut PROPRE
-    # + range), et NON via push_by_setting_velocity en mode reset, qui additionne à
-    # une vitesse racine potentiellement divergente et fait exploser le free-joint
-    # de la base -> NaN. Régression connue du roller_crouch.
+    # Entry momentum: injected via reset_root_state_uniform (CLEAN default state
+    # + range), and NOT via push_by_setting_velocity in reset mode, which adds to
+    # a potentially divergent root velocity and blows up the base free-joint
+    # -> NaN. Known regression from roller_crouch.
     cfg.events["reset_base"].params["velocity_range"] = {"x": ENTRY_VELOCITY_X}
 
     if ENABLE_WHEEL_FRICTION_RANDOMIZATION:
@@ -371,13 +371,13 @@ def make_microduck_spin_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
             func=microduck_mdp.zero_command_padding, params={"dim": 6},
         )
 
-    # === COMMAND: phase (comme ground_pick / roller_crouch) ===
+    # === COMMAND: phase (like ground_pick / roller_crouch) ===
     command: UniformVelocityCommandCfg = cfg.commands["twist"]
     command.rel_standing_envs = 0.0
     command.rel_heading_envs = 0.0
-    # period=4.0 = défaut de --ground-pick-period (rien à passer au runtime) ;
-    # randomize_phase=False -> chaque épisode démarre debout à phase 0, comme le
-    # bouton au déploiement. Épisode 20 s = 5 cycles complets du geste.
+    # period=4.0 = default of --ground-pick-period (nothing to pass to the runtime);
+    # randomize_phase=False -> every episode starts standing at phase 0, like the
+    # button at deployment. 20 s episode = 5 full cycles of the gesture.
     cfg.commands["twist"] = microduck_mdp.GroundPickPhaseCommandCfg(
         **{
             **vars(command),
@@ -404,8 +404,8 @@ def make_microduck_spin_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
             ],
         },
     )
-    # L'amorce ciseau s'efface : elle lance le bon mécanisme puis laisse la policy
-    # affiner son propre geste (fréquence de pompage libre).
+    # The scissor primer fades out: it launches the right mechanism then lets the policy
+    # refine its own gesture (free pumping frequency).
     cfg.curriculum["leg_antisym_weight"] = CurriculumTermCfg(
         func=microduck_mdp.reward_weight,
         params={
