@@ -19,34 +19,29 @@ import mujoco.viewer
 import numpy as np
 import onnxruntime as ort
 
-# Repo-level assets/mjcf; not imported from robot.py (see BAM note below).
 _ROBOT_DIR = Path(__file__).resolve().parents[1] / "assets" / "mjcf"
 MICRODUCK_XML = str(_ROBOT_DIR / "scene.xml")
 MICRODUCK_ROLLERS_XML = str(_ROBOT_DIR / "scene_rollers.xml")
 MICRODUCK_BALL_XML = str(_ROBOT_DIR / "scene_ball.xml")
 
-# BAM M6 defaults — MUST mirror `_BAM_ACTUATOR_KWARGS` in
-# src/robot.py (the actuator every policy is
-# trained against in warp). Not imported from there: that module drags in
-# mjlab/torch/warp (~16 s import) for a CPU rehearsal script. Locked by
+# MUST mirror `_BAM_ACTUATOR_KWARGS` in robot.py (the actuator every policy is trained
+# against in warp). Duplicated rather than imported: that module drags in
+# mjlab/torch/warp (~16 s) for a CPU rehearsal script. Locked by
 # tests/test_infer_bam.py.
 BAM_MOTOR_NAME = "xl330"
 BAM_MODEL = "m6"
-BAM_KP_FW = 200.0  # microduck's preserved firmware stiffness
+BAM_KP_FW = 200.0
 BAM_VIN_RANGE = (6.5, 8.2)  # per-env battery voltage DR in training
 BAM_VIN_DROP_GAIN_RANGE = (0.0, 0.2)  # load-dependent sag V_drop = gain * sum|tau|
 BAM_VIN_MIN = 6.0  # floor on effective voltage after sag
 BAM_MAX_CURRENT = None  # training runs WITHOUT the firmware current limiter
-# Stiff joint-friction constraint, copied from bam.mjlab.BamActuator
-# (stiff_frictionloss=True in training): warp has no noslip solver, so BAM
-# stiffens frictionloss so a statically-held joint does not creep. Mirrored
-# here so CPU and warp apply the same friction budget the same way.
+# Warp has no noslip solver, so BAM stiffens frictionloss to stop a statically-held
+# joint creeping. Mirrored here so CPU and warp apply the same friction budget.
 BAM_STIFF_SOLREF_FRICTION = (-5.0e4, -2.0e2)
 BAM_STIFF_SOLIMP_FRICTION = (0.99, 0.9999, 0.001, 0.5, 2.0)
 
 
 def load_bam_model(kp_fw: float, vin: float, max_current):
-    """Build the BAM M6 model + XL330 voltage-controlled actuator."""
     from bam.model import load_model
 
     bam_model = load_model(motor_name=BAM_MOTOR_NAME, model=BAM_MODEL)
@@ -59,11 +54,9 @@ def load_bam_model(kp_fw: float, vin: float, max_current):
 def load_mujoco_with_bam(xml_path: str, bam_model, timestep: float, vin_drop_gain, vin_min):
     """Load the scene and hand every non-passive actuator to bam.mujoco.MujocoController.
 
-    Mirrors bam.mjlab.BamActuator.edit_spec (what warp does at training time):
-    position actuators -> torque motors with the voltage-bounded forcerange,
-    joint damping/frictionloss zeroed (BAM rewrites them every step), stiff
-    friction constraint. Armature is set on the dofs by MujocoController.
-    Returns (model, data, bam_ctrl, actuator_names).
+    Mirrors what warp does at training time (bam.mjlab.BamActuator.edit_spec): position actuators
+    become torque motors with the voltage-bounded forcerange, joint damping/frictionloss are zeroed
+    because BAM rewrites them every step, stiff friction constraint.
     """
     from bam.mujoco import MujocoController
 
@@ -86,7 +79,7 @@ def load_mujoco_with_bam(xml_path: str, bam_model, timestep: float, vin_drop_gai
         names.append(act.name)
         for joint in spec.joints:
             if joint.name == tgt_name:
-                joint.damping = np.zeros((3, 1))  # MjsJoint expects a (3,1) array
+                joint.damping = np.zeros((3, 1))  # MjsJoint expects (3,1)
                 joint.frictionloss = 0.0
                 joint.solref_friction = BAM_STIFF_SOLREF_FRICTION
                 joint.solimp_friction = BAM_STIFF_SOLIMP_FRICTION
@@ -100,24 +93,20 @@ def load_mujoco_with_bam(xml_path: str, bam_model, timestep: float, vin_drop_gai
     return model, data, bam_ctrl, names
 
 
-# Body pose command constants (must match training constants)
-BODY_CMD_MAX_Z = 0.03  # ±30 mm
-BODY_CMD_MAX_XY = 0.02  # ±20 mm
-BODY_CMD_MAX_ANGLE = math.radians(30)  # ±30°
+# MUST match the training constants.
+BODY_CMD_MAX_Z = 0.03
+BODY_CMD_MAX_XY = 0.02
+BODY_CMD_MAX_ANGLE = math.radians(30)
 
-# Ball placement for kick behaviors (must match task_ball_kick's
-# reset_ball_in_front_of_foot params: ball center in the robot's yaw frame).
+# MUST match task_ball_kick's reset_ball_in_front_of_foot: ball centre in the robot's
+# yaw frame.
 BALL_OFFSET_X = 0.09
 BALL_OFFSET_ABS_Y = 0.042
 BALL_RADIUS = 0.035
 
-# Default pose used by the policy (legs flexed, standing position)
-# This is the reference pose that:
-# - Actions are offsets from (motor_target = DEFAULT_POSE + action * scale)
-# - Joint observations are relative to (obs_joint_pos = current_pos - DEFAULT_POSE)
-# STAND2 pose (matches HOME_FRAME in robot.py): trunk shifted
-# ~5mm forward so the CoM sits over the ankle axis. Leg pitch chain leaned
-# forward vs the old pose: hip_pitch 30°→26.24°, ankle 30°→25.95°, knee 0°→0.28°.
+# The policy's reference pose: actions are offsets from it (motor_target = DEFAULT_POSE
+# + action * scale) and joint observations are relative to it (obs_joint_pos =
+# current_pos - DEFAULT_POSE). MUST match HOME_FRAME in robot.py.
 DEFAULT_POSE = np.array(
     [
         0.0,  # left_hip_yaw
@@ -142,12 +131,8 @@ DEFAULT_POSE = np.array(
 class TerminalInput:
     """Single-keypress reader on stdin (cbreak mode, background thread).
 
-    Replaces the MuJoCo viewer key_callback: keypresses in the viewer window
-    also fire the viewer's built-in visualization shortcuts (frames, labels,
-    rendering toggles…), so commands are read from the terminal instead.
-    Arrow keys arrive as ESC [ A/B/C/D escape sequences and are translated to
-    symbolic names ("up"/"down"/"left"/"right"); letters are lowercased.
-    cbreak (not raw) mode keeps ISIG enabled, so Ctrl+C still works.
+    Replaces the MuJoCo viewer key_callback, because keypresses in the viewer window also fire its
+    built-in visualization shortcuts. cbreak rather than raw keeps ISIG enabled, so Ctrl+C works.
     """
 
     _ARROWS = {"A": "up", "B": "down", "C": "right", "D": "left"}
@@ -174,9 +159,11 @@ class TerminalInput:
             termios.tcsetattr(self._fd, termios.TCSADRAIN, self._old_attrs)
 
     def _read1(self, timeout):
-        """Read one byte from stdin, or None on timeout. os.read (unbuffered):
-        buffered sys.stdin.read would swallow escape-sequence bytes past what
-        select reported ready."""
+        """One byte from stdin, or None on timeout.
+
+        os.read, unbuffered: sys.stdin.read would swallow escape-sequence bytes past what select
+        reported ready.
+        """
         r, _, _ = select.select([self._fd], [], [], timeout)
         if not r:
             return None
@@ -188,7 +175,7 @@ class TerminalInput:
             ch = self._read1(0.1)
             if not ch:
                 continue
-            if ch == "\x1b":  # possible arrow-key escape sequence
+            if ch == "\x1b":  # arrow keys arrive as ESC [ A/B/C/D
                 if self._read1(0.05) == "[":
                     final = self._read1(0.05)
                     name = self._ARROWS.get(final) if final else None
@@ -198,7 +185,7 @@ class TerminalInput:
             self._queue.put(ch.lower() if ch.isalpha() else ch)
 
     def get_keys(self):
-        """Drain and return all pending keys (symbolic names / characters)."""
+        """Drain all pending keys: "up"/"down"/"left"/"right", " ", or a lowercase letter."""
         keys = []
         while True:
             try:
@@ -209,7 +196,7 @@ class TerminalInput:
 
 class PolicyInference:
     def __init__(self, model, data, walking_onnx_path=None, action_scale=1.0, bam_ctrl=None, delay_min_lag=0, delay_max_lag=0, standing_onnx_path=None, switch_threshold=0.05, use_projected_gravity=False, ground_pick_onnx_path=None, ground_pick_period=4.0, sit_onnx_path=None, new_cmd_obs=False, slope_onnx_path=None, sitstand_onnx_path=None, kick_left_onnx_path=None, kick_right_onnx_path=None, roulade_onnx_path=None, kick_duration=3.0, roulade_duration=2.0):
-        self.bam_ctrl = bam_ctrl  # bam.mujoco.MujocoController (None = legacy position actuators)
+        self.bam_ctrl = bam_ctrl  # None = legacy XML position actuators
         self.model = model
         self.data = data
         self.action_scale = action_scale
@@ -217,12 +204,11 @@ class PolicyInference:
         self.delay_min_lag = delay_min_lag
         self.delay_max_lag = delay_max_lag
         self.switch_threshold = switch_threshold
-        # When True: emit the unified 13D command vector and treat head_offset /
-        # body_cmd as policy COMMANDS (no add to ctrl, no joint_pos correction).
-        # When False: legacy behaviour (3D command, head_offset added to ctrl[5:9]).
+        # True: emit the unified 13D command and treat head_offset / body_cmd as policy
+        # COMMANDS. False: legacy 3D command, with head_offset added to ctrl[5:9]
+        # instead.
         self.new_cmd_obs = new_cmd_obs
 
-        # Load walking policy
         self.walking_session = None
         self.default_gait_period_from_onnx = None
         if walking_onnx_path:
@@ -233,7 +219,6 @@ class PolicyInference:
             print(f"Walking policy input: {self.walking_session.get_inputs()[0].name}, shape: {w_input_shape}")
             print(f"Walking policy output: {self.walking_session.get_outputs()[0].name}, shape: {w_output_shape}")
 
-            # Try to read gait period from ONNX metadata
             try:
                 model_metadata = self.walking_session.get_modelmeta()
                 if hasattr(model_metadata, "custom_metadata_map") and "gait_period" in model_metadata.custom_metadata_map:
@@ -242,7 +227,6 @@ class PolicyInference:
             except Exception as e:
                 print(f"Could not read gait period from ONNX metadata: {e}")
 
-        # Load standing policy
         self.standing_session = None
         if standing_onnx_path:
             print(f"\nLoading standing policy from: {standing_onnx_path}")
@@ -254,7 +238,6 @@ class PolicyInference:
             if self.walking_session:
                 print(f"Policy switching threshold: {switch_threshold} (vel command magnitude)")
 
-        # Load ground pick policy
         self.ground_pick_session = None
         self.ground_pick_mode = False
         self.ground_pick_phase = 0.0
@@ -265,13 +248,11 @@ class PolicyInference:
             gp_input_shape = self.ground_pick_session.get_inputs()[0].shape
             print(f"Ground pick policy input shape: {gp_input_shape}")
 
-        # Load sit policy. Two flavours share the Y key and self.sit_session:
-        #  - --sit (is_sitstand=False): the OLD one-way sit policy. Sits
-        #    unconditionally on a zero twist command; standing back up is done
-        #    by switching back to the standing/walking session.
-        #  - --sitstand (is_sitstand=True): the commanded sit↔stand policy.
-        #    twist[0] is a posture flag (0=stand, 1=sit); the SAME policy sits,
-        #    holds, and stands back up — Y just flips the flag.
+        # Two flavours share the Y key and self.sit_session:
+        #  - --sit: the OLD one-way sit policy. Sits on a zero twist command;
+        #    standing back up means switching to the standing/walking session.
+        #  - --sitstand: twist[0] is a posture flag (0=stand, 1=sit) and the SAME
+        #    policy sits, holds, and stands back up, so Y just flips the flag.
         self.sit_session = None
         self.sit_mode = False
         self.is_sitstand = False
@@ -291,7 +272,7 @@ class PolicyInference:
             ss_input_shape = self.sit_session.get_inputs()[0].shape
             print(f"Sitstand policy input shape: {ss_input_shape}")
 
-        # Load slope policy (passive descent, runs with zero twist command)
+        # Passive descent; runs with a zero twist command.
         self.slope_session = None
         self.slope_mode = False
         if slope_onnx_path:
@@ -300,11 +281,10 @@ class PolicyInference:
             sl_input_shape = self.slope_session.get_inputs()[0].shape
             print(f"Slope policy input shape: {sl_input_shape}")
 
-        # Episodic behavior policies (kick left/right, roulade). All three use
-        # the unified 61D obs layout with an ALL-ZERO 13D command (twist forced
-        # ~0 in training, head/body slots zero-padded), so triggering one is a
-        # plain session swap; after `duration` seconds control hands back to
-        # walking/standing (the behavior policies end standing on their own).
+        # Episodic behaviours use the 61D obs layout with an ALL-ZERO 13D command (twist
+        # forced ~0 in training, head/body slots zero-padded), so triggering one is a
+        # plain session swap. They end standing on their own, and a timer hands control
+        # back after `duration`.
         self.behavior_sessions = {}
         self.behavior_durations = {}
         self.behavior_mode = None  # name of the running behavior, or None
@@ -319,12 +299,11 @@ class PolicyInference:
             self.behavior_durations[name] = duration
             print(f"{name} policy input shape: {self.behavior_sessions[name].get_inputs()[0].shape}  (auto-return after {duration:.1f}s)")
 
-        # Validate at least one policy loaded. A sitstand policy can run alone
-        # (it holds the stand at flag=0), unlike the old one-way sit policy.
+        # A sitstand policy can run alone (it holds the stand at flag=0), unlike the
+        # one-way sit.
         if not self.walking_session and not self.standing_session and not self.is_sitstand:
             raise ValueError("At least one of --walking, --standing or --sitstand must be provided")
 
-        # Determine initial active session and policy
         if self.walking_session:
             self.current_policy = "walking"
             self.ort_session = self.walking_session
@@ -336,16 +315,13 @@ class PolicyInference:
             self.current_policy = "sit"
             self.ort_session = self.sit_session
 
-        # Get input/output names from active session
         self.input_name = self.ort_session.get_inputs()[0].name
         self.output_name = self.ort_session.get_outputs()[0].name
 
-        # Get sensor IDs and body IDs
         self.imu_ang_vel_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SENSOR, "imu_ang_vel")
         self.trunk_base_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "trunk_base")
 
-        # Trunk freejoint qpos address (needed to place the ball in the robot's
-        # yaw frame) and optional ball freejoint (present in scene_ball.xml).
+        # The ball freejoint exists only in scene_ball.xml.
         _trunk_jid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "trunk_base_freejoint")
         self._trunk_qpos_adr = int(model.jnt_qposadr[_trunk_jid])
         _ball_jid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "ball_free")
@@ -361,27 +337,25 @@ class PolicyInference:
         print("Body IDs:")
         print(f"  trunk_base: id={self.trunk_base_id}")
 
-        # Joint information
         self.n_joints = model.nu
 
-        # For robots with passive/interspersed joints (e.g. roller skates), the actuated
-        # joints are not contiguous in qpos/qvel. Compute the correct indices from the
-        # actuator transmission joint IDs so extraction works for any joint ordering.
+        # On models with interleaved passive joints (rollers, backlash) the actuated
+        # joints are NOT contiguous in qpos/qvel, so resolve indices via the actuator
+        # transmission ids.
         self.joint_qpos_indices = [int(model.jnt_qposadr[model.actuator_trnid[i, 0]]) for i in range(model.nu)]
         self.joint_qvel_indices = [int(model.jnt_dofadr[model.actuator_trnid[i, 0]]) for i in range(model.nu)]
 
-        # Default pose for the policy (flexed legs)
         self.default_pose = DEFAULT_POSE[: self.n_joints]
         print(f"Number of actuators: {self.n_joints}")
         print(f"Default pose: {self.default_pose}")
         print(f"Action scale: {self.action_scale}")
 
-        # Last action (for observation history)
         self.last_action = np.zeros(self.n_joints, dtype=np.float32)
 
-        # Velocity command [lin_vel_x, lin_vel_y, ang_vel_z] — controls walking / policy switching
+        # [lin_vel_x, lin_vel_y, ang_vel_z]; also drives walking/standing policy
+        # switching.
         self.vel_cmd = np.zeros(3, dtype=np.float32)
-        # Key-press step sizes and limits (overridden per mode in main())
+        # Overridden per mode in main().
         self.vel_step_x = 0.05
         self.vel_step_y = 0.05
         self.vel_step_ang = 0.3
@@ -390,25 +364,20 @@ class PolicyInference:
         self.vel_max_y = 0.3
         self.vel_min_y = -0.3
         self.vel_max_ang = 1.5
-        # Body pose command. In new_cmd_obs mode this is 6D
-        #   [x, y, z, roll, pitch, yaw] (m, m, m, rad, rad, rad)
-        # In legacy mode only [z, pitch, roll] (first 3 indices reused as
-        # [z, pitch, roll] to keep the legacy normalization path working).
+        # new_cmd_obs: 6D [x, y, z, roll, pitch, yaw]. Legacy: 3D, the first three
+        # indices reused as [z, pitch, roll] to keep the legacy normalization path
+        # working.
         self.body_cmd = np.zeros(6 if self.new_cmd_obs else 3, dtype=np.float32)
-        # Obs command vector (3D in legacy mode, 13D when new_cmd_obs=True).
         self.command = np.zeros(13 if self.new_cmd_obs else 3, dtype=np.float32)
 
-        # Body pose mode (like head mode but for standing body pose control)
         self.body_pose_mode = False
-        self.body_cmd_step_xy = 0.005  # 5 mm per keypress (4 to max)
-        self.body_cmd_step_z = 0.01  # 10 mm per keypress (3 to max)
-        self.body_cmd_step_angle = math.radians(10)  # 10° per keypress (3 to max)
+        self.body_cmd_step_xy = 0.005
+        self.body_cmd_step_z = 0.01
+        self.body_cmd_step_angle = math.radians(10)
 
-        # Head control mode. In legacy mode head_offset is added on top of
-        # ctrl[5:9]; in new_cmd_obs mode it's a *command* fed to the policy.
-        # Final per-joint training caps: neck/head_pitch ±1.1, head_yaw ±1.4,
-        # head_roll ±0.31. Slider max = widest joint cap; head_roll naturally
-        # gets clipped by the policy since it was never trained beyond 0.31.
+        # Slider max is the widest per-joint training cap (head_yaw ±1.4;
+        # neck/head_pitch ±1.1, head_roll ±0.31). head_roll is clipped by the policy,
+        # never trained beyond 0.31.
         self.head_mode = False
         self.head_offset = np.zeros(4, dtype=np.float32)
         if self.new_cmd_obs:
@@ -418,7 +387,6 @@ class PolicyInference:
             self.head_max = 2.5
             self.head_step = 0.83
 
-        # Action delay buffer
         self.use_delay = self.delay_max_lag > 0
         if self.use_delay:
             buffer_size = self.delay_max_lag + 1
@@ -435,67 +403,59 @@ class PolicyInference:
             self.current_lag = 0
 
     def _update_command(self):
-        """Update self.command (fed into obs) based on current policy and commands.
+        """Update self.command (fed into obs) from the current policy and commands.
 
-        Legacy mode (new_cmd_obs=False): self.command is 3D.
-        New mode (new_cmd_obs=True): self.command is 13D:
+        The 13D new_cmd_obs layout is
             [vx, vy, vtheta,                                  ← twist
              neck_pitch, head_pitch, head_yaw, head_roll,     ← head_pose deltas
              body_x, body_y, body_z, body_roll, body_pitch, body_yaw]  ← body_pose
-        We keep the existing keyboard mappings: head_offset (4D) drives the head
-        slots; body_cmd[0..2] currently mean (Δz, Δpitch, Δroll) and are routed
-        into body_pose slots [z, pitch, roll]; x/y/yaw stay 0 (not exposed on
-        keyboard yet). ground_pick still owns slots [0..2] for phase encoding.
+        body_cmd[0..2] mean (Δz, Δpitch, Δroll) and route into the [z, pitch, roll] slots; x/y/yaw
+        are not exposed on the keyboard. ground_pick owns slots [0..2] for its phase encoding.
         """
         if self.new_cmd_obs:
             if self.behavior_mode is not None:
-                # Kick/roulade were trained with an all-zero 13D command
-                # (twist ~0, head/body slots zero-padded) — feeding stale
-                # head/body commands would be out-of-distribution.
+                # Trained on an all-zero 13D command; stale head/body values are
+                # out-of-distribution.
                 self.command = np.zeros(13, dtype=np.float32)
                 return
             cmd = np.zeros(13, dtype=np.float32)
-            # twist slot (or phase encoding for ground_pick — overwritten there)
             if self.current_policy == "walking":
                 cmd[0:3] = self.vel_cmd
             elif self.current_policy == "sit" and self.is_sitstand:
-                # Sitstand posture flag: 1 = sit, 0 = stand. NOT zeros — the
-                # all-zero twist is the STAND command for this policy, which is
-                # why feeding it the old sit-policy zero command did nothing.
+                # 1 = sit, 0 = stand. NOT zeros: an all-zero twist IS this policy's
+                # STAND command, which is why feeding it the old sit policy's zero
+                # command did nothing.
                 cmd[0] = 1.0 if self.sit_mode else 0.0
-            # else standing/old-sit/ground_pick: leave twist 0 (ground_pick
-            # writes its phase encoding later)
+            # standing / old-sit / ground_pick leave the twist at 0.
             cmd[3:7] = self.head_offset
-            cmd[7:13] = self.body_cmd  # [x, y, z, roll, pitch, yaw]
+            cmd[7:13] = self.body_cmd
             self.command = cmd
             return
 
-        # Legacy 3D command
         if self.current_policy == "walking":
             self.command = self.vel_cmd.copy()
         elif self.current_policy == "sit":
-            # Sit was trained with a near-zero twist command.
+            # Trained with a near-zero twist command.
             self.command = np.zeros(3, dtype=np.float32)
         elif self.current_policy == "standing":
-            # Normalize body pose cmd to match training's body_pose_cmd_obs
+            # Normalized to match training's body_pose_cmd_obs.
             self.command = np.array([self.body_cmd[0] / BODY_CMD_MAX_Z, self.body_cmd[1] / BODY_CMD_MAX_ANGLE, self.body_cmd[2] / BODY_CMD_MAX_ANGLE], dtype=np.float32)
         elif self.current_policy == "slope":
-            # Passive descent: zero command (like standing coast)
             self.command = np.zeros(3, dtype=np.float32)
-        # ground_pick: command is set directly by update_ground_pick_phase
+        # ground_pick: set directly by update_ground_pick_phase.
 
     def _update_policy_session(self):
-        """Switch between walking and standing sessions based on vel_cmd magnitude."""
+        """Switch between walking and standing sessions on vel_cmd magnitude."""
         if not (self.walking_session and self.standing_session):
-            return  # Only one policy loaded, no switching
+            return
         if self.ground_pick_mode:
-            return  # Don't switch during ground pick
+            return
         if self.sit_mode:
-            return  # Don't switch while sitting
+            return
         if self.slope_mode:
-            return  # Don't switch during slope mode
+            return
         if self.behavior_mode is not None:
-            return  # Don't switch during a kick/roulade
+            return
 
         magnitude = float(np.linalg.norm(self.vel_cmd))
         new_policy = "standing" if magnitude <= self.switch_threshold else "walking"
@@ -506,14 +466,12 @@ class PolicyInference:
             self._update_command()
 
     def set_vel_cmd(self, lin_vel_x=0.0, lin_vel_y=0.0, ang_vel_z=0.0):
-        """Set velocity command (used for walking / policy switching)."""
         self.vel_cmd = np.array([lin_vel_x, lin_vel_y, ang_vel_z], dtype=np.float32)
         self._update_policy_session()
         self._update_command()
         print(f"Vel cmd: [{lin_vel_x:.2f}, {lin_vel_y:.2f}, {ang_vel_z:.2f}] [{self.current_policy}]")
 
     def toggle_body_pose_mode(self):
-        """Toggle body pose control mode on/off."""
         self.body_pose_mode = not self.body_pose_mode
         if self.body_pose_mode:
             print("Body pose mode: ON")
@@ -528,7 +486,6 @@ class PolicyInference:
             print("Body pose mode: OFF")
 
     def toggle_slope_mode(self):
-        """Toggle slope policy mode on/off (passive descent, zero twist command)."""
         if self.slope_session is None:
             print("Slope unavailable: no --slope policy loaded")
             return
@@ -539,7 +496,7 @@ class PolicyInference:
         if self.slope_mode:
             self.ort_session = self.slope_session
             self.current_policy = "slope"
-            self.set_vel_cmd(0.0, 0.0, 0.0)  # passive descent: zero command
+            self.set_vel_cmd(0.0, 0.0, 0.0)
             print("Slope mode: ON (passive descent)")
         else:
             self.vel_cmd = np.zeros(3, dtype=np.float32)
@@ -559,9 +516,8 @@ class PolicyInference:
         else:
             print(f"Body cmd: z={self.body_cmd[0] * 1000:.1f}mm  pitch={math.degrees(self.body_cmd[1]):.1f}°  roll={math.degrees(self.body_cmd[2]):.1f}°")
 
-    # --- body command bumpers (index differs between legacy 3D and new 6D) ---
     def _body_idx(self, axis: str) -> int:
-        """Map an axis name to the body_cmd index, depending on the active mode."""
+        """Axis name to body_cmd index; the layout differs between legacy 3D and new 6D."""
         if self.new_cmd_obs:
             return {"x": 0, "y": 1, "z": 2, "roll": 3, "pitch": 4, "yaw": 5}[axis]
         return {"z": 0, "pitch": 1, "roll": 2}[axis]
@@ -581,7 +537,6 @@ class PolicyInference:
         return vec - w * t + np.cross(xyz, t)
 
     def get_raw_accelerometer(self):
-        """Get raw accelerometer reading from MuJoCo sensor."""
         sensor_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SENSOR, "imu_accel")
         if sensor_id < 0:
             raise ValueError("Sensor 'imu_accel' not found in model")
@@ -598,36 +553,26 @@ class PolicyInference:
             return self.quat_rotate_inverse(quat, world_gravity)
 
     def get_projected_gravity(self):
-        """Get projected gravity in body frame."""
         quat = self.data.xquat[self.trunk_base_id].copy().astype(np.float32)
         world_gravity = np.array([0.0, 0.0, -1.0], dtype=np.float32)
         return self.quat_rotate_inverse(quat, world_gravity)
 
     def get_base_ang_vel(self):
-        """Get base angular velocity from IMU gyro sensor."""
         sensor_adr = self.model.sensor_adr[self.imu_ang_vel_id]
         return self.data.sensordata[sensor_adr : sensor_adr + 3].copy().astype(np.float32)
 
     def get_joint_pos_relative(self):
-        """Get joint positions relative to default pose."""
         current_pos = self.data.qpos[self.joint_qpos_indices].copy().astype(np.float32)
         return current_pos - self.default_pose
 
     def get_joint_vel(self):
-        """Get joint velocities."""
         return self.data.qvel[self.joint_qvel_indices].copy().astype(np.float32)
 
     def get_observations(self):
-        """Collect observations matching policy input.
+        """The policy's input vector, in order and with the widths the ONNX graph expects:
 
-        Order for velocity/standing task:
-        1. base_ang_vel (3D)
-        2. raw_accelerometer OR projected_gravity (3D)
-        3. joint_pos (14D) - relative to default
-        4. joint_vel (14D)
-        5. actions (14D) - last action
-        6. command (3D) - vel cmd (walking) or normalized body pose cmd (standing)
-        Total: 51D
+        base_ang_vel(3), raw_accelerometer OR projected_gravity(3), joint_pos(14, relative to
+        default), joint_vel(14), last_action(14), command(3 legacy | 13 new_cmd_obs).
         """
         obs = []
 
@@ -646,7 +591,7 @@ class PolicyInference:
         return np.concatenate(obs).astype(np.float32)
 
     def trigger_ground_pick(self):
-        """Start one ground pick cycle. Automatically returns to walking when done."""
+        """Start one ground pick cycle; returns to walking when it completes."""
         if self.ground_pick_session is None:
             print("Ground pick unavailable: no --ground-pick policy loaded")
             return
@@ -666,7 +611,6 @@ class PolicyInference:
         print(f"Ground pick: started (period={self.ground_pick_period:.1f}s)")
 
     def _end_ground_pick(self):
-        """Switch back after a ground pick cycle completes."""
         self.ground_pick_mode = False
         self.vel_cmd = np.zeros(3, dtype=np.float32)
         if self.walking_session:
@@ -679,7 +623,6 @@ class PolicyInference:
         print(f"Ground pick: done → back to {self.current_policy}")
 
     def update_ground_pick_phase(self, dt: float):
-        """Advance the ground pick phase; auto-exit when one full cycle completes."""
         if not self.ground_pick_mode:
             return
         new_phase = self.ground_pick_phase + dt / self.ground_pick_period
@@ -687,19 +630,14 @@ class PolicyInference:
             self._end_ground_pick()
             return
         self.ground_pick_phase = new_phase
-        # ground_pick policies use the first 3 slots (twist) as phase encoding.
-        # Higher slots (head/body) stay at whatever _update_command set them to.
+        # The first 3 slots carry the phase encoding; head/body slots keep what
+        # _update_command set.
         self.command[0] = np.cos(2 * np.pi * self.ground_pick_phase)
         self.command[1] = np.sin(2 * np.pi * self.ground_pick_phase)
         self.command[2] = 0.0
 
     def trigger_behavior(self, name):
-        """Start an episodic behavior (kick_left / kick_right / roulade).
-
-        The behavior policies were trained to run from a standing start with an
-        all-zero command and end standing, so triggering is a session swap; a
-        timer hands control back to walking/standing afterwards.
-        """
+        """Start an episodic behavior (kick_left / kick_right / roulade)."""
         session = self.behavior_sessions.get(name)
         if session is None:
             print(f"{name} unavailable: no --{name.replace('_', '-')} policy loaded")
@@ -727,8 +665,8 @@ class PolicyInference:
         print(f"{name}: started (auto-return in {self.behavior_time_left:.1f}s)")
 
     def _place_ball(self, behavior):
-        """Teleport the ball in front of the kicking foot, matching training's
-        reset_ball_in_front_of_foot (offset in the robot's yaw frame)."""
+        """Teleport the ball in front of the kicking foot, as training's
+        reset_ball_in_front_of_foot does (offset in the robot's yaw frame)."""
         if self.ball_qpos_adr is None or self.ball_qvel_adr is None:
             print("No ball in scene (kick will swing at air)")
             return
@@ -745,7 +683,6 @@ class PolicyInference:
         print(f"Ball placed at ({bx:.3f}, {by:.3f}) in front of the {foot} foot")
 
     def update_behavior(self, dt: float):
-        """Advance the behavior timer; hand back to walking/standing when done."""
         if self.behavior_mode is None:
             return
         self.behavior_time_left -= dt
@@ -763,22 +700,18 @@ class PolicyInference:
             self.current_policy = "standing"
             self.ort_session = self.standing_session
         else:
-            # sitstand-only setup: the sitstand policy holds the stand (flag 0).
+            # sitstand-only: the sitstand policy holds the stand (flag 0).
             self.current_policy = "sit"
             self.ort_session = self.sit_session
         self._update_command()
         print(f"{name}: done → back to {self.current_policy}")
 
     def toggle_sit(self):
-        """Toggle sitting on/off (Y key).
+        """Toggle sitting (Y key).
 
-        Old one-way sit policy (--sit): Y off switches back to the standing/
-        walking session, which does the standing back up.
-        Sitstand policy (--sitstand): Y just flips the posture flag — the SAME
-        policy sits, holds the sit, and stands back up gently (trained response
-        to a flag flip is a ~2 s glide). The session stays active after
-        standing (it holds the stand); a velocity command switches back to
-        walking/standing as usual.
+        --sit: switching off returns to the standing/walking session, which does the standing up.
+        --sitstand: this only flips the posture flag; the same policy sits, holds and stands back
+        up (a ~2 s glide) and stays active afterwards, holding the stand.
         """
         if self.sit_session is None:
             print("Sit unavailable: no --sit/--sitstand policy loaded")
@@ -796,9 +729,9 @@ class PolicyInference:
             self.ort_session = self.sit_session
             print("Sit: ON" + (" (sitstand flag=1; Y again to stand up)" if self.is_sitstand else ""))
         elif self.is_sitstand:
-            # Stay on the sitstand session — it stands up itself (flag → 0).
-            # Do NOT swap to the standing policy here: it would take over
-            # mid-rise from a seated state it wasn't trained on.
+            # Stay on the sitstand session: it stands up itself (flag → 0). Do NOT swap
+            # to the standing policy, which would take over mid-rise from an untrained
+            # seated state.
             print("Sit: OFF → sitstand policy standing up (flag=0)")
         else:
             if self.standing_session:
@@ -810,7 +743,6 @@ class PolicyInference:
         self._update_command()
 
     def toggle_head_mode(self):
-        """Toggle head control mode on/off."""
         self.head_mode = not self.head_mode
         if self.head_mode:
             print("Head mode: ON")
@@ -819,7 +751,6 @@ class PolicyInference:
             print("Head mode: OFF")
 
     def infer(self):
-        """Run policy inference and return action."""
         obs = self.get_observations()
         obs_batch = obs.reshape(1, -1)
         action = self.ort_session.run([self.output_name], {self.input_name: obs_batch})[0]
@@ -828,7 +759,6 @@ class PolicyInference:
         return action
 
     def apply_action(self, action):
-        """Apply action to MuJoCo controls with optional delay."""
         if self.use_delay:
             self.action_buffer[self.buffer_index] = action.copy()
             delayed_index = (self.buffer_index - self.current_lag) % len(self.action_buffer)
@@ -838,9 +768,9 @@ class PolicyInference:
         else:
             target_positions = self.default_pose + action * self.action_scale
 
-        # Legacy mode: head_offset is an external perturbation added on top of
-        # the policy output. New mode: head_offset is a COMMAND fed into the
-        # policy's obs, so the policy itself produces the offset head pose.
+        # Legacy: head_offset is an external perturbation on top of the policy output.
+        # New: it is a command in the policy's obs, so the policy itself produces the
+        # offset head pose.
         if not self.new_cmd_obs:
             target_positions = target_positions.copy()
             target_positions[5:9] += self.head_offset
@@ -849,8 +779,8 @@ class PolicyInference:
     def set_position_targets(self, target_positions):
         """Send joint position targets to the actuators.
 
-        BAM: the firmware position loop lives in the controller (ctrl is the
-        motor TORQUE it writes on update()). Legacy: MuJoCo position actuators.
+        Under BAM the firmware position loop lives in the controller, and ctrl is the motor TORQUE
+        it writes on update(); the legacy path writes MuJoCo position targets.
         """
         if self.bam_ctrl is not None:
             self.bam_ctrl.q_target[:] = target_positions
@@ -903,7 +833,6 @@ def main():
     if (args.kick_left or args.kick_right or args.roulade) and args.roller:
         parser.error("kick/roulade policies are trained on the walking robot, not the roller model")
 
-    # Parse delay arguments
     delay_min_lag = 0
     delay_max_lag = 0
     if args.delay is not None:
@@ -920,9 +849,8 @@ def main():
             print("Error: --delay accepts 0, 1, or 2 arguments")
             return
 
-    # Load MuJoCo model. Kick policies get a scene with a ball to kick.
-    # --scene overrides everything (any scene whose robot has the standard
-    # 14-servo layout works, e.g. scene_allcollisions.xml).
+    # --scene overrides everything; any scene whose robot has the standard
+    # 14-servo layout works.
     if args.scene:
         xml_path = args.scene
     elif args.roller:
@@ -934,10 +862,9 @@ def main():
     print(f"Loading MuJoCo model from: {xml_path}")
     bam_ctrl = None
     if not args.no_bam:
-        # Same actuator the policies are trained against in warp (BAM M6 XL330,
-        # voltage control + load-dependent friction budget), driven on CPU by
-        # bam.mujoco.MujocoController. Voltage DR collapses to fixed --vin /
-        # --vin-drop-gain (training samples them per env).
+        # The actuator the policies are trained against, on CPU. Voltage DR collapses to
+        # a fixed
+        # --vin / --vin-drop-gain, where training samples them per env.
         bam_model = load_bam_model(args.kp_fw, args.vin, args.current_limit)
         vin_drop_gain = args.vin_drop_gain if args.vin_drop_gain > 0 else None
         model, data, bam_ctrl, _bam_names = load_mujoco_with_bam(xml_path, bam_model, 0.005, vin_drop_gain, BAM_VIN_MIN)
@@ -947,10 +874,9 @@ def main():
         data = mujoco.MjData(model)
         print("Legacy MuJoCo position actuators (--no-bam): NOT the actuator the policy was trained with")
 
-    # (--no-bam only) XL330 firmware current limit. The motors saturate current
-    # at ~1.75 A; since torque = kt * current, this caps the actuator force at
-    # +/- kt * I_max. With BAM the limiter is modelled inside the voltage
-    # controller instead (see load_bam_model). kt comes from the bam package.
+    # --no-bam only: the motors saturate current at ~1.75 A and torque =
+    # kt * current, so this caps actuator force at +/- kt * I_max. Under BAM the
+    # voltage controller models the limiter.
     if args.no_bam and args.current_limit and args.current_limit > 0:
         from bam.model import load_model
 
@@ -961,10 +887,8 @@ def main():
         model.actuator_forcelimited[:] = 1
         print(f"Current limit: {args.current_limit:.2f} A -> torque limit +/-{torque_limit:.4f} Nm (kt={kt:.4f})")
 
-    # Foot contact override — emulate the real grippy + soft PU sole to check
-    # whether it reproduces the on-robot forward-fall-at-speed. Training used
-    # rigid feet at mu~1.0; the real sole is grippier (higher mu) and compliant
-    # (softer solref). Applied to the foot collision geoms only.
+    # Emulates the real grippy + compliant PU sole, to test whether it reproduces the
+    # on-robot forward-fall-at-speed. Training used rigid feet at mu~1.0.
     if args.foot_friction is not None or args.foot_solref is not None:
         import re as _re
 
@@ -975,17 +899,16 @@ def main():
                 if args.foot_friction is not None:
                     model.geom_friction[g, 0] = args.foot_friction  # tangential mu
                 if args.foot_solref is not None:
-                    model.geom_solref[g, 0] = args.foot_solref  # softer contact
+                    model.geom_solref[g, 0] = args.foot_solref
                     model.geom_solref[g, 1] = 1.0
                 n_feet += 1
         print(f"Foot override on {n_feet} geoms: mu={args.foot_friction if args.foot_friction is not None else 'default'}, solref={args.foot_solref if args.foot_solref is not None else 'default'}")
 
-    # Initialize policy
     policy = PolicyInference(model, data, bam_ctrl=bam_ctrl, walking_onnx_path=args.walking, action_scale=args.action_scale, delay_min_lag=delay_min_lag, delay_max_lag=delay_max_lag, standing_onnx_path=args.standing, switch_threshold=args.switch_threshold, use_projected_gravity=not args.raw_accelerometer, ground_pick_onnx_path=args.ground_pick, ground_pick_period=args.ground_pick_period, sit_onnx_path=args.sit, new_cmd_obs=args.new_cmd_obs, slope_onnx_path=args.slope, sitstand_onnx_path=args.sitstand, kick_left_onnx_path=args.kick_left, kick_right_onnx_path=args.kick_right, roulade_onnx_path=args.roulade, kick_duration=args.kick_duration, roulade_duration=args.roulade_duration)
     policy.set_vel_cmd(args.lin_vel_x, args.lin_vel_y, args.ang_vel_z)
 
-    # Set realistic wheel bearing friction for roller inference (must be done
-    # programmatically — non-zero frictionloss in the XML breaks training)
+    # Wheel bearing friction. MUST be set here, not in the XML: a non-zero frictionloss
+    # in the model breaks training.
     if args.roller:
         import re
 
@@ -995,16 +918,16 @@ def main():
                 dof_adr = model.jnt_dofadr[j]
                 model.dof_frictionloss[dof_adr] = 0.003
 
-    # Per-mode velocity command limits matching training ranges
+    # Command limits matching the training ranges.
     if args.roller:
-        policy.vel_step_x = 0.05  # lin_vel_x step (range -0.5..0.6)
-        policy.vel_step_y = 0.0  # no lateral command for rollers
-        policy.vel_step_ang = 0.1  # heading error step (range ±1.0 rad)
+        policy.vel_step_x = 0.05
+        policy.vel_step_y = 0.0  # rollers have no lateral command
+        policy.vel_step_ang = 0.1
         policy.vel_max_x = 0.6
         policy.vel_min_x = -0.5  # negative = brake
         policy.vel_max_y = 0.0
         policy.vel_min_y = 0.0
-        policy.vel_max_ang = 1.0  # ±1.0 rad heading error
+        policy.vel_max_ang = 1.0  # rad of heading error
     else:
         policy.vel_max_x = 0.3
         policy.vel_min_x = -0.3
@@ -1012,7 +935,6 @@ def main():
         policy.vel_min_y = -0.2
         policy.vel_max_ang = 1.5
 
-    # Set initial position to default pose
     freejoint_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "trunk_base_freejoint")
     qpos_adr = model.jnt_qposadr[freejoint_id]
     data.qpos[qpos_adr + 0] = 0.0
@@ -1026,7 +948,6 @@ def main():
     policy.set_position_targets(policy.default_pose)
     mujoco.mj_forward(model, data)
 
-    # Verify observation size
     test_obs = policy.get_observations()
     cmd_dim = 13 if policy.new_cmd_obs else 3
     expected_obs_size = 3 + 3 + policy.n_joints + policy.n_joints + policy.n_joints + cmd_dim
@@ -1069,8 +990,6 @@ def main():
     control_step_count = 0
     control_dt = decimation * model.opt.timestep
 
-    # Rolling buffer of trunk world-frame xy velocity over the last 1 s, used
-    # to print a running average so we can compare commanded vs achieved speed.
     from collections import deque
 
     _vel_window_steps = max(1, int(round(1.0 / control_dt)))  # ≈ 50 @ 50 Hz
@@ -1084,9 +1003,8 @@ def main():
     if args.record:
         original_kp = model.actuator_gainprm[:, 0].copy()
 
-    # Standby (--record) gains: the legacy path sets the position-actuator kp
-    # to 2.0 (XML kp 0.55 ~ kp_fw 200). Under BAM apply the same ratio to the
-    # firmware gain so both paths hold with the same relative stiffness.
+    # Standby (--record) gains. XML kp 0.55 ~ kp_fw 200, so applying the same ratio to
+    # the BAM firmware gain makes both paths hold at the same relative stiffness.
     _XML_KP_NOMINAL = 0.55
     _STANDBY_KP = 2.0
 
@@ -1100,16 +1018,15 @@ def main():
             model.actuator_gainprm[i, 0] = kp
             model.actuator_biasprm[i, 1] = -kp
 
-    # Cache the trunk freejoint qvel address so the push handler can write to
-    # the trunk's world-frame linear velocity directly (qvel[0..3]).
     _freejoint_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "trunk_base_freejoint")
     _trunk_qvel_adr = int(model.jnt_dofadr[_freejoint_id])
-    PUSH_MAX = 1.0  # matches the final velstand push_magnitude curriculum cap
+    PUSH_MAX = 1.0  # the final velstand push_magnitude curriculum cap
 
     def random_push():
-        """Set the trunk's world-frame xy velocity to a random vector of
-        magnitude PUSH_MAX, simulating the push_by_setting_velocity training
-        event. Doesn't accumulate — overwrites current linear velocity."""
+        """Simulate the push_by_setting_velocity training event.
+
+        Overwrites the trunk's world-frame xy velocity rather than accumulating.
+        """
         import random
 
         angle = random.uniform(0, 2 * np.pi)
@@ -1119,10 +1036,6 @@ def main():
         data.qvel[_trunk_qvel_adr + 1] = vy
         print(f"PUSH applied: v=[{vx:.2f}, {vy:.2f}, 0] m/s (angle={np.degrees(angle):.0f}°)")
 
-    # Keys come from the TERMINAL (raw stdin, see TerminalInput) — not from the
-    # MuJoCo viewer window, whose keypresses also fire built-in visualization
-    # shortcuts. `key` is a symbolic name: "up"/"down"/"left"/"right", " ", or
-    # a lowercase letter.
     quit_requested = False
 
     def handle_key(key):
@@ -1182,9 +1095,8 @@ def main():
                 else:
                     policy.set_vel_cmd(0.0, 0.0, 0.0)
             elif key == "t":
-                # Toggle policy inference on/off. When OFF the controller stops
-                # querying the ONNX policy and the motors hold the last applied
-                # target (no fresh ctrl writes).
+                # When OFF, nothing queries the ONNX policy and the motors hold the last
+                # target.
                 policy_enabled = not policy_enabled
                 print(f"Policy inference: {'ON' if policy_enabled else 'OFF (paused)'}")
             elif key == "g":
@@ -1199,7 +1111,6 @@ def main():
                 quit_requested = True
                 print("Quit requested")
             elif key == "y":
-                # Y toggles whichever aux policy is loaded (--sit or --slope).
                 if policy.sit_session is not None:
                     policy.toggle_sit()
                 else:
@@ -1315,18 +1226,15 @@ def main():
                     action = policy.infer()
                     policy.apply_action(action)
                 else:
-                    # Paused: keep last ctrl, don't query the policy. Motors
-                    # hold position. Use a zero action just so downstream
-                    # logging (csv/debug) sees something consistent.
+                    # Paused: keep the last ctrl and hold position. The zero action only
+                    # keeps downstream csv/debug logging consistent.
                     action = np.zeros(policy.n_joints, dtype=np.float32)
 
                 control_step_count += 1
 
-                # Track BODY-frame forward/lateral velocity + yaw rate, print the
-                # 1-second moving average once per second vs the commanded values.
-                # Body frame so "forward" / "turn" are directly comparable to the
-                # command (which is in the robot frame): lets us see if the policy
-                # actually achieves commanded forward speed and turn rate.
+                # Body frame, so "forward" / "turn" are directly comparable to the
+                # command and it is visible whether the policy achieves the commanded
+                # speed and turn rate.
                 quat = data.qpos[qpos_adr + 3 : qpos_adr + 7].astype(np.float32)
                 v_world = np.array([data.qvel[_trunk_qvel_adr + 0], data.qvel[_trunk_qvel_adr + 1], data.qvel[_trunk_qvel_adr + 2]], dtype=np.float32)
                 v_body = policy.quat_rotate_inverse(quat, v_world)
@@ -1392,10 +1300,9 @@ def main():
 
                 for _ in range(decimation):
                     if bam_ctrl is not None:
-                        # BAM owns control/torque/friction: update() runs the
-                        # firmware P-loop + DC-motor equation, writes the torque
-                        # to data.ctrl and pushes the friction budget onto the
-                        # dofs so MuJoCo's solver applies it on this step.
+                        # update() runs the firmware P-loop + DC-motor equation, writes
+                        # the torque to data.ctrl, and pushes the friction budget onto
+                        # the dofs so MuJoCo's solver applies it on this step.
                         bam_ctrl.update()
                     mujoco.mj_step(model, data)
 

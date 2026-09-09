@@ -1,13 +1,11 @@
 """The policy manifest (schema 2) and the checks a published policy has to pass.
 
-One vocabulary for two shapes — a single-policy repo (fields at the top level) and the official
-set (the same fields per entry under ``policies``). This module writes the first; the daemon
-(`pollen-robotics/microduck`, ``updater/src/policy.rs`` and ``robotd-params``) reads both. The
-contract is `docs/policy-manifest.md` over there; the numbers below are what the daemon publishes
-in ``duck_ipc_proto`` and refuses a policy for disagreeing with.
+Two shapes share one vocabulary: a single-policy repo (fields at the top level) and the official
+set (the same fields per entry under ``policies``). This module writes the first; the daemon reads
+both. Contract: `docs/policy-manifest.md` in `pollen-robotics/microduck`.
 
-Deliberately free of mjlab / torch imports so the tests run on a laptop in milliseconds and the
-CLI can validate an ONNX file without a GPU.
+Keep free of mjlab / torch imports, so the tests stay fast and the CLI can validate an ONNX file
+without a GPU.
 """
 
 from __future__ import annotations
@@ -20,14 +18,14 @@ from pathlib import Path
 from typing import Any, Literal
 
 SCHEMA_VERSION = 2
-# `duck_ipc_proto`: the daemon refuses a policy whose manifest disagrees with these, and refuses
-# at load a network whose graph does. 61 = 48 proprioception + 13 command; 14 = the servos.
+# `duck_ipc_proto`: the daemon refuses a policy whose manifest disagrees with these, and at load a
+# network whose graph does. 61 = 48 proprioception + 13 command; 14 = the servos.
 MODEL_API = 1
 OBS_LEN = 61
 ACTION_LEN = 14
 ROBOT: dict[str, Any] = {"model": "microduck", "hw_rev": 1, "servos": "xl330", "control_hz": 50}
 
-# The one `.onnx` a repo carries. The daemon takes the sole `.onnx` in a repo and refuses several.
+# The daemon takes the sole `.onnx` in a repo and refuses several.
 POLICY_FILE = "policy.onnx"
 
 Kind = Literal["episodic", "perpetual"]
@@ -35,17 +33,17 @@ KINDS: tuple[str, ...] = ("episodic", "perpetual")
 
 ZERO_TWIST: tuple[float, float, float] = (0.0, 0.0, 0.0)
 
-# The daemon's policy slots, for a gait's `slot` hint (display-only: `robotctl policy load <slot>`).
+# Display-only hint for `robotctl policy load <slot>`.
 SLOTS: tuple[str, ...] = ("walk", "stand", "sitstand", "ground_pick", "kick_left", "kick_right", "roulade")
 
 
 class ManifestError(ValueError):
-    """A manifest that the daemon would refuse, or that would load and run wrongly."""
+    """A manifest the daemon would refuse, or that would load and run wrongly."""
 
 
 @dataclass(frozen=True)
 class Provenance:
-    """Where the weights came from. Display-only for the daemon; the part people skip by hand."""
+    """Where the weights came from. Display-only for the daemon."""
 
     task_id: str | None = None
     repo: str = "pollen-robotics/microduck_rl"
@@ -87,9 +85,8 @@ def git_provenance(repo_root: Path | None = None) -> dict[str, Any]:
 def build_manifest(*, name: str, kind: str, description: str, duration_s: float | None = None, chain: bool = False, unwind_s: float | None = None, idle: tuple[float, float, float] = ZERO_TWIST, action_scale: float | None = None, entry_pose: str = "standing", slot: str | None = None, command_help: dict[str, Any] | None = None, training: dict[str, Any] | None = None, eval: dict[str, Any] | None = None) -> dict[str, Any]:
     """A single-policy manifest the daemon loads without surprises.
 
-    Only the constant-command family is publishable from here — a skill's network is fed a fixed
-    twist. Phase and posture-flag encodings are the official set's own arms and are not something
-    a community policy can be.
+    Only the constant-command family is publishable here (the network is fed a fixed twist); phase
+    and posture-flag encodings belong to the official set.
     """
     if kind not in KINDS:
         raise ManifestError(f"kind must be one of {KINDS}, not {kind!r}")
@@ -101,10 +98,9 @@ def build_manifest(*, name: str, kind: str, description: str, duration_s: float 
         if unwind_s:
             raise ManifestError("an episodic policy is already back when duration_s is up; unwind_s is for perpetual")
     else:
-        # Two things are perpetual: a gait, which lives in a slot (`policy load walk <repo>`) and
-        # needs nothing here, and a held pose like the flamingo, which the owner runs as a
-        # one-shot with `policy add --hold` and which then needs `unwind_s` so the robot is not
-        # let go of on one foot. `unwind_s` is what says which.
+        # `unwind_s` distinguishes the two perpetual shapes: a gait (lives in a slot, needs nothing
+        # here) from a held pose like the flamingo (run as a one-shot with `policy add --hold`,
+        # and needs unwinding so the robot is not let go of on one foot).
         if duration_s is not None:
             raise ManifestError("a perpetual policy has no length of its own; leave duration_s unset (a gait runs until told otherwise; a held pose gets --hold when added as a skill)")
         if unwind_s is not None and unwind_s <= 0:
@@ -144,8 +140,8 @@ def build_manifest(*, name: str, kind: str, description: str, duration_s: float 
 def validate_manifest(manifest: dict[str, Any]) -> None:
     """Refuse what the daemon would refuse, plus the mistakes it would load and run wrongly.
 
-    Accepts both shapes and any schema version, because absence is not evidence — a repo is under
-    no obligation to carry any field. Only a claim that is present and wrong fails.
+    Accepts both shapes and any schema version: absence is not evidence, so only a claim that is
+    present and wrong fails.
     """
     if "policies" in manifest:
         for entry in manifest["policies"]:
@@ -177,8 +173,7 @@ def validate_manifest(manifest: dict[str, Any]) -> None:
         raise ManifestError("command.idle is a 3-vector twist")
 
 
-# ---------------------------------------------------------------------------------------------
-# The ONNX file: the shape gate the daemon applies at load, applied before the upload.
+# The shape gate the daemon applies at load, applied here before the upload.
 
 
 @dataclass(frozen=True)
@@ -190,7 +185,7 @@ class OnnxShape:
 
 
 def inspect_onnx(path: Path) -> OnnxShape:
-    """The graph's single input and output widths, as the daemon checks them at load."""
+    """The graph's single input and output widths, as the daemon checks them."""
     import onnx
 
     model = onnx.load(str(path), load_external_data=False)
@@ -220,7 +215,7 @@ def is_untrained_onnx(path: Path) -> bool:
 
 
 def check_onnx(path: Path) -> OnnxShape:
-    """Refuse a file the daemon would refuse at load: wrong widths, or one that is not 61 -> 14.
+    """Refuse a file the daemon would refuse at load: anything that is not 61 -> 14.
 
     Also refuses an `--agent untrained` fixture, which passes every other check by construction.
     """
@@ -239,9 +234,8 @@ def check_onnx(path: Path) -> OnnxShape:
 def smoke_run_onnx(path: Path, steps: int = 50, seed: int = 0) -> None:
     """Run the network on plausible inputs and refuse a NaN/inf or a saturated output.
 
-    Not a physics rehearsal — `infer.py` is that — but it catches a broken export
-    (an un-baked normalizer producing NaNs on raw observations, a graph that will not execute)
-    before anything is uploaded.
+    Not a physics rehearsal (`infer.py` is that), but it catches a broken export before upload:
+    an un-baked normalizer producing NaNs on raw observations, or a graph that will not execute.
     """
     import numpy as np
     import onnxruntime as ort
@@ -256,8 +250,8 @@ def smoke_run_onnx(path: Path, steps: int = 50, seed: int = 0) -> None:
         if not np.all(np.isfinite(out)):
             raise ManifestError(f"{path.name}: the network produced a non-finite action")
         outputs.append(out)
-        # Feed the action back into the last-action slots and jitter the rest, the way an
-        # observation evolves on the robot; enough to leave the zero point.
+        # Feed the action back into the last-action slots and jitter the rest, as an observation
+        # evolves on the robot; enough to leave the zero point.
         obs = rng.normal(0.0, 0.05, size=obs.shape).astype(np.float32)
         obs[0, -ACTION_LEN - 13 : -13] = np.clip(out[0], -1, 1)
     spread = float(np.std(np.stack(outputs)))
@@ -265,15 +259,11 @@ def smoke_run_onnx(path: Path, steps: int = 50, seed: int = 0) -> None:
         raise ManifestError(f"{path.name}: the network's output never changes; is it a real policy?")
 
 
-# ---------------------------------------------------------------------------------------------
-# What else goes in the repo.
-
-
 def install_commands(manifest: dict[str, Any], repo_id: str) -> str:
-    """The `robotctl` lines that put this policy on a robot — one story per shape.
+    """The `robotctl` lines that put this policy on a robot, one per shape.
 
-    Episodic: a skill, length from the manifest. Perpetual with `unwind_s`: a held pose the owner
-    runs as a skill with `--hold`. Perpetual without: a gait, loaded into a slot.
+    Episodic: a skill, length from the manifest. Perpetual with `unwind_s`: a held pose, run as a
+    skill with `--hold`. Perpetual without: a gait, loaded into a slot.
     """
     name = manifest["name"]
     if manifest["kind"] == "episodic":
@@ -285,7 +275,7 @@ def install_commands(manifest: dict[str, Any], repo_id: str) -> str:
 
 
 def render_readme(manifest: dict[str, Any], repo_id: str) -> str:
-    """A model card that says how to run the policy on a robot, generated so it cannot go stale."""
+    """A model card saying how to run the policy, generated so it cannot go stale."""
     kind = manifest["kind"]
     name = manifest["name"]
     description = manifest.get("description", "")

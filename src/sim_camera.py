@@ -1,16 +1,14 @@
 """What a duck sees, in the format `mediad` captures.
 
-MuJoCo renders RGB; `mediad` pins its pipeline to UYVY because that is what `v4l2src` can drive at
-full rate off the rkisp — so the conversion happens here, on the side that knows it is a simulator.
+MuJoCo renders RGB; `mediad` pins its pipeline to UYVY (what `v4l2src` drives at full rate off the
+rkisp), so the conversion happens here.
 
-**Frames do not go down the JSON link.** 640x360 UYVY is 460,800 bytes, and at 15 fps that is 6.9
-MB/s — JSON would be absurd. So a camera is its own TCP port carrying length-prefixed raw frames:
-four bytes of little-endian length, then the bytes, forever. No handshake, because there is nothing
-to negotiate that both ends do not already have to agree on to be useful.
+Frames do not go down the JSON link: 640x360 UYVY at 15 fps is 6.9 MB/s. Each camera is its own TCP
+port carrying length-prefixed raw frames (4-byte little-endian length, then the bytes). No
+handshake.
 
-**Opt in, per duck.** Rendering is the most expensive thing in the simulator by a wide margin —
-12.2 ms per 640x360 frame, measured, against 0.3 ms to step four ducks' physics. Four ducks with
-cameras at 15 fps is most of a core; four without is nothing. Most sessions do not need one.
+Opt in per duck: a rendered frame costs 12.2 ms measured, against 0.3 ms to step four ducks'
+physics.
 """
 
 from __future__ import annotations
@@ -23,16 +21,15 @@ import threading
 import mujoco
 import numpy as np
 
-# 16:9 at a size the default offscreen framebuffer can hold — MuJoCo caps offscreen rendering at
-# the model's `<global offwidth/offheight>`, which is 640x480 unless the scene says otherwise.
+# MuJoCo caps offscreen rendering at the model's `<global offwidth/offheight>`, 640x480 unless the
+# scene says otherwise.
 WIDTH = 640
 HEIGHT = 360
 
-# The sensor's rate is 30, but a rendered frame costs 12 ms and a duck that is being watched is
-# usually being watched rather than raced. 15 halves the cost for something nobody can see.
+# The sensor's rate is 30; 15 halves a 12 ms-per-frame cost nobody can see.
 FPS = 15
 
-# BT.601, the same coefficients `duck_detect`'s one-pass sampler uses on the robot.
+# BT.601, the coefficients `duck_detect`'s one-pass sampler uses on the robot.
 _Y = np.array([0.299, 0.587, 0.114])
 _U = np.array([-0.168736, -0.331264, 0.5])
 _V = np.array([0.5, -0.418688, -0.081312])
@@ -41,9 +38,8 @@ _V = np.array([0.5, -0.418688, -0.081312])
 def to_uyvy(rgb: np.ndarray) -> bytes:
     """RGB to packed UYVY: `U Y0 V Y1` per pixel pair, chroma averaged across the pair.
 
-    Averaged rather than dropped, because a subsampler that takes the left pixel's chroma puts a
-    half-pixel colour shift into every frame — invisible on a duck and not invisible to a detector
-    trained on a real camera.
+    Averaged rather than dropped: taking the left pixel's chroma puts a half-pixel colour shift in
+    every frame, which a detector trained on a real camera does notice.
     """
     frame = rgb.astype(np.float32)
     luma = frame @ _Y
@@ -62,7 +58,7 @@ def to_uyvy(rgb: np.ndarray) -> bytes:
 class Camera:
     """One duck's head camera, rendered on demand.
 
-    The renderer is not thread-safe and is expensive to make, so one lives here and only the frame
+    The renderer is not thread-safe and is expensive to build, so one lives here and only the frame
     loop touches it.
     """
 
@@ -71,24 +67,12 @@ class Camera:
         if self.camera < 0:
             raise SystemExit(f"the model has no camera {name!r}")
 
-        # **The model's head camera faces backwards.** Measured against the duck's own forward axis
-        # and the ToF site's: the camera's view direction is -x where both of those are +x, exactly
-        # 180 degrees out. On screen that is a duck apparently seeing what is behind it — a cyan cube
-        # it is walking away from, sitting in frame.
-        #
-        # Turned 180 degrees about the camera's own **right** axis — not its up axis, which was the
-        # first attempt and came out upside down. Both turns fix the direction; only this one leaves
-        # the image the same way up. What the console has to undo is set by where the camera's right
-        # axis points: the original camera has it along the world's *down*, and a yaw turn moves it
-        # to *up*, so the quarter turn the console applies lands 180 degrees out.
-        #
-        # A roll turn keeps right pointing down, so a rendered frame comes out on its side exactly as
-        # the original did — which is correct, because the real head camera is mounted a quarter turn
-        # off and every consumer already expects that. `mediad --rotate 90` stays true of a simulated
-        # duck for the same reason it is true of a real one.
-        #
-        # Done here rather than in the MJCF, because that file belongs to the RL work and a camera
-        # nothing in training uses is not worth a change they have to review.
+        # The model's head camera faces backwards: its view direction is -x where the duck's
+        # forward axis and the ToF site are +x. Must be turned about the camera's own RIGHT axis,
+        # not its up axis — both fix the direction, only this one leaves the image the same way up,
+        # keeping right along the world's down so frames arrive on their side exactly as the real
+        # (quarter-turn-mounted) camera does and `mediad --rotate 90` stays true in sim.
+        # Done here, not in the MJCF: that file belongs to the RL work, which uses no camera.
         turn = np.array([0.0, 1.0, 0.0, 0.0])  # 180 degrees about x, scalar-first
         fixed = np.zeros(4)
         mujoco.mju_mulQuat(fixed, model.cam_quat[self.camera], turn)
@@ -102,12 +86,10 @@ class Camera:
     def render(self, world) -> None:
         """Render one frame, reading `MjData` only while holding the world's lock.
 
-        **`update_scene` reads the whole of `MjData`, and it runs on the step loop's thread while
-        sensor reads run on socket threads.** Unlocked, a ToF read caught a site orientation
-        mid-write and got a zero-length ray direction — which MuJoCo answers with
-        `mj_ray: vector length is too small` and an abort, taking the simulator down with it. The
-        lock is held for the scene copy, which is a millisecond, and released for the render, which
-        is twelve and touches no shared state.
+        `update_scene` reads all of `MjData` on the step loop's thread while sensor reads run on
+        socket threads. Unlocked, a ToF read once caught a site orientation mid-write, got a
+        zero-length ray direction and MuJoCo aborted the process. The lock covers only the scene
+        copy (~1 ms); the render (~12 ms) touches no shared state.
         """
         with world.lock:
             self.renderer.update_scene(world.data, camera=self.camera)
