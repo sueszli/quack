@@ -56,7 +56,6 @@ class ExportResult:
     checkpoint_iteration: int | None
 
 
-# Only `model_<N>.pt` is a checkpoint. See the comment at the fallback branch in `run_export`.
 CHECKPOINT_PATTERN = r"model_\d+\.pt$"
 
 
@@ -117,16 +116,12 @@ def run_export(task_id: str, cfg: ExportConfig) -> ExportResult:
                 raise FileNotFoundError(f"Checkpoint file not found: {resume_path}")
             print(f"[INFO]: Loading checkpoint: {resume_path.name}")
         elif cfg.checkpoint is not None:
-            # Select a specific checkpoint iteration from the local log tree.
             checkpoint_filename = f"model_{cfg.checkpoint}.pt"
             resume_path = get_checkpoint_path(log_root_path, checkpoint=re.escape(checkpoint_filename))
             print(f"[INFO]: Loading checkpoint: {resume_path.name}")
         else:
-            # Latest checkpoint of the latest run under logs/rsl_rl/<experiment_name>/.
-            # The pattern matters: mjlab's default (".*") matches every entry in the run
-            # directory, and alphabetical order puts `events.out.tfevents.*` and `params/`
-            # AFTER `model_*.pt` — so the default would hand back the TensorBoard event
-            # file (which logger="tensorboard" guarantees is sitting right there).
+            # CHECKPOINT_PATTERN, not mjlab's default ".*": that matches every entry in the
+            # run dir and sorts `events.out.tfevents.*` after `model_*.pt`.
             resume_path = get_checkpoint_path(log_root_path, checkpoint=CHECKPOINT_PATTERN)
             print(f"[INFO]: Loading checkpoint: {resume_path.name} (latest in {log_root_path})")
         log_dir = resume_path.parent
