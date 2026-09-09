@@ -189,29 +189,17 @@ def run_export(task_id: str, cfg: ExportConfig) -> ExportResult:
         env = VideoRecorder(env, video_folder=log_dir / "videos" / "play", step_trigger=lambda step: step == 0, video_length=cfg.video_length, disable_logger=True)
 
     env = RslRlVecEnvWrapper(env, clip_actions=agent_cfg.clip_actions)
-    if DUMMY_MODE:
-        action_shape: tuple[int, ...] = env.unwrapped.action_space.shape  # type: ignore
-        if cfg.agent == "zero":
-
-            class PolicyZero:
-                def __call__(self, obs) -> torch.Tensor:
-                    del obs
-                    return torch.zeros(action_shape, device=env.unwrapped.device)
-
-            policy = PolicyZero()
-        else:
-
-            class PolicyRandom:
-                def __call__(self, obs) -> torch.Tensor:
-                    del obs
-                    return 2 * torch.rand(action_shape, device=env.unwrapped.device) - 1
-
-            policy = PolicyRandom()
-    else:
-        runner_cls = load_runner_cls(task_id) or OnPolicyRunner
-        runner = runner_cls(env, asdict(agent_cfg), device=device)
+    # The runner owns the export path (`export_policy_to_onnx` below), so it is
+    # built for every agent. The dummy agents differ only in skipping the
+    # checkpoint load: their weights stay at the runner's random init, which is
+    # exactly the point — a correctly shaped ONNX with untrained weights, for
+    # rehearsing `infer` / `publish` / the runtime hot-swap without a checkpoint.
+    runner_cls = load_runner_cls(task_id) or OnPolicyRunner
+    runner = runner_cls(env, asdict(agent_cfg), device=device)
+    if TRAINED_MODE:
         runner.load(str(resume_path), map_location=device)
-        policy = runner.get_inference_policy(device=device)
+    else:
+        print(f"[WARN] --agent {cfg.agent!r}: exporting UNTRAINED weights. Shape-correct, not deployable.")
 
     # mjlab 1.3.0: ONNX export + metadata moved to mjlab.rl.exporter_utils and
     # the runner's built-in export_policy_to_onnx. Observation normalization is
