@@ -35,6 +35,8 @@ ZERO_TWIST: tuple[float, float, float] = (0.0, 0.0, 0.0)
 # The daemon's policy slots, for a gait's `slot` hint (display-only: `robotctl policy load <slot>`).
 SLOTS: tuple[str, ...] = ("walk", "stand", "sitstand", "ground_pick", "kick_left", "kick_right", "roulade")
 
+ENCODINGS: tuple[str, ...] = ("constant", "phase", "posture_flag")
+
 
 def git_provenance(repo_root: Path | None = None) -> dict[str, Any]:
     # `commit`, `branch`, `dirty` of the checkout the export ran from, or `{}` outside git.
@@ -122,7 +124,7 @@ def validate_manifest(manifest: dict[str, Any]) -> None:
     kind = manifest.get("kind")
     assert kind is None or kind in (*KINDS, "scripted"), f"kind {kind!r} not in episodic, perpetual, scripted"
     encoding = (manifest.get("command") or {}).get("encoding")
-    assert encoding is None or encoding in ("constant", "phase", "posture_flag"), f"command.encoding {encoding!r} not driven by the daemon"
+    assert encoding is None or encoding in ENCODINGS, f"command.encoding {encoding!r} not driven by the daemon"
     if kind == "episodic" and encoding in (None, "constant"):
         duration = manifest.get("duration_s")
         assert duration is not None and duration > 0, "episodic constant-command needs duration_s > 0"

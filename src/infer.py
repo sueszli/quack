@@ -2,6 +2,7 @@
 
 import argparse
 import csv
+import json
 import math
 import os
 import pickle
@@ -12,6 +13,7 @@ import termios
 import threading
 import time
 import tty
+from dataclasses import dataclass
 from pathlib import Path
 
 import mujoco
@@ -20,6 +22,8 @@ import numpy as np
 import onnxruntime as ort
 
 import src.utils  # noqa: F401
+
+from . import publish_manifest as pm
 
 # Repo-level assets/mjcf; not imported from robot.py (see BAM note below).
 _ROBOT_DIR = Path(__file__).resolve().parents[1] / "assets" / "mjcf"
@@ -140,6 +144,127 @@ DEFAULT_POSE = np.array(
 )
 
 
+@dataclass(frozen=True)
+class PolicySlot:
+    name: str  # internal name; also the `current_policy` value while it runs
+    flag: str
+    dest: str
+    help: str
+    aliases: tuple[str, ...] = ()
+    hotkey: str | None = None
+    action: str | None = None
+    action_arg: str | None = None
+    session_attr: str | None = None
+    kind: str = "perpetual"  # pm.KINDS
+    encoding: str = "constant"  # pm.ENCODINGS
+    entry_pose: str = "standing"
+    daemon_slot: str | None = None  # pm.SLOTS
+    needs_cmd_obs: bool = False  # requires --new-cmd-obs (61-D obs with the 13-D command block)
+    cmd_obs_group: str | None = None  # flags named together in the --new-cmd-obs error
+    walk_model_only: bool = False  # refuse --roller
+    needs_ball: bool = False  # pick the scene that has a ball in it
+    duration_dest: str | None = None  # which --*-duration/--*-period flag times this slot
+
+
+@dataclass(frozen=True)
+class DurationFlag:
+    flag: str
+    dest: str
+    default: float
+    help: str
+
+
+DURATION_FLAGS: tuple[DurationFlag, ...] = (DurationFlag("--kick-duration", "kick_duration", 3.0, "Seconds a kick policy stays active before handing back to standing/walking (default: 3.0)"), DurationFlag("--roulade-duration", "roulade_duration", 2.0, "Seconds the roulade policy stays active before handing back to standing/walking (default: 2.0, ~the roll itself; the standing/walking policy takes over for the settle)"), DurationFlag("--ground-pick-period", "ground_pick_period", 4.0, "Ground pick phase period in seconds (default: 4.0)"))
+DURATION_FLAGS_BY_DEST: dict[str, DurationFlag] = {d.dest: d for d in DURATION_FLAGS}
+
+POLICY_SLOTS: tuple[PolicySlot, ...] = (PolicySlot(name="walking", flag="--walking", dest="walking", help="Path to walking policy ONNX file", session_attr="walking_session", daemon_slot="walk"), PolicySlot(name="standing", flag="--standing", dest="standing", aliases=("-s",), help="Path to standing policy ONNX file", session_attr="standing_session", daemon_slot="stand"), PolicySlot(name="ground_pick", flag="--ground-pick", dest="ground_pick", help="Path to ground pick policy ONNX file (press G to activate)", hotkey="g", action="trigger_ground_pick", session_attr="ground_pick_session", kind="episodic", encoding="phase", daemon_slot="ground_pick", duration_dest="ground_pick_period"), PolicySlot(name="sit", flag="--sit", dest="sit", help="Path to OLD one-way sitting policy ONNX file (press Y to sit, Y again switches back to standing/walking policy)", hotkey="y", action="toggle_sit", session_attr="sit_session"), PolicySlot(name="sitstand", flag="--sitstand", dest="sitstand", help="Path to sitstand policy ONNX (commanded sit<->stand; press Y to sit, Y again the SAME policy stands back up). Requires --new-cmd-obs. Can run standalone.", hotkey="y", action="toggle_sit", session_attr="sit_session", encoding="posture_flag", daemon_slot="sitstand", needs_cmd_obs=True, cmd_obs_group="sitstand"), PolicySlot(name="slope", flag="--slope", dest="slope", help="Path to slope policy ONNX file (press Y to toggle)", hotkey="y", action="toggle_slope_mode", session_attr="slope_session"), PolicySlot(name="kick_left", flag="--kick-left", dest="kick_left", help="Path to LEFT-foot ball kick policy ONNX (press K to trigger). Requires --new-cmd-obs. Loads a scene with a ball.", hotkey="k", action="trigger_behavior", action_arg="kick_left", kind="episodic", daemon_slot="kick_left", needs_cmd_obs=True, cmd_obs_group="behavior", walk_model_only=True, needs_ball=True, duration_dest="kick_duration"), PolicySlot(name="kick_right", flag="--kick-right", dest="kick_right", help="Path to RIGHT-foot ball kick policy ONNX (press L to trigger). Requires --new-cmd-obs. Loads a scene with a ball.", hotkey="l", action="trigger_behavior", action_arg="kick_right", kind="episodic", daemon_slot="kick_right", needs_cmd_obs=True, cmd_obs_group="behavior", walk_model_only=True, needs_ball=True, duration_dest="kick_duration"), PolicySlot(name="roulade", flag="--roulade", dest="roulade", help="Path to roulade (forward roll) policy ONNX (press R to trigger). Requires --new-cmd-obs.", hotkey="r", action="trigger_behavior", action_arg="roulade", kind="episodic", daemon_slot="roulade", needs_cmd_obs=True, cmd_obs_group="behavior", walk_model_only=True, duration_dest="roulade_duration"))
+POLICY_SLOTS_BY_NAME: dict[str, PolicySlot] = {s.name: s for s in POLICY_SLOTS}
+
+BEHAVIOR_SLOTS: tuple[PolicySlot, ...] = tuple(s for s in POLICY_SLOTS if s.action == "trigger_behavior")
+
+
+def slots_with_hotkey(key: str) -> tuple[PolicySlot, ...]:
+    return tuple(s for s in POLICY_SLOTS if s.hotkey == key)
+
+
+def slot_is_loaded(policy, slot: PolicySlot) -> bool:
+    if slot.session_attr is not None:
+        return getattr(policy, slot.session_attr, None) is not None
+    return slot.name in getattr(policy, "behavior_sessions", {})
+
+
+def dispatch_hotkey(policy, key: str) -> bool:
+    claimants = slots_with_hotkey(key)
+    if not claimants:
+        return False
+    chosen = next((s for s in claimants if slot_is_loaded(policy, s)), claimants[-1])
+    action = getattr(policy, chosen.action)
+    action(chosen.action_arg) if chosen.action_arg is not None else action()
+    return True
+
+
+MANIFEST_FILE = "manifest.json"
+
+
+@dataclass(frozen=True)
+class ResolvedPolicy:
+    slot: PolicySlot
+    onnx_path: str
+    duration_s: float | None
+    manifest: dict | None = None
+    source: str = "flag"
+
+
+def find_policy_manifest(value: str) -> Path | None:
+    path = Path(value)
+    if not path.is_dir():
+        return None
+    manifest = path / MANIFEST_FILE
+    return manifest if manifest.is_file() else None
+
+
+def _onnx_in_repo(directory: Path) -> Path:
+    named = directory / pm.POLICY_FILE
+    if named.is_file():
+        return named
+    candidates = sorted(directory.glob("*.onnx"))
+    if len(candidates) != 1:
+        raise AssertionError(f"{directory}: expected {pm.POLICY_FILE} or exactly one .onnx, found {[c.name for c in candidates]}")
+    return candidates[0]
+
+
+def resolve_policy_argument(slot: PolicySlot, value: str, default_duration: float | None = None, new_cmd_obs: bool = False) -> ResolvedPolicy:
+    manifest_path = find_policy_manifest(value)
+    if manifest_path is None:
+        return ResolvedPolicy(slot=slot, onnx_path=value, duration_s=default_duration)
+
+    manifest = json.loads(manifest_path.read_text())
+    if "policies" in manifest:
+        raise AssertionError(f"{manifest_path}: this is a policy SET; point {slot.flag} at a single-policy repo")
+    pm.validate_manifest(manifest)
+
+    obs_len = manifest.get("obs_len")
+    if obs_len is not None and obs_len == pm.OBS_LEN and not new_cmd_obs:
+        raise AssertionError(f"{manifest_path}: obs_len {pm.OBS_LEN} is the unified 13D command layout; add --new-cmd-obs")
+
+    kind = manifest.get("kind")
+    if kind is not None and kind != slot.kind:
+        print(f"WARNING: {manifest_path} is {kind!r}, but {slot.flag} drives a {slot.kind!r} slot")
+    encoding = (manifest.get("command") or {}).get("encoding")
+    if encoding is not None and encoding != slot.encoding:
+        print(f"WARNING: {manifest_path} encodes commands as {encoding!r}, but {slot.flag} feeds {slot.encoding!r}")
+
+    duration = manifest.get("duration_s")
+    if duration is None:
+        duration = default_duration
+    elif default_duration is not None:
+        print(f"{slot.flag}: duration {float(duration):.1f}s from {manifest_path} (overriding {DURATION_FLAGS_BY_DEST[slot.duration_dest].flag})")
+
+    onnx_path = _onnx_in_repo(manifest_path.parent)
+    print(f"{slot.flag}: {manifest.get('name', '?')} ({kind}) from {manifest_path}")
+    return ResolvedPolicy(slot=slot, onnx_path=str(onnx_path), duration_s=duration, manifest=manifest, source=str(manifest_path))
+
+
 class TerminalInput:
     # Single-keypress reader on stdin (cbreak mode, background thread).
     #
@@ -208,7 +333,7 @@ class TerminalInput:
 
 
 class PolicyInference:
-    def __init__(self, model, data, walking_onnx_path=None, action_scale=1.0, bam_ctrl=None, delay_min_lag=0, delay_max_lag=0, standing_onnx_path=None, switch_threshold=0.05, use_projected_gravity=False, ground_pick_onnx_path=None, ground_pick_period=4.0, sit_onnx_path=None, new_cmd_obs=False, slope_onnx_path=None, sitstand_onnx_path=None, kick_left_onnx_path=None, kick_right_onnx_path=None, roulade_onnx_path=None, kick_duration=3.0, roulade_duration=2.0):
+    def __init__(self, model, data, walking_onnx_path=None, action_scale=1.0, bam_ctrl=None, delay_min_lag=0, delay_max_lag=0, standing_onnx_path=None, switch_threshold=0.05, use_projected_gravity=False, ground_pick_onnx_path=None, ground_pick_period=4.0, sit_onnx_path=None, new_cmd_obs=False, slope_onnx_path=None, sitstand_onnx_path=None, kick_left_onnx_path=None, kick_right_onnx_path=None, roulade_onnx_path=None, kick_duration=3.0, roulade_duration=2.0, behavior_durations=None):
         self.bam_ctrl = bam_ctrl  # bam.mujoco.MujocoController (None = legacy position actuators)
         self.model = model
         self.data = data
@@ -307,14 +432,20 @@ class PolicyInference:
         self.behavior_durations = {}
         self.behavior_mode = None  # name of the running behavior, or None
         self.behavior_time_left = 0.0
-        for name, path, duration in (("kick_left", kick_left_onnx_path, kick_duration), ("kick_right", kick_right_onnx_path, kick_duration), ("roulade", roulade_onnx_path, roulade_duration)):
+        _behavior_paths = {"kick_left": kick_left_onnx_path, "kick_right": kick_right_onnx_path, "roulade": roulade_onnx_path}
+        _behavior_defaults = {"kick_duration": kick_duration, "roulade_duration": roulade_duration}
+        for slot in BEHAVIOR_SLOTS:
+            path = _behavior_paths[slot.name]
+            duration = behavior_durations.get(slot.name) if behavior_durations else None
+            if duration is None:
+                duration = _behavior_defaults[slot.duration_dest]
             if not path:
                 continue
-            assert self.new_cmd_obs, f"--{name.replace('_', '-')} is 61D (13D command block); add --new-cmd-obs"
-            print(f"\nLoading {name} policy from: {path}")
-            self.behavior_sessions[name] = ort.InferenceSession(path)
-            self.behavior_durations[name] = duration
-            print(f"{name} policy input shape: {self.behavior_sessions[name].get_inputs()[0].shape}  (auto-return after {duration:.1f}s)")
+            assert self.new_cmd_obs, f"--{slot.name.replace('_', '-')} is 61D (13D command block); add --new-cmd-obs"
+            print(f"\nLoading {slot.name} policy from: {path}")
+            self.behavior_sessions[slot.name] = ort.InferenceSession(path)
+            self.behavior_durations[slot.name] = duration
+            print(f"{slot.name} policy input shape: {self.behavior_sessions[slot.name].get_inputs()[0].shape}  (auto-return after {duration:.1f}s)")
 
         # Validate at least one policy loaded. A sitstand policy can run alone
         # (it holds the stand at flag=0), unlike the old one-way sit policy.
@@ -694,7 +825,7 @@ class PolicyInference:
         # timer hands control back to walking/standing afterwards.
         session = self.behavior_sessions.get(name)
         if session is None:
-            print(f"{name} unavailable: no --{name.replace('_', '-')} policy loaded")
+            print(f"{name} unavailable: no {POLICY_SLOTS_BY_NAME[name].flag} policy loaded")
             return
         if self.behavior_mode is not None:
             print(f"Cannot start {name}: {self.behavior_mode} already in progress")
@@ -852,17 +983,11 @@ def main():
     parser = argparse.ArgumentParser(description="Run ONNX policy in MuJoCo")
     parser.add_argument("--roller", action="store_true", help="Use roller skate robot XML (robot_walk_rollers.xml)")
     parser.add_argument("--scene", type=str, default=None, help="Path to a scene XML, overriding the default pick (e.g. assets/mjcf/scene_allcollisions.xml)")
-    parser.add_argument("--walking", type=str, default=None, help="Path to walking policy ONNX file")
-    parser.add_argument("--standing", "-s", type=str, default=None, help="Path to standing policy ONNX file")
-    parser.add_argument("--ground-pick", type=str, default=None, help="Path to ground pick policy ONNX file (press G to activate)")
-    parser.add_argument("--sit", type=str, default=None, help="Path to OLD one-way sitting policy ONNX file (press Y to sit, Y again switches back to standing/walking policy)")
-    parser.add_argument("--sitstand", type=str, default=None, help="Path to sitstand policy ONNX (commanded sit<->stand; press Y to sit, Y again the SAME policy stands back up). Requires --new-cmd-obs. Can run standalone.")
-    parser.add_argument("--slope", type=str, default=None, help="Path to slope policy ONNX file (press Y to toggle)")
-    parser.add_argument("--kick-left", type=str, default=None, help="Path to LEFT-foot ball kick policy ONNX (press K to trigger). Requires --new-cmd-obs. Loads a scene with a ball.")
-    parser.add_argument("--kick-right", type=str, default=None, help="Path to RIGHT-foot ball kick policy ONNX (press L to trigger). Requires --new-cmd-obs. Loads a scene with a ball.")
-    parser.add_argument("--roulade", type=str, default=None, help="Path to roulade (forward roll) policy ONNX (press R to trigger). Requires --new-cmd-obs.")
-    parser.add_argument("--kick-duration", type=float, default=3.0, help="Seconds a kick policy stays active before handing back to standing/walking (default: 3.0)")
-    parser.add_argument("--roulade-duration", type=float, default=2.0, help="Seconds the roulade policy stays active before handing back to standing/walking (default: 2.0, ~the roll itself; the standing/walking policy takes over for the settle)")
+    for _slot in POLICY_SLOTS:
+        parser.add_argument(_slot.flag, *_slot.aliases, type=str, default=None, help=_slot.help)
+    for _d in DURATION_FLAGS:
+        if _d.dest != "ground_pick_period":  # kept below, next to --switch-threshold, as it always was
+            parser.add_argument(_d.flag, type=float, default=_d.default, help=_d.help)
     parser.add_argument("--lin-vel-x", type=float, default=0.0, help="Initial linear velocity X command (m/s)")
     parser.add_argument("--lin-vel-y", type=float, default=0.0, help="Initial linear velocity Y command (m/s)")
     parser.add_argument("--ang-vel-z", type=float, default=0.0, help="Initial angular velocity Z command (rad/s)")
@@ -873,7 +998,7 @@ def main():
     parser.add_argument("--save-csv", type=str, default=None, help="Save observations and actions to CSV file")
     parser.add_argument("--record", type=str, default=None, help="Enable recording mode: save observations to pickle file on Ctrl+C")
     parser.add_argument("--switch-threshold", type=float, default=0.05, help="Vel command magnitude threshold for walking/standing switch (default: 0.05)")
-    parser.add_argument("--ground-pick-period", type=float, default=4.0, help="Ground pick phase period in seconds (default: 4.0)")
+    parser.add_argument(DURATION_FLAGS_BY_DEST["ground_pick_period"].flag, type=float, default=DURATION_FLAGS_BY_DEST["ground_pick_period"].default, help=DURATION_FLAGS_BY_DEST["ground_pick_period"].help)
     parser.add_argument("--new-cmd-obs", action="store_true", help="Use the unified 13D command obs layout (twist+head_pose+body_pose). Required for policies trained with the new pose-command-tracking setup. Old policies (51D obs, head_offset added to ctrl) need this flag OFF.")
     parser.add_argument("--no-bam", action="store_true", help="Use the XML MuJoCo position actuators instead of the BAM M6 voltage/friction model the policies are trained against.")
     parser.add_argument("--vin", type=float, default=7.4, help=f"BAM battery voltage [V]. Training samples per-env in {BAM_VIN_RANGE}; 7.4 = nominal 2S LiPo.")
@@ -884,14 +1009,27 @@ def main():
     parser.add_argument("--foot-solref", type=float, default=None, help="Soften foot contact: solref time constant (s) for the foot geoms (default sim ~0.02 = stiff/rigid). Larger = softer, to emulate the compliant PU sole. e.g. --foot-solref 0.04")
     args = parser.parse_args()
 
-    if not args.walking and not args.standing and not args.sitstand:
+    given = tuple(s for s in POLICY_SLOTS if getattr(args, s.dest))
+    if not any(s.name in ("walking", "standing", "sitstand") for s in given):
         parser.error("At least one of --walking, --standing or --sitstand must be provided")
-    if args.sitstand and not args.new_cmd_obs:
-        parser.error("--sitstand policies use the unified 13D command obs (61D); add --new-cmd-obs")
-    if (args.kick_left or args.kick_right or args.roulade) and not args.new_cmd_obs:
-        parser.error("--kick-left/--kick-right/--roulade policies use the unified 13D command obs (61D); add --new-cmd-obs")
-    if (args.kick_left or args.kick_right or args.roulade) and args.roller:
+    for group in ("sitstand", "behavior"):
+        needing = tuple(s for s in given if s.needs_cmd_obs and s.cmd_obs_group == group)
+        if needing and not args.new_cmd_obs:
+            flags = "/".join(s.flag for s in POLICY_SLOTS if s.cmd_obs_group == group)
+            parser.error(f"{flags} policies use the unified 13D command obs (61D); add --new-cmd-obs")
+    if args.roller and any(s.walk_model_only for s in given):
         parser.error("kick/roulade policies are trained on the walking robot, not the roller model")
+
+    try:
+        resolved = {s.name: resolve_policy_argument(s, getattr(args, s.dest), default_duration=getattr(args, s.duration_dest) if s.duration_dest else None, new_cmd_obs=args.new_cmd_obs) for s in given}
+    except (AssertionError, json.JSONDecodeError, OSError) as exc:
+        parser.error(str(exc))
+
+    def onnx_for(name: str):
+        r = resolved.get(name)
+        return r.onnx_path if r else None
+
+    behavior_durations = {name: r.duration_s for name, r in resolved.items() if r.duration_s is not None}
 
     # Parse delay arguments
     delay_min_lag = 0
@@ -917,7 +1055,7 @@ def main():
         xml_path = args.scene
     elif args.roller:
         xml_path = MICRODUCK_ROLLERS_XML
-    elif args.kick_left or args.kick_right:
+    elif any(s.needs_ball for s in given):
         xml_path = MICRODUCK_BALL_XML
     else:
         xml_path = MICRODUCK_XML
@@ -971,7 +1109,7 @@ def main():
         print(f"Foot override on {n_feet} geoms: mu={args.foot_friction if args.foot_friction is not None else 'default'}, solref={args.foot_solref if args.foot_solref is not None else 'default'}")
 
     # Initialize policy
-    policy = PolicyInference(model, data, bam_ctrl=bam_ctrl, walking_onnx_path=args.walking, action_scale=args.action_scale, delay_min_lag=delay_min_lag, delay_max_lag=delay_max_lag, standing_onnx_path=args.standing, switch_threshold=args.switch_threshold, use_projected_gravity=not args.raw_accelerometer, ground_pick_onnx_path=args.ground_pick, ground_pick_period=args.ground_pick_period, sit_onnx_path=args.sit, new_cmd_obs=args.new_cmd_obs, slope_onnx_path=args.slope, sitstand_onnx_path=args.sitstand, kick_left_onnx_path=args.kick_left, kick_right_onnx_path=args.kick_right, roulade_onnx_path=args.roulade, kick_duration=args.kick_duration, roulade_duration=args.roulade_duration)
+    policy = PolicyInference(model, data, bam_ctrl=bam_ctrl, walking_onnx_path=onnx_for("walking"), action_scale=args.action_scale, delay_min_lag=delay_min_lag, delay_max_lag=delay_max_lag, standing_onnx_path=onnx_for("standing"), switch_threshold=args.switch_threshold, use_projected_gravity=not args.raw_accelerometer, ground_pick_onnx_path=onnx_for("ground_pick"), ground_pick_period=(resolved["ground_pick"].duration_s if "ground_pick" in resolved else args.ground_pick_period), sit_onnx_path=onnx_for("sit"), new_cmd_obs=args.new_cmd_obs, slope_onnx_path=onnx_for("slope"), sitstand_onnx_path=onnx_for("sitstand"), kick_left_onnx_path=onnx_for("kick_left"), kick_right_onnx_path=onnx_for("kick_right"), roulade_onnx_path=onnx_for("roulade"), kick_duration=args.kick_duration, roulade_duration=args.roulade_duration, behavior_durations=behavior_durations)
     policy.set_vel_cmd(args.lin_vel_x, args.lin_vel_y, args.ang_vel_z)
 
     # Set realistic wheel bearing friction for roller inference (must be done
@@ -1048,9 +1186,8 @@ def main():
         print(f"{kind} policy: loaded  (press Y to toggle)")
     if policy.slope_session:
         print("Slope policy: loaded  (press Y to toggle, passive descent)")
-    _behavior_keys = {"kick_left": "K", "kick_right": "L", "roulade": "R"}
     for _name in policy.behavior_sessions:
-        print(f"{_name} policy: loaded  (press {_behavior_keys[_name]}, auto-return after {policy.behavior_durations[_name]:.1f}s)")
+        print(f"{_name} policy: loaded  (press {POLICY_SLOTS_BY_NAME[_name].hotkey.upper()}, auto-return after {policy.behavior_durations[_name]:.1f}s)")
     print(f"Active policy: {policy.current_policy}")
     print("Close viewer window to exit")
     print()
@@ -1177,23 +1314,11 @@ def main():
                 # target (no fresh ctrl writes).
                 policy_enabled = not policy_enabled
                 print(f"Policy inference: {'ON' if policy_enabled else 'OFF (paused)'}")
-            elif key == "g":
-                policy.trigger_ground_pick()
-            elif key == "k":
-                policy.trigger_behavior("kick_left")
-            elif key == "l":
-                policy.trigger_behavior("kick_right")
-            elif key == "r":
-                policy.trigger_behavior("roulade")
+            elif dispatch_hotkey(policy, key):
+                pass
             elif key == "q":
                 quit_requested = True
                 print("Quit requested")
-            elif key == "y":
-                # Y toggles whichever aux policy is loaded (--sit or --slope).
-                if policy.sit_session is not None:
-                    policy.toggle_sit()
-                else:
-                    policy.toggle_slope_mode()
             elif key == "h":
                 policy.toggle_head_mode()
             elif key == "b":
