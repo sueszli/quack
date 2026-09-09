@@ -52,9 +52,9 @@ from pathlib import Path
 import mujoco
 import numpy as np
 
-from mjlab_microduck.sim.camera import FPS as CAMERA_FPS
-from mjlab_microduck.sim.camera import Camera, FrameHandler, FrameServer
-from mjlab_microduck.sim.tof import COLS, ROWS, Tof
+from mjlab_microduck.camera import FPS as CAMERA_FPS
+from mjlab_microduck.camera import Camera, FrameHandler, FrameServer
+from mjlab_microduck.tof import COLS, ROWS, Tof
 
 PROTOCOL = 1
 
@@ -87,7 +87,7 @@ HOME_POSE = (
     0.0, 0.0873, 0.4579, 0.0049, -0.4530,
 )
 
-SCENES = Path(__file__).resolve().parents[1] / "mjcf"
+SCENES = Path(__file__).resolve().parent / "mjcf"
 # `scene.xml`, not `scene_walk.xml`: the walking scene includes the model the RL work trains
 # against, whose actuator default classes carry `contype="0" conaffinity="0"`, so the robot collides
 # with nothing and sinks through a floor the scene really does contain.

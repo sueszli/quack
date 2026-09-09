@@ -30,9 +30,9 @@ dependencies = [
 mjlab_microduck = "mjlab_microduck.tasks.registry"
 
 [project.scripts]
-# Serve a simulated body to the real `robotd` — see sim/body_server.py.
-duck-body = "mjlab_microduck.sim.body_server:main"
-publish = "mjlab_microduck.publish.cli:main"
+# Serve a simulated body to the real `robotd` — see body_server.py.
+duck-body = "mjlab_microduck.body_server:main"
+publish = "mjlab_microduck.publish:main"
 export = "mjlab_microduck.export:main"
 infer = "mjlab_microduck.infer_policy:main"
 

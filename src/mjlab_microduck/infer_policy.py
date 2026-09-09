@@ -24,7 +24,7 @@ MICRODUCK_ROLLERS_XML = str(_ROBOT_DIR / "scene_rollers.xml")
 MICRODUCK_BALL_XML = str(_ROBOT_DIR / "scene_ball.xml")
 
 # BAM M6 defaults — MUST mirror `_BAM_ACTUATOR_KWARGS` in
-# mjlab_microduck/robot/microduck_constants.py (the actuator every policy is
+# mjlab_microduck/microduck_constants.py (the actuator every policy is
 # trained against in warp). Not imported from there: that module drags in
 # mjlab/torch/warp (~16 s import) for a CPU rehearsal script. Locked by
 # tests/test_infer_policy_bam.py.
