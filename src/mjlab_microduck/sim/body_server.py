@@ -58,14 +58,14 @@ from mjlab_microduck.sim.tof import COLS, ROWS, Tof
 
 PROTOCOL = 1
 
-# What the policies were trained at, and what `scripts/infer_policy.py` sets. The scenes ship 0.002;
+# What the policies were trained at, and what `infer_policy.py` sets. The scenes ship 0.002;
 # with that script's decimation of 4 this is exactly the 50 Hz the daemon's control loop runs at.
 # Not a performance knob: the BAM actuator fit, the contact solref and the joint armature are all
 # tuned at this step, so 0.002 gives a duck whose legs reach the right angles and still cannot hold
 # itself up.
 TIMESTEP = 0.005
 
-# Where `scripts/infer_policy.py` puts a duck before it starts: trunk this high, upright, every joint
+# Where `infer_policy.py` puts a duck before it starts: trunk this high, upright, every joint
 # at the home pose. Not a keyframe — the keyframes are poses and this is a *placement*.
 HOME_TRUNK_Z = 0.125
 
