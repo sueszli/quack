@@ -2,15 +2,11 @@
 
 <img width="2215" height="884" alt="image" src="https://github.com/user-attachments/assets/5db7cc83-b3ce-4f7c-83f0-0572a63baed7" />
 
-
 RL training environments for [Microduck](https://github.com/pollen-robotics/microduck) —
 a ~800 g, ~25 cm tall bipedal robot — built on
 [mjlab](https://github.com/mujocolab/mjlab) (MuJoCo Warp) with PPO.
 Policies are trained here at 50 Hz, exported to ONNX, and deployed on the real
 robot by the runtime in [pollen-robotics/microduck](https://github.com/pollen-robotics/microduck).
-
-<!-- HERO VIDEO — real robot montage: walking, standup, roulade, roller skating.
-     Keep it short (~30 s) and real-robot-first: this is the "why should I care" shot. -->
 
 https://github.com/user-attachments/assets/50c3d537-8db2-4005-9d9c-3472faeec4d0
 
@@ -25,7 +21,7 @@ Requires a CUDA GPU (training runs through MuJoCo Warp) and [uv](https://docs.as
 
 > **On ARM boxes (DGX Spark / GB10, Jetson):** `uv sync` pulls ~2 GB of CUDA
 > wheels on first run and uv's default 30 s HTTP timeout can abort mid-download.
-> Export `UV_HTTP_TIMEOUT=600` for the first sync. 
+> Export `UV_HTTP_TIMEOUT=600` for the first sync.
 
 ```bash
 git clone https://github.com/pollen-robotics/microduck_rl
@@ -245,16 +241,3 @@ itself and live in the official set, `pollen-robotics/microduck-policies`.
 uv run --with pytest pytest tests/
 ```
 
-CPU-only config-invariant and reward-function regression tests — they lock in
-joint-index mappings, reward sign conventions, and NaN guards.
-
-## Related projects
-
-- [microduck](https://github.com/pollen-robotics/microduck) — the Microduck project home, including the onboard runtime that runs the exported policies
-- [mjlab](https://github.com/mujocolab/mjlab) — the training framework (MuJoCo Warp + rsl_rl)
-- [BAM](https://github.com/Rhoban/bam) — better actuator models, by Rhoban
-
-## License
-
-This project is licensed under the Apache 2.0 License. See the [LICENSE](LICENSE) file for details.
-3D model files are licensed under Creative Commons BY-SA-NC.
