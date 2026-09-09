@@ -189,12 +189,8 @@ def run_export(task_id: str, cfg: ExportConfig) -> ExportResult:
         env = VideoRecorder(env, video_folder=log_dir / "videos" / "play", step_trigger=lambda step: step == 0, video_length=cfg.video_length, disable_logger=True)
 
     env = RslRlVecEnvWrapper(env, clip_actions=agent_cfg.clip_actions)
-    # The runner owns the export path (`export_policy_to_onnx` below), so it is
-    # built for every agent. `untrained` differs only in skipping the checkpoint
-    # load, leaving the actor at its random init. That is a SHAPE fixture for
-    # rehearsing `infer` / the publish gate / the runtime hot-swap without a
-    # checkpoint — the actions are meaningless, so the artifact is stamped
-    # untrained below and `publish` refuses it.
+    # The runner owns export_policy_to_onnx, so it is built for every agent;
+    # `untrained` only skips the checkpoint load, leaving the actor at random init.
     runner_cls = load_runner_cls(task_id) or OnPolicyRunner
     runner = runner_cls(env, asdict(agent_cfg), device=device)
     if TRAINED_MODE:
@@ -218,8 +214,7 @@ def run_export(task_id: str, cfg: ExportConfig) -> ExportResult:
 
     metadata = get_base_metadata(runner.env.unwrapped, run_path=cfg.checkpoint_file)
     if DUMMY_MODE:
-        # Stamp the artifact, not just stdout: a file outlives its console output,
-        # and `publish` gates on this key.
+        # Stamp the file, not just stdout: `publish` gates on this key.
         metadata["untrained"] = "true"
     attach_metadata_to_onnx(onnx_path, metadata)
 
