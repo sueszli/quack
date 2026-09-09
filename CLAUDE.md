@@ -18,7 +18,7 @@ uv run play <TASK_ID> --checkpoint-file logs/rsl_rl/<exp>/<run>/model_N.pt
 uv run export <TASK_ID> --checkpoint N   # → ONNX (bakes obs normalizer — mandatory path)
 uv run publish --task <TASK_ID> --checkpoint N --repo <user>/microduck-<name> --kind episodic --duration-s 4.0
                                                     # → HF Hub repo (policy.onnx + schema-2 manifest.json + README) the daemon loads via `robotctl policy add`
-uv run infer --walking out.onnx   # CPU MuJoCo deployment rehearsal (BAM M6 actuators as in training; --no-bam = XML PD)
+uv run infer --walking output.onnx --new-cmd-obs   # CPU MuJoCo deployment rehearsal (--new-cmd-obs = the 61D obs every current policy uses; without it infer builds 51D and the shape guard can't see it. BAM M6 actuators as in training; --no-bam = XML PD)
 uv run --with pytest pytest tests/
 ```
 
