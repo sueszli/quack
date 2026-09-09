@@ -1713,31 +1713,6 @@ def phase_height_track(env: ManagerBasedRlEnv, command_name: str, stand_z: float
     return torch.exp(-(((z - target_z) / std) ** 2))
 
 
-def pose_target_match(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, std: float = 0.3, joint_indices: list | None = None, target_overrides: dict | None = None) -> torch.Tensor:
-    """Always-on Gaussian on joint positions vs a target pose.
-
-    Non-phase analog of ``phase_pose_match``: useful for episodic tasks (e.g.
-    the sit env) where there's no cyclic command to weight the reward by, and
-    the target pose is constant for the whole episode.
-
-    Args:
-        std: Gaussian std per joint (rad).
-        joint_indices: Optional subset of joints to evaluate.
-        target_overrides: ``{joint_index: angle_rad}``. Joints not listed default
-            to ``asset.data.default_joint_pos`` (the home/standing pose).
-    """
-    asset = env.scene[asset_cfg.name]
-    joint_pos = _servo_joint_pos(env, asset)
-    target = _servo_default_joint_pos(env, asset).clone()
-    if target_overrides:
-        for idx, val in target_overrides.items():
-            target[:, idx] = val
-    if joint_indices is not None:
-        joint_pos = joint_pos[:, joint_indices]
-        target = target[:, joint_indices]
-    return torch.exp(-(((joint_pos - target) / std) ** 2)).mean(dim=-1)
-
-
 def interpolated_pose_target_match(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, std: float = 0.3, joint_indices: list | None = None, source_overrides: dict | None = None, target_overrides: dict | None = None, ramp_start_frac: float = 0.0, ramp_end_frac: float = 1.0) -> torch.Tensor:
     """Gaussian on joint positions vs a time-interpolated target pose.
 
@@ -2997,8 +2972,6 @@ def randomize_imu_orientation(env: ManagerBasedRlEnv, env_ids: torch.Tensor, max
     else:
         env_ids = env_ids.to(env.device, dtype=torch.int)
 
-    asset: Entity = env.scene[asset_cfg.name]
-
     # IMU site is the first site (index 0) in robot.xml
     # Sites: imu (0), left_foot (1), right_foot (2)
     site_id = 0
@@ -3274,7 +3247,6 @@ def randomize_base_orientation(env: ManagerBasedRlEnv, env_ids: torch.Tensor, ma
     else:
         env_ids = env_ids.to(env.device, dtype=torch.int)
 
-    asset: Entity = env.scene[asset_cfg.name]
     num_envs = len(env_ids)
 
     # Generate random pitch and roll angles
@@ -3436,7 +3408,7 @@ def set_random_ground_state(env: ManagerBasedRlEnv, env_ids: torch.Tensor, asset
         sitting = torch.stack([cy, torch.zeros_like(cy), torch.zeros_like(cy), sy], dim=1)
 
     u = torch.rand(num, device=env.device)
-    is_fd = u < p_fd
+    # is_fd (u < p_fd) is implicit: face_down is the base value of new_quat below.
     is_fu = (u >= p_fd) & (u < p_fu)
     is_sit = (u >= p_fu) & (u < p_sit)
     is_stand = u >= p_sit
