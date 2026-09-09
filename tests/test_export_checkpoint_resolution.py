@@ -16,7 +16,7 @@ def _run_dir(root, name):
     return d
 
 
-def test_latest_fallback_skips_tensorboard_artifacts(tmp_path):
+def test_latest_fallback_skips_event_files(tmp_path):
     run = _run_dir(tmp_path, "2026-01-01_00-00-00_velocity")
     (run / "model_250.pt").touch()
     (run / "model_3000.pt").touch()

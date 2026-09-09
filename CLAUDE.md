@@ -207,9 +207,9 @@ Never launch a long run without one.
 
 ## Training ops & reading a run
 
-- Metrics and checkpoints land in `logs/rsl_rl/<experiment_name>/<run>/`.
-  Curves: `uvx tensorboard --logdir logs/rsl_rl` (localhost:6006). Resume:
-  `--agent.load-checkpoint model_XXXX.pt --agent.resume True`.
+- Checkpoints land in `logs/rsl_rl/<experiment_name>/<run>/` (gitignored).
+  Resume with `--agent.load-checkpoint model_XXXX.pt --agent.resume True`.
+  Read a run from the per-iteration stdout, not a dashboard.
 - Nothing is uploaded anywhere — checkpoints stay on the machine that trained
   them, so copy the `.pt` yourself. `export`/`publish` take `--checkpoint N`
   (newest run dir only) or `--checkpoint-file <path>` (any run).
