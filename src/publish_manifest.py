@@ -36,11 +36,6 @@ ZERO_TWIST: tuple[float, float, float] = (0.0, 0.0, 0.0)
 SLOTS: tuple[str, ...] = ("walk", "stand", "sitstand", "ground_pick", "kick_left", "kick_right", "roulade")
 
 
-class ManifestError(ValueError):
-    # A manifest that the daemon would refuse, or that would load and run wrongly.
-    pass
-
-
 def git_provenance(repo_root: Path | None = None) -> dict[str, Any]:
     # `commit`, `branch`, `dirty` of the checkout the export ran from, or `{}` outside git.
     root = str(repo_root or Path(__file__).resolve().parents[1])
@@ -66,32 +61,22 @@ def build_manifest(*, name: str, kind: str, description: str, duration_s: float 
     # Only the constant-command family is publishable from here — a skill's network is fed a fixed
     # twist. Phase and posture-flag encodings are the official set's own arms and are not something
     # a community policy can be.
-    if kind not in KINDS:
-        raise ManifestError(f"kind must be one of {KINDS}, not {kind!r}")
-    if not name or "/" in name or name != name.strip():
-        raise ManifestError(f"name must be a bare word a client can ask for, not {name!r}")
+    assert kind in KINDS, f"kind {kind!r} not in {KINDS}"
+    assert name and "/" not in name and name == name.strip(), f"name {name!r}: bare word, no slash, no surrounding space"
     if kind == "episodic":
-        if duration_s is None or duration_s <= 0:
-            raise ManifestError("an episodic policy ends itself: say how long it runs with duration_s > 0")
-        if unwind_s:
-            raise ManifestError("an episodic policy is already back when duration_s is up; unwind_s is for perpetual")
+        assert duration_s is not None and duration_s > 0, "episodic needs duration_s > 0"
+        assert not unwind_s, "unwind_s is perpetual-only"
     else:
         # Two things are perpetual: a gait, which lives in a slot (`policy load walk <repo>`) and
         # needs nothing here, and a held pose like the flamingo, which the owner runs as a
         # one-shot with `policy add --hold` and which then needs `unwind_s` so the robot is not
         # let go of on one foot. `unwind_s` is what says which.
-        if duration_s is not None:
-            raise ManifestError("a perpetual policy has no length of its own; leave duration_s unset (a gait runs until told otherwise; a held pose gets --hold when added as a skill)")
-        if unwind_s is not None and unwind_s <= 0:
-            raise ManifestError("unwind_s must be > 0 when given")
-        if chain:
-            raise ManifestError("chain is for episodic one-shots a held button repeats")
-    if slot is not None and slot not in SLOTS:
-        raise ManifestError(f"slot must be one of {SLOTS}, not {slot!r}")
-    if action_scale is not None and not 0 < action_scale <= 2.0:
-        raise ManifestError(f"action_scale {action_scale} is outside (0, 2]")
-    if len(idle) != 3:
-        raise ManifestError("idle is a 3-vector twist")
+        assert duration_s is None, "perpetual has no duration_s (a held pose gets --hold at `policy add`)"
+        assert unwind_s is None or unwind_s > 0, f"unwind_s {unwind_s}: must be > 0"
+        assert not chain, "chain is episodic-only"
+    assert slot is None or slot in SLOTS, f"slot {slot!r} not in {SLOTS}"
+    assert action_scale is None or 0 < action_scale <= 2.0, f"action_scale {action_scale} outside (0, 2]"
+    assert len(idle) == 3, f"idle: 3-vector twist, got len {len(idle)}"
 
     command: dict[str, Any] = {"encoding": "constant", "idle": [float(v) for v in idle], "twist": "unused (zeros)", "head": "unused (zeros)", "body": "unused (zeros)"}
     if command_help:
@@ -123,32 +108,26 @@ def validate_manifest(manifest: dict[str, Any]) -> None:
     # no obligation to carry any field. Only a claim that is present and wrong fails.
     if "policies" in manifest:
         for entry in manifest["policies"]:
-            if "file" not in entry:
-                raise ManifestError("every set entry needs a `file`")
+            assert "file" in entry, "set entry missing `file`"
             validate_manifest({k: v for k, v in entry.items() if k != "file"})
         return
-    if (obs := manifest.get("obs_len")) is not None and obs != OBS_LEN:
-        raise ManifestError(f"obs_len {obs}: this robot builds {OBS_LEN}")
-    if (act := manifest.get("action_len")) is not None and act != ACTION_LEN:
-        raise ManifestError(f"action_len {act}: this robot has {ACTION_LEN}")
-    if (api := manifest.get("model_api")) is not None and api > MODEL_API:
-        raise ManifestError(f"model_api {api}: this repo targets {MODEL_API}")
+    obs = manifest.get("obs_len")
+    assert obs is None or obs == OBS_LEN, f"obs_len {obs}: robot builds {OBS_LEN}"
+    act = manifest.get("action_len")
+    assert act is None or act == ACTION_LEN, f"action_len {act}: robot has {ACTION_LEN}"
+    api = manifest.get("model_api")
+    assert api is None or api <= MODEL_API, f"model_api {api}: repo targets {MODEL_API}"
     model = (manifest.get("robot") or {}).get("model")
-    if model is not None and model.lower() != ROBOT["model"]:
-        raise ManifestError(f"robot.model {model!r}: this is a {ROBOT['model']} policy repo")
+    assert model is None or model.lower() == ROBOT["model"], f"robot.model {model!r}: expected {ROBOT['model']}"
     kind = manifest.get("kind")
-    if kind is not None and kind not in (*KINDS, "scripted"):
-        raise ManifestError(f"kind {kind!r} is not one of episodic, perpetual, scripted")
+    assert kind is None or kind in (*KINDS, "scripted"), f"kind {kind!r} not in episodic, perpetual, scripted"
     encoding = (manifest.get("command") or {}).get("encoding")
-    if encoding is not None and encoding not in ("constant", "phase", "posture_flag"):
-        raise ManifestError(f"command.encoding {encoding!r} is not one the daemon drives")
+    assert encoding is None or encoding in ("constant", "phase", "posture_flag"), f"command.encoding {encoding!r} not driven by the daemon"
     if kind == "episodic" and encoding in (None, "constant"):
         duration = manifest.get("duration_s")
-        if duration is None or duration <= 0:
-            raise ManifestError("an episodic constant-command policy needs duration_s > 0")
+        assert duration is not None and duration > 0, "episodic constant-command needs duration_s > 0"
     idle = (manifest.get("command") or {}).get("idle")
-    if idle is not None and len(idle) != 3:
-        raise ManifestError("command.idle is a 3-vector twist")
+    assert idle is None or len(idle) == 3, f"command.idle: 3-vector twist, got len {len(idle)}"
 
 
 # ---------------------------------------------------------------------------------------------
@@ -171,16 +150,13 @@ def inspect_onnx(path: Path) -> OnnxShape:
     graph = model.graph
     initializers = {i.name for i in graph.initializer}
     inputs = [i for i in graph.input if i.name not in initializers]
-    if len(inputs) != 1 or len(graph.output) != 1:
-        raise ManifestError(f"{path.name}: expected one input and one output, found {[i.name for i in inputs]} -> {[o.name for o in graph.output]}")
+    assert len(inputs) == 1 and len(graph.output) == 1, f"{path.name}: want 1 input and 1 output, got {[i.name for i in inputs]} -> {[o.name for o in graph.output]}"
 
     def last_dim(value) -> int:
         dims = value.type.tensor_type.shape.dim
-        if not dims:
-            raise ManifestError(f"{path.name}: {value.name} has no shape")
+        assert dims, f"{path.name}: {value.name} has no shape"
         last = dims[-1]
-        if not last.HasField("dim_value"):
-            raise ManifestError(f"{path.name}: {value.name}'s last dimension is symbolic")
+        assert last.HasField("dim_value"), f"{path.name}: {value.name} last dim is symbolic"
         return int(last.dim_value)
 
     return OnnxShape(input_name=inputs[0].name, output_name=graph.output[0].name, obs_len=last_dim(inputs[0]), action_len=last_dim(graph.output[0]))
@@ -197,15 +173,11 @@ def check_onnx(path: Path) -> OnnxShape:
     # Refuse a file the daemon would refuse at load: wrong widths, or one that is not 61 -> 14.
     #
     # Also refuses an `--agent untrained` fixture, which passes every other check by construction.
-    if not path.exists():
-        raise ManifestError(f"{path}: no such file")
-    if is_untrained_onnx(path):
-        raise ManifestError(f"{path.name}: exported with `--agent untrained` (random-init weights). This is a shape fixture for rehearsing the pipeline, not a policy; publish a trained checkpoint instead.")
+    assert path.exists(), f"{path}: no such file"
+    assert not is_untrained_onnx(path), f"{path.name}: untrained export (random-init weights), not a policy"
     shape = inspect_onnx(path)
-    if shape.obs_len != OBS_LEN:
-        raise ManifestError(f"{path.name}: observation width is {shape.obs_len}, the robot builds {OBS_LEN} (a 51-D policy is the legacy 3-value-command family, which the daemon refuses)")
-    if shape.action_len != ACTION_LEN:
-        raise ManifestError(f"{path.name}: {shape.action_len} actions, the robot has {ACTION_LEN}")
+    assert shape.obs_len == OBS_LEN, f"{path.name}: obs width {shape.obs_len}, robot builds {OBS_LEN} (51 = legacy 3-value command)"
+    assert shape.action_len == ACTION_LEN, f"{path.name}: {shape.action_len} actions, robot has {ACTION_LEN}"
     return shape
 
 
@@ -225,16 +197,14 @@ def smoke_run_onnx(path: Path, steps: int = 50, seed: int = 0) -> None:
     outputs = []
     for _ in range(steps):
         (out,) = session.run([shape.output_name], {shape.input_name: obs})
-        if not np.all(np.isfinite(out)):
-            raise ManifestError(f"{path.name}: the network produced a non-finite action")
+        assert np.all(np.isfinite(out)), f"{path.name}: non-finite action"
         outputs.append(out)
         # Feed the action back into the last-action slots and jitter the rest, the way an
         # observation evolves on the robot; enough to leave the zero point.
         obs = rng.normal(0.0, 0.05, size=obs.shape).astype(np.float32)
         obs[0, -ACTION_LEN - 13 : -13] = np.clip(out[0], -1, 1)
     spread = float(np.std(np.stack(outputs)))
-    if spread == 0.0:
-        raise ManifestError(f"{path.name}: the network's output never changes; is it a real policy?")
+    assert spread > 0.0, f"{path.name}: output never changes over {steps} steps"
 
 
 # ---------------------------------------------------------------------------------------------

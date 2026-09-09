@@ -175,7 +175,7 @@ def run(cfg: PublishConfig) -> int:
         first = m.install_commands(manifest, cfg.repo).splitlines()[0]
         print(f"[publish] on a robot: {first}")
         return 0
-    except m.ManifestError as e:
+    except AssertionError as e:
         _fail(str(e))
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
