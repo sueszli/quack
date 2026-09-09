@@ -1,6 +1,6 @@
 import math
 import torch
-from mjlab_microduck import mdp
+from src import mdp
 
 
 def test_crouch_height_target_endpoints_are_high():

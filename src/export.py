@@ -5,7 +5,7 @@ emits `actor(normalizer(obs))`, so what the robot runs is what training saw. In-
 applies the normalizer itself and hides a hand-converted checkpoint that forgot it — never
 convert by hand.
 
-`uv run export` is the command-line entry (:func:`main`); `mjlab_microduck.publish_cli` calls
+`uv run export` is the command-line entry (:func:`main`); `src.publish_cli` calls
 :func:`run_export` directly so a published policy cannot skip this step.
 """
 

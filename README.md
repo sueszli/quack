@@ -102,7 +102,7 @@ output side of the play, both the firmware PD emulation
 (`BacklashEncoderBamActuator`) and the `joint_pos`/`joint_vel` observations
 read *through* the backlash (`qpos[servo] + qpos[backlash]`). Observation and
 action dims are unchanged, so ONNX export and the runtime need no changes.
-See `src/mjlab_microduck/backlash.py`.
+See `src/backlash.py`.
 
 ## Actuator model
 
@@ -110,7 +110,7 @@ All tasks use the [BAM](https://github.com/Rhoban/bam) M6 actuator model for
 the Dynamixel XL330 (voltage control law, back-EMF, Coulomb/Stribeck/load-dependent
 friction), with per-env domain randomization on battery voltage, voltage sag
 under load, command delay, and friction magnitude
-(`FrictionDRBamActuator` in `src/mjlab_microduck/friction_dr_bam.py`).
+(`FrictionDRBamActuator` in `src/friction_dr_bam.py`).
 
 At this scale — tiny servos driving a ~800 g biped — actuator fidelity is most
 of the sim2real gap, which is why the actuator is modeled down to its voltage
@@ -143,7 +143,7 @@ assets/
 ├── mjcf/                             # MJCF robot models, scenes, onshape-to-robot configs, add_backlash.py
 └── meshes/                           # STL meshes referenced by the models
 tests/                                # CPU-only cfg-invariant and reward regression tests
-src/mjlab_microduck/                  # flat: no sub-packages, no __init__.py
+src/                  # flat: no sub-packages, no __init__.py
 ├── microduck_constants.py            # robot cfgs, HOME frame, BAM actuator cfg, MJCF_DIR
 ├── friction_dr_bam.py                # BAM + friction DR + backlash encoder feedback
 ├── registry.py                       # task registration (base + backlash variants)
