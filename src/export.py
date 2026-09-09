@@ -78,6 +78,14 @@ def run_export(task_id: str, cfg: ExportConfig) -> ExportResult:
     DUMMY_MODE = cfg.agent in {"zero", "random"}
     TRAINED_MODE = not DUMMY_MODE
 
+    # Export is `runner.export_policy_to_onnx`, and a runner only exists on the
+    # trained path (it is built from a checkpoint). The zero/random agents have
+    # no checkpoint, so there is nothing to export — bail before spending a
+    # couple of minutes compiling the scene only to hit an UnboundLocalError on
+    # `runner` at the export call.
+    if DUMMY_MODE:
+        raise ValueError(f"`export` requires a trained checkpoint, but --agent is {cfg.agent!r}. The zero/random agents have no policy weights to export; use `uv run play` to watch them instead.")
+
     # Check if this is a motion tracking task.
     is_motion_tracking = env_cfg.commands is not None and "motion" in env_cfg.commands and isinstance(env_cfg.commands["motion"], MotionCommandCfg)
     is_tracking_task = is_motion_tracking
@@ -189,29 +197,9 @@ def run_export(task_id: str, cfg: ExportConfig) -> ExportResult:
         env = VideoRecorder(env, video_folder=log_dir / "videos" / "play", step_trigger=lambda step: step == 0, video_length=cfg.video_length, disable_logger=True)
 
     env = RslRlVecEnvWrapper(env, clip_actions=agent_cfg.clip_actions)
-    if DUMMY_MODE:
-        action_shape: tuple[int, ...] = env.unwrapped.action_space.shape  # type: ignore
-        if cfg.agent == "zero":
-
-            class PolicyZero:
-                def __call__(self, obs) -> torch.Tensor:
-                    del obs
-                    return torch.zeros(action_shape, device=env.unwrapped.device)
-
-            policy = PolicyZero()
-        else:
-
-            class PolicyRandom:
-                def __call__(self, obs) -> torch.Tensor:
-                    del obs
-                    return 2 * torch.rand(action_shape, device=env.unwrapped.device) - 1
-
-            policy = PolicyRandom()
-    else:
-        runner_cls = load_runner_cls(task_id) or OnPolicyRunner
-        runner = runner_cls(env, asdict(agent_cfg), device=device)
-        runner.load(str(resume_path), map_location=device)
-        policy = runner.get_inference_policy(device=device)
+    runner_cls = load_runner_cls(task_id) or OnPolicyRunner
+    runner = runner_cls(env, asdict(agent_cfg), device=device)
+    runner.load(str(resume_path), map_location=device)
 
     # mjlab 1.3.0: ONNX export + metadata moved to mjlab.rl.exporter_utils and
     # the runner's built-in export_policy_to_onnx. Observation normalization is
