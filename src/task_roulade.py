@@ -1,40 +1,39 @@
-"""Microduck forward-roll (roulade) task — attempt 3, run 2.
-
-Episodic policy: robot starts standing, rolls forward over the flat top of
-its head, and lands back on its feet. Triggered at deployment like sit/standup
-(policy switch = roll starts immediately; no phase clock, no reference motion).
-
-RUN-2 REWORK (run 1 learned a violent ballistic "breakdance" whip — optimal
-under the run-1 rewards: same 2π, sooner, no cost): rotation now only counts
-while the robot touches the ground (support-gated accumulator — a roulade
-never leaves the floor), the landing annuity requires an over-the-head
-contact latch, paid progress rate is capped at 3 rad/s (faster forfeits the
-excess), an overspeed penalty taxes |ω| > 4 rad/s, and the impact/smoothness
-penalties are active from step 0 (discovery in this env is easy; style is
-the scarce resource, not exploration).
-
-Design (see the roulade section of task_mdp.py for the full history):
-  • ONE dense progress signal — paid increments of the max-so-far cumulative
-    forward rotation (potential-based: full roll pays 2π worth total, camping
-    anywhere pays zero per step).
-  • Landing rewards gated on ROLL COMPLETION (rotation frontier ≥ ~260°), not
-    on a clock — "do nothing" earns nothing, the standing spawn cannot farm
-    them, and no upright/height pressure ever opposes the flip.
-  • Reverse curriculum via mid-roll spawns (the trick that fixed face-up
-    recovery in standup): a slice of episodes starts 50°–185° into the roll,
-    tucked, with forward angular momentum, accumulator pre-set to the spawn
-    angle. The second half of a roulade IS the face-up recovery problem, which
-    we know is learnable.
-  • Run-up hook for later: reset_roulade_state.forward_vel_range gives standing
-    spawns an initial forward base velocity — set ROULADE_FORWARD_VEL_RANGE
-    to e.g. (0.0, 0.3) to train rolls out of a walk. (0, 0) = standstill-only.
-
-DR / obs / regularisers mirror the standup env (velocity sim2real parity),
-with the motion-blockers (body_ang_vel, |a_z|, arrival damping) kept near zero
-during discovery and introduced late by curriculum — the roll IS a large
-angular-velocity, large-impact event; taxing attempts prevents discovery
-(proven twice on standup).
-"""
+# Microduck forward-roll (roulade) task — attempt 3, run 2.
+#
+# Episodic policy: robot starts standing, rolls forward over the flat top of
+# its head, and lands back on its feet. Triggered at deployment like sit/standup
+# (policy switch = roll starts immediately; no phase clock, no reference motion).
+#
+# RUN-2 REWORK (run 1 learned a violent ballistic "breakdance" whip — optimal
+# under the run-1 rewards: same 2π, sooner, no cost): rotation now only counts
+# while the robot touches the ground (support-gated accumulator — a roulade
+# never leaves the floor), the landing annuity requires an over-the-head
+# contact latch, paid progress rate is capped at 3 rad/s (faster forfeits the
+# excess), an overspeed penalty taxes |ω| > 4 rad/s, and the impact/smoothness
+# penalties are active from step 0 (discovery in this env is easy; style is
+# the scarce resource, not exploration).
+#
+# Design (see the roulade section of task_mdp.py for the full history):
+#   • ONE dense progress signal — paid increments of the max-so-far cumulative
+#     forward rotation (potential-based: full roll pays 2π worth total, camping
+#     anywhere pays zero per step).
+#   • Landing rewards gated on ROLL COMPLETION (rotation frontier ≥ ~260°), not
+#     on a clock — "do nothing" earns nothing, the standing spawn cannot farm
+#     them, and no upright/height pressure ever opposes the flip.
+#   • Reverse curriculum via mid-roll spawns (the trick that fixed face-up
+#     recovery in standup): a slice of episodes starts 50°–185° into the roll,
+#     tucked, with forward angular momentum, accumulator pre-set to the spawn
+#     angle. The second half of a roulade IS the face-up recovery problem, which
+#     we know is learnable.
+#   • Run-up hook for later: reset_roulade_state.forward_vel_range gives standing
+#     spawns an initial forward base velocity — set ROULADE_FORWARD_VEL_RANGE
+#     to e.g. (0.0, 0.3) to train rolls out of a walk. (0, 0) = standstill-only.
+#
+# DR / obs / regularisers mirror the standup env (velocity sim2real parity),
+# with the motion-blockers (body_ang_vel, |a_z|, arrival damping) kept near zero
+# during discovery and introduced late by curriculum — the roll IS a large
+# angular-velocity, large-impact event; taxing attempts prevents discovery
+# (proven twice on standup).
 
 import math
 from copy import deepcopy
@@ -136,7 +135,7 @@ from .task_velocity import HEAD_BODY_NAMES
 
 
 def make_microduck_roulade_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
-    """Create Microduck forward-roll environment configuration."""
+    # Create Microduck forward-roll environment configuration.
 
     feet_ground_cfg = ContactSensorCfg(name="feet_ground_contact", primary=ContactMatch(mode="geom", pattern=r"^(left_foot_collision|right_foot_collision)$", entity="robot"), secondary=ContactMatch(mode="body", pattern="terrain"), fields=("found", "force"), reduce="netforce", num_slots=1, track_air_time=True)
 

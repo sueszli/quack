@@ -1,14 +1,13 @@
-"""The policy manifest (schema 2) and the checks a published policy has to pass.
-
-One vocabulary for two shapes — a single-policy repo (fields at the top level) and the official
-set (the same fields per entry under ``policies``). This module writes the first; the daemon
-(`pollen-robotics/microduck`, ``updater/src/policy.rs`` and ``robotd-params``) reads both. The
-contract is `docs/policy-manifest.md` over there; the numbers below are what the daemon publishes
-in ``duck_ipc_proto`` and refuses a policy for disagreeing with.
-
-Deliberately free of mjlab / torch imports so the tests run on a laptop in milliseconds and the
-CLI can validate an ONNX file without a GPU.
-"""
+# The policy manifest (schema 2) and the checks a published policy has to pass.
+#
+# One vocabulary for two shapes — a single-policy repo (fields at the top level) and the official
+# set (the same fields per entry under ``policies``). This module writes the first; the daemon
+# (`pollen-robotics/microduck`, ``updater/src/policy.rs`` and ``robotd-params``) reads both. The
+# contract is `docs/policy-manifest.md` over there; the numbers below are what the daemon publishes
+# in ``duck_ipc_proto`` and refuses a policy for disagreeing with.
+#
+# Deliberately free of mjlab / torch imports so the tests run on a laptop in milliseconds and the
+# CLI can validate an ONNX file without a GPU.
 
 from __future__ import annotations
 
@@ -40,12 +39,13 @@ SLOTS: tuple[str, ...] = ("walk", "stand", "sitstand", "ground_pick", "kick_left
 
 
 class ManifestError(ValueError):
-    """A manifest that the daemon would refuse, or that would load and run wrongly."""
+    # A manifest that the daemon would refuse, or that would load and run wrongly.
+    pass
 
 
 @dataclass(frozen=True)
 class Provenance:
-    """Where the weights came from. Display-only for the daemon; the part people skip by hand."""
+    # Where the weights came from. Display-only for the daemon; the part people skip by hand.
 
     task_id: str | None = None
     repo: str = "pollen-robotics/microduck_rl"
@@ -66,7 +66,7 @@ def _now_utc() -> str:
 
 
 def git_provenance(repo_root: Path | None = None) -> dict[str, Any]:
-    """`commit`, `branch`, `dirty` of the checkout the export ran from, or `{}` outside git."""
+    # `commit`, `branch`, `dirty` of the checkout the export ran from, or `{}` outside git.
     root = str(repo_root or Path(__file__).resolve().parents[1])
 
     def git(*args: str) -> str | None:
@@ -85,12 +85,11 @@ def git_provenance(repo_root: Path | None = None) -> dict[str, Any]:
 
 
 def build_manifest(*, name: str, kind: str, description: str, duration_s: float | None = None, chain: bool = False, unwind_s: float | None = None, idle: tuple[float, float, float] = ZERO_TWIST, action_scale: float | None = None, entry_pose: str = "standing", slot: str | None = None, command_help: dict[str, Any] | None = None, training: dict[str, Any] | None = None, eval: dict[str, Any] | None = None) -> dict[str, Any]:
-    """A single-policy manifest the daemon loads without surprises.
-
-    Only the constant-command family is publishable from here — a skill's network is fed a fixed
-    twist. Phase and posture-flag encodings are the official set's own arms and are not something
-    a community policy can be.
-    """
+    # A single-policy manifest the daemon loads without surprises.
+    #
+    # Only the constant-command family is publishable from here — a skill's network is fed a fixed
+    # twist. Phase and posture-flag encodings are the official set's own arms and are not something
+    # a community policy can be.
     if kind not in KINDS:
         raise ManifestError(f"kind must be one of {KINDS}, not {kind!r}")
     if not name or "/" in name or name != name.strip():
@@ -142,11 +141,10 @@ def build_manifest(*, name: str, kind: str, description: str, duration_s: float 
 
 
 def validate_manifest(manifest: dict[str, Any]) -> None:
-    """Refuse what the daemon would refuse, plus the mistakes it would load and run wrongly.
-
-    Accepts both shapes and any schema version, because absence is not evidence — a repo is under
-    no obligation to carry any field. Only a claim that is present and wrong fails.
-    """
+    # Refuse what the daemon would refuse, plus the mistakes it would load and run wrongly.
+    #
+    # Accepts both shapes and any schema version, because absence is not evidence — a repo is under
+    # no obligation to carry any field. Only a claim that is present and wrong fails.
     if "policies" in manifest:
         for entry in manifest["policies"]:
             if "file" not in entry:
@@ -190,7 +188,7 @@ class OnnxShape:
 
 
 def inspect_onnx(path: Path) -> OnnxShape:
-    """The graph's single input and output widths, as the daemon checks them at load."""
+    # The graph's single input and output widths, as the daemon checks them at load.
     import onnx
 
     model = onnx.load(str(path), load_external_data=False)
@@ -220,10 +218,9 @@ def is_untrained_onnx(path: Path) -> bool:
 
 
 def check_onnx(path: Path) -> OnnxShape:
-    """Refuse a file the daemon would refuse at load: wrong widths, or one that is not 61 -> 14.
-
-    Also refuses an `--agent untrained` fixture, which passes every other check by construction.
-    """
+    # Refuse a file the daemon would refuse at load: wrong widths, or one that is not 61 -> 14.
+    #
+    # Also refuses an `--agent untrained` fixture, which passes every other check by construction.
     if not path.exists():
         raise ManifestError(f"{path}: no such file")
     if is_untrained_onnx(path):
@@ -237,12 +234,11 @@ def check_onnx(path: Path) -> OnnxShape:
 
 
 def smoke_run_onnx(path: Path, steps: int = 50, seed: int = 0) -> None:
-    """Run the network on plausible inputs and refuse a NaN/inf or a saturated output.
-
-    Not a physics rehearsal — `infer.py` is that — but it catches a broken export
-    (an un-baked normalizer producing NaNs on raw observations, a graph that will not execute)
-    before anything is uploaded.
-    """
+    # Run the network on plausible inputs and refuse a NaN/inf or a saturated output.
+    #
+    # Not a physics rehearsal — `infer.py` is that — but it catches a broken export
+    # (an un-baked normalizer producing NaNs on raw observations, a graph that will not execute)
+    # before anything is uploaded.
     import numpy as np
     import onnxruntime as ort
 
@@ -270,11 +266,10 @@ def smoke_run_onnx(path: Path, steps: int = 50, seed: int = 0) -> None:
 
 
 def install_commands(manifest: dict[str, Any], repo_id: str) -> str:
-    """The `robotctl` lines that put this policy on a robot — one story per shape.
-
-    Episodic: a skill, length from the manifest. Perpetual with `unwind_s`: a held pose the owner
-    runs as a skill with `--hold`. Perpetual without: a gait, loaded into a slot.
-    """
+    # The `robotctl` lines that put this policy on a robot — one story per shape.
+    #
+    # Episodic: a skill, length from the manifest. Perpetual with `unwind_s`: a held pose the owner
+    # runs as a skill with `--hold`. Perpetual without: a gait, loaded into a slot.
     name = manifest["name"]
     if manifest["kind"] == "episodic":
         return f"sudo robotctl policy add {name} {repo_id}\nrobotctl robot do {name}"
@@ -285,7 +280,7 @@ def install_commands(manifest: dict[str, Any], repo_id: str) -> str:
 
 
 def render_readme(manifest: dict[str, Any], repo_id: str) -> str:
-    """A model card that says how to run the policy on a robot, generated so it cannot go stale."""
+    # A model card that says how to run the policy on a robot, generated so it cannot go stale.
     kind = manifest["kind"]
     name = manifest["name"]
     description = manifest.get("description", "")

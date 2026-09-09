@@ -1,12 +1,11 @@
-"""Microduck roller slope — balanced passive descent.
-
-The robot spawns on flat ground (forward impulse), rolls onto a descending
-ramp and lets itself glide down while staying upright. No steering: the
-twist command is neutralized (rel_standing_envs=1.0). Custom flat+ramp
-terrain (FlatRampTerrainCfg), steepness curriculum (terrain_levels_slope).
-Unified 61D obs → interchangeable at runtime (--new-cmd-obs) — inherited as-is
-from make_microduck_velocity_rollers_env_cfg (DR/obs/reset untouched here).
-"""
+# Microduck roller slope — balanced passive descent.
+#
+# The robot spawns on flat ground (forward impulse), rolls onto a descending
+# ramp and lets itself glide down while staying upright. No steering: the
+# twist command is neutralized (rel_standing_envs=1.0). Custom flat+ramp
+# terrain (FlatRampTerrainCfg), steepness curriculum (terrain_levels_slope).
+# Unified 61D obs → interchangeable at runtime (--new-cmd-obs) — inherited as-is
+# from make_microduck_velocity_rollers_env_cfg (DR/obs/reset untouched here).
 
 import math
 import os
@@ -41,7 +40,7 @@ PLAY_DIFFICULTY = None
 
 
 def _resolve_play_difficulty():
-    """Play difficulty: SLOPE_PLAY_DIFFICULTY env var, otherwise the constant."""
+    # Play difficulty: SLOPE_PLAY_DIFFICULTY env var, otherwise the constant.
     raw = os.environ.get("SLOPE_PLAY_DIFFICULTY")
     if raw is None:
         return PLAY_DIFFICULTY

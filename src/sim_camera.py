@@ -1,17 +1,16 @@
-"""What a duck sees, in the format `mediad` captures.
-
-MuJoCo renders RGB; `mediad` pins its pipeline to UYVY because that is what `v4l2src` can drive at
-full rate off the rkisp — so the conversion happens here, on the side that knows it is a simulator.
-
-**Frames do not go down the JSON link.** 640x360 UYVY is 460,800 bytes, and at 15 fps that is 6.9
-MB/s — JSON would be absurd. So a camera is its own TCP port carrying length-prefixed raw frames:
-four bytes of little-endian length, then the bytes, forever. No handshake, because there is nothing
-to negotiate that both ends do not already have to agree on to be useful.
-
-**Opt in, per duck.** Rendering is the most expensive thing in the simulator by a wide margin —
-12.2 ms per 640x360 frame, measured, against 0.3 ms to step four ducks' physics. Four ducks with
-cameras at 15 fps is most of a core; four without is nothing. Most sessions do not need one.
-"""
+# What a duck sees, in the format `mediad` captures.
+#
+# MuJoCo renders RGB; `mediad` pins its pipeline to UYVY because that is what `v4l2src` can drive at
+# full rate off the rkisp — so the conversion happens here, on the side that knows it is a simulator.
+#
+# **Frames do not go down the JSON link.** 640x360 UYVY is 460,800 bytes, and at 15 fps that is 6.9
+# MB/s — JSON would be absurd. So a camera is its own TCP port carrying length-prefixed raw frames:
+# four bytes of little-endian length, then the bytes, forever. No handshake, because there is nothing
+# to negotiate that both ends do not already have to agree on to be useful.
+#
+# **Opt in, per duck.** Rendering is the most expensive thing in the simulator by a wide margin —
+# 12.2 ms per 640x360 frame, measured, against 0.3 ms to step four ducks' physics. Four ducks with
+# cameras at 15 fps is most of a core; four without is nothing. Most sessions do not need one.
 
 from __future__ import annotations
 
@@ -39,12 +38,11 @@ _V = np.array([0.5, -0.418688, -0.081312])
 
 
 def to_uyvy(rgb: np.ndarray) -> bytes:
-    """RGB to packed UYVY: `U Y0 V Y1` per pixel pair, chroma averaged across the pair.
-
-    Averaged rather than dropped, because a subsampler that takes the left pixel's chroma puts a
-    half-pixel colour shift into every frame — invisible on a duck and not invisible to a detector
-    trained on a real camera.
-    """
+    # RGB to packed UYVY: `U Y0 V Y1` per pixel pair, chroma averaged across the pair.
+    #
+    # Averaged rather than dropped, because a subsampler that takes the left pixel's chroma puts a
+    # half-pixel colour shift into every frame — invisible on a duck and not invisible to a detector
+    # trained on a real camera.
     frame = rgb.astype(np.float32)
     luma = frame @ _Y
     chroma_u = frame @ _U + 128.0
@@ -60,11 +58,10 @@ def to_uyvy(rgb: np.ndarray) -> bytes:
 
 
 class Camera:
-    """One duck's head camera, rendered on demand.
-
-    The renderer is not thread-safe and is expensive to make, so one lives here and only the frame
-    loop touches it.
-    """
+    # One duck's head camera, rendered on demand.
+    #
+    # The renderer is not thread-safe and is expensive to make, so one lives here and only the frame
+    # loop touches it.
 
     def __init__(self, model: mujoco.MjModel, name: str, width: int = WIDTH, height: int = HEIGHT):
         self.camera = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_CAMERA, name)
@@ -100,15 +97,14 @@ class Camera:
         self.lock = threading.Lock()
 
     def render(self, world) -> None:
-        """Render one frame, reading `MjData` only while holding the world's lock.
-
-        **`update_scene` reads the whole of `MjData`, and it runs on the step loop's thread while
-        sensor reads run on socket threads.** Unlocked, a ToF read caught a site orientation
-        mid-write and got a zero-length ray direction — which MuJoCo answers with
-        `mj_ray: vector length is too small` and an abort, taking the simulator down with it. The
-        lock is held for the scene copy, which is a millisecond, and released for the render, which
-        is twelve and touches no shared state.
-        """
+        # Render one frame, reading `MjData` only while holding the world's lock.
+        #
+        # **`update_scene` reads the whole of `MjData`, and it runs on the step loop's thread while
+        # sensor reads run on socket threads.** Unlocked, a ToF read caught a site orientation
+        # mid-write and got a zero-length ray direction — which MuJoCo answers with
+        # `mj_ray: vector length is too small` and an abort, taking the simulator down with it. The
+        # lock is held for the scene copy, which is a millisecond, and released for the render, which
+        # is twelve and touches no shared state.
         with world.lock:
             self.renderer.update_scene(world.data, camera=self.camera)
         packed = to_uyvy(self.renderer.render())
@@ -121,7 +117,7 @@ class Camera:
 
 
 class FrameHandler(socketserver.BaseRequestHandler):
-    """Length-prefixed frames, at the camera's rate, until the reader goes away."""
+    # Length-prefixed frames, at the camera's rate, until the reader goes away.
 
     def handle(self) -> None:
         camera: Camera = self.server.camera

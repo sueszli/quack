@@ -1,35 +1,34 @@
-"""Microduck BallKick task — kick a ball forward with one foot (KICK_FOOT flag).
-
-Episodic policy: the robot starts STANDING (HOME pose + noise) with a 70mm /
-15g ball sitting just in front of its kicking foot (KICK_FOOT below — train a
-right-footed and a left-footed policy as two separate runs). The goal is to
-kick the ball forward (robot's heading at reset) at BALL_TARGET_SPEED while
-keeping balance and staying robust to external pushes, then settle back into
-a clean stand.
-
-Key design decisions:
-  - The policy is BLIND to the ball (no ball obs in the actor): the real robot
-    has no ball sensing — the operator aims the robot at the ball. Robustness
-    to placement error comes from ±2cm ball-position DR at reset instead. The
-    CRITIC does see ball pos/vel (asymmetric actor-critic) so the value
-    function can anticipate the kick payoff.
-  - No phase command: the kick reward is available from t=0 and an earlier
-    kick collects more ball-rolling reward, so the policy kicks immediately.
-    At deployment: hard ONNX swap to this policy (à la jump/ground-pick), it
-    kicks, then auto-swap back after ~2s.
-  - Right-foot kick is enforced geometrically + economically: the ball spawns
-    at the right toe, and an always-on LEFT-foot-grounded reward makes the
-    left leg the support leg (lifting it costs reward every step; anti-hop).
-  - Kick reward is LINEAR in ball forward speed (clamped at 5 m/s), not a
-    saturating tanh — "as hard as possible" needs gradient at high speeds.
-  - Obs layout is the unified 61D actor layout (twist + zero-padded head/body
-    command slots) so the runtime can hard-swap ONNX files with one buffer.
-
-DR / noise / regularization: velocity-parity, copied from the standup env
-(which is itself matched to velocity — the recipe with proven transfer).
-Task reward mass ~10 ≈ velocity's ~11, so the shared regularizer weights act
-at the same relative strength.
-"""
+# Microduck BallKick task — kick a ball forward with one foot (KICK_FOOT flag).
+#
+# Episodic policy: the robot starts STANDING (HOME pose + noise) with a 70mm /
+# 15g ball sitting just in front of its kicking foot (KICK_FOOT below — train a
+# right-footed and a left-footed policy as two separate runs). The goal is to
+# kick the ball forward (robot's heading at reset) at BALL_TARGET_SPEED while
+# keeping balance and staying robust to external pushes, then settle back into
+# a clean stand.
+#
+# Key design decisions:
+#   - The policy is BLIND to the ball (no ball obs in the actor): the real robot
+#     has no ball sensing — the operator aims the robot at the ball. Robustness
+#     to placement error comes from ±2cm ball-position DR at reset instead. The
+#     CRITIC does see ball pos/vel (asymmetric actor-critic) so the value
+#     function can anticipate the kick payoff.
+#   - No phase command: the kick reward is available from t=0 and an earlier
+#     kick collects more ball-rolling reward, so the policy kicks immediately.
+#     At deployment: hard ONNX swap to this policy (à la jump/ground-pick), it
+#     kicks, then auto-swap back after ~2s.
+#   - Right-foot kick is enforced geometrically + economically: the ball spawns
+#     at the right toe, and an always-on LEFT-foot-grounded reward makes the
+#     left leg the support leg (lifting it costs reward every step; anti-hop).
+#   - Kick reward is LINEAR in ball forward speed (clamped at 5 m/s), not a
+#     saturating tanh — "as hard as possible" needs gradient at high speeds.
+#   - Obs layout is the unified 61D actor layout (twist + zero-padded head/body
+#     command slots) so the runtime can hard-swap ONNX files with one buffer.
+#
+# DR / noise / regularization: velocity-parity, copied from the standup env
+# (which is itself matched to velocity — the recipe with proven transfer).
+# Task reward mass ~10 ≈ velocity's ~11, so the shared regularizer weights act
+# at the same relative strength.
 
 import math
 from copy import deepcopy
@@ -118,11 +117,10 @@ from .task_velocity import HEAD_BODY_NAMES
 
 
 def make_microduck_ball_kick_env_cfg(play: bool = False, kick_foot: str | None = None) -> ManagerBasedRlEnvCfg:
-    """Create the Microduck BallKick environment configuration.
-
-    ``kick_foot`` overrides the module-level KICK_FOOT flag (used by tests);
-    normal training just sets the flag at the top of this file.
-    """
+    # Create the Microduck BallKick environment configuration.
+    #
+    # ``kick_foot`` overrides the module-level KICK_FOOT flag (used by tests);
+    # normal training just sets the flag at the top of this file.
     kick_foot = kick_foot or KICK_FOOT
     assert kick_foot in ("right", "left")
     support_foot = "left" if kick_foot == "right" else "right"
