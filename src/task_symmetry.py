@@ -1,10 +1,7 @@
 """Bilateral (left-right) symmetry augmentation for the microduck 61-D envs.
 
-Migrated 2026-08-13 from the old 51-D layout to the current 61-D family
-(velocity/velstand/standup/roulade — twist + head_command + body_command obs
-slots), and the augmented-obs output key fixed "policy" → "actor" (mjlab
-1.3.0 group naming; the old key would KeyError in rsl_rl 5.0.1's mirror-loss
-path — dead code until now since no env had symmetry enabled).
+The augmented-obs output key must be "actor", not "policy": the old key
+KeyErrors in rsl_rl's mirror-loss path.
 
 Actor observation layout (61-dim flat tensor, concatenated in term insertion order):
     [0:3]   base_ang_vel      (roll, pitch, yaw  — body-frame IMU)
@@ -48,16 +45,10 @@ from tensordict import TensorDict
 
 @dataclass
 class PpoWithSymmetryCfg(RslRlPpoAlgorithmCfg):
-    """PPO algorithm config extended with an optional symmetry_cfg field."""
-
     symmetry_cfg: dict | None = None
 
 
 SYMMETRY_CFG = {"use_data_augmentation": False, "use_mirror_loss": True, "mirror_loss_coeff": 0.5, "data_augmentation_func": "src.task_symmetry.microduck_vel_symmetry"}
-
-# ---------------------------------------------------------------------------
-# Permutation and sign tables
-# ---------------------------------------------------------------------------
 
 # Within a 14-joint block: left (0-4) <-> right (9-13), midline (5-8) fixed
 _JOINT_PERM: list[int] = [9, 10, 11, 12, 13, 5, 6, 7, 8, 0, 1, 2, 3, 4]
@@ -89,7 +80,6 @@ _OBS_SIGN: list[float] = (
     + [1.0, -1.0, 1.0, -1.0, 1.0, -1.0]  # body: negate y, roll, yaw
 )
 
-# Cache tensors per device to avoid reallocating on every call
 _cache: dict[torch.device, tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]] = {}
 
 
@@ -103,34 +93,17 @@ def _get_tensors(device: torch.device) -> tuple[torch.Tensor, torch.Tensor, torc
     return _cache[device]
 
 
-# ---------------------------------------------------------------------------
-# Public augmentation function
-# ---------------------------------------------------------------------------
-
-
 def microduck_vel_symmetry(env, obs: TensorDict | None, actions: torch.Tensor | None) -> tuple[TensorDict | None, torch.Tensor | None]:
-    """Bilateral symmetry augmentation / mirror function for the microduck vel env.
+    """Return [original, mirrored] concatenated along the batch dimension.
 
-    Returns [original, mirrored] concatenated along the batch dimension.
-    Compatible with the rsl_rl PPO ``symmetry_cfg`` interface (use_data_augmentation
-    and/or use_mirror_loss).
-
-    Args:
-        env: The vectorised environment (unused, present for interface compatibility).
-        obs: TensorDict with keys ``"policy"`` and ``"critic"``, shape ``[B, obs_dim]``.
-             Pass ``None`` when only actions need to be mirrored.
-        actions: Float tensor of shape ``[B, 14]``.
-                 Pass ``None`` when only obs need to be mirrored.
-
-    Returns:
-        Tuple ``(aug_obs, aug_actions)`` where each non-None input is doubled
-        along the batch axis as ``[original; mirrored]``.
+    Implements the rsl_rl PPO ``symmetry_cfg`` interface: ``env`` is unused, and
+    ``obs`` or ``actions`` may be None when only the other needs mirroring.
     """
     aug_obs: TensorDict | None = None
     aug_actions: torch.Tensor | None = None
 
     if obs is not None:
-        actor_orig: torch.Tensor = obs["actor"]  # [B, 51]
+        actor_orig: torch.Tensor = obs["actor"]
         obs_perm, obs_sign, _, _ = _get_tensors(actor_orig.device)
         actor_sym = actor_orig[:, obs_perm] * obs_sign
 

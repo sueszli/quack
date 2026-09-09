@@ -3,27 +3,23 @@
 ``make_backlash_variant(cfg)`` turns any microduck env cfg into its backlash
 counterpart (task ids ``Mjlab-<Task>-<Flat|Rough>-Backlash-MicroDuck``):
 
-1. Robot → the matching backlash robot cfg (an unactuated
+1. Robot → the matching backlash robot cfg: an unactuated
    ``passive_<joint>_backlash`` hinge in series with each of the 14 servo
-   joints, ±1° play) driven by BacklashEncoderBamActuator, whose firmware PD
+   joints (±1° play), driven by BacklashEncoderBamActuator, whose firmware PD
    closes on the encoder READING THROUGH the backlash — like the real servo,
    whose encoder sits on the output side of the gear play. Pass the robot cfg
-   that mirrors the base task's model: MICRODUCK_WALK_BACKLASH_ROBOT_CFG for
-   Velocity (robot_walk_backlash.xml), the default
-   MICRODUCK_BACKLASH_ROBOT_CFG for VelStand/StandUp
-   (robot_groundcontact_backlash.xml).
+   that MIRRORS the base task's model, or the A/B comparison is confounded.
 2. joint_pos / joint_vel obs → joint_pos_rel_backlash / joint_vel_rel_backlash:
-   the policy observes qpos[servo] + qpos[backlash] (encoder view), keeping the
-   encoder-bias DR path (``biased`` param) intact. Obs and action dims are
+   the policy observes qpos[servo] + qpos[backlash] (the encoder view), keeping
+   the encoder-bias DR path (``biased`` param) intact. Obs and action dims are
    unchanged (still 14 joints), so runtime/export need no changes.
 3. dof_pos_limits reward is scoped to the servo joints: backlash joints spend
    their life pinned against their ±1° limits (that is the point of backlash),
    which would otherwise feed a permanent out-of-soft-limit penalty.
 
 Everything else (rewards, DR events, curricula) carries over untouched — the
-``passive_`` prefix on the backlash joints means every existing
-``^(?!passive_).*`` regex (actuators, pose reward, joint obs selection)
-already excludes them.
+``passive_`` prefix means every existing ``^(?!passive_).*`` regex already
+excludes the backlash joints.
 """
 
 from copy import deepcopy
