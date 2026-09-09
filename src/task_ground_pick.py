@@ -47,7 +47,6 @@ ENABLE_VELOCITY_PUSHES = True
 ENABLE_IMU_ORIENTATION_RANDOMIZATION = True  # applied at obs level (per-env rotation)
 ENABLE_ENCODER_BIAS = True  # actor obs sees joint_pos + per-env bias
 ENABLE_BASE_ORIENTATION_RANDOMIZATION = False
-ENABLE_NECK_OFFSET_RANDOMIZATION = False  # disabled — head is used for the task
 
 # ── Ranges (matched to the velocity env) ──────────────────────────────────────
 COM_RANDOMIZATION_RANGE = 0.003  # ±3mm initial, ramped via curriculum
