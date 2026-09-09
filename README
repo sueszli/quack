@@ -8,8 +8,8 @@
 RL training environments for Microduck (~800 g, ~25 cm tall bipedal robot, 14
 Dynamixel XL330 servos), built on mjlab (MuJoCo Warp) + PPO (rsl_rl).
 Policies train at 50 Hz, export to ONNX, and are deployed by the runtime in
-pollen-robotics/microduck. The repo encodes the full sim2real recipe: BAM
-actuator physics, domain randomization, backlash simulation, reward design.
+pollen-robotics/microduck. It covers the full sim2real recipe: BAM actuator
+physics, domain randomization, backlash simulation, reward design.
 
   microduck       https://github.com/pollen-robotics/microduck
   mjlab           https://github.com/mujocolab/mjlab
@@ -26,7 +26,7 @@ actuator physics, domain randomization, backlash simulation, reward design.
 QUICKSTART
 ================================================================================
 
-Requires a CUDA GPU (training runs through MuJoCo Warp) and uv.
+Requires a CUDA GPU and uv.
 On ARM boxes (DGX Spark / GB10, Jetson) the first `uv sync` pulls ~2 GB of CUDA
 wheels; export UV_HTTP_TIMEOUT=600 so uv's 30 s default does not abort it.
 
@@ -37,11 +37,11 @@ wheels; export UV_HTTP_TIMEOUT=600 so uv's 30 s default does not abort it.
     # <TASK> is any id from the registry; the walking policy is
     # Mjlab-Velocity-Flat-MicroDuck (see TASKS below).
 
-    # train (uses your GPU; ~1-2 h for a usable gait at 4096 envs)
+    # train (~1-2 h for a usable gait at 4096 envs)
     uv run train Mjlab-Velocity-Flat-MicroDuck --env.scene.num-envs 4096
     # watch a trained policy in the viewer
     uv run play Mjlab-Velocity-Flat-MicroDuck --wandb-run-path <entity/project/run_id>
-    # export to ONNX for deployment (obs normalizer baked in)
+    # export to ONNX (obs normalizer baked in)
     uv run export Mjlab-Velocity-Flat-MicroDuck --wandb-run-path <...>
     # share it on the HF Hub (see PUBLISHING A POLICY)
     uv run publish --onnx out.onnx --repo <user>/microduck-<name> \
@@ -97,7 +97,7 @@ Roulade, SitStand, Rollers/Swizzle, BallKick.
   Mjlab-Spin-Flat-MicroDuck                flat        fast spin in place on rollers
 
 Backlash variants: every main task has a twin trained on a model with +-1 deg
-of gear play (2 deg total) in series with each of the 14 servo joints. Insert
+of gear play in series with each of the 14 servo joints. Insert
 `-Backlash` before `MicroDuck`, e.g. Mjlab-Velocity-Flat-Backlash-MicroDuck.
 Each servo gets an unactuated `passive_<joint>_backlash` hinge; since the real
 encoder sits on the output side of the play, both the firmware PD emulation
@@ -111,19 +111,18 @@ src/task_backlash.py.
 DEPLOYMENT REHEARSAL (uv run infer)
 ================================================================================
 
-At deployment the runtime hot-swaps policies (walk / recover / trick) behind a
-shared 61-D observation contract, so any of them can take over at any moment.
-`uv run infer` rehearses exactly that on CPU MuJoCo:
+At deployment the runtime hot-swaps policies behind a shared 61-D observation
+contract, so any of them can take over at any moment. `uv run infer` rehearses
+that on CPU MuJoCo:
 
     uv run infer --walking walk.onnx --standing stand.onnx \
         --sitstand sitstand.onnx --roulade roulade.onnx --new-cmd-obs
 
 Keyboard driven: velocity commands, G ground pick, Y sit/stand, R roulade,
 K/L kicks. `--debug`, `--save-csv`, `--record` support sim2real comparisons.
-Servos are simulated with the same BAM M6 XL330 model used in training
-(voltage control + load-dependent friction, via bam.mujoco.MujocoController);
-`--vin` / `--vin-drop-gain` / `--kp-fw` pin training DR ranges to one value,
-`--no-bam` falls back to the XML PD actuators.
+Servos use the same BAM M6 XL330 model as training, via
+bam.mujoco.MujocoController; `--vin` / `--vin-drop-gain` / `--kp-fw` pin
+training DR ranges to one value, `--no-bam` falls back to the XML PD actuators.
 
 
 ================================================================================
@@ -136,8 +135,7 @@ randomization on battery voltage, voltage sag under load, command delay and
 friction magnitude (FrictionDRBamActuator, src/robot_actuator.py).
 
 At this scale -- tiny servos driving a ~800 g biped -- actuator fidelity is
-most of the sim2real gap, which is why the actuator is modeled down to its
-voltage control law instead of an ideal PD.
+most of the sim2real gap, hence the voltage-level model instead of an ideal PD.
 
 
 ================================================================================
@@ -202,11 +200,11 @@ Conventions worth knowing:
   * Domain-randomization toggles are ENABLE_* booleans at the top of each env
     cfg file.
   * The exporter bakes the observation normalizer into the ONNX graph. Always
-    deploy ONNX produced by `uv run export`, never a hand-converted checkpoint,
-    or the policy sees unnormalized observations at runtime.
+    deploy ONNX from `uv run export`, never a hand-converted checkpoint, or the
+    policy sees unnormalized observations at runtime.
 
 CLAUDE.md documents the env-building workflow and the reward-design rules
-learned across the project (also aimed at AI coding agents working here).
+learned across the project.
 
 
 ================================================================================
@@ -216,8 +214,8 @@ PUBLISHING A POLICY
 `uv run publish` puts a policy on the Hugging Face Hub in the shape the robot's
 daemon loads: policy.onnx with the normalizer baked in, a manifest.json
 following schema 2 of the microduck policy manifest
-(pollen-robotics/microduck, docs/policy-manifest.md), and a README. Anyone
-with a microduck installs it with one command, no daemon release needed.
+(pollen-robotics/microduck, docs/policy-manifest.md), and a README. Anyone with
+a microduck installs it with one command, no daemon release needed.
 
     # from a wandb run -- exports through the one safe path, then uploads
     uv run publish --task Mjlab-PoliteBow-Flat-MicroDuck \
@@ -247,7 +245,7 @@ Then on a robot:
     sudo robotctl policy load walk <user>/microduck-my-walk
     robotctl robot do polite-bow
 
---kind and what each needs:
+--kind:
 
   episodic    runs for --duration-s and returns itself to a standing pose
               (kicks, roulade, a bow). Add --chain if holding the button
@@ -260,13 +258,13 @@ Then on a robot:
                 back to the gait, so the robot is not let go of on one foot.
                 Owner runs it one-shot with `policy add ... --hold <seconds>`.
 
-Before uploading, publish checks the graph is [1,61] -> [1,14] (a 51-D legacy
-policy is refused with a message), runs it on plausible inputs and refuses NaNs
-or a constant output, fills the `training` block from git and wandb (task,
-commit, branch, dirty flag, run, checkpoint), and refuses to overwrite an
-existing .onnx in the repo without --force. Repos are created private;
---no-private for public, --tag v1 to tag the revision.
+Before uploading, publish checks the graph is [1,61] -> [1,14] (51-D legacy
+policies are refused), runs it on plausible inputs and refuses NaNs or constant
+output, fills the `training` block from git and wandb (task, commit, branch,
+dirty flag, run, checkpoint), and refuses to overwrite an existing .onnx
+without --force. Repos are created private; --no-private for public, --tag v1
+to tag the revision.
 
 Only constant-command policies are publishable this way. Phase-driven moves
-(the ground pick) and the posture-flag sit<->stand are driven by the daemon
-itself and live in the official set, pollen-robotics/microduck-policies.
+(the ground pick) and the posture-flag sit<->stand are driven by the daemon and
+live in the official set, pollen-robotics/microduck-policies.
