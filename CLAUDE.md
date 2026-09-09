@@ -32,7 +32,7 @@ Never launch a long run without one.
 - `src/task_*.py` — one cfg module per task
   family. `task_velocity.py` is the main walking recipe AND the
   shared base (robot, DR, obs, commands) other envs build on or mirror.
-- `src/task_registry.py` — task registration (base + `-Backlash-` variants; the `mjlab.tasks` entry point).
+- `src/task_registry.py` — task registration (base tasks + opt-in `-Backlash-` variants; the `mjlab.tasks` entry point).
 - No `__init__.py` files and no sub-packages: `src` is a flat namespace package
   (`[tool.uv.build-backend] namespace = true`).
 - `src/task_backlash.py` — wraps any env cfg into its backlash twin.
@@ -92,6 +92,12 @@ Never launch a long run without one.
   is punished for correcting what it sees.
 - `-Backlash-` task variants must mirror their base task's robot model
   (walk / groundcontact / rollers) so backlash A/B comparisons are unconfounded.
+  Enforced for EVERY `_BACKLASH_TASKS` entry (registered or not) by
+  `tests/test_task_registry.py`.
+- Backlash registration is OPT-IN: `_BACKLASH_TASKS` in `task_registry.py` is the
+  full table, `_DEFAULT_BACKLASH_TASKS` the registered subset. Each twin costs two
+  env cfgs built at import, so add one only when it is being studied
+  (or set `MICRODUCK_BACKLASH_TASKS=all` / a comma-separated list for a one-off).
 
 ## Building a new env — the workflow
 
@@ -114,7 +120,8 @@ Never launch a long run without one.
      STAND_Z once turned the goal into an impossible target for days.
 3. **Config conventions**: `ENABLE_*` toggles + tuned constants at the top of
    the cfg file; factory `make_..._env_cfg(play: bool, rough: bool)`; register
-   in `task_registry.py` (+ the `_BACKLASH_TASKS` table if applicable); own
+   in `task_registry.py` (+ the `_BACKLASH_TASKS` table if applicable — adding a
+   row there does NOT register it; add the id to `_DEFAULT_BACKLASH_TASKS` too); own
    `RslRl...RunnerCfg` with a distinct `experiment_name`. Symmetry mirror-loss
    is available (61D table in `task_symmetry.py`) — OFF by default, never for
    asymmetric tasks.

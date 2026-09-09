@@ -85,15 +85,62 @@ register_mjlab_task(task_id="Mjlab-Roulade-Flat-MicroDuck", env_cfg=make_microdu
 # base task's collision model: Velocity → robot_walk_backlash.xml,
 # VelStand/StandUp → robot_groundcontact_backlash.xml. Obs/action dims are
 # unchanged vs the base tasks.
+import os
+from collections.abc import Callable
+from typing import Any, NamedTuple
+
+from mjlab.entity import EntityCfg
+from mjlab.envs import ManagerBasedRlEnvCfg
+
 from .robot import MICRODUCK_BACKLASH_ROBOT_CFG, MICRODUCK_ROLLERS_BACKLASH_ROBOT_CFG, MICRODUCK_WALK_BACKLASH_ROBOT_CFG
 
-# (task_id, make_fn, make_kwargs, rl_cfg, backlash robot cfg). Task ids mirror
-# the base ids with "-Backlash" inserted. Walk-model tasks get the walk
-# backlash robot, roller tasks the wheels+backlash robot, the rest the
-# groundcontact backlash robot — same model as their base task in each case.
 _BL_GROUNDCONTACT = MICRODUCK_BACKLASH_ROBOT_CFG
 _BL_WALK = MICRODUCK_WALK_BACKLASH_ROBOT_CFG
 _BL_ROLLERS = MICRODUCK_ROLLERS_BACKLASH_ROBOT_CFG
-_BACKLASH_TASKS = (("Mjlab-Velocity-Flat-Backlash-MicroDuck", make_microduck_velocity_env_cfg, {}, MicroduckRlCfg, _BL_WALK), ("Mjlab-Velocity-Rough-Backlash-MicroDuck", make_microduck_velocity_env_cfg, {"rough": True}, MicroduckRlCfg, _BL_WALK), ("Mjlab-VelStand-Flat-Backlash-MicroDuck", make_microduck_velstand_env_cfg, {}, MicroduckVelStandRlCfg, _BL_GROUNDCONTACT), ("Mjlab-VelStand-Rough-Backlash-MicroDuck", make_microduck_velstand_env_cfg, {"rough": True}, MicroduckVelStandRlCfg, _BL_GROUNDCONTACT), ("Mjlab-StandUp-Flat-Backlash-MicroDuck", make_microduck_standup_env_cfg, {}, MicroduckStandUpRlCfg, _BL_GROUNDCONTACT), ("Mjlab-StandUp-Rough-Backlash-MicroDuck", make_microduck_standup_env_cfg, {"rough": True}, MicroduckStandUpRlCfg, _BL_GROUNDCONTACT), ("Mjlab-SitStand-Flat-Backlash-MicroDuck", make_microduck_sitstand_env_cfg, {}, MicroduckSitStandRlCfg, _BL_GROUNDCONTACT), ("Mjlab-SitStand-Rough-Backlash-MicroDuck", make_microduck_sitstand_env_cfg, {"rough": True}, MicroduckSitStandRlCfg, _BL_GROUNDCONTACT), ("Mjlab-GroundPick-Flat-Backlash-MicroDuck", make_microduck_ground_pick_env_cfg, {}, MicroduckGroundPickRlCfg, _BL_GROUNDCONTACT), ("Mjlab-GroundPick-Rough-Backlash-MicroDuck", make_microduck_ground_pick_env_cfg, {"rough": True}, MicroduckGroundPickRlCfg, _BL_GROUNDCONTACT), ("Mjlab-BallKick-Flat-Backlash-MicroDuck", make_microduck_ball_kick_env_cfg, {}, MicroduckBallKickRlCfg, _BL_GROUNDCONTACT), ("Mjlab-Velocity-Flat-Backlash-MicroDuck-Rollers", make_microduck_velocity_rollers_env_cfg, {}, MicroduckRollersRlCfg, _BL_ROLLERS), ("Mjlab-Velocity-Swizzle-Backlash-MicroDuck", make_microduck_velocity_swizzle_env_cfg, {}, MicroduckSwizzleRlCfg, _BL_ROLLERS), ("Mjlab-RollerCrouch-Flat-Backlash-MicroDuck", make_microduck_roller_crouch_env_cfg, {}, MicroduckRollerCrouchRlCfg, _BL_ROLLERS), ("Mjlab-RollerSlope-Flat-Backlash-MicroDuck", make_microduck_roller_slope_env_cfg, {}, MicroduckRollerSlopeRlCfg, _BL_ROLLERS))
-for _task_id, _make_cfg, _kw, _rl_cfg, _robot_cfg in _BACKLASH_TASKS:
-    register_mjlab_task(task_id=_task_id, env_cfg=make_backlash_variant(_make_cfg(**_kw), _robot_cfg), play_env_cfg=make_backlash_variant(_make_cfg(play=True, **_kw), _robot_cfg), rl_cfg=_rl_cfg, runner_cls=MicroduckOnPolicyRunner)
+
+
+class BacklashTask(NamedTuple):
+    task_id: str
+    make_cfg: Callable[..., ManagerBasedRlEnvCfg]
+    make_kwargs: dict[str, Any]
+    rl_cfg: Any
+    robot_cfg: EntityCfg
+
+
+# fmt: off
+_BACKLASH_TASKS = (
+    BacklashTask("Mjlab-Velocity-Flat-Backlash-MicroDuck",            make_microduck_velocity_env_cfg,         {},               MicroduckRlCfg,              _BL_WALK),
+    BacklashTask("Mjlab-Velocity-Rough-Backlash-MicroDuck",           make_microduck_velocity_env_cfg,         {"rough": True},  MicroduckRlCfg,              _BL_WALK),
+    BacklashTask("Mjlab-VelStand-Flat-Backlash-MicroDuck",            make_microduck_velstand_env_cfg,         {},               MicroduckVelStandRlCfg,      _BL_GROUNDCONTACT),
+    BacklashTask("Mjlab-VelStand-Rough-Backlash-MicroDuck",           make_microduck_velstand_env_cfg,         {"rough": True},  MicroduckVelStandRlCfg,      _BL_GROUNDCONTACT),
+    BacklashTask("Mjlab-StandUp-Flat-Backlash-MicroDuck",             make_microduck_standup_env_cfg,          {},               MicroduckStandUpRlCfg,       _BL_GROUNDCONTACT),
+    BacklashTask("Mjlab-StandUp-Rough-Backlash-MicroDuck",            make_microduck_standup_env_cfg,          {"rough": True},  MicroduckStandUpRlCfg,       _BL_GROUNDCONTACT),
+    BacklashTask("Mjlab-SitStand-Flat-Backlash-MicroDuck",            make_microduck_sitstand_env_cfg,         {},               MicroduckSitStandRlCfg,      _BL_GROUNDCONTACT),
+    BacklashTask("Mjlab-SitStand-Rough-Backlash-MicroDuck",           make_microduck_sitstand_env_cfg,         {"rough": True},  MicroduckSitStandRlCfg,      _BL_GROUNDCONTACT),
+    BacklashTask("Mjlab-GroundPick-Flat-Backlash-MicroDuck",          make_microduck_ground_pick_env_cfg,      {},               MicroduckGroundPickRlCfg,    _BL_GROUNDCONTACT),
+    BacklashTask("Mjlab-GroundPick-Rough-Backlash-MicroDuck",         make_microduck_ground_pick_env_cfg,      {"rough": True},  MicroduckGroundPickRlCfg,    _BL_GROUNDCONTACT),
+    BacklashTask("Mjlab-BallKick-Flat-Backlash-MicroDuck",            make_microduck_ball_kick_env_cfg,        {},               MicroduckBallKickRlCfg,      _BL_GROUNDCONTACT),
+    BacklashTask("Mjlab-Velocity-Flat-Backlash-MicroDuck-Rollers",    make_microduck_velocity_rollers_env_cfg, {},               MicroduckRollersRlCfg,       _BL_ROLLERS),
+    BacklashTask("Mjlab-Velocity-Swizzle-Backlash-MicroDuck",         make_microduck_velocity_swizzle_env_cfg, {},               MicroduckSwizzleRlCfg,       _BL_ROLLERS),
+    BacklashTask("Mjlab-RollerCrouch-Flat-Backlash-MicroDuck",        make_microduck_roller_crouch_env_cfg,    {},               MicroduckRollerCrouchRlCfg,  _BL_ROLLERS),
+    BacklashTask("Mjlab-RollerSlope-Flat-Backlash-MicroDuck",         make_microduck_roller_slope_env_cfg,     {},               MicroduckRollerSlopeRlCfg,   _BL_ROLLERS),
+)
+# fmt: on
+
+_DEFAULT_BACKLASH_TASKS = ("Mjlab-Velocity-Flat-Backlash-MicroDuck", "Mjlab-Velocity-Rough-Backlash-MicroDuck", "Mjlab-VelStand-Flat-Backlash-MicroDuck", "Mjlab-Velocity-Flat-Backlash-MicroDuck-Rollers")
+
+_BACKLASH_TASKS_BY_ID = {t.task_id: t for t in _BACKLASH_TASKS}
+_requested = os.environ.get("MICRODUCK_BACKLASH_TASKS")
+if _requested is None:
+    _ENABLED_BACKLASH_TASKS = _DEFAULT_BACKLASH_TASKS
+elif _requested.strip() == "all":
+    _ENABLED_BACKLASH_TASKS = tuple(_BACKLASH_TASKS_BY_ID)
+else:
+    _ENABLED_BACKLASH_TASKS = tuple(t for t in (s.strip() for s in _requested.split(",")) if t)
+    _unknown = [t for t in _ENABLED_BACKLASH_TASKS if t not in _BACKLASH_TASKS_BY_ID]
+    if _unknown:
+        raise ValueError(f"MICRODUCK_BACKLASH_TASKS names unknown backlash task(s): {_unknown}. Known: {sorted(_BACKLASH_TASKS_BY_ID)}")
+
+for _task_id in _ENABLED_BACKLASH_TASKS:
+    _t = _BACKLASH_TASKS_BY_ID[_task_id]
+    register_mjlab_task(task_id=_t.task_id, env_cfg=make_backlash_variant(_t.make_cfg(**_t.make_kwargs), _t.robot_cfg), play_env_cfg=make_backlash_variant(_t.make_cfg(play=True, **_t.make_kwargs), _t.robot_cfg), rl_cfg=_t.rl_cfg, runner_cls=MicroduckOnPolicyRunner)
