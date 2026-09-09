@@ -428,7 +428,7 @@ MicroduckRollersRlCfg = RslRlOnPolicyRunnerCfg(
         max_grad_norm=1.0,
         symmetry_cfg=SYMMETRY_CFG if ENABLE_SYMMETRY else None,
     ),
-    wandb_project="mjlab_microduck",
+    logger="tensorboard",
     experiment_name="velocity_rollers",
     run_name="velocity_rollers",
     save_interval=250,

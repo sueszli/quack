@@ -21,7 +21,7 @@ from mjlab.envs import ManagerBasedRlEnv
 from mjlab.rl import RslRlVecEnvWrapper
 from mjlab.tasks.registry import list_tasks, load_env_cfg, load_rl_cfg, load_runner_cls
 from mjlab.tasks.tracking.mdp import MotionCommandCfg
-from mjlab.utils.os import get_checkpoint_path, get_wandb_checkpoint_path
+from mjlab.utils.os import get_checkpoint_path
 from mjlab.utils.torch import configure_torch_backends
 from mjlab.utils.wrappers import VideoRecorder
 from rsl_rl.runners import OnPolicyRunner
@@ -31,8 +31,6 @@ from rsl_rl.runners import OnPolicyRunner
 class ExportConfig:
     onnx_file: str = "output.onnx"
     agent: Literal["untrained", "trained"] = "trained"
-    registry_name: str | None = None
-    wandb_run_path: str | None = None
     checkpoint: int | None = None  # Select checkpoint by iteration number (e.g. 3000)
     checkpoint_file: str | None = None
     motion_file: str | None = None
@@ -55,7 +53,6 @@ class ExportResult:
 
     onnx_path: Path
     checkpoint_path: Path | None
-    wandb_run_path: str | None
     checkpoint_iteration: int | None
 
 
@@ -96,37 +93,13 @@ def run_export(task_id: str, cfg: ExportConfig) -> ExportResult:
         # Check if motion file is already set and exists
         motion_file_already_set = hasattr(motion_cmd, "motion_file") and motion_cmd.motion_file is not None and Path(motion_cmd.motion_file).exists()
 
-        if DUMMY_MODE:
-            if not cfg.registry_name:
-                raise ValueError("Tracking tasks require `registry_name` when using dummy agents.")
-            # Check if the registry name includes alias, if not, append ":latest".
-            registry_name = cfg.registry_name
-            if ":" not in registry_name:
-                registry_name = registry_name + ":latest"
-            import wandb
-
-            api = wandb.Api()
-            artifact = api.artifact(registry_name)
-            motion_cmd.motion_file = str(Path(artifact.download()) / "motion.npz")
+        if cfg.motion_file is not None:
+            print(f"[INFO]: Using motion file from CLI: {cfg.motion_file}")
+            motion_cmd.motion_file = cfg.motion_file
+        elif motion_file_already_set:
+            print(f"[INFO]: Using motion file from env config: {motion_cmd.motion_file}")
         else:
-            if cfg.motion_file is not None:
-                print(f"[INFO]: Using motion file from CLI: {cfg.motion_file}")
-                motion_cmd.motion_file = cfg.motion_file
-            elif motion_file_already_set:
-                print(f"[INFO]: Using motion file from env config: {motion_cmd.motion_file}")
-            else:
-                # Try to download from wandb artifacts
-                import wandb
-
-                api = wandb.Api()
-                if cfg.wandb_run_path is None and cfg.checkpoint_file is not None:
-                    raise ValueError("Tracking tasks require `motion_file` when using `checkpoint_file`, or provide `wandb_run_path` so the motion artifact can be resolved.")
-                if cfg.wandb_run_path is not None:
-                    wandb_run = api.run(str(cfg.wandb_run_path))
-                    art = next((a for a in wandb_run.used_artifacts() if a.type == "motions"), None)
-                    if art is None:
-                        raise RuntimeError("No motion artifact found in the run.")
-                    motion_cmd.motion_file = str(Path(art.download()) / "motion.npz")
+            raise ValueError("Tracking tasks require `motion_file`: pass `--motion-file <path/to/motion.npz>` (there is no remote artifact store).")
 
     log_dir: Path | None = None
     resume_path: Path | None = None
@@ -138,36 +111,14 @@ def run_export(task_id: str, cfg: ExportConfig) -> ExportResult:
                 raise FileNotFoundError(f"Checkpoint file not found: {resume_path}")
             print(f"[INFO]: Loading checkpoint: {resume_path.name}")
         elif cfg.checkpoint is not None:
-            # Select a specific checkpoint iteration, from wandb or local.
+            # Select a specific checkpoint iteration from the local log tree.
             checkpoint_filename = f"model_{cfg.checkpoint}.pt"
-            if cfg.wandb_run_path is not None:
-                import wandb
-
-                api = wandb.Api()
-                wandb_run = api.run(str(cfg.wandb_run_path))
-                run_id = cfg.wandb_run_path.split("/")[-1]
-                download_dir = log_root_path / "wandb_checkpoints" / run_id
-                resume_path = download_dir / checkpoint_filename
-                if resume_path.exists():
-                    print(f"[INFO]: Loading checkpoint: {checkpoint_filename} (run: {run_id}, cached)")
-                else:
-                    available = [f.name for f in wandb_run.files() if "model" in f.name]
-                    if checkpoint_filename not in available:
-                        raise FileNotFoundError(f"Checkpoint '{checkpoint_filename}' not found in wandb run. Available: {sorted(available)}")
-                    wandb_run.file(checkpoint_filename).download(str(download_dir), replace=True)
-                    print(f"[INFO]: Loading checkpoint: {checkpoint_filename} (run: {run_id}, downloaded)")
-            else:
-                resume_path = get_checkpoint_path(log_root_path, checkpoint=re.escape(checkpoint_filename))
-                print(f"[INFO]: Loading checkpoint: {resume_path.name}")
+            resume_path = get_checkpoint_path(log_root_path, checkpoint=re.escape(checkpoint_filename))
+            print(f"[INFO]: Loading checkpoint: {resume_path.name}")
         else:
-            if cfg.wandb_run_path is None:
-                raise ValueError("`wandb_run_path` is required when `checkpoint_file` is not provided.")
-            resume_path, was_cached = get_wandb_checkpoint_path(log_root_path, Path(cfg.wandb_run_path))
-            # Extract run_id and checkpoint name from path for display.
-            run_id = resume_path.parent.name
-            checkpoint_name = resume_path.name
-            cached_str = "cached" if was_cached else "downloaded"
-            print(f"[INFO]: Loading checkpoint: {checkpoint_name} (run: {run_id}, {cached_str})")
+            # Latest checkpoint of the latest run under logs/rsl_rl/<experiment_name>/.
+            resume_path = get_checkpoint_path(log_root_path)
+            print(f"[INFO]: Loading checkpoint: {resume_path.name} (latest in {log_root_path})")
         log_dir = resume_path.parent
 
     if cfg.num_envs is not None:
@@ -217,7 +168,7 @@ def run_export(task_id: str, cfg: ExportConfig) -> ExportResult:
     print(f"Written {onnx_path}")
 
     env.close()
-    return ExportResult(onnx_path=Path(onnx_path), checkpoint_path=resume_path, wandb_run_path=cfg.wandb_run_path, checkpoint_iteration=_iteration_of(resume_path))
+    return ExportResult(onnx_path=Path(onnx_path), checkpoint_path=resume_path, checkpoint_iteration=_iteration_of(resume_path))
 
 
 def main():
