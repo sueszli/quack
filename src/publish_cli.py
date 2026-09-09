@@ -1,8 +1,8 @@
 """`uv run publish` — put a policy on the Hub in the shape the microduck daemon loads.
 
     # From a wandb run (exports with the normalizer baked in — the only safe path from a checkpoint)
-    uv run publish --task Mjlab-PoliteBow-Flat-MicroDuck --wandb-run-path ent/proj/run --checkpoint 3000 \\
-        --repo <user>/microduck-polite-bow --kind episodic --duration-s 4.0
+    uv run publish --task Mjlab-Roulade-Flat-MicroDuck --wandb-run-path ent/proj/run --checkpoint 3000 \\
+        --repo <user>/microduck-roulade --kind episodic --duration-s 4.0
 
     # From an ONNX file you already exported
     uv run publish --onnx out.onnx --repo <user>/microduck-flamingo --kind perpetual --unwind-s 1.5
@@ -40,7 +40,7 @@ class PublishConfig:
 
     # -- where the weights come from: exactly one of (--task + checkpoint) or --onnx
     task: str | None = None
-    """Task id to export from, e.g. Mjlab-PoliteBow-Flat-MicroDuck. Needs a checkpoint."""
+    """Task id to export from, e.g. Mjlab-Roulade-Flat-MicroDuck. Needs a checkpoint."""
     wandb_run_path: str | None = None
     """`entity/project/run_id`. With --task, the checkpoint source."""
     checkpoint: int | None = None

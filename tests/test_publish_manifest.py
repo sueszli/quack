@@ -88,7 +88,7 @@ def test_absence_is_not_evidence():
 
 
 def test_an_episodic_manifest_is_a_loadable_skill():
-    built = m.build_manifest(name="polite-bow", kind="episodic", description="Bows.", duration_s=4.0, training={"task_id": "Mjlab-PoliteBow-Flat-MicroDuck", "commit": "abc"})
+    built = m.build_manifest(name="roulade", kind="episodic", description="Rolls.", duration_s=4.0, training={"task_id": "Mjlab-Roulade-Flat-MicroDuck", "commit": "abc"})
     m.validate_manifest(built)
     assert built["schema_version"] == 2
     assert (built["obs_len"], built["action_len"], built["model_api"]) == (61, 14, 1)

@@ -220,10 +220,10 @@ following schema 2 of the microduck policy manifest
 with a microduck installs it with one command, no daemon release needed.
 
     # from a wandb run -- exports through the one safe path, then uploads
-    uv run publish --task Mjlab-PoliteBow-Flat-MicroDuck \
+    uv run publish --task Mjlab-Roulade-Flat-MicroDuck \
         --wandb-run-path <entity/project/run_id> --checkpoint 3000 \
-        --repo <user>/microduck-polite-bow --kind episodic --duration-s 4.0 \
-        --description "Bows from a two-foot stand and comes back up."
+        --repo <user>/microduck-roulade --kind episodic --duration-s 4.0 \
+        --description "Rolls forward over the head and lands back on its feet."
 
     # from an existing ONNX (validated, not re-exported)
     uv run publish --onnx out.onnx --repo <user>/microduck-flamingo \
@@ -234,24 +234,24 @@ with a microduck installs it with one command, no daemon release needed.
         --kind perpetual --slot walk
 
     # see what would be uploaded without touching the Hub
-    uv run publish --onnx out.onnx --repo <user>/microduck-bow \
+    uv run publish --onnx out.onnx --repo <user>/microduck-roulade \
         --kind episodic --duration-s 4.0 --dry-run
 
 Then on a robot:
 
     # episodic: length comes from the manifest
-    sudo robotctl policy add polite-bow <user>/microduck-polite-bow
+    sudo robotctl policy add roulade <user>/microduck-roulade
     # held pose: you pick how long
     sudo robotctl policy add flamingo <user>/microduck-flamingo --hold 5
     # gait: into the walk slot
     sudo robotctl policy load walk <user>/microduck-my-walk
-    robotctl robot do polite-bow
+    robotctl robot do roulade
 
 --kind and what each needs:
 
   episodic    runs for --duration-s and returns itself to a standing pose
-              (kicks, roulade, a bow). Add --chain if holding the button
-              should repeat it.
+              (kicks, roulade). Add --chain if holding the button should
+              repeat it.
   perpetual   runs until told otherwise. Two shapes:
               - gait (a new walk or stand): add --slot walk (or stand) and
                 nothing else; owner installs with `robotctl policy load walk`.
