@@ -48,7 +48,7 @@ wheels; export UV_HTTP_TIMEOUT=600 so uv's 30 s default does not abort it.
         --kind episodic --duration-s 4.0
     # drive the exported policy in CPU MuJoCo with the keyboard
     uv run infer --walking out.onnx
-    uv run --with pytest pytest tests/            # CPU-only test suite (see TESTS)
+    uv run --with pytest pytest tests/           # CPU tests (see TESTS)
 
 Smoke test before every long run (64 envs / 5 iters catches ~95% of cfg errors):
 
