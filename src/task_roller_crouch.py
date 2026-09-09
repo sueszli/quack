@@ -5,8 +5,8 @@ the robot crouches and glides on its momentum (~1 s plateau), then stands back u
 and hands control back to the roller policy.
 
 Hybrid:
-  - physics / roller robot  ← microduck_velocity_rollers_env_cfg.py
-  - one-shot phase machinery ← microduck_ground_pick_env_cfg.py
+  - physics / roller robot  ← task_velocity_rollers.py
+  - one-shot phase machinery ← task_ground_pick.py
     (GroundPickPhaseCommand command: [cos(2πφ), sin(2πφ), 0], period 4 s)
 
 "Trapezoid" height target (up→down→1 s plateau→up) via
@@ -107,10 +107,10 @@ from mjlab.tasks.velocity.mdp import UniformVelocityCommandCfg
 from mjlab.tasks.velocity.velocity_env_cfg import make_velocity_env_cfg
 from mjlab.utils.noise import UniformNoiseCfg as Unoise
 
-from .microduck_constants import MICRODUCK_WALK_ROLLERS_ROBOT_CFG
-from . import mdp as microduck_mdp
-from .microduck_velocity_env_cfg import HEAD_BODY_NAMES
-from .symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
+from .robot import MICRODUCK_WALK_ROLLERS_ROBOT_CFG
+from . import task_mdp as microduck_mdp
+from .task_velocity import HEAD_BODY_NAMES
+from .task_symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
 
 
 def make_microduck_roller_crouch_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:

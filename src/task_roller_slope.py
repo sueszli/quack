@@ -19,12 +19,12 @@ from mjlab.rl import RslRlOnPolicyRunnerCfg, RslRlModelCfg
 from mjlab.terrains import TerrainEntityCfg
 from mjlab.terrains.terrain_generator import TerrainGeneratorCfg
 
-from . import mdp as microduck_mdp
-from .slope_terrain import FlatRampTerrainCfg, RAMP_DEG_MAX
-from .microduck_velocity_rollers_env_cfg import (
+from . import task_mdp as microduck_mdp
+from .task_slope_terrain import FlatRampTerrainCfg, RAMP_DEG_MAX
+from .task_velocity_rollers import (
     make_microduck_velocity_rollers_env_cfg,
 )
-from .symmetry import PpoWithSymmetryCfg
+from .task_symmetry import PpoWithSymmetryCfg
 
 # Geometry of the flat+ramp+exit terrain.
 FLAT_LENGTH        = 2.0

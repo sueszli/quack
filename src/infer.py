@@ -18,17 +18,17 @@ import mujoco
 import mujoco.viewer
 import onnxruntime as ort
 
-# Repo-level assets/mjcf; not imported from microduck_constants (see BAM note below).
+# Repo-level assets/mjcf; not imported from robot.py (see BAM note below).
 _ROBOT_DIR = Path(__file__).resolve().parents[1] / "assets" / "mjcf"
 MICRODUCK_XML = str(_ROBOT_DIR / "scene.xml")
 MICRODUCK_ROLLERS_XML = str(_ROBOT_DIR / "scene_rollers.xml")
 MICRODUCK_BALL_XML = str(_ROBOT_DIR / "scene_ball.xml")
 
 # BAM M6 defaults — MUST mirror `_BAM_ACTUATOR_KWARGS` in
-# src/microduck_constants.py (the actuator every policy is
+# src/robot.py (the actuator every policy is
 # trained against in warp). Not imported from there: that module drags in
 # mjlab/torch/warp (~16 s import) for a CPU rehearsal script. Locked by
-# tests/test_infer_policy_bam.py.
+# tests/test_infer_bam.py.
 BAM_MOTOR_NAME = "xl330"
 BAM_MODEL = "m6"
 BAM_KP_FW = 200.0                 # microduck's preserved firmware stiffness
@@ -108,7 +108,7 @@ BODY_CMD_MAX_Z = 0.03              # ±30 mm
 BODY_CMD_MAX_XY = 0.02             # ±20 mm
 BODY_CMD_MAX_ANGLE = math.radians(30)  # ±30°
 
-# Ball placement for kick behaviors (must match microduck_ball_kick_env_cfg's
+# Ball placement for kick behaviors (must match task_ball_kick's
 # reset_ball_in_front_of_foot params: ball center in the robot's yaw frame).
 BALL_OFFSET_X = 0.09
 BALL_OFFSET_ABS_Y = 0.042
@@ -118,7 +118,7 @@ BALL_RADIUS = 0.035
 # This is the reference pose that:
 # - Actions are offsets from (motor_target = DEFAULT_POSE + action * scale)
 # - Joint observations are relative to (obs_joint_pos = current_pos - DEFAULT_POSE)
-# STAND2 pose (matches HOME_FRAME in microduck_constants.py): trunk shifted
+# STAND2 pose (matches HOME_FRAME in robot.py): trunk shifted
 # ~5mm forward so the CoM sits over the ankle axis. Leg pitch chain leaned
 # forward vs the old pose: hip_pitch 30°→26.24°, ankle 30°→25.95°, knee 0°→0.28°.
 DEFAULT_POSE = np.array([

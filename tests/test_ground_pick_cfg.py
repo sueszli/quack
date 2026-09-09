@@ -1,7 +1,7 @@
-from src.microduck_ground_pick_env_cfg import (
+from src.task_ground_pick import (
     make_microduck_ground_pick_env_cfg,
 )
-from src.mdp import GroundPickPhaseCommand
+from src.task_mdp import GroundPickPhaseCommand
 
 
 def test_ground_pick_cfg_task_space_rewards():

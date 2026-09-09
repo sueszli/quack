@@ -6,7 +6,7 @@ training via rsl_rl's global check_nan.
 
 import torch
 
-from src.mdp import robot_state_is_nan
+from src.task_mdp import robot_state_is_nan
 
 
 class _Data:

@@ -27,22 +27,22 @@ Never launch a long run without one.
 
 ## Repo map
 
-- `src/mdp.py` — ALL custom MDP functions (rewards, events,
+- `src/task_mdp.py` — ALL custom MDP functions (rewards, events,
   observations, commands, curricula). Add new functions here, grouped by task.
-- `src/microduck_*_env_cfg.py` — one cfg module per task
-  family. `microduck_velocity_env_cfg.py` is the main walking recipe AND the
+- `src/task_*.py` — one cfg module per task
+  family. `task_velocity.py` is the main walking recipe AND the
   shared base (robot, DR, obs, commands) other envs build on or mirror.
-- `src/registry.py` — task registration (base + `-Backlash-` variants; the `mjlab.tasks` entry point).
+- `src/task_registry.py` — task registration (base + `-Backlash-` variants; the `mjlab.tasks` entry point).
 - No `__init__.py` files and no sub-packages: `src` is a flat namespace package
   (`[tool.uv.build-backend] namespace = true`).
-- `src/backlash.py` — wraps any env cfg into its backlash twin.
-- `src/microduck_constants.py` — robot cfgs, HOME frame, BAM actuator cfg.
-- `assets/mjcf/` (`MJCF_DIR` in `microduck_constants.py`) — MJCF exports from Onshape
+- `src/task_backlash.py` — wraps any env cfg into its backlash twin.
+- `src/robot.py` — robot cfgs, HOME frame, BAM actuator cfg.
+- `assets/mjcf/` (`MJCF_DIR` in `robot.py`) — MJCF exports from Onshape
   (onshape-to-robot, one `config_mjcf_*.json` per model) and scenes; `add_backlash.py` generates
   the backlash variants. Meshes in `assets/meshes/`.
-- `src/friction_dr_bam.py` — BAM actuator + friction DR + backlash encoder.
+- `src/robot_actuator.py` — BAM actuator + friction DR + backlash encoder.
 - `src/export.py` — the ONNX export (normalizer baked in) behind `uv run export`.
-- `src/infer_policy.py` — `uv run infer`: CPU MuJoCo deployment rehearsal.
+- `src/infer.py` — `uv run infer`: CPU MuJoCo deployment rehearsal.
 - `src/publish_cli.py` + `publish_manifest.py` — `uv run publish`: schema-2 manifest builder + ONNX shape/smoke
   gate + Hub upload. Contract = `docs/policy-manifest.md` in the `microduck` repo; only
   constant-command episodic/perpetual policies are publishable (phase/posture-flag are the set's).
@@ -60,7 +60,7 @@ Never launch a long run without one.
   neck/head (neck_pitch, head_pitch, head_yaw, head_roll), 9–13 right leg.
   On roller/backlash models, passive joints INTERLEAVE — never hardcode joint
   indices in mdp functions; use the `_servo_joint_ids` / `_servo_joint_pos`
-  helpers in mdp.py (identity on plain models, correct everywhere else).
+  helpers in task_mdp.py (identity on plain models, correct everywhere else).
 - **Unactuated joints are all named `passive_*`** (wheels, backlash hinges).
   Every actuator/obs/reward selector uses `^(?!passive_).*` — keep the prefix
   convention when adding joints, and new `passive_` regexes must not
@@ -107,9 +107,9 @@ Never launch a long run without one.
      STAND_Z once turned the goal into an impossible target for days.
 3. **Config conventions**: `ENABLE_*` toggles + tuned constants at the top of
    the cfg file; factory `make_..._env_cfg(play: bool, rough: bool)`; register
-   in `registry.py` (+ the `_BACKLASH_TASKS` table if applicable); own
+   in `task_registry.py` (+ the `_BACKLASH_TASKS` table if applicable); own
    `RslRl...RunnerCfg` with a distinct `experiment_name`. Symmetry mirror-loss
-   is available (61D table in `symmetry.py`) — OFF by default, never for
+   is available (61D table in `task_symmetry.py`) — OFF by default, never for
    asymmetric tasks.
 4. **Write cfg tests** (see `tests/test_*_cfg.py`): joint indices resolve on
    the actual model, reward weights have the intended sign, gates open/closed
@@ -121,7 +121,7 @@ Never launch a long run without one.
 
 ## Reward design — rules that were each learned the hard way
 
-- **Sign convention (bit four envs):** mdp.py has two penalty styles. mjlab-base
+- **Sign convention (bit four envs):** task_mdp.py has two penalty styles. mjlab-base
   cost functions return ≥ 0 → negative weight. Self-negating microduck functions
   (`*_penalty`, `*_l1` returning ≤ 0) → POSITIVE weight. A negative weight on a
   self-negating penalty double-negates into a reward for the violation, and the

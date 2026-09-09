@@ -13,7 +13,7 @@ excess), an overspeed penalty taxes |ω| > 4 rad/s, and the impact/smoothness
 penalties are active from step 0 (discovery in this env is easy; style is
 the scarce resource, not exploration).
 
-Design (see the roulade section of mdp.py for the full history):
+Design (see the roulade section of task_mdp.py for the full history):
   • ONE dense progress signal — paid increments of the max-so-far cumulative
     forward rotation (potential-based: full roll pays 2π worth total, camping
     anywhere pays zero per step).
@@ -41,7 +41,7 @@ from copy import deepcopy
 
 # Symmetry — the roll is sagittal / left-right symmetric; the mirror loss
 # directly fights the sideways-collapse failure seen in run 2. Enabled after
-# migrating symmetry.py to the 61-dim layout (2026-08-13, includes the
+# migrating task_symmetry.py to the 61-dim layout (2026-08-13, includes the
 # "policy" → "actor" output-key fix; roulade is the first env to use it).
 ENABLE_SYMMETRY = True
 
@@ -138,10 +138,10 @@ from mjlab.tasks.velocity import mdp
 from mjlab.tasks.velocity.velocity_env_cfg import make_velocity_env_cfg
 from mjlab.utils.noise import UniformNoiseCfg as Unoise
 
-from .microduck_constants import MICRODUCK_STANDUP_ROBOT_CFG
-from . import mdp as microduck_mdp
-from .microduck_velocity_env_cfg import HEAD_BODY_NAMES
-from .symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
+from .robot import MICRODUCK_STANDUP_ROBOT_CFG
+from . import task_mdp as microduck_mdp
+from .task_velocity import HEAD_BODY_NAMES
+from .task_symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
 
 
 def make_microduck_roulade_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:

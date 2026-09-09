@@ -15,59 +15,59 @@ class MicroduckOnPolicyRunner(VelocityOnPolicyRunner):
             alg["symmetry_cfg"] = {k: v for k, v in sym.items() if k != "_env"}
 
 
-from .microduck_velocity_env_cfg import (
+from .task_velocity import (
     make_microduck_velocity_env_cfg,
     MicroduckRlCfg,
 )
-from .microduck_standup_env_cfg import (
+from .task_standup import (
     make_microduck_standup_env_cfg,
     MicroduckStandUpRlCfg,
 )
-from .microduck_velstand_env_cfg import (
+from .task_velstand import (
     make_microduck_velstand_env_cfg,
     MicroduckVelStandRlCfg,
 )
-from .microduck_ground_pick_env_cfg import (
+from .task_ground_pick import (
     make_microduck_ground_pick_env_cfg,
     MicroduckGroundPickRlCfg,
 )
-from .microduck_ball_kick_env_cfg import (
+from .task_ball_kick import (
     make_microduck_ball_kick_env_cfg,
     MicroduckBallKickRlCfg,
 )
-from .microduck_sitstand_env_cfg import (
+from .task_sitstand import (
     make_microduck_sitstand_env_cfg,
     MicroduckSitStandRlCfg,
 )
-from .microduck_velocity_rollers_env_cfg import (
+from .task_velocity_rollers import (
     make_microduck_velocity_rollers_env_cfg,
     MicroduckRollersRlCfg,
 )
-from .microduck_velocity_swizzle_env_cfg import (
+from .task_velocity_swizzle import (
     make_microduck_velocity_swizzle_env_cfg,
     MicroduckSwizzleRlCfg,
 )
-from .microduck_roller_crouch_env_cfg import (
+from .task_roller_crouch import (
     make_microduck_roller_crouch_env_cfg,
     MicroduckRollerCrouchRlCfg,
 )
-from .microduck_roller_slope_env_cfg import (
+from .task_roller_slope import (
     make_microduck_roller_slope_env_cfg,
     MicroduckRollerSlopeRlCfg,
 )
-from .microduck_roller_standup_env_cfg import (
+from .task_roller_standup import (
     make_microduck_roller_standup_env_cfg,
     MicroduckRollerStandUpRlCfg,
 )
-from .microduck_spin_env_cfg import (
+from .task_spin import (
     make_microduck_spin_env_cfg,
     MicroduckSpinRlCfg,
 )
-from .microduck_roulade_env_cfg import (
+from .task_roulade import (
     make_microduck_roulade_env_cfg,
     MicroduckRouladeRlCfg,
 )
-from .backlash import make_backlash_variant
+from .task_backlash import make_backlash_variant
 
 # Standard velocity task
 register_mjlab_task(
@@ -226,11 +226,11 @@ register_mjlab_task(
 )
 
 # Backlash variants — ±1° serial gear play per servo + encoder-through-backlash
-# actuator feedback and joint obs (see backlash.py). Each family keeps its
+# actuator feedback and joint obs (see task_backlash.py). Each family keeps its
 # base task's collision model: Velocity → robot_walk_backlash.xml,
 # VelStand/StandUp → robot_groundcontact_backlash.xml. Obs/action dims are
 # unchanged vs the base tasks.
-from .microduck_constants import (
+from .robot import (
     MICRODUCK_BACKLASH_ROBOT_CFG,
     MICRODUCK_ROLLERS_BACKLASH_ROBOT_CFG,
     MICRODUCK_WALK_BACKLASH_ROBOT_CFG,
