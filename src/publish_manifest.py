@@ -212,10 +212,25 @@ def inspect_onnx(path: Path) -> OnnxShape:
     return OnnxShape(input_name=inputs[0].name, output_name=graph.output[0].name, obs_len=last_dim(inputs[0]), action_len=last_dim(graph.output[0]))
 
 
+def is_untrained_onnx(path: Path) -> bool:
+    """True if the artifact is stamped as a random-init shape fixture (`export --agent untrained`)."""
+    import onnx
+
+    model = onnx.load(str(path), load_external_data=False)
+    return any(prop.key == "untrained" and prop.value == "true" for prop in model.metadata_props)
+
+
 def check_onnx(path: Path) -> OnnxShape:
-    """Refuse a file the daemon would refuse at load: wrong widths, or one that is not 61 -> 14."""
+    """Refuse a file the daemon would refuse at load: wrong widths, or one that is not 61 -> 14.
+
+    Also refuses a shape fixture from `export --agent untrained`: it is the right
+    shape and passes the smoke run by construction, so nothing else here would
+    catch it, and a robot would happily load random weights.
+    """
     if not path.exists():
         raise ManifestError(f"{path}: no such file")
+    if is_untrained_onnx(path):
+        raise ManifestError(f"{path.name}: exported with `--agent untrained` (random-init weights). This is a shape fixture for rehearsing the pipeline, not a policy; publish a trained checkpoint instead.")
     shape = inspect_onnx(path)
     if shape.obs_len != OBS_LEN:
         raise ManifestError(f"{path.name}: observation width is {shape.obs_len}, the robot builds {OBS_LEN} (a 51-D policy is the legacy 3-value-command family, which the daemon refuses)")

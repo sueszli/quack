@@ -41,6 +41,32 @@ def _tiny_policy(path: Path, obs_len: int = m.OBS_LEN, action_len: int = m.ACTIO
     return path
 
 
+# -- the untrained shape fixture must never reach the Hub -------------------------------------
+
+
+def test_an_untrained_export_is_refused(tmp_path):
+    """`export --agent untrained` stamps the ONNX; publish must refuse it.
+
+    It has the right widths and passes the smoke run by construction (random
+    weights still emit finite actions), so this stamp is the ONLY thing standing
+    between a shape fixture and a robot loading random weights.
+    """
+    path = _tiny_policy(tmp_path / "policy.onnx")
+    model = onnx.load(str(path))
+    model.metadata_props.append(onnx.StringStringEntryProto(key="untrained", value="true"))
+    onnx.save(model, str(path))
+
+    assert m.is_untrained_onnx(path)
+    with pytest.raises(m.ManifestError, match="untrained"):
+        m.check_onnx(path)
+
+
+def test_a_normal_export_is_not_flagged_untrained(tmp_path):
+    path = _tiny_policy(tmp_path / "policy.onnx")
+    assert not m.is_untrained_onnx(path)
+    assert m.check_onnx(path).obs_len == m.OBS_LEN
+
+
 # -- the numbers the daemon refuses on -------------------------------------------------------
 
 
