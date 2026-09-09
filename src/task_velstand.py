@@ -75,12 +75,12 @@ import math
 from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.managers import CurriculumTermCfg, EventTermCfg, RewardTermCfg, TerminationTermCfg
 from mjlab.managers.scene_entity_config import SceneEntityCfg
-from mjlab.rl import RslRlOnPolicyRunnerCfg, RslRlModelCfg
+from mjlab.rl import RslRlModelCfg, RslRlOnPolicyRunnerCfg
 
-from .robot import MICRODUCK_STANDUP_ROBOT_CFG
 from . import task_mdp as microduck_mdp
-from .task_velocity import make_microduck_velocity_env_cfg
+from .robot import MICRODUCK_STANDUP_ROBOT_CFG
 from .task_symmetry import PpoWithSymmetryCfg
+from .task_velocity import make_microduck_velocity_env_cfg
 
 # Phase boundaries (PPO iterations; env step counter scales by num_steps_per_env=24)
 FELL_OVER_DISABLE_ITER = 500

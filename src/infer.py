@@ -13,9 +13,10 @@ import threading
 import time
 import tty
 from pathlib import Path
-import numpy as np
+
 import mujoco
 import mujoco.viewer
+import numpy as np
 import onnxruntime as ort
 
 # Repo-level assets/mjcf; not imported from robot.py (see BAM note below).
@@ -396,9 +397,9 @@ class PolicyInference:
             self.ball_qpos_adr = None
             self.ball_qvel_adr = None
 
-        print(f"Sensors found:")
+        print("Sensors found:")
         print(f"  imu_ang_vel: id={self.imu_ang_vel_id}")
-        print(f"Body IDs:")
+        print("Body IDs:")
         print(f"  trunk_base: id={self.trunk_base_id}")
 
         # Joint information
@@ -465,7 +466,7 @@ class PolicyInference:
             self.action_buffer = [np.zeros(self.n_joints, dtype=np.float32) for _ in range(buffer_size)]
             self.buffer_index = 0
             self.current_lag = np.random.randint(self.delay_min_lag, self.delay_max_lag + 1)
-            print(f"\nActuator delay enabled:")
+            print("\nActuator delay enabled:")
             print(f"  Min lag: {self.delay_min_lag} timesteps")
             print(f"  Max lag: {self.delay_max_lag} timesteps")
             print(f"  Sampled lag: {self.current_lag} timesteps")
@@ -575,7 +576,7 @@ class PolicyInference:
                 print(
                     f"  Z/S: Δyaw ±{math.degrees(self.body_cmd_step_angle):.0f}°  (max ±{math.degrees(BODY_CMD_MAX_ANGLE):.0f}°)"
                 )
-            print(f"  SPACE: reset body pose to zero")
+            print("  SPACE: reset body pose to zero")
             self._print_body_cmd()
         else:
             print("Body pose mode: OFF")
@@ -1228,7 +1229,7 @@ def main():
     )
 
     if test_obs.size != expected_obs_size:
-        print(f"\nWARNING: Observation size mismatch!")
+        print("\nWARNING: Observation size mismatch!")
         print(f"  Expected: {expected_obs_size}")
         print(f"  Got: {test_obs.size}")
         print(f"  Breakdown: {breakdown}")
@@ -1237,11 +1238,11 @@ def main():
     print("\n" + "=" * 80)
     print("MicroDuck Policy Inference")
     print("=" * 80)
-    print(f"Control frequency: 50 Hz (decimation: 4)")
+    print("Control frequency: 50 Hz (decimation: 4)")
     print(f"Simulation timestep: {model.opt.timestep}s")
     print(f"Observation size: {test_obs.size} (expected: {expected_obs_size})")
     if policy.walking_session:
-        print(f"Walking policy: loaded")
+        print("Walking policy: loaded")
     if policy.standing_session:
         print(
             f"Standing policy: loaded  (body pose: z=±{BODY_CMD_MAX_Z * 1000:.0f}mm, pitch/roll=±{math.degrees(BODY_CMD_MAX_ANGLE):.0f}°)"
@@ -1249,12 +1250,12 @@ def main():
     if policy.walking_session and policy.standing_session:
         print(f"  Switch threshold: {policy.switch_threshold} (vel cmd magnitude)")
     if policy.ground_pick_session:
-        print(f"Ground pick policy: loaded  (press G)")
+        print("Ground pick policy: loaded  (press G)")
     if policy.sit_session:
         kind = "Sitstand" if policy.is_sitstand else "Sit"
         print(f"{kind} policy: loaded  (press Y to toggle)")
     if policy.slope_session:
-        print(f"Slope policy: loaded  (press Y to toggle, passive descent)")
+        print("Slope policy: loaded  (press Y to toggle, passive descent)")
     _behavior_keys = {"kick_left": "K", "kick_right": "L", "roulade": "R"}
     for _name in policy.behavior_sessions:
         print(
@@ -1612,7 +1613,7 @@ def main():
                         print(f"Step {control_step_count} DEBUG:")
                         print(f"{'=' * 70}")
                         print(f"Active policy: {policy.current_policy}")
-                        print(f"Base state:")
+                        print("Base state:")
                         print(f"  Position: [{pos[0]:7.4f}, {pos[1]:7.4f}, {pos[2]:7.4f}]")
                         print(f"  CoM height: {com_height:7.4f}")
                         print(f"  Quaternion: [{quat[0]:7.4f}, {quat[1]:7.4f}, {quat[2]:7.4f}, {quat[3]:7.4f}]")
@@ -1634,7 +1635,7 @@ def main():
                             print(
                                 f"  Body cmd (raw): z={policy.body_cmd[0] * 1000:.1f}mm  pitch={math.degrees(policy.body_cmd[1]):.1f}°  roll={math.degrees(policy.body_cmd[2]):.1f}°"
                             )
-                        print(f"\nAction output:")
+                        print("\nAction output:")
                         print(f"  Raw action: {action}")
                         print(f"  Action min/max: [{action.min():.4f}, {action.max():.4f}]")
                         if policy.use_delay:
@@ -1671,7 +1672,7 @@ def main():
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             writer.writeheader()
             writer.writerows(csv_data)
-        print(f"CSV file saved successfully!")
+        print("CSV file saved successfully!")
         print(f"  Columns: {len(fieldnames)}")
         print(f"  Rows: {len(csv_data)}")
 
