@@ -33,19 +33,13 @@ import math
 import os
 
 from mjlab.envs import ManagerBasedRlEnvCfg
-from mjlab.managers import (
-    CurriculumTermCfg,
-    EventTermCfg,
-    RewardTermCfg,
-)
+from mjlab.managers import CurriculumTermCfg, EventTermCfg, RewardTermCfg
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.rl import RslRlModelCfg, RslRlOnPolicyRunnerCfg
 
 from . import task_mdp as microduck_mdp
-from .task_velocity_rollers import (
-    make_microduck_velocity_rollers_env_cfg,
-)
 from .task_symmetry import PpoWithSymmetryCfg
+from .task_velocity_rollers import make_microduck_velocity_rollers_env_cfg
 
 # ── Trunk heights (m) ─────────────────────────────────────────────────────────
 # Measured by exact kinematics (minimum of the mesh vertices of the colliding
@@ -57,7 +51,7 @@ from .task_symmetry import PpoWithSymmetryCfg
 ROLLER_STAND_Z = 0.138
 ROLLER_PRONE_Z = 0.075
 
-EPISODE_LENGTH_S  = 6.0   # rise + stabilize, like standup
+EPISODE_LENGTH_S = 6.0  # rise + stabilize, like standup
 NUM_STEPS_PER_ENV = 24
 
 # ── Play override: force the proportion of FACE-UP starts ─────────────────────
@@ -91,6 +85,7 @@ def _resolve_play_face_up():
         print(f"[roller_standup] STANDUP_PLAY_FACE_UP='{raw}' invalid -> default {PLAY_FACE_UP}")
         return PLAY_FACE_UP
 
+
 # ── Joint indices — the passive wheels are INTERLEAVED ────────────────────────
 # Actual order of the rollers model (18 joints after the free-joint), verified in
 # MuJoCo via get_walk_rollers_spec().compile():
@@ -106,8 +101,8 @@ def _resolve_play_face_up():
 # _WHEEL_JOINTS serve documentation and the index test: the neck is
 # resolved by NAME (neck_joint_pos_l2 calls find_joints(r".*(neck|head).*") at
 # every step) and the wheels by the ^passive_.* regex.
-_LEG_JOINTS   = [0, 1, 2, 3, 4, 11, 12, 13, 14, 15]
-_NECK_JOINTS  = [7, 8, 9, 10]
+_LEG_JOINTS = [0, 1, 2, 3, 4, 11, 12, 13, 14, 15]
+_NECK_JOINTS = [7, 8, 9, 10]
 _WHEEL_JOINTS = [5, 6, 16, 17]
 
 # SKATING rewards of the roller env: meaningless when on the ground.
@@ -115,25 +110,11 @@ _WHEEL_JOINTS = [5, 6, 16, 17]
 # hip_roll_neutral: getting up requires spreading the legs.
 # pose / com_height_target: replaced by the standup pose/height targets.
 # upright (base Gaussian): replaced by upright_linear + upright_sharp.
-_SKATING_REWARDS = (
-    "wheel_speed",
-    "braking",
-    "skating_air_time",
-    "glide",
-    "single_support",
-    "gait_symmetry",
-    "forward_lean",
-    "heading_hold",
-    "feet_flat",
-    "hip_roll_neutral",
-    "pose",
-    "com_height_target",
-    "upright",
-)
+_SKATING_REWARDS = ("wheel_speed", "braking", "skating_air_time", "glide", "single_support", "gait_symmetry", "forward_lean", "heading_hold", "feet_flat", "hip_roll_neutral", "pose", "com_height_target", "upright")
 
 
 def make_microduck_roller_standup_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
-    """"Getting up on rollers" env: start on the ground, target = standing on wheels."""
+    """ "Getting up on rollers" env: start on the ground, target = standing on wheels."""
     cfg = make_microduck_velocity_rollers_env_cfg(play=play)
 
     cfg.episode_length_s = EPISODE_LENGTH_S
@@ -149,9 +130,9 @@ def make_microduck_roller_standup_env_cfg(play: bool = False) -> ManagerBasedRlE
     # body_pose (6) slots stay zero-padded → 61D obs parity preserved.
     command = cfg.commands["twist"]
     command.rel_standing_envs = 0.0
-    command.rel_heading_envs  = 0.0
-    command.heading_command   = False
-    command.ranges.heading    = None
+    command.rel_heading_envs = 0.0
+    command.heading_command = False
+    command.ranges.heading = None
     command.resampling_time_range = (EPISODE_LENGTH_S, EPISODE_LENGTH_S * 2)
     command.debug_vis = False
     command.ranges.lin_vel_x = (-0.01, 0.01)
@@ -175,68 +156,23 @@ def make_microduck_roller_standup_env_cfg(play: bool = False) -> ManagerBasedRlE
 
     # Target pose = HOME (target_overrides=None), LEGS only: the neck and
     # head are held by neck_joint_pos_l2 (inherited), which resolves by NAME.
-    cfg.rewards["pose_stand_legs"] = RewardTermCfg(
-        func=microduck_mdp.pose_target_match,
-        weight=8.0,
-        params={
-            "std": 0.5,
-            "joint_indices": _LEG_JOINTS,
-            "target_overrides": None,
-        },
-    )
+    cfg.rewards["pose_stand_legs"] = RewardTermCfg(func=microduck_mdp.pose_target_match, weight=8.0, params={"std": 0.5, "joint_indices": _LEG_JOINTS, "target_overrides": None})
     # L1 bootstrap: constant gradient even far from HOME (the Gaussian saturates).
-    cfg.rewards["pose_stand_l1"] = RewardTermCfg(
-        func=microduck_mdp.pose_l1_penalty,
-        weight=5.0,
-        params={
-            "joint_indices": _LEG_JOINTS,
-            "target_overrides": None,
-        },
-    )
+    cfg.rewards["pose_stand_l1"] = RewardTermCfg(func=microduck_mdp.pose_l1_penalty, weight=5.0, params={"joint_indices": _LEG_JOINTS, "target_overrides": None})
 
     # Height in three layers: wide Gaussian (pulls from the ground),
     # narrow Gaussian (forces the last cm, where the wide one is saturated),
     # and strong L1 that makes "staying on the ground" net NEGATIVE — without it, the policy
     # settles for the lazy optimum "motionless on the ground".
-    cfg.rewards["height_stand"] = RewardTermCfg(
-        func=microduck_mdp.height_target_gaussian,
-        weight=4.0,
-        params={
-            "std": 0.04,
-            "target_height": ROLLER_STAND_Z,
-            "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
-        },
-    )
-    cfg.rewards["height_stand_sharp"] = RewardTermCfg(
-        func=microduck_mdp.height_target_gaussian,
-        weight=4.0,
-        params={
-            "std": 0.015,
-            "target_height": ROLLER_STAND_Z,
-            "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
-        },
-    )
-    cfg.rewards["height_stand_l1"] = RewardTermCfg(
-        func=microduck_mdp.height_l1_penalty,
-        weight=30.0,
-        params={
-            "target_height": ROLLER_STAND_Z,
-            "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
-        },
-    )
+    cfg.rewards["height_stand"] = RewardTermCfg(func=microduck_mdp.height_target_gaussian, weight=4.0, params={"std": 0.04, "target_height": ROLLER_STAND_Z, "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))})
+    cfg.rewards["height_stand_sharp"] = RewardTermCfg(func=microduck_mdp.height_target_gaussian, weight=4.0, params={"std": 0.015, "target_height": ROLLER_STAND_Z, "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))})
+    cfg.rewards["height_stand_l1"] = RewardTermCfg(func=microduck_mdp.height_l1_penalty, weight=30.0, params={"target_height": ROLLER_STAND_Z, "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))})
 
     # Pays for the rising MOTION, not just the destination: without it,
     # "staying seated while collecting the partial pose" dominates. The cutoff is
     # 10 mm ABOVE the target, otherwise the policy parks at the cutoff
     # altitude and does not finish the rise.
-    cfg.rewards["com_upward_velocity"] = RewardTermCfg(
-        func=microduck_mdp.com_upward_velocity,
-        weight=3.0,
-        params={
-            "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
-            "max_height": ROLLER_STAND_Z + 0.010,
-        },
-    )
+    cfg.rewards["com_upward_velocity"] = RewardTermCfg(func=microduck_mdp.com_upward_velocity, weight=3.0, params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)), "max_height": ROLLER_STAND_Z + 0.010})
     # Gentle rise: penalizes |a_z|. Compatible with com_upward_velocity — a
     # constant vertical velocity collects the former AND has a_z = 0 → the two
     # pressures together select a smooth rise at constant velocity.
@@ -255,50 +191,21 @@ def make_microduck_roller_standup_env_cfg(play: bool = False) -> ManagerBasedRlE
     # |a_z| is necessarily high during a roll-over from the back, so a large
     # weight here would be a motion blocker. The actual damping is carried by
     # joint_torque_rate_l2, which penalizes the torque VARIATION and not the motion.
-    cfg.rewards["gentle_rise"] = RewardTermCfg(
-        func=microduck_mdp.trunk_vertical_accel_penalty,
-        weight=+0.02,
-        params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))},
-    )
+    cfg.rewards["gentle_rise"] = RewardTermCfg(func=microduck_mdp.trunk_vertical_accel_penalty, weight=+0.02, params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))})
 
     # Vertical trunk in two layers: cos(tilt) has a strong gradient when lying
     # down but runs out of steam near vertical; the tight height-gated Gaussian
     # takes over and kills the backward lean (standup failure mode:
     # tipping backwards while extending the legs).
-    cfg.rewards["upright_linear"] = RewardTermCfg(
-        func=microduck_mdp.body_upright_linear,
-        weight=6.0,
-        params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))},
-    )
-    cfg.rewards["upright_sharp"] = RewardTermCfg(
-        func=microduck_mdp.upright_gaussian_at_height,
-        weight=6.0,
-        params={
-            "std": 0.3,
-            "height_low": ROLLER_PRONE_Z,
-            "height_high": ROLLER_STAND_Z,
-            "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
-        },
-    )
+    cfg.rewards["upright_linear"] = RewardTermCfg(func=microduck_mdp.body_upright_linear, weight=6.0, params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))})
+    cfg.rewards["upright_sharp"] = RewardTermCfg(func=microduck_mdp.upright_gaussian_at_height, weight=6.0, params={"std": 0.3, "height_low": ROLLER_PRONE_Z, "height_high": ROLLER_STAND_Z, "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))})
 
     # MULTIPLICATIVE score height × verticality × pose: since the factors
     # multiply, being good on 2 criteria out of 3 pays nothing → breaks the
     # "leaning at the right height" compromises that additive rewards
     # let through. Stds deliberately WIDE to stay visible during the
     # rise (tight stds gave a score ~5e-5, hence zero gradient).
-    cfg.rewards["standing_composite"] = RewardTermCfg(
-        func=microduck_mdp.standing_composite_score,
-        weight=15.0,
-        params={
-            "target_height": ROLLER_STAND_Z,
-            "height_std": 0.04,
-            "upright_std": 0.40,
-            "pose_std": 0.40,
-            "joint_indices": _LEG_JOINTS,
-            "target_overrides": None,
-            "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
-        },
-    )
+    cfg.rewards["standing_composite"] = RewardTermCfg(func=microduck_mdp.standing_composite_score, weight=15.0, params={"target_height": ROLLER_STAND_Z, "height_std": 0.04, "upright_std": 0.40, "pose_std": 0.40, "joint_indices": _LEG_JOINTS, "target_overrides": None, "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))})
 
     # Anti-jitter: penalizes the torque VARIATION, not its amplitude nor the
     # trunk rotation → damps the trembling without blocking the roll-over.
@@ -317,10 +224,7 @@ def make_microduck_roller_standup_env_cfg(play: bool = False) -> ManagerBasedRlE
     # If it is still violent, raise THIS term (formula above) rather than
     # body_ang_vel or action_rate, which are motion blockers and froze
     # the rise from the back.
-    cfg.rewards["joint_torque_rate_l2"] = RewardTermCfg(
-        func=microduck_mdp.joint_torque_rate_l2,
-        weight=-0.2,
-    )
+    cfg.rewards["joint_torque_rate_l2"] = RewardTermCfg(func=microduck_mdp.joint_torque_rate_l2, weight=-0.2)
 
     # NO head impact penalty. Tried with the velstand values
     # (body_impact_cost, `neck` subtree, weight -1.0, threshold 2.0): the policy
@@ -358,10 +262,10 @@ def make_microduck_roller_standup_env_cfg(play: bool = False) -> ManagerBasedRlE
         func=microduck_mdp.set_random_ground_state,
         mode="reset",
         params={
-            "face_down_prob": 0.50,   # face down (+90° of pitch)
-            "face_up_prob":   0.00,   # face up — the hardest, introduced late
-            "sitting_prob":   0.00,
-            "standing_prob":  0.50,
+            "face_down_prob": 0.50,  # face down (+90° of pitch)
+            "face_up_prob": 0.00,  # face up — the hardest, introduced late
+            "sitting_prob": 0.00,
+            "standing_prob": 0.50,
             "sitting_joint_overrides": None,
             # The two starting poses (face down/face up) share a SINGLE z range,
             # yet their contacts have nothing in common: the belly only lifts off the ground
@@ -370,8 +274,8 @@ def make_microduck_roller_standup_env_cfg(play: bool = False) -> ManagerBasedRlE
             # any interpenetration on the belly side (measured: at 0.05, +25 mm into the
             # ground), at the cost of a back that starts 28–42 mm above its rest —
             # a much gentler artifact than a contact pushout.
-            "prone_z_min":    0.076,
-            "prone_z_max":    0.09,
+            "prone_z_min": 0.076,
+            "prone_z_max": 0.09,
             # Standing on wheels: ROLLER_STAND_Z = 0.138 (vs 0.11–0.12 without wheels).
             "standing_z_min": 0.134,
             "standing_z_max": 0.144,
@@ -392,26 +296,7 @@ def make_microduck_roller_standup_env_cfg(play: bool = False) -> ManagerBasedRlE
     # (standup lesson: it froze into "do nothing" on that pose). We
     # therefore introduce standing+face-down first, face-up late, and bias towards the
     # hard poses at the end so they receive the most training.
-    cfg.curriculum["ground_state_mix"] = CurriculumTermCfg(
-        func=microduck_mdp.event_param_curriculum,
-        params={
-            "event_name": "set_ground_state",
-            "param_stages": [
-                {"step": 0, "params": {
-                    "standing_prob": 0.50, "sitting_prob": 0.00,
-                    "face_down_prob": 0.50, "face_up_prob": 0.00}},
-                {"step": 600 * NUM_STEPS_PER_ENV, "params": {
-                    "standing_prob": 0.35, "sitting_prob": 0.00,
-                    "face_down_prob": 0.45, "face_up_prob": 0.20}},
-                {"step": 1500 * NUM_STEPS_PER_ENV, "params": {
-                    "standing_prob": 0.25, "sitting_prob": 0.00,
-                    "face_down_prob": 0.40, "face_up_prob": 0.35}},
-                {"step": 2500 * NUM_STEPS_PER_ENV, "params": {
-                    "standing_prob": 0.20, "sitting_prob": 0.00,
-                    "face_down_prob": 0.40, "face_up_prob": 0.40}},
-            ],
-        },
-    )
+    cfg.curriculum["ground_state_mix"] = CurriculumTermCfg(func=microduck_mdp.event_param_curriculum, params={"event_name": "set_ground_state", "param_stages": [{"step": 0, "params": {"standing_prob": 0.50, "sitting_prob": 0.00, "face_down_prob": 0.50, "face_up_prob": 0.00}}, {"step": 600 * NUM_STEPS_PER_ENV, "params": {"standing_prob": 0.35, "sitting_prob": 0.00, "face_down_prob": 0.45, "face_up_prob": 0.20}}, {"step": 1500 * NUM_STEPS_PER_ENV, "params": {"standing_prob": 0.25, "sitting_prob": 0.00, "face_down_prob": 0.40, "face_up_prob": 0.35}}, {"step": 2500 * NUM_STEPS_PER_ENV, "params": {"standing_prob": 0.20, "sitting_prob": 0.00, "face_down_prob": 0.40, "face_up_prob": 0.40}}]})
 
     # Play override: force face-up starts so they can be inspected.
     # We write the probabilities into the event AND remove the curriculum: without
@@ -422,12 +307,7 @@ def make_microduck_roller_standup_env_cfg(play: bool = False) -> ManagerBasedRlE
         play_face_up = _resolve_play_face_up()
         if play_face_up is not None:
             remainder = 1.0 - play_face_up
-            cfg.events["set_ground_state"].params.update({
-                "face_up_prob":    play_face_up,
-                "face_down_prob":  remainder * _PLAY_FACE_DOWN_SHARE,
-                "standing_prob":   remainder * (1.0 - _PLAY_FACE_DOWN_SHARE),
-                "sitting_prob":    0.00,
-            })
+            cfg.events["set_ground_state"].params.update({"face_up_prob": play_face_up, "face_down_prob": remainder * _PLAY_FACE_DOWN_SHARE, "standing_prob": remainder * (1.0 - _PLAY_FACE_DOWN_SHARE), "sitting_prob": 0.00})
             del cfg.curriculum["ground_state_mix"]
 
     # ── INVERTED rolling friction: braked → free ─────────────────────────────
@@ -447,19 +327,7 @@ def make_microduck_roller_standup_env_cfg(play: bool = False) -> ManagerBasedRlE
     # (iter 4000+) are deployment candidates. Before that, the policy relies on
     # a rolling friction that does not exist on the real robot.
     _WHEEL_FRICTION_STAGE0 = (0.0500, 0.0500)
-    cfg.curriculum["wheel_friction"] = CurriculumTermCfg(
-        func=microduck_mdp.wheel_friction_curriculum,
-        params={
-            "event_name": "randomize_wheel_friction",
-            "ranges_stages": [
-                {"step": 0,                        "ranges": _WHEEL_FRICTION_STAGE0},
-                {"step": 1000 * NUM_STEPS_PER_ENV, "ranges": (0.0200, 0.0200)},
-                {"step": 2000 * NUM_STEPS_PER_ENV, "ranges": (0.0080, 0.0080)},
-                {"step": 3000 * NUM_STEPS_PER_ENV, "ranges": (0.0030, 0.0030)},
-                {"step": 4000 * NUM_STEPS_PER_ENV, "ranges": (0.0015, 0.0015)},
-            ],
-        },
-    )
+    cfg.curriculum["wheel_friction"] = CurriculumTermCfg(func=microduck_mdp.wheel_friction_curriculum, params={"event_name": "randomize_wheel_friction", "ranges_stages": [{"step": 0, "ranges": _WHEEL_FRICTION_STAGE0}, {"step": 1000 * NUM_STEPS_PER_ENV, "ranges": (0.0200, 0.0200)}, {"step": 2000 * NUM_STEPS_PER_ENV, "ranges": (0.0080, 0.0080)}, {"step": 3000 * NUM_STEPS_PER_ENV, "ranges": (0.0030, 0.0030)}, {"step": 4000 * NUM_STEPS_PER_ENV, "ranges": (0.0015, 0.0015)}]})
     # Defensive redundancy: the curriculum manager runs BEFORE the reset
     # events at every reset (including the very first), and wheel_friction_curriculum
     # itself defaults to stage 0 — so this line is never necessary in
@@ -474,36 +342,13 @@ def make_microduck_roller_standup_env_cfg(play: bool = False) -> ManagerBasedRlE
     # needs (the standup documents that too strong an action_rate killed that
     # recovery). Smoothness is carried here by joint_torque_rate_l2.
     cfg.rewards["action_rate_l2"].weight = -0.6
-    cfg.curriculum["action_rate_weight"] = CurriculumTermCfg(
-        func=microduck_mdp.reward_weight,
-        params={
-            "reward_name": "action_rate_l2",
-            "weight_stages": [
-                {"step": 0,                       "weight": -0.4},
-                {"step": 250 * NUM_STEPS_PER_ENV, "weight": -0.8},
-                {"step": 500 * NUM_STEPS_PER_ENV, "weight": -1.0},
-            ],
-        },
-    )
+    cfg.curriculum["action_rate_weight"] = CurriculumTermCfg(func=microduck_mdp.reward_weight, params={"reward_name": "action_rate_l2", "weight_stages": [{"step": 0, "weight": -0.4}, {"step": 250 * NUM_STEPS_PER_ENV, "weight": -0.8}, {"step": 500 * NUM_STEPS_PER_ENV, "weight": -1.0}]})
 
     # ── Ramped pushes ───────────────────────────────────────────────────────
     # push_robot is inherited from the roller env (±0.2 m/s, every 3–6 s) but
     # without curriculum. A shove from step 0 disrupts the bootstrap of the
     # rise: we ramp it up like the standup.
-    cfg.curriculum["push_magnitude"] = CurriculumTermCfg(
-        func=microduck_mdp.push_curriculum,
-        params={
-            "event_name": "push_robot",
-            "push_stages": [
-                {"step": 0, "velocity_range": {
-                    "x": (0.0, 0.0), "y": (0.0, 0.0)}},
-                {"step": 500 * NUM_STEPS_PER_ENV, "velocity_range": {
-                    "x": (-0.08, 0.08), "y": (-0.08, 0.08)}},
-                {"step": 1000 * NUM_STEPS_PER_ENV, "velocity_range": {
-                    "x": (-0.2, 0.2), "y": (-0.2, 0.2)}},
-            ],
-        },
-    )
+    cfg.curriculum["push_magnitude"] = CurriculumTermCfg(func=microduck_mdp.push_curriculum, params={"event_name": "push_robot", "push_stages": [{"step": 0, "velocity_range": {"x": (0.0, 0.0), "y": (0.0, 0.0)}}, {"step": 500 * NUM_STEPS_PER_ENV, "velocity_range": {"x": (-0.08, 0.08), "y": (-0.08, 0.08)}}, {"step": 1000 * NUM_STEPS_PER_ENV, "velocity_range": {"x": (-0.2, 0.2), "y": (-0.2, 0.2)}}]})
 
     return cfg
 
@@ -514,17 +359,9 @@ MicroduckRollerStandUpRlCfg = RslRlOnPolicyRunnerCfg(
         hidden_dims=(512, 256, 128),
         activation="elu",
         obs_normalization=True,  # the normalizer MUST be baked into the ONNX by export.py
-        distribution_cfg={
-            "class_name": "GaussianDistribution",
-            "init_std": 1.0,
-            "std_type": "scalar",
-        },
+        distribution_cfg={"class_name": "GaussianDistribution", "init_std": 1.0, "std_type": "scalar"},
     ),
-    critic=RslRlModelCfg(
-        hidden_dims=(512, 256, 128),
-        activation="elu",
-        obs_normalization=True,
-    ),
+    critic=RslRlModelCfg(hidden_dims=(512, 256, 128), activation="elu", obs_normalization=True),
     algorithm=PpoWithSymmetryCfg(
         value_loss_coef=1.0,
         use_clipped_value_loss=True,

@@ -113,20 +113,11 @@ def _resolve_weights(cfg: PublishConfig, workdir: Path) -> tuple[Path, dict]:
 
     # Heavy imports only on this path: the ONNX path must work without a GPU or mjlab's registry.
     import mjlab.tasks  # noqa: F401  (populates the registry)
+
     from .export import ExportConfig, run_export
 
     out = workdir / m.POLICY_FILE
-    result = run_export(
-        cfg.task,
-        ExportConfig(
-            onnx_file=str(out),
-            wandb_run_path=cfg.wandb_run_path,
-            checkpoint=cfg.checkpoint,
-            checkpoint_file=cfg.checkpoint_file,
-            num_envs=1,
-            device=cfg.device,
-        ),
-    )
+    result = run_export(cfg.task, ExportConfig(onnx_file=str(out), wandb_run_path=cfg.wandb_run_path, checkpoint=cfg.checkpoint, checkpoint_file=cfg.checkpoint_file, num_envs=1, device=cfg.device))
     training["task_id"] = cfg.task
     if result.wandb_run_path:
         training["run"] = result.wandb_run_path
@@ -155,20 +146,7 @@ def run(cfg: PublishConfig) -> int:
             print("[publish] smoke run: finite, non-constant output")
 
         command_help = {"twist": cfg.twist_help} if cfg.twist_help else None
-        manifest = m.build_manifest(
-            name=name,
-            kind=cfg.kind,
-            description=cfg.description or training.get("task_id") or name,
-            duration_s=cfg.duration_s,
-            chain=cfg.chain,
-            unwind_s=cfg.unwind_s,
-            idle=cfg.idle,
-            action_scale=cfg.action_scale,
-            entry_pose=cfg.entry_pose,
-            slot=cfg.slot,
-            command_help=command_help,
-            training=training,
-        )
+        manifest = m.build_manifest(name=name, kind=cfg.kind, description=cfg.description or training.get("task_id") or name, duration_s=cfg.duration_s, chain=cfg.chain, unwind_s=cfg.unwind_s, idle=cfg.idle, action_scale=cfg.action_scale, entry_pose=cfg.entry_pose, slot=cfg.slot, command_help=command_help, training=training)
         m.validate_manifest(manifest)
 
         staged = workdir / "repo"
@@ -192,17 +170,9 @@ def run(cfg: PublishConfig) -> int:
         existing = set(api.list_repo_files(cfg.repo))
         onnx_files = {f for f in existing if f.endswith(".onnx")}
         if onnx_files and not cfg.force:
-            _fail(
-                f"{cfg.repo} already carries {sorted(onnx_files)}; --force overwrites. "
-                "A repo carries exactly one .onnx, so a second name is a new repo."
-            )
+            _fail(f"{cfg.repo} already carries {sorted(onnx_files)}; --force overwrites. A repo carries exactly one .onnx, so a second name is a new repo.")
         stale = onnx_files - {m.POLICY_FILE}
-        commit = api.upload_folder(
-            repo_id=cfg.repo,
-            folder_path=str(staged),
-            commit_message=f"publish {name}: {cfg.kind}, {training.get('task_id', onnx_path.name)}",
-            delete_patterns=sorted(stale) or None,
-        )
+        commit = api.upload_folder(repo_id=cfg.repo, folder_path=str(staged), commit_message=f"publish {name}: {cfg.kind}, {training.get('task_id', onnx_path.name)}", delete_patterns=sorted(stale) or None)
         url = getattr(commit, "commit_url", None) or f"https://huggingface.co/{cfg.repo}"
         print(f"[publish] uploaded: {url}")
         if cfg.tag:

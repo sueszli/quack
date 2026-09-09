@@ -73,24 +73,14 @@ Phases (as before, but with a recovery backstop):
 import math
 
 from mjlab.envs import ManagerBasedRlEnvCfg
-from mjlab.managers import (
-    CurriculumTermCfg,
-    EventTermCfg,
-    RewardTermCfg,
-    TerminationTermCfg,
-)
+from mjlab.managers import CurriculumTermCfg, EventTermCfg, RewardTermCfg, TerminationTermCfg
 from mjlab.managers.scene_entity_config import SceneEntityCfg
-from mjlab.rl import (
-    RslRlOnPolicyRunnerCfg,
-    RslRlModelCfg,
-)
+from mjlab.rl import RslRlModelCfg, RslRlOnPolicyRunnerCfg
 
-from .robot import MICRODUCK_STANDUP_ROBOT_CFG
 from . import task_mdp as microduck_mdp
-from .task_velocity import (
-    make_microduck_velocity_env_cfg,
-)
+from .robot import MICRODUCK_STANDUP_ROBOT_CFG
 from .task_symmetry import PpoWithSymmetryCfg
+from .task_velocity import make_microduck_velocity_env_cfg
 
 # Phase boundaries (PPO iterations; env step counter scales by num_steps_per_env=24)
 FELL_OVER_DISABLE_ITER = 500
@@ -104,12 +94,12 @@ NUM_STEPS_PER_ENV = 24
 # the state. Tilt>40° can't be farmed from a comfortable pose — you're
 # genuinely toppled. The TERMINATION keeps the z-condition so sitters and
 # stuck-low envs get recycled (terminated) rather than paid.
-REWARD_GATE_TILT_DEG = 40.0   # recovery rewards: fallen = tilt > 40° ONLY
+REWARD_GATE_TILT_DEG = 40.0  # recovery rewards: fallen = tilt > 40° ONLY
 # TERM z-gate at 0.08, NOT 0.10 (run-3 lesson): a normally wobbling upright
 # robot dips to z=0.084-0.096 — 0.10 sits inside the early-learning envelope
 # and recycled crouch-walking explorers every 5 s. 0.08 still catches sitting
 # (z≈0.07) and prone (z≈0.05).
-TERM_GATE_Z = 0.08            # fallen_too_long: z < 0.08 OR tilt > 40°
+TERM_GATE_Z = 0.08  # fallen_too_long: z < 0.08 OR tilt > 40°
 TERM_GATE_TILT_DEG = 40.0
 
 # "Recovery COMPLETE" definition — shared by the recovery_success bounty and
@@ -150,13 +140,7 @@ FALLEN_TIMEOUT_S = 8.0
 # started prone+econ together at 800 and prone recovery never bootstrapped.
 # Crouch slice alone starts at 800: near-upright states, tax-free until econ,
 # and it doubles as full-stand posture data (run 6 stood truly vertical).
-PRONE_RAMP_STAGES = [
-    {"step": 0,                        "params": {"prone_prob": 0.00, "face_down_prob": 1.0,  "crouch_prob": 0.00}},
-    {"step": 800 * NUM_STEPS_PER_ENV,  "params": {"prone_prob": 0.00, "face_down_prob": 1.0,  "crouch_prob": 0.15}},
-    {"step": 1500 * NUM_STEPS_PER_ENV, "params": {"prone_prob": 0.15, "face_down_prob": 0.80, "crouch_prob": 0.15}},
-    {"step": 2000 * NUM_STEPS_PER_ENV, "params": {"prone_prob": 0.30, "face_down_prob": 0.65, "crouch_prob": 0.15}},
-    {"step": 2500 * NUM_STEPS_PER_ENV, "params": {"prone_prob": 0.45, "face_down_prob": 0.50, "crouch_prob": 0.15}},
-]
+PRONE_RAMP_STAGES = [{"step": 0, "params": {"prone_prob": 0.00, "face_down_prob": 1.0, "crouch_prob": 0.00}}, {"step": 800 * NUM_STEPS_PER_ENV, "params": {"prone_prob": 0.00, "face_down_prob": 1.0, "crouch_prob": 0.15}}, {"step": 1500 * NUM_STEPS_PER_ENV, "params": {"prone_prob": 0.15, "face_down_prob": 0.80, "crouch_prob": 0.15}}, {"step": 2000 * NUM_STEPS_PER_ENV, "params": {"prone_prob": 0.30, "face_down_prob": 0.65, "crouch_prob": 0.15}}, {"step": 2500 * NUM_STEPS_PER_ENV, "params": {"prone_prob": 0.45, "face_down_prob": 0.50, "crouch_prob": 0.15}}]
 
 
 def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> ManagerBasedRlEnvCfg:
@@ -180,12 +164,7 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
     # EMA below z=0.09 / beyond 40° tilt (matching REWARD_GATE_TILT_DEG), so
     # the term prices exactly what it does in the velocity env — sustained droop while
     # actually standing/walking — and nothing during recovery.
-    cfg.rewards["head_pose_bias"].params.update({
-        "gate_height_low":    0.09,
-        "gate_height_high":   0.11,
-        "gate_tilt_full_deg": 20.0,
-        "gate_tilt_zero_deg": REWARD_GATE_TILT_DEG,
-    })
+    cfg.rewards["head_pose_bias"].params.update({"gate_height_low": 0.09, "gate_height_high": 0.11, "gate_tilt_full_deg": 20.0, "gate_tilt_zero_deg": REWARD_GATE_TILT_DEG})
 
     # ── Recovery reward layer ─────────────────────────────────────────────────
     # LESSON (runs 1/2/4 — sitting, lying, head-tripod): ANY positive reward for
@@ -195,27 +174,14 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
     # rewards catching a stumble while walking. (Run 4 specifically: removing
     # the head-impact penalty unlocked a head-tripod at ~55° farming the gated
     # +2·cos(tilt) — run 2 had only been protected from it by that penalty.)
-    cfg.rewards["upright_progress"] = RewardTermCfg(
-        func=microduck_mdp.upright_progress,
-        weight=5.0,
-        params={
-            "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
-        },
-    )
+    cfg.rewards["upright_progress"] = RewardTermCfg(func=microduck_mdp.upright_progress, weight=5.0, params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))})
     # z-axis companion to upright_progress (run-5 crouch-endpoint lesson): the
     # crouch→stand last mile is mostly a HEIGHT change at modest tilt — where
     # Δcos(tilt) is tiny and the Gaussian upright/pose rewards are flat. Same
     # potential-based construction: unfarmable (holding/bobbing nets zero),
     # ungated, charges falls symmetrically. Full prone→stand rise (0.05 →
     # 0.115 m) collects Δ≈+0.065 × 30 ≈ +2; the crouch→stand mile ≈ +1.
-    cfg.rewards["height_progress"] = RewardTermCfg(
-        func=microduck_mdp.height_progress,
-        weight=30.0,
-        params={
-            "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
-            "ceiling": 0.115,
-        },
-    )
+    cfg.rewards["height_progress"] = RewardTermCfg(func=microduck_mdp.height_progress, weight=30.0, params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)), "ceiling": 0.115})
     cfg.rewards["com_upward_velocity"] = RewardTermCfg(
         func=microduck_mdp.com_upward_velocity,
         weight=0.0,  # recovery term — ramped in at RECOVERY_ECON_KICKIN_ITER
@@ -236,21 +202,14 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
     # than getting up. joint_torque_rate_l2 below covers landing harshness.
     # Standup's proven anti-jitter term: penalizes torque CHANGE (not magnitude
     # or rotation) → smooths transfer without blocking the recovery flip.
-    cfg.rewards["joint_torque_rate_l2"] = RewardTermCfg(
-        func=microduck_mdp.joint_torque_rate_l2,
-        weight=-2e-3,
-    )
+    cfg.rewards["joint_torque_rate_l2"] = RewardTermCfg(func=microduck_mdp.joint_torque_rate_l2, weight=-2e-3)
 
     # ── Recovery economics (first-run lessons #3-#5) ──────────────────────────
     # air_time zeroed while fallen: a robot lying on its trunk can rhythmically
     # tap its feet through the swing window — the observed "shaking a leg" farm.
     at = cfg.rewards["air_time"]
     at_params = dict(at.params)
-    cfg.rewards["air_time"] = RewardTermCfg(
-        func=microduck_mdp.feet_air_time_upright,
-        weight=at.weight,
-        params={**at_params, "gate_tilt_above_deg": REWARD_GATE_TILT_DEG},
-    )
+    cfg.rewards["air_time"] = RewardTermCfg(func=microduck_mdp.feet_air_time_upright, weight=at.weight, params={**at_params, "gate_tilt_above_deg": REWARD_GATE_TILT_DEG})
     # Flat tax while fallen: lying still must be strictly worse than trying.
     # (Without it, waiting 5 s for the fallen_too_long recycle was rational —
     # recovery attempts cost action-rate/torque penalties, waiting cost 0.)
@@ -294,123 +253,34 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
         func=microduck_mdp.maybe_set_random_prone_orientation,
         mode="reset",
         params={
-            "prone_prob": 0.0,        # ramped by the prone_init_prob curriculum
+            "prone_prob": 0.0,  # ramped by the prone_init_prob curriculum
             "face_down_prob": 1.0,
             "prone_z_min": 0.05,
             "prone_z_max": 0.09,
-            "crouch_prob": 0.0,       # ramped by the prone_init_prob curriculum
+            "crouch_prob": 0.0,  # ramped by the prone_init_prob curriculum
         },
     )
 
     # ── Terminations ──────────────────────────────────────────────────────────
     # Failed-recovery backstop (see module docstring, Phase 2).
-    cfg.terminations["fallen_too_long"] = TerminationTermCfg(
-        func=microduck_mdp.fallen_too_long,
-        time_out=False,
-        params={
-            "gate_z_below": TERM_GATE_Z,
-            "gate_tilt_above_deg": TERM_GATE_TILT_DEG,
-            "max_duration_s": FALLEN_TIMEOUT_S,
-        },
-    )
+    cfg.terminations["fallen_too_long"] = TerminationTermCfg(func=microduck_mdp.fallen_too_long, time_out=False, params={"gate_z_below": TERM_GATE_Z, "gate_tilt_above_deg": TERM_GATE_TILT_DEG, "max_duration_s": FALLEN_TIMEOUT_S})
 
     # ── Curricula ─────────────────────────────────────────────────────────────
     # Phase 1 → 2: disable fell_over at iter 500 (limit 70° → 180°) so falls
     # become recovery training instead of episode ends.
     if not play:
-        cfg.curriculum["fell_over_disable"] = CurriculumTermCfg(
-            func=microduck_mdp.termination_param_curriculum,
-            params={
-                "term_name": "fell_over",
-                "param_stages": [
-                    {"step": 0,
-                     "params": {"limit_angle": math.radians(70.0)}},
-                    {"step": FELL_OVER_DISABLE_ITER * NUM_STEPS_PER_ENV,
-                     "params": {"limit_angle": math.pi}},
-                ],
-            },
-        )
+        cfg.curriculum["fell_over_disable"] = CurriculumTermCfg(func=microduck_mdp.termination_param_curriculum, params={"term_name": "fell_over", "param_stages": [{"step": 0, "params": {"limit_angle": math.radians(70.0)}}, {"step": FELL_OVER_DISABLE_ITER * NUM_STEPS_PER_ENV, "params": {"limit_angle": math.pi}}]})
 
     # Phase 3: prone-init ramp (face-down first, face-up later, capped 45%).
-    cfg.curriculum["prone_init_prob"] = CurriculumTermCfg(
-        func=microduck_mdp.event_param_curriculum,
-        params={
-            "event_name": "random_prone_init",
-            "param_stages": PRONE_RAMP_STAGES,
-        },
-    )
+    cfg.curriculum["prone_init_prob"] = CurriculumTermCfg(func=microduck_mdp.event_param_curriculum, params={"event_name": "random_prone_init", "param_stages": PRONE_RAMP_STAGES})
 
     # Recovery economics ramp: tax + bounty OFF until the walk is established
     # (see RECOVERY_ECON_KICKIN_ITER note above — run-3 crouch-freeze lesson).
-    cfg.curriculum["fallen_tax_weight"] = CurriculumTermCfg(
-        func=microduck_mdp.reward_weight,
-        params={
-            "reward_name": "fallen_tax",
-            "weight_stages": [
-                {"step": 0, "weight": 0.0},
-                {"step": RECOVERY_ECON_KICKIN_ITER * NUM_STEPS_PER_ENV, "weight": -0.5},
-            ],
-        },
-    )
-    cfg.curriculum["recovery_success_weight"] = CurriculumTermCfg(
-        func=microduck_mdp.reward_weight,
-        params={
-            "reward_name": "recovery_success",
-            "weight_stages": [
-                {"step": 0, "weight": 0.0},
-                {"step": RECOVERY_ECON_KICKIN_ITER * NUM_STEPS_PER_ENV, "weight": 10.0},
-            ],
-        },
-    )
-    cfg.curriculum["com_upward_weight"] = CurriculumTermCfg(
-        func=microduck_mdp.reward_weight,
-        params={
-            "reward_name": "com_upward_velocity",
-            "weight_stages": [
-                {"step": 0, "weight": 0.0},
-                {"step": RECOVERY_ECON_KICKIN_ITER * NUM_STEPS_PER_ENV, "weight": 2.0},
-            ],
-        },
-    )
+    cfg.curriculum["fallen_tax_weight"] = CurriculumTermCfg(func=microduck_mdp.reward_weight, params={"reward_name": "fallen_tax", "weight_stages": [{"step": 0, "weight": 0.0}, {"step": RECOVERY_ECON_KICKIN_ITER * NUM_STEPS_PER_ENV, "weight": -0.5}]})
+    cfg.curriculum["recovery_success_weight"] = CurriculumTermCfg(func=microduck_mdp.reward_weight, params={"reward_name": "recovery_success", "weight_stages": [{"step": 0, "weight": 0.0}, {"step": RECOVERY_ECON_KICKIN_ITER * NUM_STEPS_PER_ENV, "weight": 10.0}]})
+    cfg.curriculum["com_upward_weight"] = CurriculumTermCfg(func=microduck_mdp.reward_weight, params={"reward_name": "com_upward_velocity", "weight_stages": [{"step": 0, "weight": 0.0}, {"step": RECOVERY_ECON_KICKIN_ITER * NUM_STEPS_PER_ENV, "weight": 2.0}]})
 
     return cfg
 
 
-MicroduckVelStandRlCfg = RslRlOnPolicyRunnerCfg(
-    actor=RslRlModelCfg(
-        hidden_dims=(512, 256, 128),
-        activation="elu",
-        obs_normalization=True,
-        distribution_cfg={
-            "class_name": "GaussianDistribution",
-            "init_std": 1.0,
-            "std_type": "scalar",
-        },
-    ),
-    critic=RslRlModelCfg(
-        hidden_dims=(512, 256, 128),
-        activation="elu",
-        obs_normalization=True,
-    ),
-    algorithm=PpoWithSymmetryCfg(
-        value_loss_coef=1.0,
-        use_clipped_value_loss=True,
-        clip_param=0.2,
-        entropy_coef=0.01,
-        num_learning_epochs=5,
-        num_mini_batches=4,
-        learning_rate=1.0e-3,
-        schedule="adaptive",
-        gamma=0.99,
-        lam=0.95,
-        desired_kl=0.01,
-        max_grad_norm=1.0,
-        symmetry_cfg=None,
-    ),
-    wandb_project="mjlab_microduck",
-    experiment_name="velstand",
-    run_name="velstand",
-    save_interval=250,
-    num_steps_per_env=24,
-    max_iterations=20_000,
-)
+MicroduckVelStandRlCfg = RslRlOnPolicyRunnerCfg(actor=RslRlModelCfg(hidden_dims=(512, 256, 128), activation="elu", obs_normalization=True, distribution_cfg={"class_name": "GaussianDistribution", "init_std": 1.0, "std_type": "scalar"}), critic=RslRlModelCfg(hidden_dims=(512, 256, 128), activation="elu", obs_normalization=True), algorithm=PpoWithSymmetryCfg(value_loss_coef=1.0, use_clipped_value_loss=True, clip_param=0.2, entropy_coef=0.01, num_learning_epochs=5, num_mini_batches=4, learning_rate=1.0e-3, schedule="adaptive", gamma=0.99, lam=0.95, desired_kl=0.01, max_grad_norm=1.0, symmetry_cfg=None), wandb_project="mjlab_microduck", experiment_name="velstand", run_name="velstand", save_interval=250, num_steps_per_env=24, max_iterations=20_000)

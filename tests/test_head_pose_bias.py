@@ -64,10 +64,7 @@ class _Env:
         self._head_pose_bl_mask = torch.zeros(4)
 
 
-GATE = dict(
-    gate_height_low=0.09, gate_height_high=0.11,
-    gate_tilt_full_deg=20.0, gate_tilt_zero_deg=45.0,
-)
+GATE = dict(gate_height_low=0.09, gate_height_high=0.11, gate_tilt_full_deg=20.0, gate_tilt_zero_deg=45.0)
 
 
 def _set_pose(env, z, pitch_deg):
@@ -86,9 +83,9 @@ def _run(env, steps, **kw):
 
 def test_prone_accumulates_nothing():
     env = _Env(2)
-    _set_pose(env, z=0.05, pitch_deg=90.0)          # face-down on the ground
-    env.scene._asset.data.joint_pos[:, :4] = 0.5    # huge head "error" (28°)
-    out = _run(env, 200, **GATE)                    # 4 s of prone thrash
+    _set_pose(env, z=0.05, pitch_deg=90.0)  # face-down on the ground
+    env.scene._asset.data.joint_pos[:, :4] = 0.5  # huge head "error" (28°)
+    out = _run(env, 200, **GATE)  # 4 s of prone thrash
     assert torch.allclose(out, torch.zeros(2), atol=1e-9), out
 
 
@@ -96,13 +93,13 @@ def test_arrival_starts_from_zero_then_charges_true_bias():
     env = _Env(2)
     _set_pose(env, z=0.05, pitch_deg=90.0)
     env.scene._asset.data.joint_pos[:, :4] = 0.5
-    _run(env, 200, **GATE)                          # ground phase: EMA stays 0
-    _set_pose(env, z=0.117, pitch_deg=0.0)          # recovery completes
+    _run(env, 200, **GATE)  # ground phase: EMA stays 0
+    _set_pose(env, z=0.117, pitch_deg=0.0)  # recovery completes
     env.scene._asset.data.joint_pos[:, :4] = math.radians(15)  # 15° droop
     first = _run(env, 1, **GATE)
     assert first.abs().max() < 0.01, f"finish-line wall: {first}"  # no arrival spike
-    settled = _run(env, 300, **GATE)                # 6 s standing
-    assert abs(-settled[0].item() - math.radians(15)) < 0.01      # charges the droop
+    settled = _run(env, 300, **GATE)  # 6 s standing
+    assert abs(-settled[0].item() - math.radians(15)) < 0.01  # charges the droop
 
 
 def test_fall_stops_the_charge_immediately():
@@ -110,7 +107,7 @@ def test_fall_stops_the_charge_immediately():
     _set_pose(env, z=0.117, pitch_deg=0.0)
     env.scene._asset.data.joint_pos[:, :4] = math.radians(15)
     _run(env, 300, **GATE)
-    _set_pose(env, z=0.05, pitch_deg=90.0)          # falls
+    _set_pose(env, z=0.05, pitch_deg=90.0)  # falls
     out = _run(env, 1, **GATE)
     assert torch.allclose(out, torch.zeros(2), atol=1e-9), out
 
@@ -118,7 +115,7 @@ def test_fall_stops_the_charge_immediately():
 def test_ungated_matches_velocity_env_behavior():
     # No gate params -> plain EMA of the raw error (the velocity-env term).
     env = _Env(2)
-    _set_pose(env, z=0.05, pitch_deg=90.0)          # pose must be irrelevant
+    _set_pose(env, z=0.05, pitch_deg=90.0)  # pose must be irrelevant
     env.scene._asset.data.joint_pos[:, :4] = math.radians(15)
     out = _run(env, 300)
     assert abs(-out[0].item() - math.radians(15)) < 0.01
@@ -129,7 +126,7 @@ def test_reset_clears_the_ema():
     _set_pose(env, z=0.117, pitch_deg=0.0)
     env.scene._asset.data.joint_pos[:, :4] = math.radians(15)
     _run(env, 300, **GATE)
-    env.episode_length_buf[0] = 1                   # env 0 just reset
+    env.episode_length_buf[0] = 1  # env 0 just reset
     out = _run(env, 1, **GATE)
     # One step after reset the EMA holds exactly alpha*err (~0.005), while the
     # non-reset env still carries the full settled bias (~0.26).
@@ -137,13 +134,11 @@ def test_reset_clears_the_ema():
 
 
 def test_standup_cfg_wiring():
-    from src.task_standup import (
-        make_microduck_standup_env_cfg,
-    )
+    from src.task_standup import make_microduck_standup_env_cfg
 
     cfg = make_microduck_standup_env_cfg()
     term = cfg.rewards["head_pose_bias"]
-    assert term.weight == 0.0                       # discovery phase untouched
+    assert term.weight == 0.0  # discovery phase untouched
     assert term.params["gate_height_low"] is not None
     # Gate values identical to arrival_damping so "standing" means one thing.
     ad = cfg.rewards["arrival_damping"].params
@@ -155,9 +150,7 @@ def test_standup_cfg_wiring():
 
 
 def test_velocity_cfg_unchanged_no_gate():
-    from src.task_velocity import (
-        make_microduck_velocity_env_cfg,
-    )
+    from src.task_velocity import make_microduck_velocity_env_cfg
 
     cfg = make_microduck_velocity_env_cfg()
     assert "gate_height_low" not in cfg.rewards["head_pose_bias"].params
@@ -166,9 +159,7 @@ def test_velocity_cfg_unchanged_no_gate():
 def test_velstand_inherited_term_is_gated():
     # Velstand episodes survive falls — the inherited velocity-env term must not
     # charge the ground phase.
-    from src.task_velstand import (
-        make_microduck_velstand_env_cfg,
-    )
+    from src.task_velstand import make_microduck_velstand_env_cfg
 
     cfg = make_microduck_velstand_env_cfg()
     params = cfg.rewards["head_pose_bias"].params

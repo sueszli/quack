@@ -55,11 +55,7 @@ class Tof:
             elevation = -centres[row]
             for col in range(COLS):
                 azimuth = -centres[col]
-                self.directions[row * COLS + col] = [
-                    np.cos(elevation) * np.cos(azimuth),
-                    np.cos(elevation) * np.sin(azimuth),
-                    np.sin(elevation),
-                ]
+                self.directions[row * COLS + col] = [np.cos(elevation) * np.cos(azimuth), np.cos(elevation) * np.sin(azimuth), np.sin(elevation)]
 
     def frame(self, data: mujoco.MjData) -> tuple[list[int], list[int]]:
         """One capture: distances in millimetres and a status per zone.
@@ -83,10 +79,7 @@ class Tof:
 
         geom = np.zeros(1, dtype=np.int32)
         for zone in range(ZONES):
-            hit = mujoco.mj_ray(
-                self.model, data, origin, np.ascontiguousarray(world[:, zone]),
-                None, 1, -1, geom,
-            )
+            hit = mujoco.mj_ray(self.model, data, origin, np.ascontiguousarray(world[:, zone]), None, 1, -1, geom)
             if hit < 0 or hit > MAX_RANGE:
                 continue
             # Noise that grows with range, as the datasheet has it: a few millimetres up close, a
