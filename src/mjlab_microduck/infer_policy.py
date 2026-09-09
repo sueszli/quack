@@ -1,5 +1,4 @@
-#!/usr/bin/env python3
-"""Simple script to run ONNX policy inference in MuJoCo with rendering."""
+"""Run ONNX policy inference in CPU MuJoCo with rendering (`uv run infer`)."""
 
 import argparse
 import csv
@@ -13,20 +12,19 @@ import termios
 import threading
 import time
 import tty
+from pathlib import Path
 import numpy as np
 import mujoco
 import mujoco.viewer
 import onnxruntime as ort
 
-MICRODUCK_XML = "src/mjlab_microduck/robot/microduck/scene.xml"
-# MICRODUCK_XML = "src/mjlab_microduck/robot/microduck/scene_ramps.xml"
-# MICRODUCK_XML = "src/mjlab_microduck/robot/microduck/scene_floor_objects.xml"
-# MICRODUCK_XML = "src/mjlab_microduck/robot/microduck/scene_robot_walk.xml"
-MICRODUCK_ROLLERS_XML = "src/mjlab_microduck/robot/microduck/scene_rollers.xml"
-MICRODUCK_BALL_XML = "src/mjlab_microduck/robot/microduck/scene_ball.xml"
+_ROBOT_DIR = Path(__file__).resolve().parent / "robot" / "microduck"
+MICRODUCK_XML = str(_ROBOT_DIR / "scene.xml")
+MICRODUCK_ROLLERS_XML = str(_ROBOT_DIR / "scene_rollers.xml")
+MICRODUCK_BALL_XML = str(_ROBOT_DIR / "scene_ball.xml")
 
 # BAM M6 defaults — MUST mirror `_BAM_ACTUATOR_KWARGS` in
-# src/mjlab_microduck/robot/microduck_constants.py (the actuator every policy is
+# mjlab_microduck/robot/microduck_constants.py (the actuator every policy is
 # trained against in warp). Not imported from there: that module drags in
 # mjlab/torch/warp (~16 s import) for a CPU rehearsal script. Locked by
 # tests/test_infer_policy_bam.py.
