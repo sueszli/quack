@@ -1,33 +1,32 @@
-"""Microduck roller standup — getting up on rollers.
-
-DEDICATED episodic policy: the robot starts on the ground (face down, face up) or
-already standing, and must get back up on its rollers then HOLD the stance.
-Port of the `standup` recipe (walking duck) to the rollers model.
-
-Derives from the roller env (`make_microduck_velocity_rollers_env_cfg`) → inherits
-as-is the rollers robot, the sensors, all the DR and the 61D observation, hence
-interchangeable at runtime (--new-cmd-obs). This is the roller_slope pattern.
-
-Two structural differences from `standup`:
-  - the passive wheels are INTERLEAVED in the joint order → remapped
-    indices (_LEG_JOINTS below), locked by
-    tests/test_roller_standup_cfg.py;
-  - no head_pose command: the head/body slots stay zero-padded
-    (roller family convention) and the head is held straight by
-    neck_joint_pos_l2, which resolves by NAME.
-
-The new piece is the rolling-friction curriculum, INVERTED (wheels
-braked → free): the wheels roll, so there is no grip to
-push on the ground. We bootstrap with nearly locked wheels then ramp
-towards the true value. If `standing_composite` collapses at a stage, the
-"grippy feet" gesture does not transfer and a skater technique will have to be
-guided (knee support, one skate at a time).
-
-Target deployment: in `--standing` opposite the roller policy in `--walking`, with
-the automatic switch on the magnitude of the velocity command
-(infer.py:262, threshold 0.05); the twist slot is left at zero there
-(infer.py:239).
-"""
+# Microduck roller standup — getting up on rollers.
+#
+# DEDICATED episodic policy: the robot starts on the ground (face down, face up) or
+# already standing, and must get back up on its rollers then HOLD the stance.
+# Port of the `standup` recipe (walking duck) to the rollers model.
+#
+# Derives from the roller env (`make_microduck_velocity_rollers_env_cfg`) → inherits
+# as-is the rollers robot, the sensors, all the DR and the 61D observation, hence
+# interchangeable at runtime (--new-cmd-obs). This is the roller_slope pattern.
+#
+# Two structural differences from `standup`:
+#   - the passive wheels are INTERLEAVED in the joint order → remapped
+#     indices (_LEG_JOINTS below), locked by
+#     tests/test_roller_standup_cfg.py;
+#   - no head_pose command: the head/body slots stay zero-padded
+#     (roller family convention) and the head is held straight by
+#     neck_joint_pos_l2, which resolves by NAME.
+#
+# The new piece is the rolling-friction curriculum, INVERTED (wheels
+# braked → free): the wheels roll, so there is no grip to
+# push on the ground. We bootstrap with nearly locked wheels then ramp
+# towards the true value. If `standing_composite` collapses at a stage, the
+# "grippy feet" gesture does not transfer and a skater technique will have to be
+# guided (knee support, one skate at a time).
+#
+# Target deployment: in `--standing` opposite the roller policy in `--walking`, with
+# the automatic switch on the magnitude of the velocity command
+# (infer.py:262, threshold 0.05); the twist slot is left at zero there
+# (infer.py:239).
 
 import math
 import os
@@ -72,7 +71,7 @@ _PLAY_FACE_DOWN_SHARE = 2.0 / 3.0
 
 
 def _resolve_play_face_up():
-    """Proportion of face-up starts at play: STANDUP_PLAY_FACE_UP env var, otherwise the constant."""
+    # Proportion of face-up starts at play: STANDUP_PLAY_FACE_UP env var, otherwise the constant.
     raw = os.environ.get("STANDUP_PLAY_FACE_UP")
     if raw is None:
         return PLAY_FACE_UP
@@ -114,7 +113,7 @@ _SKATING_REWARDS = ("wheel_speed", "braking", "skating_air_time", "glide", "sing
 
 
 def make_microduck_roller_standup_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
-    """ "Getting up on rollers" env: start on the ground, target = standing on wheels."""
+    # "Getting up on rollers" env: start on the ground, target = standing on wheels.
     cfg = make_microduck_velocity_rollers_env_cfg(play=play)
 
     cfg.episode_length_s = EPISODE_LENGTH_S

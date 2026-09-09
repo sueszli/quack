@@ -1,17 +1,16 @@
-"""A simulated VL53L5CX, so the duck can see a wall.
-
-8x8 zones over a 45-degree square field of view, out to 4 m, at 15 Hz — the real sensor's shape,
-because `tofd` publishes frames of exactly that and `maploc` reprojects them assuming it.
-
-Modelled on `~/MISC/microduck_maploc`'s `sim/tof_sensor.py`, which had these numbers from the
-datasheet and from the sensor on a desk: noise that grows with distance (millimetres up close,
-centimetres out near the limit), and a status per zone rather than a distance alone.
-
-**The status byte matters as much as the distance.** A real sensor distinguishes "nothing out there"
-from "could not measure", and `maploc` treats them differently — a zone with no target is empty
-space to clear on the map, and a zone that failed is no information at all. A simulator reporting
-only distances would let a bug through that hardware finds.
-"""
+# A simulated VL53L5CX, so the duck can see a wall.
+#
+# 8x8 zones over a 45-degree square field of view, out to 4 m, at 15 Hz — the real sensor's shape,
+# because `tofd` publishes frames of exactly that and `maploc` reprojects them assuming it.
+#
+# Modelled on `~/MISC/microduck_maploc`'s `sim/tof_sensor.py`, which had these numbers from the
+# datasheet and from the sensor on a desk: noise that grows with distance (millimetres up close,
+# centimetres out near the limit), and a status per zone rather than a distance alone.
+#
+# **The status byte matters as much as the distance.** A real sensor distinguishes "nothing out there"
+# from "could not measure", and `maploc` treats them differently — a zone with no target is empty
+# space to clear on the map, and a zone that failed is no information at all. A simulator reporting
+# only distances would let a bug through that hardware finds.
 
 from __future__ import annotations
 
@@ -31,11 +30,10 @@ MAX_RANGE = 4.0
 
 
 class Tof:
-    """The 8x8 sensor on one duck's `tof` site.
-
-    Rays are cast in the site's frame — +x forward, +y left, +z up — so a head that turns takes the
-    sensor with it, which is the whole point of `robot.look` scanning a room.
-    """
+    # The 8x8 sensor on one duck's `tof` site.
+    #
+    # Rays are cast in the site's frame — +x forward, +y left, +z up — so a head that turns takes the
+    # sensor with it, which is the whole point of `robot.look` scanning a room.
 
     def __init__(self, model: mujoco.MjModel, site: int, seed: int = 0):
         self.model = model
@@ -58,12 +56,11 @@ class Tof:
                 self.directions[row * COLS + col] = [np.cos(elevation) * np.cos(azimuth), np.cos(elevation) * np.sin(azimuth), np.sin(elevation)]
 
     def frame(self, data: mujoco.MjData) -> tuple[list[int], list[int]]:
-        """One capture: distances in millimetres and a status per zone.
-
-        Self-hits are reported, not filtered. A real sensor sees the duck's own beak when the beak is
-        in front of it, and a simulator that quietly skipped its own geometry would hide exactly the
-        kind of mounting problem this is here to catch.
-        """
+        # One capture: distances in millimetres and a status per zone.
+        #
+        # Self-hits are reported, not filtered. A real sensor sees the duck's own beak when the beak is
+        # in front of it, and a simulator that quietly skipped its own geometry would hide exactly the
+        # kind of mounting problem this is here to catch.
         origin = data.site_xpos[self.site].copy()
         rotation = data.site_xmat[self.site].reshape(3, 3)
         world = rotation @ self.directions.T  # (3, ZONES)

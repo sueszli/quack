@@ -1,74 +1,73 @@
-"""Microduck VelStand environment: walking + fall recovery, one policy.
-
-REBASED (2026-07, audit follow-up) on the velocity recipe — the proven
-walker — instead of the abandoned older recipe the old velstand used.
-The 2026-07 audit found the old design starved the walk: only ~25% of
-experience was clean commanded walking (2/3 prone resets + fallen envs farming
-recovery reward for full 20 s episodes), the recovery rewards taxed the gait
-(always-on posture double-counting, a bounce incentive from com_upward_velocity
-below walk height), and the prone init dropped the robot from 0.20–0.25 m
-(function defaults — a violent uncontrolled impact opening most episodes).
-
-Design now:
-  - Walk layer  = make_microduck_velocity_env_cfg, verbatim. Everything the
-    good walker has (tracking weights, air_time, turn-in-place bucket, fixed
-    command ranges, DR/noise/obs) flows in by construction.
-  - Robot       = all-collision standup XML (body can physically lie down).
-  - Recovery    = a small reward layer GATED on actually-being-fallen
-    (trunk z < 0.10 m OR tilt > 40°): contributes exactly zero during clean
-    walking, steers only when down. upright_linear gives an orientation
-    gradient everywhere; com_upward_velocity pays for rising. (The old
-    com_height_recovery was dropped: flat/no-gradient inside its band and
-    redundant with the two above — audit finding 3.)
-  - Impact penalties (trunk/head) discourage hard landings, ungated.
-  - joint_torque_rate_l2 (standup's proven anti-jitter) for transfer
-    smoothness — penalizes torque CHANGE, never blocks the recovery flip.
-
-Run-5 lesson (crouch endpoint): recoveries walked nicely but parked in a deep
-crouch just past the 40° gates — every dense recovery term stops paying there,
-and the recovery_success bounty demanded z > 0.105, above the policy's real
-standing envelope (0.084–0.096), so it never fired. Fixes: (1) shared
-"recovery complete" definition (tilt < 25° AND z > 0.09 — reachable) for the
-bounty and (2) a fallen_tax hysteresis that keeps taxing after a fall until
-that definition is met, and (3) height_progress — a potential-based Δz term
-giving the crouch→stand last mile the dense gradient nothing else provides.
-
-Run-6 lesson (still parked at 4k): fixing the economics wasn't enough — the
-bounty fired (rising recovery_success curve) but stayed exploration-rare,
-because the last mile got almost no on-policy DATA: a prone episode spends
-most of its 5 s fallen budget getting TO the crouch, then fallen_too_long
-recycles it right at the frontier. The old velstand learned recovery fast
-precisely because 2/3 prone resets + 20 s episodes made fallen-state data
-abundant (at the cost of the walk). Run-6 recovers that data density without
-the starvation: (1) crouch_prob reverse-curriculum slice — reset directly
-into random mid-recovery crouches, dense last-mile data from step 0; (2)
-fallen timeout 5 → 8 s; (3) economics at 800 (walk is stable by ~750) and
-the whole prone ramp pulled ~500 iters earlier.
-
-Run-7 lesson (headless eval of run 6 vs run 5 @4k, 2026-07-21): the crouch
-slice WORKED — run 6 stands truly vertical (tilt ≈1°, z ≈0.117) and recovers
-94–97% from crouch inits — but prone recovery collapsed to 0% (run 5: gets up
-from prone but parks at ~30°). Cause: run 6 turned on tax + bounty + prone +
-crouch ALL at iter 800, deleting the tax-free natural-fall window (500→1200 in
-run 5) where prone-flip exploration was cheap and the dense progress terms
-alone taught it — run 5's recovery_success was already firing the moment its
-weight turned on at 1200. With the tax live from 800 and hopeless prone
-episodes bleeding -0.5/step for the full 8 s timeout, the run-3 avoidance/
-freeze mechanism re-emerged for prone states while PPO capacity went to the
-easy crouch-slice reward. Run-7: keep the crouch slice (validated) + 8 s
-timeout, restore econ to 1200 and prone to the run-5 ramp (1500+), crouch
-slice alone from 800 (harmless pre-econ: it just adds stand-tall data).
-
-Phases (as before, but with a recovery backstop):
-  Phase 1 (0 → 500 iters): `fell_over` termination active (70°) → clean
-    walking first.
-  Phase 2 (500+): fell_over disabled (limit → π) so falls become recovery
-    opportunities — but `fallen_too_long` (5 s continuously down) recycles
-    failed recoveries instead of letting them farm the full 20 s episode.
-  Phase 3 (1500+): prone-init ramp: face-down first (easier), face-up mixed
-    in later, capped at 45% prone so the walking data share stays ≥ ~55%
-    (was 2/3 prone → ~25% walking share).
-"""
+# Microduck VelStand environment: walking + fall recovery, one policy.
+#
+# REBASED (2026-07, audit follow-up) on the velocity recipe — the proven
+# walker — instead of the abandoned older recipe the old velstand used.
+# The 2026-07 audit found the old design starved the walk: only ~25% of
+# experience was clean commanded walking (2/3 prone resets + fallen envs farming
+# recovery reward for full 20 s episodes), the recovery rewards taxed the gait
+# (always-on posture double-counting, a bounce incentive from com_upward_velocity
+# below walk height), and the prone init dropped the robot from 0.20–0.25 m
+# (function defaults — a violent uncontrolled impact opening most episodes).
+#
+# Design now:
+#   - Walk layer  = make_microduck_velocity_env_cfg, verbatim. Everything the
+#     good walker has (tracking weights, air_time, turn-in-place bucket, fixed
+#     command ranges, DR/noise/obs) flows in by construction.
+#   - Robot       = all-collision standup XML (body can physically lie down).
+#   - Recovery    = a small reward layer GATED on actually-being-fallen
+#     (trunk z < 0.10 m OR tilt > 40°): contributes exactly zero during clean
+#     walking, steers only when down. upright_linear gives an orientation
+#     gradient everywhere; com_upward_velocity pays for rising. (The old
+#     com_height_recovery was dropped: flat/no-gradient inside its band and
+#     redundant with the two above — audit finding 3.)
+#   - Impact penalties (trunk/head) discourage hard landings, ungated.
+#   - joint_torque_rate_l2 (standup's proven anti-jitter) for transfer
+#     smoothness — penalizes torque CHANGE, never blocks the recovery flip.
+#
+# Run-5 lesson (crouch endpoint): recoveries walked nicely but parked in a deep
+# crouch just past the 40° gates — every dense recovery term stops paying there,
+# and the recovery_success bounty demanded z > 0.105, above the policy's real
+# standing envelope (0.084–0.096), so it never fired. Fixes: (1) shared
+# "recovery complete" definition (tilt < 25° AND z > 0.09 — reachable) for the
+# bounty and (2) a fallen_tax hysteresis that keeps taxing after a fall until
+# that definition is met, and (3) height_progress — a potential-based Δz term
+# giving the crouch→stand last mile the dense gradient nothing else provides.
+#
+# Run-6 lesson (still parked at 4k): fixing the economics wasn't enough — the
+# bounty fired (rising recovery_success curve) but stayed exploration-rare,
+# because the last mile got almost no on-policy DATA: a prone episode spends
+# most of its 5 s fallen budget getting TO the crouch, then fallen_too_long
+# recycles it right at the frontier. The old velstand learned recovery fast
+# precisely because 2/3 prone resets + 20 s episodes made fallen-state data
+# abundant (at the cost of the walk). Run-6 recovers that data density without
+# the starvation: (1) crouch_prob reverse-curriculum slice — reset directly
+# into random mid-recovery crouches, dense last-mile data from step 0; (2)
+# fallen timeout 5 → 8 s; (3) economics at 800 (walk is stable by ~750) and
+# the whole prone ramp pulled ~500 iters earlier.
+#
+# Run-7 lesson (headless eval of run 6 vs run 5 @4k, 2026-07-21): the crouch
+# slice WORKED — run 6 stands truly vertical (tilt ≈1°, z ≈0.117) and recovers
+# 94–97% from crouch inits — but prone recovery collapsed to 0% (run 5: gets up
+# from prone but parks at ~30°). Cause: run 6 turned on tax + bounty + prone +
+# crouch ALL at iter 800, deleting the tax-free natural-fall window (500→1200 in
+# run 5) where prone-flip exploration was cheap and the dense progress terms
+# alone taught it — run 5's recovery_success was already firing the moment its
+# weight turned on at 1200. With the tax live from 800 and hopeless prone
+# episodes bleeding -0.5/step for the full 8 s timeout, the run-3 avoidance/
+# freeze mechanism re-emerged for prone states while PPO capacity went to the
+# easy crouch-slice reward. Run-7: keep the crouch slice (validated) + 8 s
+# timeout, restore econ to 1200 and prone to the run-5 ramp (1500+), crouch
+# slice alone from 800 (harmless pre-econ: it just adds stand-tall data).
+#
+# Phases (as before, but with a recovery backstop):
+#   Phase 1 (0 → 500 iters): `fell_over` termination active (70°) → clean
+#     walking first.
+#   Phase 2 (500+): fell_over disabled (limit → π) so falls become recovery
+#     opportunities — but `fallen_too_long` (5 s continuously down) recycles
+#     failed recoveries instead of letting them farm the full 20 s episode.
+#   Phase 3 (1500+): prone-init ramp: face-down first (easier), face-up mixed
+#     in later, capped at 45% prone so the walking data share stays ≥ ~55%
+#     (was 2/3 prone → ~25% walking share).
 
 import math
 

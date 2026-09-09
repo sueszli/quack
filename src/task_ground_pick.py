@@ -1,30 +1,29 @@
-"""Microduck ground pick task.
-
-Episodic policy that crouches to bring its mouth tip AS CLOSE AS POSSIBLE to the
-ground WITHOUT touching it (correctly oriented, mouth pointing down), then
-returns to a clean standing pose — all while remaining stable and robust to
-pushes.  The obs/action spaces are identical to the walking policy so the two
-can be switched at runtime with a single key-press.
-
-Task-space objective (no DOWN pose): mouth_ground_proximity pulls the mouth
-towards the ground, head_impact_penalty (strong) forbids contact -> equilibrium = mouth
-just above; mouth_perpendicular_to_ground orients it downwards.
-
-Phase encoding (in the command slot, 3-D):
-    command = [cos(2π·phase), sin(2π·phase), 0]
-    phase ∈ [0, 0.5]  → approach (reward mouth going down)
-    phase ∈ [0.5, 1]  → return   (reward returning to standing pose)
-
-Phase is randomised per env on episode reset to de-correlate environments and
-avoid synchronised oscillations.  PERIOD = 4 s (2 s down + 2 s up).
-
-── mjlab 1.3.0 + canonical BAM ────────────────────────────────────────────────
-Migrated to match the velocity env's sim2real machinery: fixed (non-accumulating)
-CoM / head-CoM / mass-inertia / friction / armature DR, obs-level IMU misalignment,
-encoder-bias, obs normalization. The task-specific REGULARIZATION is deliberately
-kept HEAVIER than velocity's (slow careful reaching wants more damping than
-walking) — see the regularisation block.
-"""
+# Microduck ground pick task.
+#
+# Episodic policy that crouches to bring its mouth tip AS CLOSE AS POSSIBLE to the
+# ground WITHOUT touching it (correctly oriented, mouth pointing down), then
+# returns to a clean standing pose — all while remaining stable and robust to
+# pushes.  The obs/action spaces are identical to the walking policy so the two
+# can be switched at runtime with a single key-press.
+#
+# Task-space objective (no DOWN pose): mouth_ground_proximity pulls the mouth
+# towards the ground, head_impact_penalty (strong) forbids contact -> equilibrium = mouth
+# just above; mouth_perpendicular_to_ground orients it downwards.
+#
+# Phase encoding (in the command slot, 3-D):
+#     command = [cos(2π·phase), sin(2π·phase), 0]
+#     phase ∈ [0, 0.5]  → approach (reward mouth going down)
+#     phase ∈ [0.5, 1]  → return   (reward returning to standing pose)
+#
+# Phase is randomised per env on episode reset to de-correlate environments and
+# avoid synchronised oscillations.  PERIOD = 4 s (2 s down + 2 s up).
+#
+# ── mjlab 1.3.0 + canonical BAM ────────────────────────────────────────────────
+# Migrated to match the velocity env's sim2real machinery: fixed (non-accumulating)
+# CoM / head-CoM / mass-inertia / friction / armature DR, obs-level IMU misalignment,
+# encoder-bias, obs normalization. The task-specific REGULARIZATION is deliberately
+# kept HEAVIER than velocity's (slow careful reaching wants more damping than
+# walking) — see the regularisation block.
 
 import math
 from copy import deepcopy
@@ -99,7 +98,7 @@ RISE_END = 0.80
 
 
 def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) -> ManagerBasedRlEnvCfg:
-    """Create Microduck ground pick environment configuration."""
+    # Create Microduck ground pick environment configuration.
 
     feet_ground_cfg = ContactSensorCfg(name="feet_ground_contact", primary=ContactMatch(mode="geom", pattern=r"^(left_foot_collision|right_foot_collision)$", entity="robot"), secondary=ContactMatch(mode="body", pattern="terrain"), fields=("found", "force"), reduce="netforce", num_slots=1, track_air_time=True)
 

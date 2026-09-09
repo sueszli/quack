@@ -1,30 +1,29 @@
-"""Microduck velocity environment — roller skate variant.
-
-MIGRATED to mjlab 1.3.0 + canonical BAM (2026-07), matching the velocity env's
-sim2real machinery, and updated for the NEW roller model:
-
-  - `get_walk_rollers_spec` now loads `robot_groundcontact_rollers.xml`
-    (it silently loaded the wheel-less standup model before): 14 actuated
-    joints + 4 passive wheels (passive_{L,R}{F,R}wheel), two per blade,
-    INTERSPERSED in the joint order (after each ankle) — everything resolves
-    joints by NAME, never by index.
-  - Legs run the canonical BAM actuator like every other variant (was a plain
-    XML PD — an actuator-physics mismatch, and no joint-friction DR).
-  - Obs migrated to the unified 61D layout (twist + zero-padded head/body
-    command slots) so roller policies load through the runtime's
-    --new-cmd-obs path. Symmetry OFF (SYMMETRY_CFG is hardcoded for the old
-    51D layout).
-  - DR/noise/delays matched to the velocity env's FIXED (non-accumulating,
-    per-env-verified) versions; wheel-bearing frictionloss DR kept
-    (dr.dof_frictionloss on the passive wheels + existing curriculum).
-
-Task design (unchanged — the roller recipe):
-  cmd_x semantics: 0 = coast, >0 = push to accelerate, <0 = brake.
-  cmd[2] = heading error via RelativeHeadingVelocityCommand.
-  Sole positive task reward is wheel_speed — the robot must actually spin its
-  wheels; braking/skating_air_time/forward_lean/heading_tracking shape the
-  skating style.
-"""
+# Microduck velocity environment — roller skate variant.
+#
+# MIGRATED to mjlab 1.3.0 + canonical BAM (2026-07), matching the velocity env's
+# sim2real machinery, and updated for the NEW roller model:
+#
+#   - `get_walk_rollers_spec` now loads `robot_groundcontact_rollers.xml`
+#     (it silently loaded the wheel-less standup model before): 14 actuated
+#     joints + 4 passive wheels (passive_{L,R}{F,R}wheel), two per blade,
+#     INTERSPERSED in the joint order (after each ankle) — everything resolves
+#     joints by NAME, never by index.
+#   - Legs run the canonical BAM actuator like every other variant (was a plain
+#     XML PD — an actuator-physics mismatch, and no joint-friction DR).
+#   - Obs migrated to the unified 61D layout (twist + zero-padded head/body
+#     command slots) so roller policies load through the runtime's
+#     --new-cmd-obs path. Symmetry OFF (SYMMETRY_CFG is hardcoded for the old
+#     51D layout).
+#   - DR/noise/delays matched to the velocity env's FIXED (non-accumulating,
+#     per-env-verified) versions; wheel-bearing frictionloss DR kept
+#     (dr.dof_frictionloss on the passive wheels + existing curriculum).
+#
+# Task design (unchanged — the roller recipe):
+#   cmd_x semantics: 0 = coast, >0 = push to accelerate, <0 = brake.
+#   cmd[2] = heading error via RelativeHeadingVelocityCommand.
+#   Sole positive task reward is wheel_speed — the robot must actually spin its
+#   wheels; braking/skating_air_time/forward_lean/heading_tracking shape the
+#   skating style.
 
 import math
 from copy import deepcopy
@@ -74,7 +73,7 @@ from .task_velocity import HEAD_BODY_NAMES
 
 
 def make_microduck_velocity_rollers_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
-    """Create Microduck roller skate velocity tracking environment configuration."""
+    # Create Microduck roller skate velocity tracking environment configuration.
 
     # passive_.*: 999.0 → passive wheel joints are matched but effectively ignored
     std_standing = {r".*hip_yaw.*": 0.05, r".*hip_roll.*": 0.05, r".*hip_pitch.*": 0.05, r".*knee.*": 0.05, r".*ankle.*": 0.05, r".*neck.*": 0.05, r".*head.*": 0.05, r".*passive_.*": 999.0}

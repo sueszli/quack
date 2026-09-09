@@ -1,4 +1,4 @@
-"""MDP functions for microduck tasks"""
+# MDP functions for microduck tasks
 
 import math
 from dataclasses import dataclass as _dataclass
@@ -118,16 +118,15 @@ _NECK_JOINT_PATTERNS = [r".*neck_pitch.*", r".*head_pitch.*", r".*head_yaw.*", r
 
 
 def _servo_joint_ids(env: "ManagerBasedRlEnv", asset: Entity) -> list:
-    """Entity-local indices of the servo (non-``passive_``) joints, cached.
-
-    All joint-index-based reward/event params in this module (``joint_indices``,
-    ``target_overrides``, qpos-column math) are written against the canonical
-    14-servo layout. On models with extra unactuated joints — backlash hinges,
-    roller wheels, the jaw linkage, all named ``passive_*`` — the entity joint
-    array is wider and interleaved, so raw indices would select the wrong
-    joints. Index through this list to recover the servo-only view; on plain
-    models it is the identity.
-    """
+    # Entity-local indices of the servo (non-``passive_``) joints, cached.
+    #
+    # All joint-index-based reward/event params in this module (``joint_indices``,
+    # ``target_overrides``, qpos-column math) are written against the canonical
+    # 14-servo layout. On models with extra unactuated joints — backlash hinges,
+    # roller wheels, the jaw linkage, all named ``passive_*`` — the entity joint
+    # array is wider and interleaved, so raw indices would select the wrong
+    # joints. Index through this list to recover the servo-only view; on plain
+    # models it is the identity.
     cache = env.__dict__.setdefault("_servo_joint_ids_cache", {})
     key = id(asset)
     ids = cache.get(key)
@@ -150,19 +149,18 @@ def _servo_default_joint_pos(env: "ManagerBasedRlEnv", asset: Entity) -> torch.T
 
 
 def reset_with_forward_velocity(env: ManagerBasedRlEnv, env_ids: torch.Tensor, velocity_range: tuple[float, float] = (0.3, 0.8), fraction_stages: list[dict] | None = None, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> None:
-    """Warm-start a fraction of reset environments with a random forward velocity.
-
-    The robot spawns already moving in its body-forward direction, so it first
-    discovers what coasting at speed feels like. The fraction decreases over
-    training, forcing it to progressively earn that speed from rest.
-
-    Args:
-        velocity_range: (min, max) forward speed in m/s.
-        fraction_stages: list of {"step": int, "fraction": float} dicts, sorted by step.
-            The fraction active at the current training step is used.
-            Example: [{"step":0,"fraction":0.8}, {"step":2000*24,"fraction":0.0}]
-        asset_cfg: robot entity config.
-    """
+    # Warm-start a fraction of reset environments with a random forward velocity.
+    #
+    # The robot spawns already moving in its body-forward direction, so it first
+    # discovers what coasting at speed feels like. The fraction decreases over
+    # training, forcing it to progressively earn that speed from rest.
+    #
+    # Args:
+    #     velocity_range: (min, max) forward speed in m/s.
+    #     fraction_stages: list of {"step": int, "fraction": float} dicts, sorted by step.
+    #         The fraction active at the current training step is used.
+    #         Example: [{"step":0,"fraction":0.8}, {"step":2000*24,"fraction":0.0}]
+    #     asset_cfg: robot entity config.
     if fraction_stages is None:
         fraction_stages = [{"step": 0, "fraction": 0.8}]
 
@@ -215,17 +213,15 @@ def reset_with_forward_velocity(env: ManagerBasedRlEnv, env_ids: torch.Tensor, v
 
 
 def reset_action_history(env: ManagerBasedRlEnv, env_ids: torch.Tensor, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG):
-    """
-    Reset cached action history for environments that are being reset.
-    This is critical for action rate and acceleration penalty terms.
-
-    This function should be called in the post_reset callback or at episode termination.
-
-    Args:
-        env: The environment
-        env_ids: Indices of environments being reset
-        asset_cfg: Asset configuration
-    """
+    # Reset cached action history for environments that are being reset.
+    # This is critical for action rate and acceleration penalty terms.
+    #
+    # This function should be called in the post_reset callback or at episode termination.
+    #
+    # Args:
+    #     env: The environment
+    #     env_ids: Indices of environments being reset
+    #     asset_cfg: Asset configuration
     if len(env_ids) == 0:
         return
 
@@ -298,17 +294,15 @@ def reset_action_history(env: ManagerBasedRlEnv, env_ids: torch.Tensor, asset_cf
 
 
 def joint_accelerations_l2(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """
-    Penalize joint accelerations using L2 squared norm.
-    Joint accelerations are computed using finite differences of joint velocities.
-
-    Args:
-        env: The environment
-        asset_cfg: Asset configuration
-
-    Returns:
-        Penalty tensor of shape (num_envs,) - sum of squared joint accelerations
-    """
+    # Penalize joint accelerations using L2 squared norm.
+    # Joint accelerations are computed using finite differences of joint velocities.
+    #
+    # Args:
+    #     env: The environment
+    #     asset_cfg: Asset configuration
+    #
+    # Returns:
+    #     Penalty tensor of shape (num_envs,) - sum of squared joint accelerations
     asset: Entity = env.scene[asset_cfg.name]
 
     # Get current joint velocities
@@ -333,17 +327,15 @@ def joint_accelerations_l2(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _
 
 
 def leg_action_rate_l2(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """
-    Penalize the rate of change of leg actions (action_t - action_{t-1}).
-    Leg joints are indices 0-4 and 9-13 (10 joints total).
-
-    Args:
-        env: The environment
-        asset_cfg: Asset configuration
-
-    Returns:
-        Penalty tensor of shape (num_envs,)
-    """
+    # Penalize the rate of change of leg actions (action_t - action_{t-1}).
+    # Leg joints are indices 0-4 and 9-13 (10 joints total).
+    #
+    # Args:
+    #     env: The environment
+    #     asset_cfg: Asset configuration
+    #
+    # Returns:
+    #     Penalty tensor of shape (num_envs,)
     # Get leg joint indices
     leg_joint_indices = list(range(5)) + list(range(9, 14))
 
@@ -370,17 +362,15 @@ def leg_action_rate_l2(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFA
 
 
 def neck_action_rate_l2(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """
-    Penalize the rate of change of neck actions (action_t - action_{t-1}).
-    Neck joints are indices 5-8 (4 joints total).
-
-    Args:
-        env: The environment
-        asset_cfg: Asset configuration
-
-    Returns:
-        Penalty tensor of shape (num_envs,)
-    """
+    # Penalize the rate of change of neck actions (action_t - action_{t-1}).
+    # Neck joints are indices 5-8 (4 joints total).
+    #
+    # Args:
+    #     env: The environment
+    #     asset_cfg: Asset configuration
+    #
+    # Returns:
+    #     Penalty tensor of shape (num_envs,)
     # Get neck joint indices
     neck_joint_indices = list(range(5, 9))
 
@@ -405,17 +395,15 @@ def neck_action_rate_l2(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEF
 
 
 def leg_action_acceleration_l2(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """
-    Penalize leg action accelerations (action_t - 2*action_{t-1} + action_{t-2}).
-    Leg joints are indices 0-4 and 9-13 (10 joints total).
-
-    Args:
-        env: The environment
-        asset_cfg: Asset configuration
-
-    Returns:
-        Penalty tensor of shape (num_envs,)
-    """
+    # Penalize leg action accelerations (action_t - 2*action_{t-1} + action_{t-2}).
+    # Leg joints are indices 0-4 and 9-13 (10 joints total).
+    #
+    # Args:
+    #     env: The environment
+    #     asset_cfg: Asset configuration
+    #
+    # Returns:
+    #     Penalty tensor of shape (num_envs,)
     # Get leg joint indices
     leg_joint_indices = list(range(5)) + list(range(9, 14))
 
@@ -442,17 +430,15 @@ def leg_action_acceleration_l2(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg
 
 
 def neck_action_acceleration_l2(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """
-    Penalize neck action accelerations (action_t - 2*action_{t-1} + action_{t-2}).
-    Neck joints are indices 5-8 (4 joints total).
-
-    Args:
-        env: The environment
-        asset_cfg: Asset configuration
-
-    Returns:
-        Penalty tensor of shape (num_envs,)
-    """
+    # Penalize neck action accelerations (action_t - 2*action_{t-1} + action_{t-2}).
+    # Neck joints are indices 5-8 (4 joints total).
+    #
+    # Args:
+    #     env: The environment
+    #     asset_cfg: Asset configuration
+    #
+    # Returns:
+    #     Penalty tensor of shape (num_envs,)
     # Get neck joint indices
     neck_joint_indices = list(range(5, 9))
 
@@ -479,10 +465,10 @@ def neck_action_acceleration_l2(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCf
 
 
 def _fallen_mask(env: ManagerBasedRlEnv, asset, gate_z_below: float, gate_tilt_above_deg: float) -> torch.Tensor:
-    """Per-env float mask: 1.0 where the robot counts as FALLEN — trunk height
-    below `gate_z_below` OR tilt beyond `gate_tilt_above_deg`. Used to gate the
-    recovery rewards so they only steer while actually fallen and contribute
-    exactly zero during clean walking (no walk tax / bounce farming)."""
+    # Per-env float mask: 1.0 where the robot counts as FALLEN — trunk height
+    # below `gate_z_below` OR tilt beyond `gate_tilt_above_deg`. Used to gate the
+    # recovery rewards so they only steer while actually fallen and contribute
+    # exactly zero during clean walking (no walk tax / bounce farming).
     z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0)
     quat = asset.data.root_link_quat_w
     # cos(tilt) = R22 = 1 - 2(qx² + qy²)
@@ -492,12 +478,11 @@ def _fallen_mask(env: ManagerBasedRlEnv, asset, gate_z_below: float, gate_tilt_a
 
 
 def feet_air_time_upright(env: ManagerBasedRlEnv, gate_tilt_above_deg: float = 40.0, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, **air_time_kwargs) -> torch.Tensor:
-    """velocity template feet_air_time, zeroed while FALLEN (tilt > gate).
-
-    velstand: a robot lying on its trunk can still tap its feet rhythmically
-    through the air-time window — the observed "lies there shaking a leg"
-    exploit. Air time is only meaningful upright.
-    """
+    # velocity template feet_air_time, zeroed while FALLEN (tilt > gate).
+    #
+    # velstand: a robot lying on its trunk can still tap its feet rhythmically
+    # through the air-time window — the observed "lies there shaking a leg"
+    # exploit. Air time is only meaningful upright.
     from mjlab.tasks.velocity.mdp import feet_air_time as _template_air_time
 
     reward = _template_air_time(env, **air_time_kwargs)
@@ -507,16 +492,15 @@ def feet_air_time_upright(env: ManagerBasedRlEnv, gate_tilt_above_deg: float = 4
 
 
 def upright_progress(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """Potential-based upright shaping: Δcos(tilt) per step.
-
-    Pays for PROGRESS toward upright, charges for progress toward fallen, and
-    pays exactly ZERO for holding any pose — so no state can farm it (the gated
-    state-reward it replaces was farmed from sitting, lying flat, and a
-    head-tripod lean across three velstand runs). Potential-based shaping is
-    policy-invariant (Ng et al.): it accelerates learning of recovery without
-    creating new optima. A full prone→stand recovery collects Δ≈+1 total
-    (× weight); a fall costs the same on the way down.
-    """
+    # Potential-based upright shaping: Δcos(tilt) per step.
+    #
+    # Pays for PROGRESS toward upright, charges for progress toward fallen, and
+    # pays exactly ZERO for holding any pose — so no state can farm it (the gated
+    # state-reward it replaces was farmed from sitting, lying flat, and a
+    # head-tripod lean across three velstand runs). Potential-based shaping is
+    # policy-invariant (Ng et al.): it accelerates learning of recovery without
+    # creating new optima. A full prone→stand recovery collects Δ≈+1 total
+    # (× weight); a fall costs the same on the way down.
     asset: Entity = env.scene[asset_cfg.name]
     quat = asset.data.root_link_quat_w
     cos_tilt = torch.nan_to_num(1.0 - 2.0 * (quat[:, 1] ** 2 + quat[:, 2] ** 2), nan=1.0)
@@ -531,16 +515,15 @@ def upright_progress(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAUL
 
 
 def height_progress(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, ceiling: float = 0.115) -> torch.Tensor:
-    """Potential-based height shaping: Δ min(trunk z, ceiling) per step.
-
-    The z-axis companion to ``upright_progress`` (velstand crouch-endpoint
-    lesson): the last mile of a recovery — extending the knees out of a deep
-    crouch — is mostly a HEIGHT change at modest tilt, exactly where the
-    Gaussian upright/pose rewards are flat and Δcos(tilt) is tiny. Rising pays,
-    falling charges, holding pays zero, so gait bobbing nets zero and nothing
-    can farm it. Capped at ``ceiling`` (just below full-stand trunk z ≈ 0.117)
-    so hopping above stance height pays nothing extra.
-    """
+    # Potential-based height shaping: Δ min(trunk z, ceiling) per step.
+    #
+    # The z-axis companion to ``upright_progress`` (velstand crouch-endpoint
+    # lesson): the last mile of a recovery — extending the knees out of a deep
+    # crouch — is mostly a HEIGHT change at modest tilt, exactly where the
+    # Gaussian upright/pose rewards are flat and Δcos(tilt) is tiny. Rising pays,
+    # falling charges, holding pays zero, so gait bobbing nets zero and nothing
+    # can farm it. Capped at ``ceiling`` (just below full-stand trunk z ≈ 0.117)
+    # so hopping above stance height pays nothing extra.
     asset: Entity = env.scene[asset_cfg.name]
     z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0)
     pot = torch.clamp(z, max=ceiling)
@@ -554,18 +537,18 @@ def height_progress(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT
 
 
 def fallen_state_penalty(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, gate_tilt_above_deg: float = 40.0, release_tilt_below_deg: float | None = None, release_z_above: float | None = None) -> torch.Tensor:
-    """1.0 while FALLEN (weight it negative): a flat per-step tax on staying
-    down. Without it, lying still is ~0/step while attempting recovery costs
-    action-rate/torque penalties — waiting for the fallen_too_long recycle was
-    the rational policy. (Penalties on bad states are safe; it's POSITIVE
-    rewards gated on bad states that get farmed.)
-
-    With ``release_*`` set, the tax has HYSTERESIS (velstand crouch-endpoint
-    lesson): a fall arms it and it keeps paying until the robot is genuinely
-    up (tilt < release_tilt AND z > release_z), not merely under the arming
-    gate. Without it, a crouch just below the 40° gate is a zero-cost rest
-    state — recoveries learned to park there instead of finishing the stand.
-    Arms only on a genuine fall, so gait-cycle tilt wobble is never taxed."""
+    # 1.0 while FALLEN (weight it negative): a flat per-step tax on staying
+    # down. Without it, lying still is ~0/step while attempting recovery costs
+    # action-rate/torque penalties — waiting for the fallen_too_long recycle was
+    # the rational policy. (Penalties on bad states are safe; it's POSITIVE
+    # rewards gated on bad states that get farmed.)
+    #
+    # With ``release_*`` set, the tax has HYSTERESIS (velstand crouch-endpoint
+    # lesson): a fall arms it and it keeps paying until the robot is genuinely
+    # up (tilt < release_tilt AND z > release_z), not merely under the arming
+    # gate. Without it, a crouch just below the 40° gate is a zero-cost rest
+    # state — recoveries learned to park there instead of finishing the stand.
+    # Arms only on a genuine fall, so gait-cycle tilt wobble is never taxed.
     asset: Entity = env.scene[asset_cfg.name]
     fallen = _fallen_mask(env, asset, 0.0, gate_tilt_above_deg).bool()
     if release_tilt_below_deg is None:
@@ -586,12 +569,11 @@ def fallen_state_penalty(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DE
 
 
 def recovery_success(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, fallen_tilt_deg: float = 40.0, min_fallen_s: float = 0.5, up_tilt_deg: float = 25.0, up_z: float = 0.105) -> torch.Tensor:
-    """One-shot bounty on a COMPLETED recovery: fires on the frame where an env
-    that has been fallen (tilt > fallen_tilt for ≥ min_fallen_s) becomes
-    genuinely upright (tilt < up_tilt AND trunk z > up_z). Hysteresis: re-arms
-    only by being fallen again, so oscillating around the gate pays nothing.
-    Gives the sparse-but-strong endpoint gradient the dense gated terms lack.
-    """
+    # One-shot bounty on a COMPLETED recovery: fires on the frame where an env
+    # that has been fallen (tilt > fallen_tilt for ≥ min_fallen_s) becomes
+    # genuinely upright (tilt < up_tilt AND trunk z > up_z). Hysteresis: re-arms
+    # only by being fallen again, so oscillating around the gate pays nothing.
+    # Gives the sparse-but-strong endpoint gradient the dense gated terms lack.
     asset: Entity = env.scene[asset_cfg.name]
     z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0)
     quat = asset.data.root_link_quat_w
@@ -612,15 +594,14 @@ def recovery_success(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAUL
 
 
 def body_upright_linear(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, gate_z_below: float | None = None, gate_tilt_above_deg: float = 40.0) -> torch.Tensor:
-    """Linear reward for body uprightness — provides gradient at every tilt angle.
-
-    Returns +1 when fully upright, 0 when horizontal (prone/supine), -1 when inverted.
-    Unlike flat_orientation (Gaussian), this has non-zero gradient everywhere, so the
-    robot always has a signal to rotate toward upright even when starting from prone.
-
-    Computed as the z-component of the body's local Z-axis expressed in world frame,
-    which equals R[2,2] = 1 - 2*(qx² + qy²) for quaternion [w, x, y, z].
-    """
+    # Linear reward for body uprightness — provides gradient at every tilt angle.
+    #
+    # Returns +1 when fully upright, 0 when horizontal (prone/supine), -1 when inverted.
+    # Unlike flat_orientation (Gaussian), this has non-zero gradient everywhere, so the
+    # robot always has a signal to rotate toward upright even when starting from prone.
+    #
+    # Computed as the z-component of the body's local Z-axis expressed in world frame,
+    # which equals R[2,2] = 1 - 2*(qx² + qy²) for quaternion [w, x, y, z].
     asset: Entity = env.scene[asset_cfg.name]
     quat = asset.data.root_link_quat_w  # (N, 4): [w, x, y, z]
     qx = quat[:, 1]
@@ -634,17 +615,16 @@ def body_upright_linear(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEF
 
 
 def body_upright_gaussian(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, std: float = 0.1) -> torch.Tensor:
-    """Gaussian reward on tilt magnitude — sharp pull toward fully vertical.
-
-    Complements ``body_upright_linear`` (which is ``cos(tilt)`` and whose
-    gradient ``sin(tilt)`` *vanishes* at the target). This Gaussian's
-    gradient is non-zero near vertical and tapers as you move away, so it
-    creates a strong differential pull in the regime where the linear
-    version is weakest.
-
-    Uses ``2*(qx² + qy²) = 1 - cos(tilt) ≈ tilt²/2`` as a tilt-squared
-    proxy and applies ``exp(-tilt²/std²)``. Default std=0.1 rad ≈ 5.7°.
-    """
+    # Gaussian reward on tilt magnitude — sharp pull toward fully vertical.
+    #
+    # Complements ``body_upright_linear`` (which is ``cos(tilt)`` and whose
+    # gradient ``sin(tilt)`` *vanishes* at the target). This Gaussian's
+    # gradient is non-zero near vertical and tapers as you move away, so it
+    # creates a strong differential pull in the regime where the linear
+    # version is weakest.
+    #
+    # Uses ``2*(qx² + qy²) = 1 - cos(tilt) ≈ tilt²/2`` as a tilt-squared
+    # proxy and applies ``exp(-tilt²/std²)``. Default std=0.1 rad ≈ 5.7°.
     asset: Entity = env.scene[asset_cfg.name]
     quat = asset.data.root_link_quat_w
     qx = quat[:, 1]
@@ -654,14 +634,13 @@ def body_upright_gaussian(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _D
 
 
 def upright_gaussian_at_height(env: ManagerBasedRlEnv, std: float, height_low: float, height_high: float, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """``body_upright_gaussian`` weighted by smoothstep on trunk z.
-
-    Full Gaussian-upright reward when ``z >= height_high``, zero when
-    ``z <= height_low``, smoothstep in between. Use this when the upright
-    incentive should only apply at the target standing height — otherwise
-    the policy can find a "crouch low and vertical" local optimum that
-    collects upright reward without ever rising.
-    """
+    # ``body_upright_gaussian`` weighted by smoothstep on trunk z.
+    #
+    # Full Gaussian-upright reward when ``z >= height_high``, zero when
+    # ``z <= height_low``, smoothstep in between. Use this when the upright
+    # incentive should only apply at the target standing height — otherwise
+    # the policy can find a "crouch low and vertical" local optimum that
+    # collects upright reward without ever rising.
     asset = env.scene[asset_cfg.name]
     quat = asset.data.root_link_quat_w
     qx = quat[:, 1]
@@ -675,24 +654,23 @@ def upright_gaussian_at_height(env: ManagerBasedRlEnv, std: float, height_low: f
 
 
 def body_ang_vel_at_height(env: ManagerBasedRlEnv, height_low: float, height_high: float, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, tilt_full_deg: float | None = None, tilt_zero_deg: float = 45.0) -> torch.Tensor:
-    """Trunk ``sum(ω_xy²)`` penalty gated by trunk z (and optionally tilt).
-
-    Height-gated arrival damper: zero below ``height_low`` (ground recovery —
-    flips/rolls need large trunk rotation and must stay free), full above
-    ``height_high``. Same formula as mjlab's body_angular_velocity_penalty
-    (world-frame ω_xy, z-rotation free) but returns the gated POSITIVE cost;
-    use a negative weight.
-
-    ``tilt_full_deg`` (optional but STRONGLY recommended): additionally gate
-    by tilt — full cost only when tilt ≤ tilt_full_deg, zero when
-    ≥ tilt_zero_deg, smoothstep between. LESSON (2026-07 run that broke
-    front-recovery): with a height gate alone, the final straighten of a
-    bent-over rise (tilt 60°→0 happening INSIDE the z gate) is itself a
-    large trunk rotation — taxing it builds a reward wall right before the
-    finish, and the policy parks bent-over below the gate instead. With the
-    tilt gate, the approach TO vertical is free; only residual wobble
-    AROUND vertical (the overshoot→tip→retry oscillation) is damped.
-    """
+    # Trunk ``sum(ω_xy²)`` penalty gated by trunk z (and optionally tilt).
+    #
+    # Height-gated arrival damper: zero below ``height_low`` (ground recovery —
+    # flips/rolls need large trunk rotation and must stay free), full above
+    # ``height_high``. Same formula as mjlab's body_angular_velocity_penalty
+    # (world-frame ω_xy, z-rotation free) but returns the gated POSITIVE cost;
+    # use a negative weight.
+    #
+    # ``tilt_full_deg`` (optional but STRONGLY recommended): additionally gate
+    # by tilt — full cost only when tilt ≤ tilt_full_deg, zero when
+    # ≥ tilt_zero_deg, smoothstep between. LESSON (2026-07 run that broke
+    # front-recovery): with a height gate alone, the final straighten of a
+    # bent-over rise (tilt 60°→0 happening INSIDE the z gate) is itself a
+    # large trunk rotation — taxing it builds a reward wall right before the
+    # finish, and the policy parks bent-over below the gate instead. With the
+    # tilt gate, the approach TO vertical is free; only residual wobble
+    # AROUND vertical (the overshoot→tip→retry oscillation) is damped.
     asset = env.scene[asset_cfg.name]
     ang_vel = asset.data.body_link_ang_vel_w[:, asset_cfg.body_ids, :].squeeze(1)
     cost = torch.sum(torch.square(ang_vel[:, :2]), dim=1)
@@ -709,17 +687,16 @@ def body_ang_vel_at_height(env: ManagerBasedRlEnv, height_low: float, height_hig
 
 
 def standing_composite_score(env: ManagerBasedRlEnv, target_height: float, height_std: float, upright_std: float, pose_std: float, joint_indices: list, target_overrides: dict | None = None, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """Smooth multiplicative goal-state score (product of three Gaussians).
-
-    Returns ``height_score * upright_score * pose_score``, each ∈ [0, 1].
-    Because the factors *multiply*, a deficiency in any one term collapses
-    the whole reward — the policy can't claim 80% of this by being perfect
-    on 2-of-3. Gradient is non-zero everywhere, so the score works during
-    the rise (not just at the goal like a binary bonus would).
-
-    Use to break Nash-equilibrium compromises (e.g., a "lean trunk at the
-    right height" basin that satisfies the additive rewards' partial sums).
-    """
+    # Smooth multiplicative goal-state score (product of three Gaussians).
+    #
+    # Returns ``height_score * upright_score * pose_score``, each ∈ [0, 1].
+    # Because the factors *multiply*, a deficiency in any one term collapses
+    # the whole reward — the policy can't claim 80% of this by being perfect
+    # on 2-of-3. Gradient is non-zero everywhere, so the score works during
+    # the rise (not just at the goal like a binary bonus would).
+    #
+    # Use to break Nash-equilibrium compromises (e.g., a "lean trunk at the
+    # right height" basin that satisfies the additive rewards' partial sums).
     asset = env.scene[asset_cfg.name]
 
     z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0)
@@ -744,15 +721,14 @@ def standing_composite_score(env: ManagerBasedRlEnv, target_height: float, heigh
 
 
 def standing_success_bonus(env: ManagerBasedRlEnv, target_height: float, height_tol: float, upright_threshold: float, pose_tol: float, joint_indices: list, target_overrides: dict | None = None, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """Binary bonus: 1.0 iff height, uprightness AND pose are all within tol.
-
-    Creates a discrete goal-state attractor that gradient-based pose/upright/
-    height rewards can't fully match by themselves. Surrounding compromises
-    (lean trunk to balance head-forward CoM, park 1cm short of target z,
-    etc.) collect partial gradient credit but ZERO bonus — the bonus is
-    available only at the true goal state, so it changes the policy's
-    relative preference once the rest of the rewards have brought it close.
-    """
+    # Binary bonus: 1.0 iff height, uprightness AND pose are all within tol.
+    #
+    # Creates a discrete goal-state attractor that gradient-based pose/upright/
+    # height rewards can't fully match by themselves. Surrounding compromises
+    # (lean trunk to balance head-forward CoM, park 1cm short of target z,
+    # etc.) collect partial gradient credit but ZERO bonus — the bonus is
+    # available only at the true goal state, so it changes the policy's
+    # relative preference once the rest of the rewards have brought it close.
     asset = env.scene[asset_cfg.name]
 
     z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0)
@@ -777,19 +753,18 @@ def standing_success_bonus(env: ManagerBasedRlEnv, target_height: float, height_
 
 
 def com_upward_velocity(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, max_height: float = 0.08, gate_z_below: float | None = None, gate_tilt_above_deg: float = 40.0, max_vz: float | None = None) -> torch.Tensor:
-    """Reward upward CoM velocity to incentivize dynamic standup motion.
-
-    Gated by height: only active while the CoM is below `max_height` (the
-    standing target). Once standing, the reward is zero so the robot has no
-    incentive to keep squatting to farm upward-velocity reward.
-
-    ``max_vz`` (optional): cap the rewarded velocity. Uncapped, the reward is
-    proportional to vz, which pays MORE per step for an explosive launch —
-    a violent-rise incentive. With a cap, any rise ≥ max_vz earns the same,
-    so the gentlest rise that reaches the cap is optimal (the |a_z| penalty
-    then picks the smooth one). The bootstrap property is preserved: any
-    upward motion still pays immediately.
-    """
+    # Reward upward CoM velocity to incentivize dynamic standup motion.
+    #
+    # Gated by height: only active while the CoM is below `max_height` (the
+    # standing target). Once standing, the reward is zero so the robot has no
+    # incentive to keep squatting to farm upward-velocity reward.
+    #
+    # ``max_vz`` (optional): cap the rewarded velocity. Uncapped, the reward is
+    # proportional to vz, which pays MORE per step for an explosive launch —
+    # a violent-rise incentive. With a cap, any rise ≥ max_vz earns the same,
+    # so the gentlest rise that reaches the cap is optimal (the |a_z| penalty
+    # then picks the smooth one). The bootstrap property is preserved: any
+    # upward motion still pays immediately.
     asset: Entity = env.scene[asset_cfg.name]
     # nan_to_num: MuJoCo can produce NaN on contact instability; treat as z=0
     com_z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0)
@@ -804,14 +779,13 @@ def com_upward_velocity(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEF
 
 
 def fallen_too_long(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, gate_z_below: float = 0.10, gate_tilt_above_deg: float = 40.0, max_duration_s: float = 5.0) -> torch.Tensor:
-    """Terminate envs that have been continuously FALLEN for `max_duration_s`.
-
-    For envs that mix walking with fall recovery (velstand): the fell_over
-    termination gets disabled by curriculum so the policy can attempt recovery,
-    but without a backstop a failed recovery farms recovery-reward for the whole
-    20 s episode, starving the walk of data (audit: ~25% walking share). This
-    gives every fall a fair recovery window, then recycles the env.
-    """
+    # Terminate envs that have been continuously FALLEN for `max_duration_s`.
+    #
+    # For envs that mix walking with fall recovery (velstand): the fell_over
+    # termination gets disabled by curriculum so the policy can attempt recovery,
+    # but without a backstop a failed recovery farms recovery-reward for the whole
+    # 20 s episode, starving the walk of data (audit: ~25% walking share). This
+    # gives every fall a fair recovery window, then recycles the env.
     asset: Entity = env.scene[asset_cfg.name]
     fallen = _fallen_mask(env, asset, gate_z_below, gate_tilt_above_deg).bool()
     if not hasattr(env, "_fallen_timer_s"):
@@ -823,31 +797,30 @@ def fallen_too_long(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT
 
 
 def robot_state_is_nan(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, sensor_names: tuple[str, ...] = ()) -> torch.Tensor:
-    """Terminate environments where MuJoCo produced NaN joint positions.
-
-    MuJoCo's contact solver can overflow to NaN under extreme penetration or
-    impulse (e.g. robot landing at high velocity). A NaN simulation state
-    propagates into observations, corrupting the policy network weights.
-
-    Terminating immediately resets the environment before the cascade spreads:
-    - The observation returned to the runner is from the valid reset state.
-    - NaN rewards are avoided on subsequent steps.
-
-    Note: the reward at THIS terminal step may still be NaN from the simulation;
-    mjlab computes rewards before resetting (see manager_based_rl_env.py step()).
-    Our custom reward functions guard against NaN internally with nan_to_num,
-    but standard mjlab rewards can still be NaN here. One NaN reward is
-    tolerable because done=True prevents it propagating backward through GAE.
-
-    Covers the WHOLE physical state, not just joint_pos: contact divergence
-    often blows up the base FREE-JOINT (position/orientation/velocity) or the
-    passive WHEELS, not the actuated joints. These quantities
-    feed critic obs terms (base_lin_vel, base_ang_vel,
-    projected_gravity, wheel_vel); if they are not monitored, the env does not
-    reset and the NaN reaches the obs → rsl_rl's check_nan kills the whole
-    training. We test non-finiteness (NaN AND inf, the inf becoming NaN
-    downstream during the normalization of projected_gravity).
-    """
+    # Terminate environments where MuJoCo produced NaN joint positions.
+    #
+    # MuJoCo's contact solver can overflow to NaN under extreme penetration or
+    # impulse (e.g. robot landing at high velocity). A NaN simulation state
+    # propagates into observations, corrupting the policy network weights.
+    #
+    # Terminating immediately resets the environment before the cascade spreads:
+    # - The observation returned to the runner is from the valid reset state.
+    # - NaN rewards are avoided on subsequent steps.
+    #
+    # Note: the reward at THIS terminal step may still be NaN from the simulation;
+    # mjlab computes rewards before resetting (see manager_based_rl_env.py step()).
+    # Our custom reward functions guard against NaN internally with nan_to_num,
+    # but standard mjlab rewards can still be NaN here. One NaN reward is
+    # tolerable because done=True prevents it propagating backward through GAE.
+    #
+    # Covers the WHOLE physical state, not just joint_pos: contact divergence
+    # often blows up the base FREE-JOINT (position/orientation/velocity) or the
+    # passive WHEELS, not the actuated joints. These quantities
+    # feed critic obs terms (base_lin_vel, base_ang_vel,
+    # projected_gravity, wheel_vel); if they are not monitored, the env does not
+    # reset and the NaN reaches the obs → rsl_rl's check_nan kills the whole
+    # training. We test non-finiteness (NaN AND inf, the inf becoming NaN
+    # downstream during the normalization of projected_gravity).
     asset: Entity = env.scene[asset_cfg.name]
     d = asset.data
     bad = ~torch.isfinite(d.joint_pos).all(dim=1)
@@ -873,43 +846,40 @@ def robot_state_is_nan(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFA
 
 
 def root_height_below(env: ManagerBasedRlEnv, min_height: float, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """Terminate when the trunk drops below ``min_height`` in world z.
-
-    Used by roller_slope as "fell into the void": the terrain has an
-    exit flat at the bottom of the ramp, so a normal descent never goes
-    below the level of the lowest exit flat. Choosing min_height
-    below that level => the termination only triggers if the robot
-    leaves solid ground and falls into the void. Independent of the exact
-    ramp geometry (length/slope).
-    """
+    # Terminate when the trunk drops below ``min_height`` in world z.
+    #
+    # Used by roller_slope as "fell into the void": the terrain has an
+    # exit flat at the bottom of the ramp, so a normal descent never goes
+    # below the level of the lowest exit flat. Choosing min_height
+    # below that level => the termination only triggers if the robot
+    # leaves solid ground and falls into the void. Independent of the exact
+    # ramp geometry (length/slope).
     asset: Entity = env.scene[asset_cfg.name]
     return asset.data.root_link_pos_w[:, 2] < min_height
 
 
 def descent_speed_reward(env: ManagerBasedRlEnv, cap: float = 0.8, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """Rewards forward speed DOWN the slope (world +x).
-
-    The ramp descends in +x, so the world linear velocity in x measures the
-    descent progress. Capped at ``cap`` m/s: encourages letting oneself
-    glide without pushing to hurtle down faster and faster. Zero if the robot
-    goes backwards/uphill (vx < 0). Without this reward, the optimum is to stay
-    motionless and upright (the robot "brakes" instead of gliding). NaN-safe.
-    """
+    # Rewards forward speed DOWN the slope (world +x).
+    #
+    # The ramp descends in +x, so the world linear velocity in x measures the
+    # descent progress. Capped at ``cap`` m/s: encourages letting oneself
+    # glide without pushing to hurtle down faster and faster. Zero if the robot
+    # goes backwards/uphill (vx < 0). Without this reward, the optimum is to stay
+    # motionless and upright (the robot "brakes" instead of gliding). NaN-safe.
     asset: Entity = env.scene[asset_cfg.name]
     vx = torch.nan_to_num(asset.data.root_link_lin_vel_w[:, 0], nan=0.0, posinf=0.0, neginf=0.0)
     return torch.clamp(vx, min=0.0, max=cap)
 
 
 def reset_rolling_entry(env: ManagerBasedRlEnv, env_ids: torch.Tensor | None, speed_range: tuple = (0.25, 0.45), wheel_radius: float = 0.0175, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> None:
-    """ROLLING start without slipping (momentum at the wheels).
-
-    Draws a forward speed v per env; sets the base LINEAR velocity (world
-    x) = v AND the ROTATION velocity of the 4 passive wheels = v / r, so
-    ω·r = v => zero slip at contact. Avoids the jolt of the old base-only
-    push (moving base, stationary wheels = brutal skidding on the 1st step).
-    To be executed AFTER reset_base (which places the base; stop giving it a
-    velocity_range).
-    """
+    # ROLLING start without slipping (momentum at the wheels).
+    #
+    # Draws a forward speed v per env; sets the base LINEAR velocity (world
+    # x) = v AND the ROTATION velocity of the 4 passive wheels = v / r, so
+    # ω·r = v => zero slip at contact. Avoids the jolt of the old base-only
+    # push (moving base, stationary wheels = brutal skidding on the 1st step).
+    # To be executed AFTER reset_base (which places the base; stop giving it a
+    # velocity_range).
     asset: Entity = env.scene[asset_cfg.name]
     if env_ids is None:
         env_ids = torch.arange(env.num_envs, device=env.device)
@@ -933,15 +903,14 @@ def reset_rolling_entry(env: ManagerBasedRlEnv, env_ids: torch.Tensor | None, sp
 
 
 def wheel_glide_reward(env: ManagerBasedRlEnv, cap_speed: float = 0.35, wheel_radius: float = 0.0175) -> torch.Tensor:
-    """Rewards the wheels ROLLING forward (glide), capped.
-
-    Unlike descent_speed (velocity of the BASE, reachable by
-    "running"/pushing), we reward the rotation of the passive WHEELS = true
-    glide by rolling. Independent of any command (the slope task has a
-    zero command: the glide comes from gravity). Capped at ``cap_speed``
-    (m/s of rolling speed) -> NO incentive to accelerate beyond; zero
-    if the wheels go backwards (uphill). NaN-safe.
-    """
+    # Rewards the wheels ROLLING forward (glide), capped.
+    #
+    # Unlike descent_speed (velocity of the BASE, reachable by
+    # "running"/pushing), we reward the rotation of the passive WHEELS = true
+    # glide by rolling. Independent of any command (the slope task has a
+    # zero command: the glide comes from gravity). Capped at ``cap_speed``
+    # (m/s of rolling speed) -> NO incentive to accelerate beyond; zero
+    # if the wheels go backwards (uphill). NaN-safe.
     asset: Entity = env.scene["robot"]
     lf, _ = asset.find_joints("passive_LF_?wheel")
     lr, _ = asset.find_joints("passive_LR_?wheel")
@@ -955,32 +924,28 @@ def wheel_glide_reward(env: ManagerBasedRlEnv, cap_speed: float = 0.35, wheel_ra
 
 
 def is_alive(env: ManagerBasedRlEnv) -> torch.Tensor:
-    """
-    Reward for staying alive (not terminated)
-
-    Args:
-        env: The environment
-
-    Returns:
-        Reward tensor of shape (num_envs,) - ones for all envs
-    """
+    # Reward for staying alive (not terminated)
+    #
+    # Args:
+    #     env: The environment
+    #
+    # Returns:
+    #     Reward tensor of shape (num_envs,) - ones for all envs
     return torch.ones(env.num_envs, device=env.device)
 
 
 def com_height_target(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, target_height_min: float = 0.1, target_height_max: float = 0.15) -> torch.Tensor:
-    """
-    Reward for keeping the center of mass within a target height range.
-    Returns positive reward when in range, negative penalty when outside.
-
-    Args:
-        env: The environment
-        asset_cfg: Asset configuration
-        target_height_min: Minimum target height for CoM (meters)
-        target_height_max: Maximum target height for CoM (meters)
-
-    Returns:
-        Reward tensor of shape (num_envs,)
-    """
+    # Reward for keeping the center of mass within a target height range.
+    # Returns positive reward when in range, negative penalty when outside.
+    #
+    # Args:
+    #     env: The environment
+    #     asset_cfg: Asset configuration
+    #     target_height_min: Minimum target height for CoM (meters)
+    #     target_height_max: Maximum target height for CoM (meters)
+    #
+    # Returns:
+    #     Reward tensor of shape (num_envs,)
     asset: Entity = env.scene[asset_cfg.name]
 
     # Height above terrain spawn origin (world z minus terrain z).
@@ -1006,20 +971,19 @@ def com_height_target(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAU
 
 
 def crouch_height_target(phase: torch.Tensor, height_low: float, height_high: float, hold_lo: float = 0.375, hold_hi: float = 0.625) -> torch.Tensor:
-    """ "Trapezoid" trunk height target along the phase [0,1).
-
-    phase ∈ [0, hold_lo)      : descent    height_high -> height_low
-    phase ∈ [hold_lo, hold_hi): hold       height_low   (the crouched glide)
-    phase ∈ [hold_hi, 1.0)    : rise       height_low  -> height_high
-
-    Args:
-        phase: (B,) phase per env, in [0, 1).
-        height_low: crouched trunk height (m).
-        height_high: standing trunk height (m).
-        hold_lo, hold_hi: bounds of the low hold as a phase fraction.
-    Returns:
-        (B,) target height in meters.
-    """
+    # "Trapezoid" trunk height target along the phase [0,1).
+    #
+    # phase ∈ [0, hold_lo)      : descent    height_high -> height_low
+    # phase ∈ [hold_lo, hold_hi): hold       height_low   (the crouched glide)
+    # phase ∈ [hold_hi, 1.0)    : rise       height_low  -> height_high
+    #
+    # Args:
+    #     phase: (B,) phase per env, in [0, 1).
+    #     height_low: crouched trunk height (m).
+    #     height_high: standing trunk height (m).
+    #     hold_lo, hold_hi: bounds of the low hold as a phase fraction.
+    # Returns:
+    #     (B,) target height in meters.
     descend = phase < hold_lo
     hold = (phase >= hold_lo) & (phase < hold_hi)
 
@@ -1035,22 +999,20 @@ def crouch_height_target(phase: torch.Tensor, height_low: float, height_high: fl
 
 
 def crouch_glide_reward_from_values(com_height: torch.Tensor, cmd_cos: torch.Tensor, cmd_sin: torch.Tensor, height_low: float, height_high: float, hold_lo: float = 0.375, hold_hi: float = 0.625, std: float = 0.02) -> torch.Tensor:
-    """Gaussian reward for tracking the height target (pure function).
-
-    Decodes the phase from [cos, sin] then compares the measured height to the
-    trapezoid target. Returns exp(-((h - target)/std)^2) ∈ (0, 1].
-    """
+    # Gaussian reward for tracking the height target (pure function).
+    #
+    # Decodes the phase from [cos, sin] then compares the measured height to the
+    # trapezoid target. Returns exp(-((h - target)/std)^2) ∈ (0, 1].
     phase = (torch.atan2(cmd_sin, cmd_cos) / (2 * torch.pi)) % 1.0
     target = crouch_height_target(phase, height_low, height_high, hold_lo, hold_hi)
     return torch.exp(-(((com_height - target) / std) ** 2))
 
 
 def crouch_glide_height_by_phase(env: ManagerBasedRlEnv, command_name: str = "twist", height_low: float = 0.075, height_high: float = 0.11, hold_lo: float = 0.375, hold_hi: float = 0.625, std: float = 0.02, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """Main reward: tracks the trunk height target along the phase.
-
-    The CoM height is computed as in `com_height_target` (world z minus
-    the terrain origin, nan->0). The phase comes from the GroundPick command.
-    """
+    # Main reward: tracks the trunk height target along the phase.
+    #
+    # The CoM height is computed as in `com_height_target` (world z minus
+    # the terrain origin, nan->0). The phase comes from the GroundPick command.
     asset: Entity = env.scene[asset_cfg.name]
     com_height = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0)
     cmd = env.command_manager.get_command(command_name)
@@ -1058,24 +1020,22 @@ def crouch_glide_height_by_phase(env: ManagerBasedRlEnv, command_name: str = "tw
 
 
 def forward_speed_reward(env: ManagerBasedRlEnv, vel_ref: float = 0.2, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """Rewards the trunk's forward speed (keep the momentum / do not brake).
-
-    Independent of the command (the command carries the phase, not the speed).
-    tanh(clamp(vx, 0)/vel_ref) → saturates at ~1, never rewards going backwards.
-    """
+    # Rewards the trunk's forward speed (keep the momentum / do not brake).
+    #
+    # Independent of the command (the command carries the phase, not the speed).
+    # tanh(clamp(vx, 0)/vel_ref) → saturates at ~1, never rewards going backwards.
     asset: Entity = env.scene[asset_cfg.name]
     vx = asset.data.root_link_lin_vel_b[:, 0]
     return torch.tanh(torch.clamp(vx, min=0.0) / vel_ref)
 
 
 def crouch_pose_blend(phase: torch.Tensor, descent_end: float, hold_end: float, rise_end: float) -> torch.Tensor:
-    """Blend 0..1 along the phase [0,1) — 0 = standing pose, 1 = crouched pose.
-
-    [0, descent_end)      : 0 -> 1  (go down)
-    [descent_end, hold_end): 1      (low / crouched)
-    [hold_end, rise_end)  : 1 -> 0  (stand up)
-    [rise_end, 1.0)       : 0       (high / standing, rest)
-    """
+    # Blend 0..1 along the phase [0,1) — 0 = standing pose, 1 = crouched pose.
+    #
+    # [0, descent_end)      : 0 -> 1  (go down)
+    # [descent_end, hold_end): 1      (low / crouched)
+    # [hold_end, rise_end)  : 1 -> 0  (stand up)
+    # [rise_end, 1.0)       : 0       (high / standing, rest)
     b = torch.zeros_like(phase)
     descend = phase < descent_end
     b = torch.where(descend, phase / descent_end, b)
@@ -1087,13 +1047,12 @@ def crouch_pose_blend(phase: torch.Tensor, descent_end: float, hold_end: float, 
 
 
 def _crouch_pose_error(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg, command_name: str, crouch_pose: dict, descent_end: float, hold_end: float, rise_end: float, stand_pose: dict | None = None):
-    """(cur, target) joint tensors for the phase-interpolated crouch pose.
-
-    Target interpolates per joint STAND <-> crouch_pose by the 4-segment blend
-    b(phase) in [0,1] (0 = standing, 1 = crouch). STAND is `stand_pose` where
-    given, else the model DEFAULT (HOME). Joints are resolved BY NAME so the
-    passive-wheel interspersing on the roller robot never shifts an index.
-    """
+    # (cur, target) joint tensors for the phase-interpolated crouch pose.
+    #
+    # Target interpolates per joint STAND <-> crouch_pose by the 4-segment blend
+    # b(phase) in [0,1] (0 = standing, 1 = crouch). STAND is `stand_pose` where
+    # given, else the model DEFAULT (HOME). Joints are resolved BY NAME so the
+    # passive-wheel interspersing on the roller robot never shifts an index.
     asset: Entity = env.scene[asset_cfg.name]
     cmd = env.command_manager.get_command(command_name)
     phase = (torch.atan2(cmd[:, 1], cmd[:, 0]) / (2 * torch.pi)) % 1.0  # (B,)
@@ -1116,34 +1075,31 @@ def _crouch_pose_error(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg, comman
 
 
 def crouch_glide_pose_by_phase(env: ManagerBasedRlEnv, command_name: str = "twist", crouch_pose: dict | None = None, stand_pose: dict | None = None, std: float = 0.4, descent_end: float = 0.10, hold_end: float = 0.50, rise_end: float = 0.60, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """Gaussian match to a phase-interpolated joint pose (stand <-> crouch).
-
-    Directive reward: tells the robot the exact joint configuration to be in at
-    each phase. Standing back up (target = stand_pose) is rewarded exactly like
-    crouching (target = crouch_pose) — symmetric by construction.
-    """
+    # Gaussian match to a phase-interpolated joint pose (stand <-> crouch).
+    #
+    # Directive reward: tells the robot the exact joint configuration to be in at
+    # each phase. Standing back up (target = stand_pose) is rewarded exactly like
+    # crouching (target = crouch_pose) — symmetric by construction.
     cur, target = _crouch_pose_error(env, asset_cfg, command_name, crouch_pose or {}, descent_end, hold_end, rise_end, stand_pose)
     return torch.exp(-(((cur - target) / std) ** 2)).mean(dim=-1)
 
 
 def crouch_glide_pose_l1(env: ManagerBasedRlEnv, command_name: str = "twist", crouch_pose: dict | None = None, stand_pose: dict | None = None, descent_end: float = 0.10, hold_end: float = 0.50, rise_end: float = 0.60, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """L1 bootstrap toward the phase-interpolated crouch pose (negative penalty).
-
-    Constant gradient everywhere — gives the policy a direction to the target
-    pose even when the Gaussian above has saturated to ~0 far from it.
-    """
+    # L1 bootstrap toward the phase-interpolated crouch pose (negative penalty).
+    #
+    # Constant gradient everywhere — gives the policy a direction to the target
+    # pose even when the Gaussian above has saturated to ~0 far from it.
     cur, target = _crouch_pose_error(env, asset_cfg, command_name, crouch_pose or {}, descent_end, hold_end, rise_end, stand_pose)
     return -(cur - target).abs().mean(dim=-1)
 
 
 def crouch_forward_lean(env: ManagerBasedRlEnv, command_name: str = "twist", target_pitch: float = 0.08, std: float = 0.1, descent_end: float = 0.10, hold_end: float = 0.50, rise_end: float = 0.60, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot", body_names=("trunk_base",))) -> torch.Tensor:
-    """Slight FORWARD lean of the trunk during the crouch (gated by the crouch blend).
-
-    Counters the backward tipping induced by the fast hip flexion. Pitch
-    proxy = projected_gravity_b[:,0] (positive = forward, verified). The gate
-    (blend) is 1 during descent+low, 0 standing → ONLY biases the crouch.
-    small target_pitch = "by very little".
-    """
+    # Slight FORWARD lean of the trunk during the crouch (gated by the crouch blend).
+    #
+    # Counters the backward tipping induced by the fast hip flexion. Pitch
+    # proxy = projected_gravity_b[:,0] (positive = forward, verified). The gate
+    # (blend) is 1 during descent+low, 0 standing → ONLY biases the crouch.
+    # small target_pitch = "by very little".
     asset: Entity = env.scene[asset_cfg.name]
     cmd = env.command_manager.get_command(command_name)
     phase = (torch.atan2(cmd[:, 1], cmd[:, 0]) / (2 * torch.pi)) % 1.0
@@ -1153,17 +1109,15 @@ def crouch_forward_lean(env: ManagerBasedRlEnv, command_name: str = "twist", tar
 
 
 def neck_joint_vel_l2(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """
-    Penalize neck joint velocities to keep head stable.
-    Neck joints are indices 5-8 (4 joints total).
-
-    Args:
-        env: The environment
-        asset_cfg: Asset configuration
-
-    Returns:
-        Penalty tensor of shape (num_envs,)
-    """
+    # Penalize neck joint velocities to keep head stable.
+    # Neck joints are indices 5-8 (4 joints total).
+    #
+    # Args:
+    #     env: The environment
+    #     asset_cfg: Asset configuration
+    #
+    # Returns:
+    #     Penalty tensor of shape (num_envs,)
     asset: Entity = env.scene[asset_cfg.name]
 
     # Get neck joint indices (neck_pitch, head_pitch, head_yaw, head_roll).
@@ -1177,17 +1131,15 @@ def neck_joint_vel_l2(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAU
 
 
 def leg_joint_vel_l2(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """
-    Penalize leg joint velocities to encourage smoother, less dynamic motion.
-    Leg joints are indices 0-4 and 9-13 (10 joints total).
-
-    Args:
-        env: The environment
-        asset_cfg: Asset configuration
-
-    Returns:
-        Penalty tensor of shape (num_envs,)
-    """
+    # Penalize leg joint velocities to encourage smoother, less dynamic motion.
+    # Leg joints are indices 0-4 and 9-13 (10 joints total).
+    #
+    # Args:
+    #     env: The environment
+    #     asset_cfg: Asset configuration
+    #
+    # Returns:
+    #     Penalty tensor of shape (num_envs,)
     asset: Entity = env.scene[asset_cfg.name]
 
     # Get leg joint indices (left hip-ankle: 0-4, right hip-ankle: 9-13).
@@ -1206,27 +1158,26 @@ _ROLLER_FEET_SITE_CFG = SceneEntityCfg("robot", site_names=("left_foot", "right_
 
 
 def feet_flat_penalty(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _ROLLER_FEET_SITE_CFG, sensor_name: str | None = None) -> torch.Tensor:
-    """Penalize foot sites not being parallel to the ground.
-
-    The foot site frame has Z+ pointing up when flat. We project a unit gravity
-    vector (pointing down) into each foot site's local frame. When flat, gravity
-    maps to [0,0,-1] in site frame (xy=0, penalty=0). Any tilt rotates Z away
-    from world-up, giving nonzero xy components.
-
-    Max value ≈ 2.0 per foot (foot fully sideways), total ≈ 4.0.
-
-    When ``sensor_name`` is given, each foot's penalty is GATED by that foot's own
-    ground contact: the airborne (swing) foot is free to tilt, only the stance
-    blade is asked to stay flat (so its wheels keep gripping). Without this gate
-    the penalty punishes the recovery-foot lift a stride needs — it is minimised
-    by keeping BOTH blades flat on the ground, i.e. the swizzle. Assumes the site
-    order (left, right) matches the sensor slot order (ankle_l_v1,
-    ankle_r_v1) — both left-first in this model.
-
-    Bug note: must normalize gravity PER ENV with dim=-1. Using torch.norm()
-    without dim computes a scalar over all envs × 3 dims, making the vector
-    ~1/sqrt(num_envs) in magnitude → penalty ~num_envs times too small.
-    """
+    # Penalize foot sites not being parallel to the ground.
+    #
+    # The foot site frame has Z+ pointing up when flat. We project a unit gravity
+    # vector (pointing down) into each foot site's local frame. When flat, gravity
+    # maps to [0,0,-1] in site frame (xy=0, penalty=0). Any tilt rotates Z away
+    # from world-up, giving nonzero xy components.
+    #
+    # Max value ≈ 2.0 per foot (foot fully sideways), total ≈ 4.0.
+    #
+    # When ``sensor_name`` is given, each foot's penalty is GATED by that foot's own
+    # ground contact: the airborne (swing) foot is free to tilt, only the stance
+    # blade is asked to stay flat (so its wheels keep gripping). Without this gate
+    # the penalty punishes the recovery-foot lift a stride needs — it is minimised
+    # by keeping BOTH blades flat on the ground, i.e. the swizzle. Assumes the site
+    # order (left, right) matches the sensor slot order (ankle_l_v1,
+    # ankle_r_v1) — both left-first in this model.
+    #
+    # Bug note: must normalize gravity PER ENV with dim=-1. Using torch.norm()
+    # without dim computes a scalar over all envs × 3 dims, making the vector
+    # ~1/sqrt(num_envs) in magnitude → penalty ~num_envs times too small.
     import torch.nn.functional as F
     from mjlab.utils.lab_api.math import quat_apply_inverse
 
@@ -1251,18 +1202,17 @@ def feet_flat_penalty(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _ROLLE
 
 
 def feet_tiptoe_alignment(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _ROLLER_FEET_SITE_CFG, command_name: str = "twist", command_threshold: float = 0.01) -> torch.Tensor:
-    """Reward each foot site's local x-axis pointing downward — tiptoe stance.
-
-    When flat, foot site x points roughly forward (horizontal). Pitching the
-    foot forward (heel up, toe down) rotates x toward world -Z. We reward the
-    z-component of the foot x-axis being -1 (perfectly downward).
-
-    Per foot: alignment ∈ [-1, 1], summed over both feet ∈ [-2, 2].
-
-    Gated on |vel_cmd_xy| > command_threshold so the policy isn't required to
-    stand on tiptoes at rest — only while walking. The companion
-    feet_flat_penalty is NOT used in this task; the two would fight.
-    """
+    # Reward each foot site's local x-axis pointing downward — tiptoe stance.
+    #
+    # When flat, foot site x points roughly forward (horizontal). Pitching the
+    # foot forward (heel up, toe down) rotates x toward world -Z. We reward the
+    # z-component of the foot x-axis being -1 (perfectly downward).
+    #
+    # Per foot: alignment ∈ [-1, 1], summed over both feet ∈ [-2, 2].
+    #
+    # Gated on |vel_cmd_xy| > command_threshold so the policy isn't required to
+    # stand on tiptoes at rest — only while walking. The companion
+    # feet_flat_penalty is NOT used in this task; the two would fight.
     asset: Entity = env.scene[asset_cfg.name]
     quats = asset.data.site_quat_w[:, asset_cfg.site_ids, :]  # (B, N, 4) [w, x, y, z]
     w, qx, qy, qz = quats[:, :, 0], quats[:, :, 1], quats[:, :, 2], quats[:, :, 3]
@@ -1276,27 +1226,25 @@ def feet_tiptoe_alignment(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _R
 
 
 def hip_pitch_knee_vel_l2(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _HIP_PITCH_KNEE_CFG) -> torch.Tensor:
-    """Penalize hip_pitch and knee joint velocities (L2 squared).
-
-    Walking requires rapid oscillation of these sagittal-plane joints.
-    Skating uses hip_roll laterally and glides with minimal sagittal movement.
-    This penalizes the oscillation without preventing static balance adjustments.
-    """
+    # Penalize hip_pitch and knee joint velocities (L2 squared).
+    #
+    # Walking requires rapid oscillation of these sagittal-plane joints.
+    # Skating uses hip_roll laterally and glides with minimal sagittal movement.
+    # This penalizes the oscillation without preventing static balance adjustments.
     asset: Entity = env.scene[asset_cfg.name]
     return torch.sum(torch.square(asset.data.joint_vel[:, asset_cfg.joint_ids]), dim=1)
 
 
 def neck_joint_pos_l2(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _NECK_JOINT_CFG, pattern: str = r".*(neck|head).*") -> torch.Tensor:
-    """Penalize neck/head joint position deviation from default (L2 squared).
-
-    Uses find_joints() every call to avoid stale cached indices when the same
-    SceneEntityCfg singleton is reused across robots with different joint layouts
-    (e.g. walk robot vs rollers robot where passive wheels shift neck indices).
-
-    ``pattern`` selects the joints counted (default: the whole neck + head).
-    The spin task passes a pattern that EXCLUDES `head_yaw`, to let the head serve
-    as a flywheel when launching the rotation.
-    """
+    # Penalize neck/head joint position deviation from default (L2 squared).
+    #
+    # Uses find_joints() every call to avoid stale cached indices when the same
+    # SceneEntityCfg singleton is reused across robots with different joint layouts
+    # (e.g. walk robot vs rollers robot where passive wheels shift neck indices).
+    #
+    # ``pattern`` selects the joints counted (default: the whole neck + head).
+    # The spin task passes a pattern that EXCLUDES `head_yaw`, to let the head serve
+    # as a flywheel when launching the rotation.
     asset: Entity = env.scene[asset_cfg.name]
     # Exclude passive_* joints (backlash hinges also contain "neck"/"head").
     if not pattern.startswith(r"^(?!passive_)"):
@@ -1307,16 +1255,14 @@ def neck_joint_pos_l2(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _NECK_
 
 
 def joint_torques_l2(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """
-    Penalize actuator forces (torques) to encourage energy-efficient motion.
-
-    Args:
-        env: The environment
-        asset_cfg: Asset configuration
-
-    Returns:
-        Penalty tensor of shape (num_envs,) - sum of squared actuator forces
-    """
+    # Penalize actuator forces (torques) to encourage energy-efficient motion.
+    #
+    # Args:
+    #     env: The environment
+    #     asset_cfg: Asset configuration
+    #
+    # Returns:
+    #     Penalty tensor of shape (num_envs,) - sum of squared actuator forces
     asset: Entity = env.scene[asset_cfg.name]
 
     # Get actuator forces (scalar actuation in actuation space)
@@ -1327,14 +1273,13 @@ def joint_torques_l2(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAUL
 
 
 def joint_torque_rate_l2(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """Penalize rate of change in actuator torques (proxy for gearbox shock).
-
-    Sudden torque spikes occur when the robot impacts the ground and actuators
-    resist the impulse. Penalising this rate encourages soft landings and smooth
-    force transitions that protect gearboxes.
-
-    Returns the sum of squared torque differences from the previous step.
-    """
+    # Penalize rate of change in actuator torques (proxy for gearbox shock).
+    #
+    # Sudden torque spikes occur when the robot impacts the ground and actuators
+    # resist the impulse. Penalising this rate encourages soft landings and smooth
+    # force transitions that protect gearboxes.
+    #
+    # Returns the sum of squared torque differences from the previous step.
     asset: Entity = env.scene[asset_cfg.name]
     current = asset.data.actuator_force  # (num_envs, num_actuators)
 
@@ -1348,12 +1293,11 @@ def joint_torque_rate_l2(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DE
 
 
 def feet_grounded_reward(env: ManagerBasedRlEnv, sensor_name: str) -> torch.Tensor:
-    """Positive reward for feet contacting the ground (0, +0.5, or +1.0).
-
-    Uses the contact sensor's `found` field. For the feet_ground_contact sensor
-    which has 2 primary foot geoms, `found` has shape (num_envs, 2) with per-foot
-    binary contact. We sum and normalize to [0, 1].
-    """
+    # Positive reward for feet contacting the ground (0, +0.5, or +1.0).
+    #
+    # Uses the contact sensor's `found` field. For the feet_ground_contact sensor
+    # which has 2 primary foot geoms, `found` has shape (num_envs, 2) with per-foot
+    # binary contact. We sum and normalize to [0, 1].
     if sensor_name not in env.scene.sensors:
         return torch.zeros(env.num_envs, device=env.device)
     sensor = env.scene.sensors[sensor_name]
@@ -1364,21 +1308,20 @@ def feet_grounded_reward(env: ManagerBasedRlEnv, sensor_name: str) -> torch.Tens
 
 
 def body_impact_cost(env: ManagerBasedRlEnv, sensor_name: str, threshold: float = 1.0) -> torch.Tensor:
-    """Penalize terrain contact forces above a threshold on protected body parts.
-
-    Used to discourage slamming the trunk shell or head into the ground during
-    falls. The sensor should cover the relevant body or subtree with
-    reduce='netforce'. Forces below threshold are free; above that the penalty
-    grows linearly.
-
-    Args:
-        sensor_name: Name of a ContactSensorCfg with fields=("force",),
-            reduce="netforce".
-        threshold: Contact force (N) below which no penalty is applied.
-
-    Returns:
-        Penalty tensor (num_envs,) — N above threshold per step.
-    """
+    # Penalize terrain contact forces above a threshold on protected body parts.
+    #
+    # Used to discourage slamming the trunk shell or head into the ground during
+    # falls. The sensor should cover the relevant body or subtree with
+    # reduce='netforce'. Forces below threshold are free; above that the penalty
+    # grows linearly.
+    #
+    # Args:
+    #     sensor_name: Name of a ContactSensorCfg with fields=("force",),
+    #         reduce="netforce".
+    #     threshold: Contact force (N) below which no penalty is applied.
+    #
+    # Returns:
+    #     Penalty tensor (num_envs,) — N above threshold per step.
     if sensor_name not in env.scene.sensors:
         return torch.zeros(env.num_envs, device=env.device)
 
@@ -1390,17 +1333,16 @@ def body_impact_cost(env: ManagerBasedRlEnv, sensor_name: str, threshold: float 
 
 
 def wheel_speed_reward(env: ManagerBasedRlEnv, command_name: str, wheel_radius: float = 0.0175, vel_scale: float = 0.5, bidirectional: bool = False) -> torch.Tensor:
-    """Reward wheel spin proportional to commanded push.
-
-    All 4 wheels spin positive for forward motion (verified visually).
-    tanh saturation at vel_scale m/s equivalent prevents runaway.
-
-    - ``bidirectional=False`` (default): forward only — reward forward spin for
-      cmd_x > 0, silent otherwise (cmd_x < 0 handled by the braking reward).
-    - ``bidirectional=True``: reward wheel spin in the COMMANDED direction —
-      forward for cmd_x > 0, backward for cmd_x < 0 — with magnitude |cmd_x|.
-      Lets cmd_x < 0 mean "go backward" instead of "brake".
-    """
+    # Reward wheel spin proportional to commanded push.
+    #
+    # All 4 wheels spin positive for forward motion (verified visually).
+    # tanh saturation at vel_scale m/s equivalent prevents runaway.
+    #
+    # - ``bidirectional=False`` (default): forward only — reward forward spin for
+    #   cmd_x > 0, silent otherwise (cmd_x < 0 handled by the braking reward).
+    # - ``bidirectional=True``: reward wheel spin in the COMMANDED direction —
+    #   forward for cmd_x > 0, backward for cmd_x < 0 — with magnitude |cmd_x|.
+    #   Lets cmd_x < 0 mean "go backward" instead of "brake".
     cmd_x = env.command_manager.get_command(command_name)[:, 0]  # (B,)
 
     asset: Entity = env.scene["robot"]
@@ -1422,15 +1364,14 @@ def wheel_speed_reward(env: ManagerBasedRlEnv, command_name: str, wheel_radius: 
 
 
 def coasting_reward(env: ManagerBasedRlEnv, command_name: str, vel_std: float = 0.3, stillness_std: float = 5.0, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot", joint_names=(r".*(hip|knee|ankle).*",))) -> torch.Tensor:
-    """Reward coasting: low leg-joint velocity while at target speed.
-
-    Returns exp(-vel_error / vel_std²) × exp(-sum(joint_vel²) / stillness_std²).
-    Both factors must be high simultaneously — robot is rewarded for being at
-    target speed AND keeping its legs still (gliding), not for either alone.
-
-    Typical values when coasting well: ~0.7–1.0.  When actively stomping at
-    speed the joint_vel term suppresses the reward toward 0.
-    """
+    # Reward coasting: low leg-joint velocity while at target speed.
+    #
+    # Returns exp(-vel_error / vel_std²) × exp(-sum(joint_vel²) / stillness_std²).
+    # Both factors must be high simultaneously — robot is rewarded for being at
+    # target speed AND keeping its legs still (gliding), not for either alone.
+    #
+    # Typical values when coasting well: ~0.7–1.0.  When actively stomping at
+    # speed the joint_vel term suppresses the reward toward 0.
     cmd = env.command_manager.get_command(command_name)
     vel_b = env.scene["robot"].data.root_link_lin_vel_b[:, :2]
     vel_error = torch.sum(torch.square(cmd[:, :2] - vel_b), dim=1)
@@ -1444,14 +1385,13 @@ def coasting_reward(env: ManagerBasedRlEnv, command_name: str, vel_std: float = 
 
 
 def braking_reward(env: ManagerBasedRlEnv, command_name: str, vel_std: float = 0.3) -> torch.Tensor:
-    """Reward coming to a stop when cmd_x < 0 (brake commanded).
-
-    Returns clamp(-cmd_x, 0) * exp(-fwd_vel² / vel_std²).
-    - Silent when cmd_x ≥ 0 (coast or push).
-    - At cmd_x = -1 and vel = 0: reward = 1.0 (full stop achieved).
-    - At cmd_x = -1 and vel = vel_std: reward ≈ 0.37 (strong gradient).
-    vel_std=0.3 m/s gives meaningful gradient down to walking-pace speeds.
-    """
+    # Reward coming to a stop when cmd_x < 0 (brake commanded).
+    #
+    # Returns clamp(-cmd_x, 0) * exp(-fwd_vel² / vel_std²).
+    # - Silent when cmd_x ≥ 0 (coast or push).
+    # - At cmd_x = -1 and vel = 0: reward = 1.0 (full stop achieved).
+    # - At cmd_x = -1 and vel = vel_std: reward ≈ 0.37 (strong gradient).
+    # vel_std=0.3 m/s gives meaningful gradient down to walking-pace speeds.
     cmd = env.command_manager.get_command(command_name)
     cmd_x = cmd[:, 0]
     braking_strength = torch.clamp(-cmd_x, min=0.0)
@@ -1461,19 +1401,17 @@ def braking_reward(env: ManagerBasedRlEnv, command_name: str, vel_std: float = 0
 
 
 def contact_frequency_penalty(env: ManagerBasedRlEnv, sensor_name: str = "feet_ground_contact", max_contact_changes_per_sec: float = 4.0, command_threshold: float = 0.01) -> torch.Tensor:
-    """
-    Penalize high frequency of contact changes to encourage slower stepping.
-    Tracks the number of contact state changes per second and penalizes when above threshold.
-
-    Args:
-        env: The environment
-        sensor_name: Name of the contact sensor
-        max_contact_changes_per_sec: Maximum allowed contact changes per second
-        command_threshold: Minimum command magnitude to apply penalty
-
-    Returns:
-        Penalty tensor of shape (num_envs,) - negative when exceeding threshold
-    """
+    # Penalize high frequency of contact changes to encourage slower stepping.
+    # Tracks the number of contact state changes per second and penalizes when above threshold.
+    #
+    # Args:
+    #     env: The environment
+    #     sensor_name: Name of the contact sensor
+    #     max_contact_changes_per_sec: Maximum allowed contact changes per second
+    #     command_threshold: Minimum command magnitude to apply penalty
+    #
+    # Returns:
+    #     Penalty tensor of shape (num_envs,) - negative when exceeding threshold
     if sensor_name not in env.scene.sensors:
         return torch.zeros(env.num_envs, device=env.device)
 
@@ -1534,16 +1472,15 @@ def contact_frequency_penalty(env: ManagerBasedRlEnv, sensor_name: str = "feet_g
 
 
 def mouth_ground_proximity(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot", site_names=["mouth_tip"]), std: float = 0.03, target_height: float = 0.0, command_name: str = "twist") -> torch.Tensor:
-    """Reward for mouth tip approaching the ground, weighted by the approach phase.
-
-    The command for the ground pick task is [cos(2π*phase), sin(2π*phase), 0].
-    The approach phase is the first half-cycle (sin > 0, phase ∈ [0, 0.5]),
-    smoothly weighted by max(0, sin(2π*phase)).
-
-    Args:
-        std: Gaussian std on mouth_tip height (m). 0.03 m gives strong gradient.
-        target_height: Target z-height for the mouth tip (m). 0 = ground level.
-    """
+    # Reward for mouth tip approaching the ground, weighted by the approach phase.
+    #
+    # The command for the ground pick task is [cos(2π*phase), sin(2π*phase), 0].
+    # The approach phase is the first half-cycle (sin > 0, phase ∈ [0, 0.5]),
+    # smoothly weighted by max(0, sin(2π*phase)).
+    #
+    # Args:
+    #     std: Gaussian std on mouth_tip height (m). 0.03 m gives strong gradient.
+    #     target_height: Target z-height for the mouth tip (m). 0 = ground level.
     asset = env.scene[asset_cfg.name]
     mouth_z = asset.data.site_pos_w[:, asset_cfg.site_ids[0], 2]  # (num_envs,)
     proximity = torch.exp(-(((mouth_z - target_height) / std) ** 2))
@@ -1556,11 +1493,10 @@ def mouth_ground_proximity(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = S
 
 
 def mouth_perpendicular_to_ground(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot", site_names=["mouth_tip"]), command_name: str = "twist") -> torch.Tensor:
-    """Reward the mouth tip x-axis being vertical (pointing down) during the approach phase.
-
-    A perfectly perpendicular contact gives alignment=1; horizontal gives 0; pointing up gives -1.
-    Weighted by max(0, sin(2π*phase)) so it only applies during the descent.
-    """
+    # Reward the mouth tip x-axis being vertical (pointing down) during the approach phase.
+    #
+    # A perfectly perpendicular contact gives alignment=1; horizontal gives 0; pointing up gives -1.
+    # Weighted by max(0, sin(2π*phase)) so it only applies during the descent.
     asset = env.scene[asset_cfg.name]
     # site_quat_w: (num_envs, num_sites, 4) as [w, x, y, z]
     q = asset.data.site_quat_w[:, asset_cfg.site_ids[0], :]  # (num_envs, 4)
@@ -1577,19 +1513,18 @@ def mouth_perpendicular_to_ground(env: ManagerBasedRlEnv, asset_cfg: SceneEntity
 
 
 def sit_grounded(env: ManagerBasedRlEnv, sensor_name: str, command_name: str | None = None, sin_threshold: float = 0.7, min_progress_frac: float = 0.0, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, upright_cos_threshold: float = 0.5) -> torch.Tensor:
-    """Positive reward for trunk-ground contact WHILE upright.
-
-    Gated additionally on the trunk's body-frame +Z axis pointing in roughly the
-    world-up direction (cosine >= ``upright_cos_threshold``, default 0.5 → up to
-    60° tilt accepted). Without this gate, the policy can earn the contact
-    bonus by tipping sideways or face-forward — the trunk hits the ground in
-    those weird poses, sit_grounded fires, and the policy converges to a
-    "fallen" mode that competes with the actual sit pose.
-
-    When ``command_name`` is provided, the reward is gated to the sit window of
-    a phase command. Otherwise it's always-on, optionally gated to the late
-    part of the episode via ``min_progress_frac``.
-    """
+    # Positive reward for trunk-ground contact WHILE upright.
+    #
+    # Gated additionally on the trunk's body-frame +Z axis pointing in roughly the
+    # world-up direction (cosine >= ``upright_cos_threshold``, default 0.5 → up to
+    # 60° tilt accepted). Without this gate, the policy can earn the contact
+    # bonus by tipping sideways or face-forward — the trunk hits the ground in
+    # those weird poses, sit_grounded fires, and the policy converges to a
+    # "fallen" mode that competes with the actual sit pose.
+    #
+    # When ``command_name`` is provided, the reward is gated to the sit window of
+    # a phase command. Otherwise it's always-on, optionally gated to the late
+    # part of the episode via ``min_progress_frac``.
     if sensor_name not in env.scene.sensors:
         return torch.zeros(env.num_envs, device=env.device)
     sensor = env.scene.sensors[sensor_name]
@@ -1621,12 +1556,11 @@ def sit_grounded(env: ManagerBasedRlEnv, sensor_name: str, command_name: str | N
 
 
 def sit_stability(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, command_name: str | None = None, ang_vel_std: float = 0.5, sin_threshold: float = 0.7, min_progress_frac: float = 0.0) -> torch.Tensor:
-    """Bonus for low body angular velocity.
-
-    Phase-gated when ``command_name`` is set (sit window of a phase command).
-    Always-on otherwise, optionally restricted to the late part of the episode
-    via ``min_progress_frac``. Encourages a stable rest pose.
-    """
+    # Bonus for low body angular velocity.
+    #
+    # Phase-gated when ``command_name`` is set (sit window of a phase command).
+    # Always-on otherwise, optionally restricted to the late part of the episode
+    # via ``min_progress_frac``. Encourages a stable rest pose.
     asset = env.scene[asset_cfg.name]
     ang_vel_norm = asset.data.root_link_ang_vel_w.norm(dim=-1)
     stillness = torch.exp(-((ang_vel_norm / ang_vel_std) ** 2))
@@ -1642,14 +1576,13 @@ def sit_stability(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_A
 
 
 def joint_deviation_l1(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """L1 penalty for joint positions deviating from their default (HOME).
-
-    Returns sum of |joint_pos - default| over the selected joints. Unlike the
-    Gaussian `pose` reward (which saturates near 1.0 for any small deviation),
-    this gives a *linear* gradient at all deviation magnitudes — useful as a
-    focused penalty on a subset of joints (e.g. hip_yaw / hip_roll) to prevent
-    them drifting to wide-base stances even when other joints are near HOME.
-    """
+    # L1 penalty for joint positions deviating from their default (HOME).
+    #
+    # Returns sum of |joint_pos - default| over the selected joints. Unlike the
+    # Gaussian `pose` reward (which saturates near 1.0 for any small deviation),
+    # this gives a *linear* gradient at all deviation magnitudes — useful as a
+    # focused penalty on a subset of joints (e.g. hip_yaw / hip_roll) to prevent
+    # them drifting to wide-base stances even when other joints are near HOME.
     asset = env.scene[asset_cfg.name]
     jnt_ids = asset_cfg.joint_ids
     err = asset.data.joint_pos[:, jnt_ids] - asset.data.default_joint_pos[:, jnt_ids]
@@ -1657,30 +1590,29 @@ def joint_deviation_l1(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFA
 
 
 def joint_pos_limit_proximity(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, margin: float = 0.15) -> torch.Tensor:
-    """L1 penalty for joint positions entering a ``margin`` (rad) band next to
-    their *hard* range limits.
-
-    The base ``joint_pos_limits`` reward only fires past the *soft* limit
-    (global ``soft_joint_pos_limit_factor`` = 0.9 → roughly the last 7.5% of
-    range) and only by the radians-overshoot magnitude, so it's near-useless
-    against a joint parked on its stop. This term instead reads the *hard*
-    limits directly and lets each reward set its own wide margin, scoped to
-    specific joints.
-
-    Motivating case: with a low-kp position servo and wide ctrlrange the policy
-    can command far past a joint's limit "for free" (no command-side cost) and
-    park the joint on its hard stop — e.g. hip_yaw slammed to ±limit so the foot
-    slides/pivots. The overshoot is *intended* (it's how a low-kp servo reaches
-    its target), so the deterrent must live on the qpos side and bite well
-    before the stop.
-
-    For each selected joint with hard limits ``[lo, hi]``::
-
-        soft_lo = lo + margin,  soft_hi = hi - margin
-        penalty = relu(soft_lo - q) + relu(q - soft_hi)
-
-    summed over joints: zero in the interior, ramping linearly toward each stop.
-    """
+    # L1 penalty for joint positions entering a ``margin`` (rad) band next to
+    # their *hard* range limits.
+    #
+    # The base ``joint_pos_limits`` reward only fires past the *soft* limit
+    # (global ``soft_joint_pos_limit_factor`` = 0.9 → roughly the last 7.5% of
+    # range) and only by the radians-overshoot magnitude, so it's near-useless
+    # against a joint parked on its stop. This term instead reads the *hard*
+    # limits directly and lets each reward set its own wide margin, scoped to
+    # specific joints.
+    #
+    # Motivating case: with a low-kp position servo and wide ctrlrange the policy
+    # can command far past a joint's limit "for free" (no command-side cost) and
+    # park the joint on its hard stop — e.g. hip_yaw slammed to ±limit so the foot
+    # slides/pivots. The overshoot is *intended* (it's how a low-kp servo reaches
+    # its target), so the deterrent must live on the qpos side and bite well
+    # before the stop.
+    #
+    # For each selected joint with hard limits ``[lo, hi]``::
+    #
+    #     soft_lo = lo + margin,  soft_hi = hi - margin
+    #     penalty = relu(soft_lo - q) + relu(q - soft_hi)
+    #
+    # summed over joints: zero in the interior, ramping linearly toward each stop.
     asset = env.scene[asset_cfg.name]
     jnt_ids = asset_cfg.joint_ids
     q = asset.data.joint_pos[:, jnt_ids]
@@ -1693,18 +1625,17 @@ def joint_pos_limit_proximity(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg 
 
 
 def phase_height_track(env: ManagerBasedRlEnv, command_name: str, stand_z: float, sit_z: float, std: float = 0.02, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """Reward trunk_z tracking a sin-interpolated target between stand and sit heights.
-
-    Used for the sitstand task instead of joint-angle matching for the sit pose —
-    rewards the END STATE (low trunk) without prescribing HOW the robot gets there.
-    The policy is free to find any motion strategy (deep squat, head-supported
-    descent, etc.).
-
-    Command (from GroundPickPhaseCommand): cmd[:, 1] = sin(2π·phase).
-    sin = +1 at phase 0.25 (sit peak) → target = sit_z.
-    sin = -1 at phase 0.75 (stand peak) → target = stand_z.
-    sin = 0 at transitions → target = midpoint.
-    """
+    # Reward trunk_z tracking a sin-interpolated target between stand and sit heights.
+    #
+    # Used for the sitstand task instead of joint-angle matching for the sit pose —
+    # rewards the END STATE (low trunk) without prescribing HOW the robot gets there.
+    # The policy is free to find any motion strategy (deep squat, head-supported
+    # descent, etc.).
+    #
+    # Command (from GroundPickPhaseCommand): cmd[:, 1] = sin(2π·phase).
+    # sin = +1 at phase 0.25 (sit peak) → target = sit_z.
+    # sin = -1 at phase 0.75 (stand peak) → target = stand_z.
+    # sin = 0 at transitions → target = midpoint.
     cmd = env.command_manager.get_command(command_name)
     sin_phase = cmd[:, 1]
     target_z = (stand_z + sit_z) * 0.5 - (stand_z - sit_z) * 0.5 * sin_phase
@@ -1714,26 +1645,25 @@ def phase_height_track(env: ManagerBasedRlEnv, command_name: str, stand_z: float
 
 
 def interpolated_pose_target_match(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, std: float = 0.3, joint_indices: list | None = None, source_overrides: dict | None = None, target_overrides: dict | None = None, ramp_start_frac: float = 0.0, ramp_end_frac: float = 1.0) -> torch.Tensor:
-    """Gaussian on joint positions vs a time-interpolated target pose.
-
-    Tracks a target that linearly interpolates from a source pose to a target
-    pose over the episode, between progress fractions ``ramp_start_frac`` and
-    ``ramp_end_frac``. Before/after the ramp the target is clamped to source /
-    final target respectively.
-
-    The point is to enforce smooth descent: snapping to the final target early
-    leaves the robot *off-target* relative to where the interpolated target
-    currently is, costing pose reward for the duration of the mismatch.
-
-    Args:
-        std: Gaussian std per joint (rad).
-        joint_indices: Optional subset of joints to evaluate.
-        source_overrides: ``{joint_index: angle_rad}`` defining the source pose
-            (start of the ramp). ``None`` = default/HOME pose.
-        target_overrides: same, for the target pose (end of the ramp).
-        ramp_start_frac, ramp_end_frac: episode-progress window in [0, 1] over
-            which the target moves from source to target.
-    """
+    # Gaussian on joint positions vs a time-interpolated target pose.
+    #
+    # Tracks a target that linearly interpolates from a source pose to a target
+    # pose over the episode, between progress fractions ``ramp_start_frac`` and
+    # ``ramp_end_frac``. Before/after the ramp the target is clamped to source /
+    # final target respectively.
+    #
+    # The point is to enforce smooth descent: snapping to the final target early
+    # leaves the robot *off-target* relative to where the interpolated target
+    # currently is, costing pose reward for the duration of the mismatch.
+    #
+    # Args:
+    #     std: Gaussian std per joint (rad).
+    #     joint_indices: Optional subset of joints to evaluate.
+    #     source_overrides: ``{joint_index: angle_rad}`` defining the source pose
+    #         (start of the ramp). ``None`` = default/HOME pose.
+    #     target_overrides: same, for the target pose (end of the ramp).
+    #     ramp_start_frac, ramp_end_frac: episode-progress window in [0, 1] over
+    #         which the target moves from source to target.
     asset = env.scene[asset_cfg.name]
     joint_pos = _servo_joint_pos(env, asset)
     source = _servo_default_joint_pos(env, asset).clone()
@@ -1757,14 +1687,13 @@ def interpolated_pose_target_match(env: ManagerBasedRlEnv, asset_cfg: SceneEntit
 
 
 def interpolated_pose_l1_penalty(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, joint_indices: list | None = None, source_overrides: dict | None = None, target_overrides: dict | None = None, ramp_start_frac: float = 0.0, ramp_end_frac: float = 1.0) -> torch.Tensor:
-    """L1 distance from a time-interpolated target pose (negative — used as penalty).
-
-    Same interpolation schedule as ``interpolated_pose_target_match`` but
-    returns ``-mean(|joint_pos - interp|)`` instead of a Gaussian. The L1
-    gradient is constant everywhere — useful as a bootstrap signal when the
-    Gaussian variant saturates to zero far from target and leaves the policy
-    no gradient to discover the target direction.
-    """
+    # L1 distance from a time-interpolated target pose (negative — used as penalty).
+    #
+    # Same interpolation schedule as ``interpolated_pose_target_match`` but
+    # returns ``-mean(|joint_pos - interp|)`` instead of a Gaussian. The L1
+    # gradient is constant everywhere — useful as a bootstrap signal when the
+    # Gaussian variant saturates to zero far from target and leaves the policy
+    # no gradient to discover the target direction.
     asset = env.scene[asset_cfg.name]
     joint_pos = _servo_joint_pos(env, asset)
     source = _servo_default_joint_pos(env, asset).clone()
@@ -1788,12 +1717,11 @@ def interpolated_pose_l1_penalty(env: ManagerBasedRlEnv, asset_cfg: SceneEntityC
 
 
 def interpolated_height_l1_penalty(env: ManagerBasedRlEnv, start_height: float, end_height: float, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, ramp_start_frac: float = 0.0, ramp_end_frac: float = 1.0) -> torch.Tensor:
-    """L1 distance from a time-interpolated target height (negative — penalty).
-
-    Same role as ``interpolated_pose_l1_penalty`` but on trunk z. Provides a
-    constant gradient toward the target height regardless of how far off the
-    current z is, complementing the Gaussian ``interpolated_height_target``.
-    """
+    # L1 distance from a time-interpolated target height (negative — penalty).
+    #
+    # Same role as ``interpolated_pose_l1_penalty`` but on trunk z. Provides a
+    # constant gradient toward the target height regardless of how far off the
+    # current z is, complementing the Gaussian ``interpolated_height_target``.
     progress = env.episode_length_buf.float() / float(env.max_episode_length)
     span = max(ramp_end_frac - ramp_start_frac, 1e-6)
     tau = ((progress - ramp_start_frac) / span).clamp(0.0, 1.0)
@@ -1805,11 +1733,10 @@ def interpolated_height_l1_penalty(env: ManagerBasedRlEnv, start_height: float, 
 
 
 def interpolated_height_target(env: ManagerBasedRlEnv, start_height: float, end_height: float, std: float = 0.02, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, ramp_start_frac: float = 0.0, ramp_end_frac: float = 1.0) -> torch.Tensor:
-    """Gaussian on trunk z vs a time-interpolated target height.
-
-    Companion to ``interpolated_pose_target_match`` — same time-interpolation
-    logic applied to the trunk height.
-    """
+    # Gaussian on trunk z vs a time-interpolated target height.
+    #
+    # Companion to ``interpolated_pose_target_match`` — same time-interpolation
+    # logic applied to the trunk height.
     progress = env.episode_length_buf.float() / float(env.max_episode_length)
     span = max(ramp_end_frac - ramp_start_frac, 1e-6)
     tau = ((progress - ramp_start_frac) / span).clamp(0.0, 1.0)
@@ -1821,22 +1748,21 @@ def interpolated_height_target(env: ManagerBasedRlEnv, start_height: float, end_
 
 
 def bilateral_symmetry_penalty(env: ManagerBasedRlEnv, left_indices: list, right_indices: list, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """L1 penalty on left/right leg asymmetry.
-
-    For a bilaterally-symmetric robot the leg HOME and any symmetric target
-    (FOLD, SIT) satisfy ``q_left + q_right == 0`` on each matched joint pair
-    (because the left/right joints use mirrored sign conventions). This term
-    penalises departures from that constraint.
-
-    Useful when ``mean()`` of pose-target rewards lets the policy get away
-    with one-leg-correct solutions (you collect ~half the reward for free
-    and the gradient toward fixing the second leg is too weak to escape that
-    local minimum). The penalty here has constant L1 gradient regardless of
-    magnitude, so any asymmetry pays a cost and the unique zero is the
-    fully-symmetric configuration.
-
-    Returns ``-sum_i |q[left_i] + q[right_i]|`` averaged over the N pairs.
-    """
+    # L1 penalty on left/right leg asymmetry.
+    #
+    # For a bilaterally-symmetric robot the leg HOME and any symmetric target
+    # (FOLD, SIT) satisfy ``q_left + q_right == 0`` on each matched joint pair
+    # (because the left/right joints use mirrored sign conventions). This term
+    # penalises departures from that constraint.
+    #
+    # Useful when ``mean()`` of pose-target rewards lets the policy get away
+    # with one-leg-correct solutions (you collect ~half the reward for free
+    # and the gradient toward fixing the second leg is too weak to escape that
+    # local minimum). The penalty here has constant L1 gradient regardless of
+    # magnitude, so any asymmetry pays a cost and the unique zero is the
+    # fully-symmetric configuration.
+    #
+    # Returns ``-sum_i |q[left_i] + q[right_i]|`` averaged over the N pairs.
     asset: Entity = env.scene[asset_cfg.name]
     pos = asset.data.joint_pos
     left = pos[:, left_indices]
@@ -1845,16 +1771,15 @@ def bilateral_symmetry_penalty(env: ManagerBasedRlEnv, left_indices: list, right
 
 
 def _multistage_target_pose(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg, waypoints) -> torch.Tensor:
-    """Compute the time-interpolated joint target across N waypoints.
-
-    waypoints: ordered list of dicts {"frac": float in [0,1],
-                                       "overrides": dict[int,float] | None}.
-    First waypoint should have frac=0.0 (typically HOME, overrides=None).
-    Subsequent waypoints define milestones. Between two waypoints the target
-    linearly interpolates. Before the first / after the last it clamps.
-
-    Returns a (num_envs, num_joints) tensor of target joint angles.
-    """
+    # Compute the time-interpolated joint target across N waypoints.
+    #
+    # waypoints: ordered list of dicts {"frac": float in [0,1],
+    #                                    "overrides": dict[int,float] | None}.
+    # First waypoint should have frac=0.0 (typically HOME, overrides=None).
+    # Subsequent waypoints define milestones. Between two waypoints the target
+    # linearly interpolates. Before the first / after the last it clamps.
+    #
+    # Returns a (num_envs, num_joints) tensor of target joint angles.
     asset = env.scene[asset_cfg.name]
     default = _servo_default_joint_pos(env, asset)
 
@@ -1883,10 +1808,9 @@ def _multistage_target_pose(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg, w
 
 
 def _multistage_target_height(env: ManagerBasedRlEnv, waypoints) -> torch.Tensor:
-    """Same logic as _multistage_target_pose but for trunk z height.
-
-    waypoints: [{"frac": float, "height": float}, ...].
-    """
+    # Same logic as _multistage_target_pose but for trunk z height.
+    #
+    # waypoints: [{"frac": float, "height": float}, ...].
     progress = env.episode_length_buf.float() / float(env.max_episode_length)
     out = torch.full_like(progress, waypoints[0]["height"])
     for i in range(1, len(waypoints)):
@@ -1901,16 +1825,15 @@ def _multistage_target_height(env: ManagerBasedRlEnv, waypoints) -> torch.Tensor
 
 
 def multistage_pose_target_match(env: ManagerBasedRlEnv, waypoints: list, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, std: float = 0.3, joint_indices: list | None = None) -> torch.Tensor:
-    """Multi-waypoint variant of interpolated_pose_target_match.
-
-    waypoints: [{"frac": 0.0, "overrides": None},
-                {"frac": 0.4, "overrides": FOLD_OVERRIDES},
-                {"frac": 0.7, "overrides": SIT_OVERRIDES}]
-
-    Use this to enforce a curriculum-style trajectory through one or more
-    intermediate poses (e.g. stand → fold → sit). Same per-joint Gaussian
-    semantics as the single-stage version.
-    """
+    # Multi-waypoint variant of interpolated_pose_target_match.
+    #
+    # waypoints: [{"frac": 0.0, "overrides": None},
+    #             {"frac": 0.4, "overrides": FOLD_OVERRIDES},
+    #             {"frac": 0.7, "overrides": SIT_OVERRIDES}]
+    #
+    # Use this to enforce a curriculum-style trajectory through one or more
+    # intermediate poses (e.g. stand → fold → sit). Same per-joint Gaussian
+    # semantics as the single-stage version.
     asset = env.scene[asset_cfg.name]
     target = _multistage_target_pose(env, asset_cfg, waypoints)
     joint_pos = _servo_joint_pos(env, asset)
@@ -1921,7 +1844,7 @@ def multistage_pose_target_match(env: ManagerBasedRlEnv, waypoints: list, asset_
 
 
 def multistage_pose_l1_penalty(env: ManagerBasedRlEnv, waypoints: list, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, joint_indices: list | None = None) -> torch.Tensor:
-    """L1 companion to multistage_pose_target_match."""
+    # L1 companion to multistage_pose_target_match.
     asset = env.scene[asset_cfg.name]
     target = _multistage_target_pose(env, asset_cfg, waypoints)
     joint_pos = _servo_joint_pos(env, asset)
@@ -1932,7 +1855,7 @@ def multistage_pose_l1_penalty(env: ManagerBasedRlEnv, waypoints: list, asset_cf
 
 
 def multistage_height_target(env: ManagerBasedRlEnv, waypoints: list, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, std: float = 0.03) -> torch.Tensor:
-    """Multi-waypoint Gaussian on trunk z."""
+    # Multi-waypoint Gaussian on trunk z.
     target_z = _multistage_target_height(env, waypoints)
     asset = env.scene[asset_cfg.name]
     z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0)
@@ -1940,7 +1863,7 @@ def multistage_height_target(env: ManagerBasedRlEnv, waypoints: list, asset_cfg:
 
 
 def multistage_height_l1_penalty(env: ManagerBasedRlEnv, waypoints: list, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """L1 companion to multistage_height_target."""
+    # L1 companion to multistage_height_target.
     target_z = _multistage_target_height(env, waypoints)
     asset = env.scene[asset_cfg.name]
     z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0)
@@ -1948,12 +1871,11 @@ def multistage_height_l1_penalty(env: ManagerBasedRlEnv, waypoints: list, asset_
 
 
 def pose_target_match(env: ManagerBasedRlEnv, target_overrides: dict | None = None, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, std: float = 0.3, joint_indices: list | None = None) -> torch.Tensor:
-    """Gaussian pose-match against a single fixed target.
-
-    target = ``default_joint_pos`` with the per-index overrides applied. No
-    waypoints, no episode-progress interpolation — the same target is rewarded
-    from t=0 to the end of the episode.
-    """
+    # Gaussian pose-match against a single fixed target.
+    #
+    # target = ``default_joint_pos`` with the per-index overrides applied. No
+    # waypoints, no episode-progress interpolation — the same target is rewarded
+    # from t=0 to the end of the episode.
     asset = env.scene[asset_cfg.name]
     target = _servo_default_joint_pos(env, asset).clone()
     if target_overrides:
@@ -1967,7 +1889,7 @@ def pose_target_match(env: ManagerBasedRlEnv, target_overrides: dict | None = No
 
 
 def pose_l1_penalty(env: ManagerBasedRlEnv, target_overrides: dict | None = None, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, joint_indices: list | None = None) -> torch.Tensor:
-    """L1 companion to ``pose_target_match`` (constant gradient toward target)."""
+    # L1 companion to ``pose_target_match`` (constant gradient toward target).
     asset = env.scene[asset_cfg.name]
     target = _servo_default_joint_pos(env, asset).clone()
     if target_overrides:
@@ -1981,30 +1903,29 @@ def pose_l1_penalty(env: ManagerBasedRlEnv, target_overrides: dict | None = None
 
 
 def height_target_gaussian(env: ManagerBasedRlEnv, target_height: float, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, std: float = 0.02) -> torch.Tensor:
-    """Gaussian on trunk z against a single fixed target."""
+    # Gaussian on trunk z against a single fixed target.
     asset = env.scene[asset_cfg.name]
     z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0)
     return torch.exp(-(((z - target_height) / std) ** 2))
 
 
 def height_l1_penalty(env: ManagerBasedRlEnv, target_height: float, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """L1 companion to ``height_target_gaussian``."""
+    # L1 companion to ``height_target_gaussian``.
     asset = env.scene[asset_cfg.name]
     z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0)
     return -torch.abs(z - target_height)
 
 
 def trunk_vertical_accel_penalty(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """Penalty proportional to ``|a_z|`` of the trunk (finite-diff of v_z).
-
-    Captures hard impacts (large deceleration spike on landing) AND incentivises
-    a smooth quasi-static descent (constant velocity → a_z ≈ 0). At rest a_z is
-    zero so the seated robot pays no cost.
-
-    State is kept on the env in ``_prev_trunk_vz``; at episode reset the
-    accel is zeroed to avoid a transient from the previous episode's final
-    state leaking into the new one.
-    """
+    # Penalty proportional to ``|a_z|`` of the trunk (finite-diff of v_z).
+    #
+    # Captures hard impacts (large deceleration spike on landing) AND incentivises
+    # a smooth quasi-static descent (constant velocity → a_z ≈ 0). At rest a_z is
+    # zero so the seated robot pays no cost.
+    #
+    # State is kept on the env in ``_prev_trunk_vz``; at episode reset the
+    # accel is zeroed to avoid a transient from the previous episode's final
+    # state leaking into the new one.
     asset = env.scene[asset_cfg.name]
     vz = torch.nan_to_num(asset.data.root_link_lin_vel_w[:, 2], nan=0.0)
     prev = getattr(env, "_prev_trunk_vz", None)
@@ -2020,31 +1941,29 @@ def trunk_vertical_accel_penalty(env: ManagerBasedRlEnv, asset_cfg: SceneEntityC
 
 
 def trunk_downward_velocity_penalty(env: ManagerBasedRlEnv, max_down_vel: float = 0.05, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """Penalty on downward trunk velocity beyond ``max_down_vel``.
-
-    Caps descent SPEED, which ``trunk_vertical_accel_penalty`` alone cannot:
-    a fast constant-velocity drop has a_z ≈ 0 the whole way down and pays only
-    one impact spike at the bottom — cheap relative to arriving at the target
-    pose sooner. This term makes every step of a too-fast descent cost reward,
-    so the gentlest descent that stays under the cap is optimal. Zero at rest
-    and for any motion slower than the cap (including all upward motion).
-    """
+    # Penalty on downward trunk velocity beyond ``max_down_vel``.
+    #
+    # Caps descent SPEED, which ``trunk_vertical_accel_penalty`` alone cannot:
+    # a fast constant-velocity drop has a_z ≈ 0 the whole way down and pays only
+    # one impact spike at the bottom — cheap relative to arriving at the target
+    # pose sooner. This term makes every step of a too-fast descent cost reward,
+    # so the gentlest descent that stays under the cap is optimal. Zero at rest
+    # and for any motion slower than the cap (including all upward motion).
     asset = env.scene[asset_cfg.name]
     vz = torch.nan_to_num(asset.data.root_link_lin_vel_w[:, 2], nan=0.0)
     return -torch.clamp(-vz - max_down_vel, min=0.0)
 
 
 def seated_stillness(env: ManagerBasedRlEnv, height_full: float = 0.06, height_zero: float = 0.08, vel_std: float = 0.05, tilt_full_deg: float = 25.0, tilt_zero_deg: float = 60.0, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """Reward trunk stillness while seated UPRIGHT: |v| Gaussian, z- and tilt-gated.
-
-    exp(-(|v|/vel_std)²) · smoothstep(z) · smoothstep(tilt). The z gate is full
-    below ``height_full`` and zero above ``height_zero`` (inactive during the
-    descent). The tilt gate is full below ``tilt_full_deg`` and zero above
-    ``tilt_zero_deg`` — WITHOUT it, "lie still on your back" scores as well as
-    "sit still upright" (the trunk on its back is inside the seated z band and
-    perfectly motionless), which is exactly the exploit run 2 converged to.
-    Makes "rest quietly, upright, at the seated height" the only rewarded rest.
-    """
+    # Reward trunk stillness while seated UPRIGHT: |v| Gaussian, z- and tilt-gated.
+    #
+    # exp(-(|v|/vel_std)²) · smoothstep(z) · smoothstep(tilt). The z gate is full
+    # below ``height_full`` and zero above ``height_zero`` (inactive during the
+    # descent). The tilt gate is full below ``tilt_full_deg`` and zero above
+    # ``tilt_zero_deg`` — WITHOUT it, "lie still on your back" scores as well as
+    # "sit still upright" (the trunk on its back is inside the seated z band and
+    # perfectly motionless), which is exactly the exploit run 2 converged to.
+    # Makes "rest quietly, upright, at the seated height" the only rewarded rest.
     asset = env.scene[asset_cfg.name]
     v = torch.nan_to_num(asset.data.root_link_lin_vel_w, nan=0.0).norm(dim=-1)
     z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0)
@@ -2060,15 +1979,14 @@ def seated_stillness(env: ManagerBasedRlEnv, height_full: float = 0.06, height_z
 
 
 def upright_while_tall(env: ManagerBasedRlEnv, height_low: float, height_high: float, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """Linear upright reward weighted by a smoothstep on trunk z.
-
-    Returns ``body_upright_linear * smoothstep((z - low)/(high - low))`` so the
-    upright incentive is full while the robot is still standing tall, and
-    fades to zero once it has committed to the lower sit configuration (where
-    butt-on-ground orientation is fine). Prevents the policy from learning to
-    tip backward while still high (which would otherwise farm the descent
-    reward via a controlled fall).
-    """
+    # Linear upright reward weighted by a smoothstep on trunk z.
+    #
+    # Returns ``body_upright_linear * smoothstep((z - low)/(high - low))`` so the
+    # upright incentive is full while the robot is still standing tall, and
+    # fades to zero once it has committed to the lower sit configuration (where
+    # butt-on-ground orientation is fine). Prevents the policy from learning to
+    # tip backward while still high (which would otherwise farm the descent
+    # reward via a controlled fall).
     asset = env.scene[asset_cfg.name]
     quat = asset.data.root_link_quat_w
     qx = quat[:, 1]
@@ -2081,13 +1999,12 @@ def upright_while_tall(env: ManagerBasedRlEnv, height_low: float, height_high: f
 
 
 def phase_pose_blend(phase: torch.Tensor, descent_end: float, hold_end: float, rise_end: float) -> torch.Tensor:
-    """Blend 0..1 along the phase [0,1) — 0 = STAND pose, 1 = DOWN pose.
-
-    [0, descent_end)       : 0 -> 1  (go down)
-    [descent_end, hold_end): 1       (low)
-    [hold_end, rise_end)   : 1 -> 0  (stand up)
-    [rise_end, 1.0)        : 0       (high / rest)
-    """
+    # Blend 0..1 along the phase [0,1) — 0 = STAND pose, 1 = DOWN pose.
+    #
+    # [0, descent_end)       : 0 -> 1  (go down)
+    # [descent_end, hold_end): 1       (low)
+    # [hold_end, rise_end)   : 1 -> 0  (stand up)
+    # [rise_end, 1.0)        : 0       (high / rest)
     b = torch.zeros_like(phase)
     descend = phase < descent_end
     b = torch.where(descend, phase / descent_end, b)
@@ -2099,15 +2016,14 @@ def phase_pose_blend(phase: torch.Tensor, descent_end: float, hold_end: float, r
 
 
 def kick_pose_target(phase: torch.Tensor, stand: torch.Tensor, back: torch.Tensor, forward: torch.Tensor, windup_end: float, kick_end: float, return_end: float) -> torch.Tensor:
-    """Interpolated joint target of a 4-keyframe kicking gesture.
-
-    phase (B,) ∈ [0,1). stand/back/forward (k,) or (1,k). Returns (B,k).
-
-    [0, windup_end)        STAND   -> BACK     (wind-up)
-    [windup_end, kick_end) BACK    -> FORWARD  (sharp strike)
-    [kick_end, return_end) FORWARD -> STAND    (return)
-    [return_end, 1.0)      STAND             (rest)
-    """
+    # Interpolated joint target of a 4-keyframe kicking gesture.
+    #
+    # phase (B,) ∈ [0,1). stand/back/forward (k,) or (1,k). Returns (B,k).
+    #
+    # [0, windup_end)        STAND   -> BACK     (wind-up)
+    # [windup_end, kick_end) BACK    -> FORWARD  (sharp strike)
+    # [kick_end, return_end) FORWARD -> STAND    (return)
+    # [return_end, 1.0)      STAND             (rest)
     p = phase.unsqueeze(-1)  # (B,1)
 
     def interp(a, b, s):
@@ -2128,13 +2044,12 @@ def kick_pose_target(phase: torch.Tensor, stand: torch.Tensor, back: torch.Tenso
 
 
 def _kick_pose_error(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg, command_name: str, stand_pose: dict, back_pose: dict, forward_pose: dict, windup_end: float, kick_end: float, return_end: float, joint_names: list | None = None):
-    """(cur, target) for the kicking gesture, joints resolved BY NAME.
-
-    The 3 poses share the same keys (14 joints). The name order is
-    given by `stand_pose` (or by `joint_names` if provided — a subset
-    of the keys, e.g. right leg + neck on one side, left leg on the other, to
-    apply different stds to the gesture vs the support leg).
-    """
+    # (cur, target) for the kicking gesture, joints resolved BY NAME.
+    #
+    # The 3 poses share the same keys (14 joints). The name order is
+    # given by `stand_pose` (or by `joint_names` if provided — a subset
+    # of the keys, e.g. right leg + neck on one side, left leg on the other, to
+    # apply different stds to the gesture vs the support leg).
     if not stand_pose:
         raise ValueError("_kick_pose_error requires a non-empty stand_pose dict")
     asset: Entity = env.scene[asset_cfg.name]
@@ -2154,31 +2069,29 @@ def _kick_pose_error(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg, command_
 
 
 def kick_pose_track(env: ManagerBasedRlEnv, command_name: str = "twist", stand_pose: dict | None = None, back_pose: dict | None = None, forward_pose: dict | None = None, std: float = 0.4, windup_end: float = 0.35, kick_end: float = 0.45, return_end: float = 0.75, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, joint_names: list | None = None) -> torch.Tensor:
-    """Gaussian on the joint pose vs the interpolated kick target.
-
-    Directive and symmetric reward: every phase imposes the exact joint
-    config. Resolution BY NAME. `joint_names` restricts the evaluation to a
-    subset (e.g. right leg + neck tracked tightly, left support leg
-    tracked loosely to let it balance).
-    """
+    # Gaussian on the joint pose vs the interpolated kick target.
+    #
+    # Directive and symmetric reward: every phase imposes the exact joint
+    # config. Resolution BY NAME. `joint_names` restricts the evaluation to a
+    # subset (e.g. right leg + neck tracked tightly, left support leg
+    # tracked loosely to let it balance).
     cur, target = _kick_pose_error(env, asset_cfg, command_name, stand_pose or {}, back_pose or {}, forward_pose or {}, windup_end, kick_end, return_end, joint_names)
     return torch.exp(-(((cur - target) / std) ** 2)).mean(dim=-1)
 
 
 def kick_pose_track_l1(env: ManagerBasedRlEnv, command_name: str = "twist", stand_pose: dict | None = None, back_pose: dict | None = None, forward_pose: dict | None = None, windup_end: float = 0.35, kick_end: float = 0.45, return_end: float = 0.75, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, joint_names: list | None = None) -> torch.Tensor:
-    """L1 bootstrap towards the interpolated target (constant gradient, penalty<=0)."""
+    # L1 bootstrap towards the interpolated target (constant gradient, penalty<=0).
     cur, target = _kick_pose_error(env, asset_cfg, command_name, stand_pose or {}, back_pose or {}, forward_pose or {}, windup_end, kick_end, return_end, joint_names)
     return -(cur - target).abs().mean(dim=-1)
 
 
 def kick_engagement(phase: torch.Tensor, windup_end: float, return_end: float) -> torch.Tensor:
-    """Gesture engagement gate ∈ [0,1] (pure) — to weight the single-leg
-    balance rewards that must only apply outside the STAND rest.
-
-    [0, windup_end)        : 0 -> 1  (ramp up during the wind-up)
-    [windup_end, return_end): 1       (strike phase = single-leg support expected)
-    [return_end, 1.0)      : 0        (STAND rest, two-leg support, centered CoM OK)
-    """
+    # Gesture engagement gate ∈ [0,1] (pure) — to weight the single-leg
+    # balance rewards that must only apply outside the STAND rest.
+    #
+    # [0, windup_end)        : 0 -> 1  (ramp up during the wind-up)
+    # [windup_end, return_end): 1       (strike phase = single-leg support expected)
+    # [return_end, 1.0)      : 0        (STAND rest, two-leg support, centered CoM OK)
     g = torch.zeros_like(phase)
     ramp = phase < windup_end
     g = torch.where(ramp, phase / windup_end, g)
@@ -2188,17 +2101,16 @@ def kick_engagement(phase: torch.Tensor, windup_end: float, return_end: float) -
 
 
 def com_over_support_foot(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg, command_name: str = "twist", std: float = 0.04, windup_end: float = 0.35, return_end: float = 0.75) -> torch.Tensor:
-    """Gaussian reward: horizontal projection of the CoM close to the support foot,
-    gated on the strike phase (kick_engagement).
-
-    Learns the lateral weight transfer onto the support foot. Without
-    it, a one-footed gesture built from poses recorded in two-leg support keeps the CoM
-    centered between the two feet → tips over and falls as soon as the other foot lifts.
-    At the STAND rest the gate is 0 (two-leg support, centered CoM allowed).
-
-    `asset_cfg` must target the support foot site (e.g. site_names=["left_foot"]).
-    `std` in meters (CoM↔foot tolerance radius, ~foot size).
-    """
+    # Gaussian reward: horizontal projection of the CoM close to the support foot,
+    # gated on the strike phase (kick_engagement).
+    #
+    # Learns the lateral weight transfer onto the support foot. Without
+    # it, a one-footed gesture built from poses recorded in two-leg support keeps the CoM
+    # centered between the two feet → tips over and falls as soon as the other foot lifts.
+    # At the STAND rest the gate is 0 (two-leg support, centered CoM allowed).
+    #
+    # `asset_cfg` must target the support foot site (e.g. site_names=["left_foot"]).
+    # `std` in meters (CoM↔foot tolerance radius, ~foot size).
     asset: Entity = env.scene[asset_cfg.name]
     com_xy = asset.data.root_com_pos_w[:, :2]
     foot_id = asset_cfg.site_ids[0]
@@ -2213,12 +2125,11 @@ def com_over_support_foot(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg, com
 
 
 def _phase_pose_error(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg, command_name: str, target_pose: dict, descent_end: float, hold_end: float, rise_end: float, source_pose: dict | None = None):
-    """(cur, target) for the phase-interpolated pose, resolved BY NAME.
-
-    Target = source + blend(phase)·(target_pose - source), source = STAND
-    (`source_pose` if provided, otherwise the model DEFAULT/HOME). blend ∈ [0,1]
-    (0 = STAND, 1 = target_pose) via `phase_pose_blend`.
-    """
+    # (cur, target) for the phase-interpolated pose, resolved BY NAME.
+    #
+    # Target = source + blend(phase)·(target_pose - source), source = STAND
+    # (`source_pose` if provided, otherwise the model DEFAULT/HOME). blend ∈ [0,1]
+    # (0 = STAND, 1 = target_pose) via `phase_pose_blend`.
     if not target_pose:
         raise ValueError("_phase_pose_error requires a non-empty target_pose dict")
 
@@ -2244,41 +2155,38 @@ def _phase_pose_error(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg, command
 
 
 def phase_pose_track(env: ManagerBasedRlEnv, command_name: str = "twist", target_pose: dict | None = None, source_pose: dict | None = None, std: float = 0.3, descent_end: float = 0.15, hold_end: float = 0.50, rise_end: float = 0.65, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """Gaussian on the joint pose vs the interpolated STAND<->DOWN target.
-
-    Directive reward: indicates the exact joint config at every phase. Standing
-    up (target → STAND) is rewarded exactly like going down (target →
-    DOWN) — symmetric by construction. Resolution BY NAME.
-    """
+    # Gaussian on the joint pose vs the interpolated STAND<->DOWN target.
+    #
+    # Directive reward: indicates the exact joint config at every phase. Standing
+    # up (target → STAND) is rewarded exactly like going down (target →
+    # DOWN) — symmetric by construction. Resolution BY NAME.
     cur, target = _phase_pose_error(env, asset_cfg, command_name, target_pose or {}, descent_end, hold_end, rise_end, source_pose)
     return torch.exp(-(((cur - target) / std) ** 2)).mean(dim=-1)
 
 
 def phase_pose_track_l1(env: ManagerBasedRlEnv, command_name: str = "twist", target_pose: dict | None = None, source_pose: dict | None = None, descent_end: float = 0.15, hold_end: float = 0.50, rise_end: float = 0.65, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """L1 bootstrap towards the interpolated target (negative penalty).
-
-    Constant gradient everywhere — gives a direction towards the target even when the
-    Gaussian above has saturated to ~0 far from the target.
-    """
+    # L1 bootstrap towards the interpolated target (negative penalty).
+    #
+    # Constant gradient everywhere — gives a direction towards the target even when the
+    # Gaussian above has saturated to ~0 far from the target.
     cur, target = _phase_pose_error(env, asset_cfg, command_name, target_pose or {}, descent_end, hold_end, rise_end, source_pose)
     return -(cur - target).abs().mean(dim=-1)
 
 
 def phase_pose_match(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, std: float = 0.3, command_name: str = "twist", joint_indices: list | None = None, target_overrides: dict | None = None, phase: str = "approach") -> torch.Tensor:
-    """Reward matching a target pose, weighted by phase-cycle command.
-
-    Generic helper for phase-conditioned tasks (e.g. sit/stand). The command
-    encodes phase as [cos(2π·phase), sin(2π·phase), 0]:
-      - "approach" weight = max(0, sin(2π·phase)) — peaks at phase 0.25.
-      - "return"   weight = max(0,-sin(2π·phase)) — peaks at phase 0.75.
-
-    Args:
-        std: Gaussian std per joint (rad).
-        joint_indices: Optional subset of joints to evaluate (rest ignored).
-        target_overrides: {joint_index: angle_rad}. Joints not listed default
-            to asset.data.default_joint_pos (the home/standing pose).
-        phase: "approach" or "return".
-    """
+    # Reward matching a target pose, weighted by phase-cycle command.
+    #
+    # Generic helper for phase-conditioned tasks (e.g. sit/stand). The command
+    # encodes phase as [cos(2π·phase), sin(2π·phase), 0]:
+    #   - "approach" weight = max(0, sin(2π·phase)) — peaks at phase 0.25.
+    #   - "return"   weight = max(0,-sin(2π·phase)) — peaks at phase 0.75.
+    #
+    # Args:
+    #     std: Gaussian std per joint (rad).
+    #     joint_indices: Optional subset of joints to evaluate (rest ignored).
+    #     target_overrides: {joint_index: angle_rad}. Joints not listed default
+    #         to asset.data.default_joint_pos (the home/standing pose).
+    #     phase: "approach" or "return".
     asset = env.scene[asset_cfg.name]
     joint_pos = _servo_joint_pos(env, asset)
     target = _servo_default_joint_pos(env, asset).clone()
@@ -2299,16 +2207,15 @@ def phase_pose_match(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAUL
 
 
 def ground_pick_return_pose(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, std: float = 0.3, command_name: str = "twist", joint_indices: list | None = None) -> torch.Tensor:
-    """Reward for returning to the standing pose after ground pick, weighted by the return phase.
-
-    The return phase is the second half-cycle (sin < 0, phase ∈ [0.5, 1.0]),
-    smoothly weighted by max(0, -sin(2π*phase)).
-
-    Args:
-        std: Gaussian std per joint (rad).
-        joint_indices: Subset of joints to evaluate. Use to apply different stds
-            to leg joints vs neck/head joints (call this reward twice).
-    """
+    # Reward for returning to the standing pose after ground pick, weighted by the return phase.
+    #
+    # The return phase is the second half-cycle (sin < 0, phase ∈ [0.5, 1.0]),
+    # smoothly weighted by max(0, -sin(2π*phase)).
+    #
+    # Args:
+    #     std: Gaussian std per joint (rad).
+    #     joint_indices: Subset of joints to evaluate. Use to apply different stds
+    #         to leg joints vs neck/head joints (call this reward twice).
     asset = env.scene[asset_cfg.name]
     joint_pos = _servo_joint_pos(env, asset)  # (num_envs, n_servo_joints)
     default_pos = _servo_default_joint_pos(env, asset)
@@ -2327,14 +2234,13 @@ def ground_pick_return_pose(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = 
 
 
 def ground_pick_return_upright(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, std: float = 0.4, command_name: str = "twist") -> torch.Tensor:
-    """Reward trunk verticality, weighted by the RETURN phase (stand-up aid).
-
-    Same return weighting as ``ground_pick_return_pose`` (``max(0, -sin(2π·phase))``)
-    so it only rewards being upright during the stand-up, never fighting the
-    forward lean of the approach. Verticality = ``exp(-tilt²/std²)`` with the same
-    tilt proxy as ``body_upright_gaussian`` (``2*(qx²+qy²) ≈ 1-cos(tilt)``). A broad
-    std (0.4 rad ≈ 23°) gives gradient even from a fairly tilted crouch.
-    """
+    # Reward trunk verticality, weighted by the RETURN phase (stand-up aid).
+    #
+    # Same return weighting as ``ground_pick_return_pose`` (``max(0, -sin(2π·phase))``)
+    # so it only rewards being upright during the stand-up, never fighting the
+    # forward lean of the approach. Verticality = ``exp(-tilt²/std²)`` with the same
+    # tilt proxy as ``body_upright_gaussian`` (``2*(qx²+qy²) ≈ 1-cos(tilt)``). A broad
+    # std (0.4 rad ≈ 23°) gives gradient even from a fairly tilted crouch.
     asset: Entity = env.scene[asset_cfg.name]
     quat = asset.data.root_link_quat_w
     tilt_sq = 2.0 * (quat[:, 1] ** 2 + quat[:, 2] ** 2)  # qx² + qy²
@@ -2353,8 +2259,8 @@ def ground_pick_return_upright(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg
 #               0 before the rise -> 0..1 (rise) -> 1 (standing rest)            #
 # --------------------------------------------------------------------------- #
 def phase_rise_gate(phase: torch.Tensor, hold_end: float, rise_end: float) -> torch.Tensor:
-    """Rising gate for the RETURN: 0 before hold_end, 0->1 over [hold_end,
-    rise_end), 1 after (standing rest)."""
+    # Rising gate for the RETURN: 0 before hold_end, 0->1 over [hold_end,
+    # rise_end), 1 after (standing rest).
     g = torch.zeros_like(phase)
     rising = (phase >= hold_end) & (phase < rise_end)
     g = torch.where(rising, (phase - hold_end) / (rise_end - hold_end), g)
@@ -2368,7 +2274,7 @@ def _gp_phase(env: ManagerBasedRlEnv, command_name: str) -> torch.Tensor:
 
 
 def mouth_ground_proximity_phased(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot", site_names=["mouth_tip"]), std: float = 0.10, target_height: float = 0.0, command_name: str = "twist", descent_end: float = 0.25, hold_end: float = 0.35, rise_end: float = 0.60) -> torch.Tensor:
-    """mouth_ground_proximity gated by the segmented down-gate (descent+hold)."""
+    # mouth_ground_proximity gated by the segmented down-gate (descent+hold).
     asset = env.scene[asset_cfg.name]
     mouth_z = asset.data.site_pos_w[:, asset_cfg.site_ids[0], 2]
     proximity = torch.exp(-(((mouth_z - target_height) / std) ** 2))
@@ -2377,7 +2283,7 @@ def mouth_ground_proximity_phased(env: ManagerBasedRlEnv, asset_cfg: SceneEntity
 
 
 def mouth_perpendicular_phased(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot", site_names=["mouth_tip"]), command_name: str = "twist", descent_end: float = 0.25, hold_end: float = 0.35, rise_end: float = 0.60) -> torch.Tensor:
-    """mouth_perpendicular_to_ground gated by the segmented down-gate."""
+    # mouth_perpendicular_to_ground gated by the segmented down-gate.
     asset = env.scene[asset_cfg.name]
     q = asset.data.site_quat_w[:, asset_cfg.site_ids[0], :]
     w, qx, qy, qz = q[:, 0], q[:, 1], q[:, 2], q[:, 3]
@@ -2388,7 +2294,7 @@ def mouth_perpendicular_phased(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg
 
 
 def ground_pick_return_pose_phased(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, std: float = 0.3, command_name: str = "twist", joint_indices: list | None = None, hold_end: float = 0.35, rise_end: float = 0.60) -> torch.Tensor:
-    """ground_pick_return_pose gated by the segmented up-gate (rise+rest)."""
+    # ground_pick_return_pose gated by the segmented up-gate (rise+rest).
     asset = env.scene[asset_cfg.name]
     joint_pos = _servo_joint_pos(env, asset)
     default_pos = _servo_default_joint_pos(env, asset)
@@ -2401,7 +2307,7 @@ def ground_pick_return_pose_phased(env: ManagerBasedRlEnv, asset_cfg: SceneEntit
 
 
 def ground_pick_return_upright_phased(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, std: float = 0.4, command_name: str = "twist", hold_end: float = 0.35, rise_end: float = 0.60) -> torch.Tensor:
-    """ground_pick_return_upright gated by the segmented up-gate."""
+    # ground_pick_return_upright gated by the segmented up-gate.
     asset: Entity = env.scene[asset_cfg.name]
     quat = asset.data.root_link_quat_w
     tilt_sq = 2.0 * (quat[:, 1] ** 2 + quat[:, 2] ** 2)
@@ -2411,13 +2317,12 @@ def ground_pick_return_upright_phased(env: ManagerBasedRlEnv, asset_cfg: SceneEn
 
 
 def neck_vel_descent_penalty(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, command_name: str = "twist", joint_indices: list | None = None, hold_end: float = 0.35) -> torch.Tensor:
-    """Penalizes neck joint velocity during the DESCENT+hold (slows the head's
-    nosedive).
-
-    Cost = mean(joint_vel²) over the given joints, gated to 1 for phase < hold_end
-    (descent + low hold) and 0 afterwards (rise + rest) -> does NOT hinder
-    raising the neck. Returns a positive cost; to be used with a negative weight.
-    """
+    # Penalizes neck joint velocity during the DESCENT+hold (slows the head's
+    # nosedive).
+    #
+    # Cost = mean(joint_vel²) over the given joints, gated to 1 for phase < hold_end
+    # (descent + low hold) and 0 afterwards (rise + rest) -> does NOT hinder
+    # raising the neck. Returns a positive cost; to be used with a negative weight.
     asset = env.scene[asset_cfg.name]
     vel = _servo_joint_vel(env, asset)
     if joint_indices is not None:
@@ -2429,8 +2334,8 @@ def neck_vel_descent_penalty(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg =
 
 
 def sample_mouth_payload(env: ManagerBasedRlEnv, env_ids: torch.Tensor, min_kg: float = 0.01, max_kg: float = 0.04) -> None:
-    """Reset event: draws a mass for the object 'held in the mouth' per env (kg),
-    stored on env._mouth_payload_kg. Used by apply_mouth_payload_force."""
+    # Reset event: draws a mass for the object 'held in the mouth' per env (kg),
+    # stored on env._mouth_payload_kg. Used by apply_mouth_payload_force.
     buf = getattr(env, "_mouth_payload_kg", None)
     if buf is None:
         buf = torch.zeros(env.num_envs, device=env.device)
@@ -2441,14 +2346,14 @@ def sample_mouth_payload(env: ManagerBasedRlEnv, env_ids: torch.Tensor, min_kg: 
 
 
 def apply_mouth_payload_force(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot", body_names=["jaw_soft"], site_names=["mouth_tip"]), command_name: str = "twist", hold_end: float = 0.35, ramp: float = 0.05, gravity: float = 9.81) -> torch.Tensor:
-    """Per-step hook (used as a weight-0 reward): applies the WEIGHT of the
-    object held in the mouth as a vertical external force at mouth_tip, gated
-    on the rise (phase >= hold_end, fast ramp at the moment of the 'grab').
-
-    Emulates a point mass at the tip of the mouth while standing up: the force
-    m·g is applied at the body CoM + the torque (p_mouth - p_com) × F, which
-    is equivalent to applying it at mouth_tip (proper lever arm for the neck). Returns
-    0 (this is not a real reward — just the application hook)."""
+    # Per-step hook (used as a weight-0 reward): applies the WEIGHT of the
+    # object held in the mouth as a vertical external force at mouth_tip, gated
+    # on the rise (phase >= hold_end, fast ramp at the moment of the 'grab').
+    #
+    # Emulates a point mass at the tip of the mouth while standing up: the force
+    # m·g is applied at the body CoM + the torque (p_mouth - p_com) × F, which
+    # is equivalent to applying it at mouth_tip (proper lever arm for the neck). Returns
+    # 0 (this is not a real reward — just the application hook).
     asset: Entity = env.scene[asset_cfg.name]
     payload = getattr(env, "_mouth_payload_kg", None)
     if payload is None:
@@ -2474,24 +2379,23 @@ def apply_mouth_payload_force(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg 
 
 
 def randomize_delayed_actuator_gains(env: ManagerBasedRlEnv, env_ids: torch.Tensor, kp_range: tuple[float, float], kd_range: tuple[float, float], asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, operation: str = "scale"):
-    """Randomize firmware PD gains per episode (NON-accumulating).
-
-    Under the canonical BAM actuator (``bam.mjlab.BamActuator``) gains are scaled
-    per-env via ``set_gains``/``reset_gains`` (the actuator owns ``kp_scale``/
-    ``kd_scale``), so we never touch the MuJoCo model — no accumulation risk. The
-    sampled per-joint factors are averaged into a single scalar per env (the
-    actuator applies one scale across its joints), matching the previous behavior.
-    Non-BAM actuators are skipped (e.g. the roller XmlActuator, which doesn't
-    expose set_gains).
-
-    Args:
-        env: The environment
-        env_ids: Environment IDs to randomize (None = all envs)
-        kp_range: (min, max) for kp randomization
-        kd_range: (min, max) for kd randomization
-        asset_cfg: Asset configuration
-        operation: unused (kept for cfg compatibility; scaling is always applied)
-    """
+    # Randomize firmware PD gains per episode (NON-accumulating).
+    #
+    # Under the canonical BAM actuator (``bam.mjlab.BamActuator``) gains are scaled
+    # per-env via ``set_gains``/``reset_gains`` (the actuator owns ``kp_scale``/
+    # ``kd_scale``), so we never touch the MuJoCo model — no accumulation risk. The
+    # sampled per-joint factors are averaged into a single scalar per env (the
+    # actuator applies one scale across its joints), matching the previous behavior.
+    # Non-BAM actuators are skipped (e.g. the roller XmlActuator, which doesn't
+    # expose set_gains).
+    #
+    # Args:
+    #     env: The environment
+    #     env_ids: Environment IDs to randomize (None = all envs)
+    #     kp_range: (min, max) for kp randomization
+    #     kd_range: (min, max) for kd randomization
+    #     asset_cfg: Asset configuration
+    #     operation: unused (kept for cfg compatibility; scaling is always applied)
     del operation
     from bam.mjlab import BamActuator
 
@@ -2515,26 +2419,25 @@ def randomize_delayed_actuator_gains(env: ManagerBasedRlEnv, env_ids: torch.Tens
 
 @requires_model_fields("dof_frictionloss", "dof_damping")
 def expand_bam_friction_fields(env: ManagerBasedRlEnv, env_ids: torch.Tensor):
-    """No-op startup event whose only purpose is the decorator above.
-
-    bam's BamActuator (mjlab_frictionloss branch) writes a per-env friction
-    budget into MuJoCo's dof_frictionloss/dof_damping every step, which
-    requires those model fields to be expanded per world. mjlab expands
-    exactly the fields declared by event functions via requires_model_fields,
-    so every env using the BAM actuator must register this event.
-    """
+    # No-op startup event whose only purpose is the decorator above.
+    #
+    # bam's BamActuator (mjlab_frictionloss branch) writes a per-env friction
+    # budget into MuJoCo's dof_frictionloss/dof_damping every step, which
+    # requires those model fields to be expanded per world. mjlab expands
+    # exactly the fields declared by event functions via requires_model_fields,
+    # so every env using the BAM actuator must register this event.
+    pass
 
 
 def randomize_bam_friction(env: ManagerBasedRlEnv, env_ids: torch.Tensor, scale_range: tuple[float, float], asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG):
-    """Per-episode joint-friction randomization for the BAM actuator (NON-accumulating).
-
-    Under BAM, MuJoCo's dof_frictionloss is zeroed (BAM computes friction in
-    compute()), so stock dr.dof_frictionloss is a no-op. Instead this samples a
-    per-env scalar in ``scale_range`` and applies it to the FrictionDRBamActuator's
-    ``friction_scale``, which multiplies BAM's velocity-independent friction budget
-    (Coulomb + Stribeck + load). Restores nominal (1.0) first to avoid accumulation.
-    No-op on actuators without a friction_scale hook.
-    """
+    # Per-episode joint-friction randomization for the BAM actuator (NON-accumulating).
+    #
+    # Under BAM, MuJoCo's dof_frictionloss is zeroed (BAM computes friction in
+    # compute()), so stock dr.dof_frictionloss is a no-op. Instead this samples a
+    # per-env scalar in ``scale_range`` and applies it to the FrictionDRBamActuator's
+    # ``friction_scale``, which multiplies BAM's velocity-independent friction budget
+    # (Coulomb + Stribeck + load). Restores nominal (1.0) first to avoid accumulation.
+    # No-op on actuators without a friction_scale hook.
     from .robot_actuator import FrictionDRBamActuator
 
     if env_ids is None:
@@ -2552,17 +2455,16 @@ def randomize_bam_friction(env: ManagerBasedRlEnv, env_ids: torch.Tensor, scale_
 
 
 def randomize_mass_and_inertia(env: ManagerBasedRlEnv, env_ids: torch.Tensor, scale_range: tuple[float, float], asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG):
-    """Randomize body mass and inertia together with the same scaling factor.
-
-    This maintains physical consistency - mass and inertia must scale together
-    to avoid creating invalid inertia tensors that cause simulation instability.
-
-    Args:
-        env: The environment
-        env_ids: Environment IDs to randomize
-        scale_range: (min, max) scaling factor applied to both mass and inertia
-        asset_cfg: Asset configuration specifying which bodies to randomize
-    """
+    # Randomize body mass and inertia together with the same scaling factor.
+    #
+    # This maintains physical consistency - mass and inertia must scale together
+    # to avoid creating invalid inertia tensors that cause simulation instability.
+    #
+    # Args:
+    #     env: The environment
+    #     env_ids: Environment IDs to randomize
+    #     scale_range: (min, max) scaling factor applied to both mass and inertia
+    #     asset_cfg: Asset configuration specifying which bodies to randomize
     if env_ids is None:
         env_ids = torch.arange(env.num_envs, device=env.device, dtype=torch.int)
     else:
@@ -2596,22 +2498,21 @@ def randomize_mass_and_inertia(env: ManagerBasedRlEnv, env_ids: torch.Tensor, sc
 
 
 def standing_envs_curriculum(env: ManagerBasedRlEnv, env_ids: torch.Tensor, command_name: str, standing_stages: list[dict]) -> torch.Tensor:
-    """Update the relative number of standing environments based on training progress.
-
-    Args:
-        env: The RL environment
-        env_ids: Environment IDs (unused, but required by curriculum interface)
-        command_name: Name of the velocity command term
-        standing_stages: List of dicts with 'step' and 'rel_standing_envs' keys
-            Example: [
-                {"step": 0, "rel_standing_envs": 0.02},
-                {"step": 1000, "rel_standing_envs": 0.1},
-                {"step": 2000, "rel_standing_envs": 0.2},
-            ]
-
-    Returns:
-        Current rel_standing_envs value as a tensor
-    """
+    # Update the relative number of standing environments based on training progress.
+    #
+    # Args:
+    #     env: The RL environment
+    #     env_ids: Environment IDs (unused, but required by curriculum interface)
+    #     command_name: Name of the velocity command term
+    #     standing_stages: List of dicts with 'step' and 'rel_standing_envs' keys
+    #         Example: [
+    #             {"step": 0, "rel_standing_envs": 0.02},
+    #             {"step": 1000, "rel_standing_envs": 0.1},
+    #             {"step": 2000, "rel_standing_envs": 0.2},
+    #         ]
+    #
+    # Returns:
+    #     Current rel_standing_envs value as a tensor
     del env_ids  # Unused
 
     from typing import cast
@@ -2632,25 +2533,24 @@ def standing_envs_curriculum(env: ManagerBasedRlEnv, env_ids: torch.Tensor, comm
 
 
 def velocity_tracking_std_curriculum(env: ManagerBasedRlEnv, env_ids: torch.Tensor, reward_name: str, std_stages: list[dict]) -> torch.Tensor:
-    """Update velocity tracking std parameter based on training progress.
-
-    Starts with loose std (easy rewards) to learn basic walking, then gradually
-    tightens to improve velocity tracking accuracy.
-
-    Args:
-        env: The RL environment
-        env_ids: Environment IDs (unused, but required by curriculum interface)
-        reward_name: Name of the reward term (e.g., "track_linear_velocity")
-        std_stages: List of dicts with 'step' and 'std' keys
-            Example: [
-                {"step": 0, "std": 0.5},      # Start loose - learn to walk
-                {"step": 250, "std": 0.3},     # Moderate - refine gait
-                {"step": 500, "std": 0.2},     # Strict - accurate tracking
-            ]
-
-    Returns:
-        Current std value as a tensor
-    """
+    # Update velocity tracking std parameter based on training progress.
+    #
+    # Starts with loose std (easy rewards) to learn basic walking, then gradually
+    # tightens to improve velocity tracking accuracy.
+    #
+    # Args:
+    #     env: The RL environment
+    #     env_ids: Environment IDs (unused, but required by curriculum interface)
+    #     reward_name: Name of the reward term (e.g., "track_linear_velocity")
+    #     std_stages: List of dicts with 'step' and 'std' keys
+    #         Example: [
+    #             {"step": 0, "std": 0.5},      # Start loose - learn to walk
+    #             {"step": 250, "std": 0.3},     # Moderate - refine gait
+    #             {"step": 500, "std": 0.2},     # Strict - accurate tracking
+    #         ]
+    #
+    # Returns:
+    #     Current std value as a tensor
     del env_ids  # Unused
 
     # Get reward term configuration
@@ -2670,25 +2570,24 @@ def velocity_tracking_std_curriculum(env: ManagerBasedRlEnv, env_ids: torch.Tens
 
 
 def push_curriculum(env: ManagerBasedRlEnv, env_ids: torch.Tensor, event_name: str, push_stages: list[dict]) -> torch.Tensor:
-    """Update push velocity range based on training progress.
-
-    Starts with no/small pushes to learn clean walking, then gradually increases
-    to build robustness without disrupting early learning.
-
-    Args:
-        env: The RL environment
-        env_ids: Environment IDs (unused, but required by curriculum interface)
-        event_name: Name of the push event term (e.g., "push_robot")
-        push_stages: List of dicts with 'step' and 'velocity_range' keys
-            Example: [
-                {"step": 0, "velocity_range": {"x": (0.0, 0.0), "y": (0.0, 0.0)}},
-                {"step": 250, "velocity_range": {"x": (-0.15, 0.15), "y": (-0.15, 0.15)}},
-                {"step": 500, "velocity_range": {"x": (-0.3, 0.3), "y": (-0.3, 0.3)}},
-            ]
-
-    Returns:
-        Current max push magnitude as a tensor
-    """
+    # Update push velocity range based on training progress.
+    #
+    # Starts with no/small pushes to learn clean walking, then gradually increases
+    # to build robustness without disrupting early learning.
+    #
+    # Args:
+    #     env: The RL environment
+    #     env_ids: Environment IDs (unused, but required by curriculum interface)
+    #     event_name: Name of the push event term (e.g., "push_robot")
+    #     push_stages: List of dicts with 'step' and 'velocity_range' keys
+    #         Example: [
+    #             {"step": 0, "velocity_range": {"x": (0.0, 0.0), "y": (0.0, 0.0)}},
+    #             {"step": 250, "velocity_range": {"x": (-0.15, 0.15), "y": (-0.15, 0.15)}},
+    #             {"step": 500, "velocity_range": {"x": (-0.3, 0.3), "y": (-0.3, 0.3)}},
+    #         ]
+    #
+    # Returns:
+    #     Current max push magnitude as a tensor
     del env_ids  # Unused
 
     # NOTE: must update the live EventManager term_cfg, not env.cfg.events —
@@ -2711,7 +2610,7 @@ def push_curriculum(env: ManagerBasedRlEnv, env_ids: torch.Tensor, event_name: s
 
 
 def wheel_friction_curriculum(env: ManagerBasedRlEnv, env_ids: torch.Tensor, event_name: str, ranges_stages: list[dict]) -> torch.Tensor:
-    """Update wheel friction based on training step stages."""
+    # Update wheel friction based on training step stages.
     del env_ids  # Unused
 
     current_ranges = ranges_stages[0]["ranges"]
@@ -2724,14 +2623,13 @@ def wheel_friction_curriculum(env: ManagerBasedRlEnv, env_ids: torch.Tensor, eve
 
 
 def reward_weight(env: ManagerBasedRlEnv, env_ids: torch.Tensor, reward_name: str, weight_stages: list[dict]) -> torch.Tensor:
-    """Step-staged reward weight curriculum.
-
-    mjlab 1.3.0 dropped the built-in ``mdp.reward_weight`` helper, so microduck
-    provides its own. ``weight_stages`` is a list of ``{"step": int, "weight":
-    float}`` dicts; the weight of the latest stage whose step has elapsed is
-    applied. Mutates the live RewardManager term cfg (not env.cfg, which is a
-    deepcopy at manager init).
-    """
+    # Step-staged reward weight curriculum.
+    #
+    # mjlab 1.3.0 dropped the built-in ``mdp.reward_weight`` helper, so microduck
+    # provides its own. ``weight_stages`` is a list of ``{"step": int, "weight":
+    # float}`` dicts; the weight of the latest stage whose step has elapsed is
+    # applied. Mutates the live RewardManager term cfg (not env.cfg, which is a
+    # deepcopy at manager init).
     del env_ids
     term_cfg = env.reward_manager.get_term_cfg(reward_name)
     for stage in weight_stages:
@@ -2741,25 +2639,24 @@ def reward_weight(env: ManagerBasedRlEnv, env_ids: torch.Tensor, reward_name: st
 
 
 def com_range_curriculum(env: ManagerBasedRlEnv, env_ids: torch.Tensor, event_name: str, range_stages: list[dict]) -> torch.Tensor:
-    """Update CoM randomization range based on training progress.
-
-    Gradually increases the CoM offset range so the robot first learns to walk
-    with a small CoM uncertainty, then progressively larger.
-
-    Args:
-        env: The RL environment
-        env_ids: Environment IDs (unused)
-        event_name: Name of the CoM randomization event (e.g., "randomize_com")
-        range_stages: List of dicts with 'step' and 'range' keys (range in meters)
-            Example: [
-                {"step": 0,          "range": 0.003},
-                {"step": 1000 * 24,  "range": 0.005},
-                {"step": 2000 * 24,  "range": 0.008},
-            ]
-
-    Returns:
-        Current range value as a tensor (for logging)
-    """
+    # Update CoM randomization range based on training progress.
+    #
+    # Gradually increases the CoM offset range so the robot first learns to walk
+    # with a small CoM uncertainty, then progressively larger.
+    #
+    # Args:
+    #     env: The RL environment
+    #     env_ids: Environment IDs (unused)
+    #     event_name: Name of the CoM randomization event (e.g., "randomize_com")
+    #     range_stages: List of dicts with 'step' and 'range' keys (range in meters)
+    #         Example: [
+    #             {"step": 0,          "range": 0.003},
+    #             {"step": 1000 * 24,  "range": 0.005},
+    #             {"step": 2000 * 24,  "range": 0.008},
+    #         ]
+    #
+    # Returns:
+    #     Current range value as a tensor (for logging)
     del env_ids
 
     # NOTE: must update the live EventManager term_cfg, not env.cfg.events —
@@ -2776,27 +2673,25 @@ def com_range_curriculum(env: ManagerBasedRlEnv, env_ids: torch.Tensor, event_na
 
 
 def slope_move_masks(distance: "torch.Tensor", size_x: float):
-    """Promotion/demotion masks of the slope curriculum.
-
-    move_up   : traveled more than 40% of the tile → it went down the ramp,
-                make it steeper. Aligned with the terrain_edge_reached
-                termination (~3.8 m, threshold_fraction=0.95 by
-                default on size_x=8.0), which ends the episode before the
-                half threshold (4.0 m) — without this alignment a successful
-                traverser is never promoted.
-    move_down : barely advanced (< 20% of the tile) → early fall/stall,
-                make the ramp gentler.
-    """
+    # Promotion/demotion masks of the slope curriculum.
+    #
+    # move_up   : traveled more than 40% of the tile → it went down the ramp,
+    #             make it steeper. Aligned with the terrain_edge_reached
+    #             termination (~3.8 m, threshold_fraction=0.95 by
+    #             default on size_x=8.0), which ends the episode before the
+    #             half threshold (4.0 m) — without this alignment a successful
+    #             traverser is never promoted.
+    # move_down : barely advanced (< 20% of the tile) → early fall/stall,
+    #             make the ramp gentler.
     move_up = distance > size_x * 0.4
     move_down = (distance < size_x * 0.2) & (~move_up)
     return move_up, move_down
 
 
 def terrain_levels_slope(env: ManagerBasedRlEnv, env_ids: torch.Tensor) -> torch.Tensor:
-    """Steepness curriculum for roller_slope (no commanded velocity).
-
-    Progression based on the x distance traveled from the spawn origin.
-    """
+    # Steepness curriculum for roller_slope (no commanded velocity).
+    #
+    # Progression based on the x distance traveled from the spawn origin.
     asset = env.scene["robot"]
     terrain = env.scene.terrain
     assert terrain is not None
@@ -2810,26 +2705,25 @@ def terrain_levels_slope(env: ManagerBasedRlEnv, env_ids: torch.Tensor) -> torch
 
 
 def velocity_command_ranges_curriculum(env: ManagerBasedRlEnv, env_ids: torch.Tensor, command_name: str, velocity_stages: list[dict], update_lin_vel_y: bool = True, update_ang_vel_z: bool = True, forward_only: bool = False) -> torch.Tensor:
-    """Update velocity command ranges based on training progress.
-
-    Gradually increases the commanded velocity ranges to allow the robot to learn
-    higher speeds progressively. Starts with smaller ranges for stable learning,
-    then expands to more challenging velocities.
-
-    Args:
-        env: The RL environment
-        env_ids: Environment IDs (unused, but required by curriculum interface)
-        command_name: Name of the velocity command term (e.g., "twist")
-        velocity_stages: List of dicts with 'step', 'lin_vel_range', and 'ang_vel_range' keys
-            Example: [
-                {"step": 0, "lin_vel_range": 0.3, "ang_vel_range": 1.5},
-                {"step": 500 * 24, "lin_vel_range": 0.4, "ang_vel_range": 1.75},
-                {"step": 1000 * 24, "lin_vel_range": 0.5, "ang_vel_range": 2.0},
-            ]
-
-    Returns:
-        Current max linear velocity as a tensor
-    """
+    # Update velocity command ranges based on training progress.
+    #
+    # Gradually increases the commanded velocity ranges to allow the robot to learn
+    # higher speeds progressively. Starts with smaller ranges for stable learning,
+    # then expands to more challenging velocities.
+    #
+    # Args:
+    #     env: The RL environment
+    #     env_ids: Environment IDs (unused, but required by curriculum interface)
+    #     command_name: Name of the velocity command term (e.g., "twist")
+    #     velocity_stages: List of dicts with 'step', 'lin_vel_range', and 'ang_vel_range' keys
+    #         Example: [
+    #             {"step": 0, "lin_vel_range": 0.3, "ang_vel_range": 1.5},
+    #             {"step": 500 * 24, "lin_vel_range": 0.4, "ang_vel_range": 1.75},
+    #             {"step": 1000 * 24, "lin_vel_range": 0.5, "ang_vel_range": 2.0},
+    #         ]
+    #
+    # Returns:
+    #     Current max linear velocity as a tensor
     del env_ids  # Unused
 
     from typing import cast
@@ -2864,31 +2758,29 @@ def velocity_command_ranges_curriculum(env: ManagerBasedRlEnv, env_ids: torch.Te
 
 
 def projected_gravity(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """Projected gravity vector in body frame.
-
-    Returns the gravity vector projected into the robot's body frame,
-    representing pure orientation without linear acceleration.
-    This is simpler than raw accelerometer and only depends on orientation.
-
-    Returns:
-        torch.Tensor: Projected gravity in body frame (num_envs, 3)
-    """
+    # Projected gravity vector in body frame.
+    #
+    # Returns the gravity vector projected into the robot's body frame,
+    # representing pure orientation without linear acceleration.
+    # This is simpler than raw accelerometer and only depends on orientation.
+    #
+    # Returns:
+    #     torch.Tensor: Projected gravity in body frame (num_envs, 3)
     asset: Entity = env.scene[asset_cfg.name]
     return asset.data.projected_gravity_b
 
 
 def _imu_misalignment_quat(env: ManagerBasedRlEnv, max_angle_rad: float) -> torch.Tensor:
-    """Per-env constant IMU mounting-misalignment rotation (sampled once).
-
-    Models a fixed small mounting/calibration error of the IMU on each robot.
-    Sampled lazily on first use and cached — constant per env for the whole run
-    (like a startup randomization), so it's a *systematic per-robot bias*, not
-    per-step noise. Replaces the old randomize_imu_orientation event, which wrote
-    site_quat (not per-env expanded under mjlab 1.3.0, and not read by the
-    projected_gravity / base_ang_vel observations anyway).
-
-    Returns a (num_envs, 4) unit quaternion (w, x, y, z).
-    """
+    # Per-env constant IMU mounting-misalignment rotation (sampled once).
+    #
+    # Models a fixed small mounting/calibration error of the IMU on each robot.
+    # Sampled lazily on first use and cached — constant per env for the whole run
+    # (like a startup randomization), so it's a *systematic per-robot bias*, not
+    # per-step noise. Replaces the old randomize_imu_orientation event, which wrote
+    # site_quat (not per-env expanded under mjlab 1.3.0, and not read by the
+    # projected_gravity / base_ang_vel observations anyway).
+    #
+    # Returns a (num_envs, 4) unit quaternion (w, x, y, z).
     q = getattr(env, "_imu_misalign_quat", None)
     if q is None:
         n = env.num_envs
@@ -2901,29 +2793,28 @@ def _imu_misalignment_quat(env: ManagerBasedRlEnv, max_angle_rad: float) -> torc
 
 
 def projected_gravity_imu_misaligned(env: ManagerBasedRlEnv, max_angle_deg: float = 1.0, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """projected_gravity with a per-env constant IMU mounting misalignment."""
+    # projected_gravity with a per-env constant IMU mounting misalignment.
     asset: Entity = env.scene[asset_cfg.name]
     q = _imu_misalignment_quat(env, math.radians(max_angle_deg))
     return quat_apply(q, asset.data.projected_gravity_b)
 
 
 def base_ang_vel_imu_misaligned(env: ManagerBasedRlEnv, max_angle_deg: float = 1.0, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """base angular velocity with the SAME per-env IMU misalignment as gravity."""
+    # base angular velocity with the SAME per-env IMU misalignment as gravity.
     asset: Entity = env.scene[asset_cfg.name]
     q = _imu_misalignment_quat(env, math.radians(max_angle_deg))
     return quat_apply(q, asset.data.root_link_ang_vel_b)
 
 
 def raw_accelerometer(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """Raw accelerometer reading (includes gravity + linear acceleration).
-
-    Returns normalized raw accelerometer which mimics what a real IMU measures.
-    This is different from pure projected_gravity which only reflects orientation.
-    Reads from the MuJoCo accelerometer sensor "imu_accel".
-
-    Returns:
-        torch.Tensor: Normalized raw accelerometer reading (num_envs, 3)
-    """
+    # Raw accelerometer reading (includes gravity + linear acceleration).
+    #
+    # Returns normalized raw accelerometer which mimics what a real IMU measures.
+    # This is different from pure projected_gravity which only reflects orientation.
+    # Reads from the MuJoCo accelerometer sensor "imu_accel".
+    #
+    # Returns:
+    #     torch.Tensor: Normalized raw accelerometer reading (num_envs, 3)
     asset: Entity = env.scene[asset_cfg.name]
 
     # Access the model to find the sensor address
@@ -2956,17 +2847,16 @@ def raw_accelerometer(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAU
 
 
 def randomize_imu_orientation(env: ManagerBasedRlEnv, env_ids: torch.Tensor, max_angle_deg: float = 2.0, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG):
-    """Randomize IMU sensor mounting orientation by small angles.
-
-    Simulates slight mounting errors or calibration offsets in the real robot.
-    The IMU orientation is randomized by rotating around random axes by up to max_angle_deg.
-
-    Args:
-        env: The environment
-        env_ids: Environment IDs to randomize
-        max_angle_deg: Maximum rotation angle in degrees (default 2.0°)
-        asset_cfg: Asset configuration
-    """
+    # Randomize IMU sensor mounting orientation by small angles.
+    #
+    # Simulates slight mounting errors or calibration offsets in the real robot.
+    # The IMU orientation is randomized by rotating around random axes by up to max_angle_deg.
+    #
+    # Args:
+    #     env: The environment
+    #     env_ids: Environment IDs to randomize
+    #     max_angle_deg: Maximum rotation angle in degrees (default 2.0°)
+    #     asset_cfg: Asset configuration
     if env_ids is None:
         env_ids = torch.arange(env.num_envs, device=env.device, dtype=torch.int)
     else:
@@ -3020,18 +2910,17 @@ def randomize_imu_orientation(env: ManagerBasedRlEnv, env_ids: torch.Tensor, max
 
 
 def standing_phase(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """Simple time-based phase for standing task.
-
-    Returns a scalar phase value that cycles from 0 to 1 based on time.
-    This allows the policy to have a sense of time progression even when standing.
-
-    Args:
-        env: The RL environment
-        asset_cfg: Not used, but kept for API consistency
-
-    Returns:
-        Phase value [0, 1] as tensor of shape (num_envs, 1)
-    """
+    # Simple time-based phase for standing task.
+    #
+    # Returns a scalar phase value that cycles from 0 to 1 based on time.
+    # This allows the policy to have a sense of time progression even when standing.
+    #
+    # Args:
+    #     env: The RL environment
+    #     asset_cfg: Not used, but kept for API consistency
+    #
+    # Returns:
+    #     Phase value [0, 1] as tensor of shape (num_envs, 1)
     # Simple time-based phase that cycles every 2 seconds
     # This gives the policy a time-varying signal
     phase_period = 2.0  # seconds
@@ -3052,15 +2941,14 @@ def air_time_adaptive(
     run_threshold_min: float = 0.05,
     run_threshold_max: float = 0.25,
 ) -> torch.Tensor:
-    """Air-time reward with separate swing-time windows for walking vs running.
-
-    - command < command_threshold  → 0 (standing, no reward)
-    - command_threshold–running_threshold → walk window [walk_min, walk_max]
-    - command > running_threshold  → run  window [run_min,  run_max]
-
-    This lets the walking gait keep its deliberate 100–250 ms swing while
-    running can use a faster 50–250 ms cadence.
-    """
+    # Air-time reward with separate swing-time windows for walking vs running.
+    #
+    # - command < command_threshold  → 0 (standing, no reward)
+    # - command_threshold–running_threshold → walk window [walk_min, walk_max]
+    # - command > running_threshold  → run  window [run_min,  run_max]
+    #
+    # This lets the walking gait keep its deliberate 100–250 ms swing while
+    # running can use a faster 50–250 ms cadence.
     sensor = env.scene.sensors[sensor_name]
     current_air_time = sensor.data.current_air_time  # (num_envs, num_feet)
     assert current_air_time is not None
@@ -3084,13 +2972,12 @@ def air_time_adaptive(
 
 
 def stillness_at_zero_command(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, command_name: str = "twist", command_threshold: float = 0.01, vel_std: float = 0.1) -> torch.Tensor:
-    """Reward staying still when command is near zero.
-
-    Returns exp(-body_vel² / vel_std²) when command < threshold, else 0.
-    This is monotonically decreasing with body speed — moving faster is always
-    less rewarding. There is no threshold the robot can cross to 'escape' it,
-    unlike gate-based stepping penalties.
-    """
+    # Reward staying still when command is near zero.
+    #
+    # Returns exp(-body_vel² / vel_std²) when command < threshold, else 0.
+    # This is monotonically decreasing with body speed — moving faster is always
+    # less rewarding. There is no threshold the robot can cross to 'escape' it,
+    # unlike gate-based stepping penalties.
     asset: Entity = env.scene[asset_cfg.name]
 
     command = env.command_manager.get_command(command_name)
@@ -3104,12 +2991,11 @@ def stillness_at_zero_command(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg 
 
 
 def joint_vel_l2_when_standing(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, command_name: str = "twist", command_threshold: float = 0.01) -> torch.Tensor:
-    """Penalise leg joint velocities only when command is near zero.
-
-    Targets the standing-shake problem: the policy makes rapid oscillating
-    corrections around the home pose when standing. Gated on command so it
-    does not affect the walking gait at all.
-    """
+    # Penalise leg joint velocities only when command is near zero.
+    #
+    # Targets the standing-shake problem: the policy makes rapid oscillating
+    # corrections around the home pose when standing. Gated on command so it
+    # does not affect the walking gait at all.
     asset: Entity = env.scene[asset_cfg.name]
 
     command = env.command_manager.get_command(command_name)
@@ -3124,18 +3010,17 @@ def joint_vel_l2_when_standing(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg
 
 
 def foot_step_penalty_when_standing(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, command_name: str = "twist", command_threshold: float = 0.01, body_vel_threshold: float = 0.2, air_time_threshold: float = 0.05) -> torch.Tensor:
-    """Penalise stepping when at zero command and the body is not being pushed.
-
-    Symmetric counterpart to the air_time reward:
-    - air_time gives  +reward for stepping when command > threshold  (walk)
-    - this gives      -reward for stepping when command < threshold  (stand)
-
-    The body-velocity gate prevents penalising recovery steps after a push:
-    if the robot is already moving fast (pushed), no penalty is applied so it
-    can still take steps to catch itself.
-
-    Returns a value in [0, 1] (use a negative weight in the config).
-    """
+    # Penalise stepping when at zero command and the body is not being pushed.
+    #
+    # Symmetric counterpart to the air_time reward:
+    # - air_time gives  +reward for stepping when command > threshold  (walk)
+    # - this gives      -reward for stepping when command < threshold  (stand)
+    #
+    # The body-velocity gate prevents penalising recovery steps after a push:
+    # if the robot is already moving fast (pushed), no penalty is applied so it
+    # can still take steps to catch itself.
+    #
+    # Returns a value in [0, 1] (use a negative weight in the config).
     asset: Entity = env.scene[asset_cfg.name]
     contact_sensor = env.scene.sensors["feet_ground_contact"]
 
@@ -3156,22 +3041,21 @@ def foot_step_penalty_when_standing(env: ManagerBasedRlEnv, asset_cfg: SceneEnti
 
 
 def recovery_stepping_reward(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, command_name: str = "twist", command_threshold: float = 0.01, velocity_threshold: float = 0.3, air_time_threshold: float = 0.05) -> torch.Tensor:
-    """Reward foot air time only when at zero command AND robot has high velocity (recovering from push).
-
-    This encourages the robot to take steps to recover balance when pushed,
-    but does NOT fire during normal walking (command > threshold).
-
-    Args:
-        env: The RL environment
-        asset_cfg: Asset configuration (unused but kept for API consistency)
-        command_name: Name of the velocity command in the command manager
-        command_threshold: Speed below which the robot is considered to be in standing mode
-        velocity_threshold: Linear velocity threshold to activate stepping reward (m/s)
-        air_time_threshold: Minimum air time to count as a step (seconds)
-
-    Returns:
-        Reward tensor of shape (num_envs,)
-    """
+    # Reward foot air time only when at zero command AND robot has high velocity (recovering from push).
+    #
+    # This encourages the robot to take steps to recover balance when pushed,
+    # but does NOT fire during normal walking (command > threshold).
+    #
+    # Args:
+    #     env: The RL environment
+    #     asset_cfg: Asset configuration (unused but kept for API consistency)
+    #     command_name: Name of the velocity command in the command manager
+    #     command_threshold: Speed below which the robot is considered to be in standing mode
+    #     velocity_threshold: Linear velocity threshold to activate stepping reward (m/s)
+    #     air_time_threshold: Minimum air time to count as a step (seconds)
+    #
+    # Returns:
+    #     Reward tensor of shape (num_envs,)
     asset: Entity = env.scene[asset_cfg.name]
 
     # Only fire for standing envs (command near zero)
@@ -3200,21 +3084,20 @@ def recovery_stepping_reward(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg =
 
 
 def adaptive_pose_weight(env: ManagerBasedRlEnv, base_pose_reward: torch.Tensor, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, velocity_threshold: float = 0.3, min_weight: float = 0.3) -> torch.Tensor:
-    """Reduce pose tracking weight when robot has high velocity (recovering from push).
-
-    This gives the robot freedom to deviate from the standing pose when taking
-    recovery steps, while maintaining strict pose tracking when standing still.
-
-    Args:
-        env: The RL environment
-        base_pose_reward: The original pose reward (before weighting)
-        asset_cfg: Asset configuration (unused but kept for API consistency)
-        velocity_threshold: Linear velocity threshold to start reducing weight (m/s)
-        min_weight: Minimum weight multiplier (0-1) at high velocities
-
-    Returns:
-        Weighted reward tensor of shape (num_envs,)
-    """
+    # Reduce pose tracking weight when robot has high velocity (recovering from push).
+    #
+    # This gives the robot freedom to deviate from the standing pose when taking
+    # recovery steps, while maintaining strict pose tracking when standing still.
+    #
+    # Args:
+    #     env: The RL environment
+    #     base_pose_reward: The original pose reward (before weighting)
+    #     asset_cfg: Asset configuration (unused but kept for API consistency)
+    #     velocity_threshold: Linear velocity threshold to start reducing weight (m/s)
+    #     min_weight: Minimum weight multiplier (0-1) at high velocities
+    #
+    # Returns:
+    #     Weighted reward tensor of shape (num_envs,)
     asset: Entity = env.scene[asset_cfg.name]
 
     # Get base linear velocity magnitude
@@ -3229,19 +3112,18 @@ def adaptive_pose_weight(env: ManagerBasedRlEnv, base_pose_reward: torch.Tensor,
 
 
 def randomize_base_orientation(env: ManagerBasedRlEnv, env_ids: torch.Tensor, max_pitch_deg: float = 10.0, max_roll_deg: float = 5.0, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG):
-    """Randomize base orientation at episode start to force reactive behavior.
-
-    Adds random pitch and roll to the robot's base orientation at the start of
-    each episode. This prevents the policy from memorizing a single initial state
-    and forces it to use feedback to adapt to different orientations.
-
-    Args:
-        env: The environment
-        env_ids: Environment IDs to randomize
-        max_pitch_deg: Maximum pitch angle in degrees (forward/backward tilt)
-        max_roll_deg: Maximum roll angle in degrees (side-to-side tilt)
-        asset_cfg: Asset configuration
-    """
+    # Randomize base orientation at episode start to force reactive behavior.
+    #
+    # Adds random pitch and roll to the robot's base orientation at the start of
+    # each episode. This prevents the policy from memorizing a single initial state
+    # and forces it to use feedback to adapt to different orientations.
+    #
+    # Args:
+    #     env: The environment
+    #     env_ids: Environment IDs to randomize
+    #     max_pitch_deg: Maximum pitch angle in degrees (forward/backward tilt)
+    #     max_roll_deg: Maximum roll angle in degrees (side-to-side tilt)
+    #     asset_cfg: Asset configuration
     if env_ids is None:
         env_ids = torch.arange(env.num_envs, device=env.device, dtype=torch.int)
     else:
@@ -3285,16 +3167,15 @@ def randomize_base_orientation(env: ManagerBasedRlEnv, env_ids: torch.Tensor, ma
 
 
 def set_face_down_orientation(env: ManagerBasedRlEnv, env_ids: torch.Tensor, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG):
-    """Set the robot to a prone (belly-down) orientation for stand-up training.
-
-    Rotates the robot 90° forward around the pitch axis (Y) so the front/belly
-    faces the ground and legs point upward. Combined with a random yaw.
-
-    Quaternion derivation:
-        quat_pitch90 = [s, 0, s, 0]   where s = sqrt(2)/2  (90° around Y)
-        quat_yaw     = [cy, 0, 0, sy]
-        combined     = quat_yaw * quat_pitch90 = [s*cy, -s*sy, s*cy, s*sy]
-    """
+    # Set the robot to a prone (belly-down) orientation for stand-up training.
+    #
+    # Rotates the robot 90° forward around the pitch axis (Y) so the front/belly
+    # faces the ground and legs point upward. Combined with a random yaw.
+    #
+    # Quaternion derivation:
+    #     quat_pitch90 = [s, 0, s, 0]   where s = sqrt(2)/2  (90° around Y)
+    #     quat_yaw     = [cy, 0, 0, sy]
+    #     combined     = quat_yaw * quat_pitch90 = [s*cy, -s*sy, s*cy, s*sy]
     if env_ids is None or len(env_ids) == 0:
         return
     env_ids = env_ids.to(env.device, dtype=torch.int)
@@ -3321,15 +3202,14 @@ def set_face_down_orientation(env: ManagerBasedRlEnv, env_ids: torch.Tensor, ass
 
 
 def set_random_prone_orientation(env: ManagerBasedRlEnv, env_ids: torch.Tensor, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, face_down_prob: float = 0.5):
-    """Randomly initialize each env as face-down (belly) or face-up (back), with random yaw.
-
-    Face-down:  +90° pitch → quat = [s*cy, -s*sy,  s*cy,  s*sy]
-    Face-up:    -90° pitch → quat = [s*cy,  s*sy, -s*cy,  s*sy]
-
-    Args:
-        face_down_prob: probability of sampling face-down (vs face-up). A curriculum
-            can ramp this from a high initial value (easier task) toward 0.5.
-    """
+    # Randomly initialize each env as face-down (belly) or face-up (back), with random yaw.
+    #
+    # Face-down:  +90° pitch → quat = [s*cy, -s*sy,  s*cy,  s*sy]
+    # Face-up:    -90° pitch → quat = [s*cy,  s*sy, -s*cy,  s*sy]
+    #
+    # Args:
+    #     face_down_prob: probability of sampling face-down (vs face-up). A curriculum
+    #         can ramp this from a high initial value (easier task) toward 0.5.
     if env_ids is None or len(env_ids) == 0:
         return
     env_ids = env_ids.to(env.device, dtype=torch.int)
@@ -3351,27 +3231,26 @@ def set_random_prone_orientation(env: ManagerBasedRlEnv, env_ids: torch.Tensor, 
 
 
 def set_random_ground_state(env: ManagerBasedRlEnv, env_ids: torch.Tensor, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, face_down_prob: float = 0.4, face_up_prob: float = 0.4, sitting_prob: float = 0.2, standing_prob: float = 0.0, prone_z_min: float = 0.20, prone_z_max: float = 0.25, sitting_z_min: float = 0.07, sitting_z_max: float = 0.09, standing_z_min: float = 0.11, standing_z_max: float = 0.12, sitting_joint_overrides: dict | None = None, sitting_joint_noise_std: float = 0.0, sitting_tilt_max: float = 0.0, face_up_roll_max: float = 0.0):
-    """Reset to a random ground state: face-down, face-up, sitting, or standing.
-
-    Broader than ``set_random_prone_orientation`` — used by the stand-up env so
-    the policy learns to recover from any plausible pose, including the sitting
-    keyframe (rest state of the sit policy) and an already-standing pose (so it
-    also learns to *hold* a stand, not only to rise).
-
-    Modes (probabilities are normalized; they need not sum to 1.0):
-      - face-down (belly to floor): +90° pitch, random yaw, z in [prone_z_min, prone_z_max].
-      - face-up   (back to floor):  -90° pitch, random yaw, z in [prone_z_min, prone_z_max].
-      - sitting:                    upright (±sitting_tilt_max), random yaw, z low,
-                                    joints set to ``sitting_joint_overrides``.
-      - standing:                   upright (±sitting_tilt_max), random yaw, z in
-                                    [standing_z_min, standing_z_max], joints left at
-                                    HOME (whatever ``reset_robot_joints`` set).
-
-    Args:
-        sitting_joint_overrides: ``{qpos_joint_index: angle_rad}`` to write into
-            ``qpos[7+idx]`` for envs sampled into the sitting bucket. ``None``
-            keeps joints at whatever ``reset_robot_joints`` already set.
-    """
+    # Reset to a random ground state: face-down, face-up, sitting, or standing.
+    #
+    # Broader than ``set_random_prone_orientation`` — used by the stand-up env so
+    # the policy learns to recover from any plausible pose, including the sitting
+    # keyframe (rest state of the sit policy) and an already-standing pose (so it
+    # also learns to *hold* a stand, not only to rise).
+    #
+    # Modes (probabilities are normalized; they need not sum to 1.0):
+    #   - face-down (belly to floor): +90° pitch, random yaw, z in [prone_z_min, prone_z_max].
+    #   - face-up   (back to floor):  -90° pitch, random yaw, z in [prone_z_min, prone_z_max].
+    #   - sitting:                    upright (±sitting_tilt_max), random yaw, z low,
+    #                                 joints set to ``sitting_joint_overrides``.
+    #   - standing:                   upright (±sitting_tilt_max), random yaw, z in
+    #                                 [standing_z_min, standing_z_max], joints left at
+    #                                 HOME (whatever ``reset_robot_joints`` set).
+    #
+    # Args:
+    #     sitting_joint_overrides: ``{qpos_joint_index: angle_rad}`` to write into
+    #         ``qpos[7+idx]`` for envs sampled into the sitting bucket. ``None``
+    #         keeps joints at whatever ``reset_robot_joints`` already set.
     if env_ids is None or len(env_ids) == 0:
         return
     env_ids = env_ids.to(env.device, dtype=torch.int)
@@ -3495,16 +3374,15 @@ _CROUCH_ANCHOR_BY_NAME = {"left_hip_pitch": -1.15, "left_knee": 1.25, "left_ankl
 
 
 def set_random_crouch_state(env: ManagerBasedRlEnv, env_ids: torch.Tensor, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, depth_min: float = 0.35, depth_max: float = 1.0, pitch_max_deg: float = 55.0, joint_noise: float = 0.12, z_stand: float = 0.115, z_deep: float = 0.06):
-    """Reset selected envs into a random mid-recovery crouch.
-
-    Reverse curriculum for the recovery last mile (velstand run-5 lesson):
-    prone-init episodes spend most of their fallen budget getting TO the deep
-    crouch and are recycled shortly after reaching it, so the crouch→stand
-    mile gets almost no on-policy data — the policy converged to parking
-    there. Seeding resets ACROSS that mile (depth λ ∈ [depth_min, depth_max]
-    between standing and the deep-crouch anchor, trunk pitch and z scaled
-    with λ) makes the frontier dense from step 0 of the episode.
-    """
+    # Reset selected envs into a random mid-recovery crouch.
+    #
+    # Reverse curriculum for the recovery last mile (velstand run-5 lesson):
+    # prone-init episodes spend most of their fallen budget getting TO the deep
+    # crouch and are recycled shortly after reaching it, so the crouch→stand
+    # mile gets almost no on-policy data — the policy converged to parking
+    # there. Seeding resets ACROSS that mile (depth λ ∈ [depth_min, depth_max]
+    # between standing and the deep-crouch anchor, trunk pitch and z scaled
+    # with λ) makes the frontier dense from step 0 of the episode.
     if env_ids is None or len(env_ids) == 0:
         return
     env_ids = env_ids.to(env.device, dtype=torch.long)
@@ -3555,24 +3433,23 @@ def set_random_crouch_state(env: ManagerBasedRlEnv, env_ids: torch.Tensor, asset
 
 
 def maybe_set_random_prone_orientation(env: ManagerBasedRlEnv, env_ids: torch.Tensor, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, prone_prob: float = 0.0, face_down_prob: float = 0.5, prone_z_min: float = 0.20, prone_z_max: float = 0.25, crouch_prob: float = 0.0):
-    """Reset event that overrides orientation to prone with probability `prone_prob`.
-
-    With prob `prone_prob`, replaces the upright orientation (already set by
-    reset_base) with a prone orientation; otherwise leaves it upright. Among the
-    overridden envs, `face_down_prob` picks face-down (belly) vs face-up (back).
-
-    Also lifts z to [prone_z_min, prone_z_max] for the overridden envs so the
-    head/neck clearance is sufficient — the vel-env reset z (~0.125) would
-    clip the head through the ground at 90° pitch.
-
-    At prone_prob=2/3 and face_down_prob=0.5 you get a balanced 33/33/33 split
-    of upright/face-down/face-up resets, which is the standard mixture for
-    learning fall recovery alongside normal upright start.
-
-    With ``crouch_prob`` > 0, an additional exclusive slice of envs is reset
-    into a random mid-recovery crouch via ``set_random_crouch_state`` (reverse
-    curriculum for the recovery last mile — see its docstring).
-    """
+    # Reset event that overrides orientation to prone with probability `prone_prob`.
+    #
+    # With prob `prone_prob`, replaces the upright orientation (already set by
+    # reset_base) with a prone orientation; otherwise leaves it upright. Among the
+    # overridden envs, `face_down_prob` picks face-down (belly) vs face-up (back).
+    #
+    # Also lifts z to [prone_z_min, prone_z_max] for the overridden envs so the
+    # head/neck clearance is sufficient — the vel-env reset z (~0.125) would
+    # clip the head through the ground at 90° pitch.
+    #
+    # At prone_prob=2/3 and face_down_prob=0.5 you get a balanced 33/33/33 split
+    # of upright/face-down/face-up resets, which is the standard mixture for
+    # learning fall recovery alongside normal upright start.
+    #
+    # With ``crouch_prob`` > 0, an additional exclusive slice of envs is reset
+    # into a random mid-recovery crouch via ``set_random_crouch_state`` (reverse
+    # curriculum for the recovery last mile — see its docstring).
     if prone_prob <= 0.0 and crouch_prob <= 0.0:
         return
     # env_ids=None means "all envs" (the initial global reset passes None —
@@ -3596,13 +3473,12 @@ def maybe_set_random_prone_orientation(env: ManagerBasedRlEnv, env_ids: torch.Te
 
 
 def event_param_curriculum(env: ManagerBasedRlEnv, env_ids: torch.Tensor, event_name: str, param_stages: list[dict]) -> torch.Tensor:
-    """Mutate an event term's params at scheduled steps.
-
-    Mirror of termination_param_curriculum but for events. Uses the live
-    EventManager term cfg via get_term_cfg, since env.cfg.events is a deepcopy.
-    param_stages: list of {step: int, params: dict}. Shallow-merged into the
-    live event term's params at the latest matching stage.
-    """
+    # Mutate an event term's params at scheduled steps.
+    #
+    # Mirror of termination_param_curriculum but for events. Uses the live
+    # EventManager term cfg via get_term_cfg, since env.cfg.events is a deepcopy.
+    # param_stages: list of {step: int, params: dict}. Shallow-merged into the
+    # live event term's params at the latest matching stage.
     del env_ids
     event_cfg = env.event_manager.get_term_cfg(event_name)
     current = param_stages[0]["params"]
@@ -3615,13 +3491,12 @@ def event_param_curriculum(env: ManagerBasedRlEnv, env_ids: torch.Tensor, event_
 
 
 def face_down_prob_curriculum(env: ManagerBasedRlEnv, env_ids: torch.Tensor, event_name: str, prob_stages: list[dict]) -> torch.Tensor:
-    """Ramp face_down_prob on a reset event over training.
-
-    Args:
-        event_name: name of the event term using set_random_prone_orientation
-        prob_stages: list of {step: int, prob: float}. Higher prob = more
-            face-down resets (easier task); ramp toward 0.5 as training proceeds.
-    """
+    # Ramp face_down_prob on a reset event over training.
+    #
+    # Args:
+    #     event_name: name of the event term using set_random_prone_orientation
+    #     prob_stages: list of {step: int, prob: float}. Higher prob = more
+    #         face-down resets (easier task); ramp toward 0.5 as training proceeds.
     del env_ids
 
     # NOTE: must update the live EventManager term_cfg, not env.cfg.events —
@@ -3638,7 +3513,7 @@ def face_down_prob_curriculum(env: ManagerBasedRlEnv, env_ids: torch.Tensor, eve
 
 
 class VelocityCommandCommandOnly(UniformVelocityCommand):
-    """Like UniformVelocityCommand but only draws the command arrows (no actual velocity arrows)."""
+    # Like UniformVelocityCommand but only draws the command arrows (no actual velocity arrows).
 
     def _resample_command(self, env_ids: torch.Tensor) -> None:
         super()._resample_command(env_ids)
@@ -3707,23 +3582,22 @@ class VelocityCommandCommandOnlyCfg(UniformVelocityCommandCfg):
 
 
 class RelativeHeadingVelocityCommand(VelocityCommandCommandOnly):
-    """Velocity command where cmd[2] is the heading error in the robot's body frame.
-
-    cmd[0] = lin_vel_x  (throttle: 0=coast, +push, -brake)
-    cmd[1] = lin_vel_y  (unused, 0)
-    cmd[2] = heading_error  (+ = target is to the right/CW, - = to the left/CCW)
-             0 → go straight, ±max = target is max_angle rad to the right/left
-
-    During training: a random world-frame heading is sampled at each episode reset.
-    At every step, cmd[2] = clamp(wrap(current_yaw - target_yaw), ±max_angle).
-    Positive when the robot is pointing CCW (left) of the target → needs to turn right.
-
-    At inference: the user feeds cmd[2] directly.  Holding cmd[2] = constant gives
-    a proportional heading correction = approximately constant turn rate.
-
-    Set heading_command=False and rel_heading_envs=0.0 in the cfg (we handle
-    heading internally).  ang_vel_z range in cfg is used as the clip limit for cmd[2].
-    """
+    # Velocity command where cmd[2] is the heading error in the robot's body frame.
+    #
+    # cmd[0] = lin_vel_x  (throttle: 0=coast, +push, -brake)
+    # cmd[1] = lin_vel_y  (unused, 0)
+    # cmd[2] = heading_error  (+ = target is to the right/CW, - = to the left/CCW)
+    #          0 → go straight, ±max = target is max_angle rad to the right/left
+    #
+    # During training: a random world-frame heading is sampled at each episode reset.
+    # At every step, cmd[2] = clamp(wrap(current_yaw - target_yaw), ±max_angle).
+    # Positive when the robot is pointing CCW (left) of the target → needs to turn right.
+    #
+    # At inference: the user feeds cmd[2] directly.  Holding cmd[2] = constant gives
+    # a proportional heading correction = approximately constant turn rate.
+    #
+    # Set heading_command=False and rel_heading_envs=0.0 in the cfg (we handle
+    # heading internally).  ang_vel_z range in cfg is used as the clip limit for cmd[2].
 
     def __init__(self, cfg, env: ManagerBasedRlEnv):
         super().__init__(cfg, env)
@@ -3763,32 +3637,30 @@ class RelativeHeadingVelocityCommandCfg(UniformVelocityCommandCfg):
 
 
 def heading_tracking_reward(env: ManagerBasedRlEnv, command_name: str, std: float = 0.5) -> torch.Tensor:
-    """Reward for reducing heading error when cmd[2] encodes heading error.
-
-    Returns exp(-cmd[2]² / std²).
-    - At error = 0 (on heading): reward = 1.0.
-    - At error = std: reward ≈ 0.37 (strong gradient).
-    - At error = 1.0 rad with std=0.5: reward ≈ 0.018 (nearly zero).
-
-    std=0.5 rad (≈28°) gives a meaningful gradient across the expected range.
-    """
+    # Reward for reducing heading error when cmd[2] encodes heading error.
+    #
+    # Returns exp(-cmd[2]² / std²).
+    # - At error = 0 (on heading): reward = 1.0.
+    # - At error = std: reward ≈ 0.37 (strong gradient).
+    # - At error = 1.0 rad with std=0.5: reward ≈ 0.018 (nearly zero).
+    #
+    # std=0.5 rad (≈28°) gives a meaningful gradient across the expected range.
     cmd = env.command_manager.get_command(command_name)
     heading_error = cmd[:, 2]
     return torch.exp(-(heading_error**2) / (std**2))
 
 
 def skating_air_time_reward(env: ManagerBasedRlEnv, sensor_name: str, command_name: str, threshold_min: float = 0.05, threshold_max: float = 0.4, vel_gate_ref: float = 0.0) -> torch.Tensor:
-    """Reward feet air time only when pushing (cmd_x > 0).
-
-    Encourages the robot to lift each foot during the recovery phase of the
-    skating stroke rather than dragging it on the ground.
-    Scaled by cmd_x so the incentive grows with push intensity.
-
-    When ``vel_gate_ref`` > 0 the reward is also multiplied by a forward-speed
-    gate so lifting feet without propelling the body (tap-dancing on the spot)
-    earns nothing. ``threshold_min`` sets the shortest swing that counts — raise
-    it to forbid a frantic high-cadence flutter.
-    """
+    # Reward feet air time only when pushing (cmd_x > 0).
+    #
+    # Encourages the robot to lift each foot during the recovery phase of the
+    # skating stroke rather than dragging it on the ground.
+    # Scaled by cmd_x so the incentive grows with push intensity.
+    #
+    # When ``vel_gate_ref`` > 0 the reward is also multiplied by a forward-speed
+    # gate so lifting feet without propelling the body (tap-dancing on the spot)
+    # earns nothing. ``threshold_min`` sets the shortest swing that counts — raise
+    # it to forbid a frantic high-cadence flutter.
     from mjlab.sensor import ContactSensor
 
     sensor: ContactSensor = env.scene[sensor_name]
@@ -3807,12 +3679,12 @@ def skating_air_time_reward(env: ManagerBasedRlEnv, sensor_name: str, command_na
 
 
 def _forward_progress_gate(env: ManagerBasedRlEnv, v_ref: float) -> torch.Tensor | None:
-    """0→1 ramp in body forward speed: 0 when standing still, 1 at/above v_ref.
-
-    Used to gate stride-shaping rewards so that stepping which does NOT propel
-    the body (e.g. tap-dancing on the spot) earns nothing — the reward for the
-    FORM of a stride is only paid when the stride actually does its JOB (moving
-    forward). Returns None when disabled (v_ref <= 0)."""
+    # 0→1 ramp in body forward speed: 0 when standing still, 1 at/above v_ref.
+    #
+    # Used to gate stride-shaping rewards so that stepping which does NOT propel
+    # the body (e.g. tap-dancing on the spot) earns nothing — the reward for the
+    # FORM of a stride is only paid when the stride actually does its JOB (moving
+    # forward). Returns None when disabled (v_ref <= 0).
     if v_ref <= 0.0:
         return None
     v_fwd = env.scene["robot"].data.root_link_lin_vel_b[:, 0]
@@ -3820,25 +3692,24 @@ def _forward_progress_gate(env: ManagerBasedRlEnv, v_ref: float) -> torch.Tensor
 
 
 def single_support_reward(env: ManagerBasedRlEnv, sensor_name: str, command_name: str, vel_gate_ref: float = 0.0, double_penalty: float = 0.25) -> torch.Tensor:
-    """Reward single-support (a skating stride), mildly discourage the swizzle.
-
-    Real skating is a STRIDE: push off one blade while the other swings, i.e.
-    single support that alternates left/right. A symmetric swizzle keeps BOTH
-    blades grounded the whole time and still spins the wheels, so wheel_speed
-    alone converges to it.
-
-    Per step, counting blades in contact:
-      - exactly 1 blade down (stride)  → + clamp(cmd_x,0) · gate
-      - 2 blades down    (double supp) → − double_penalty · clamp(cmd_x,0)
-      - 0 blades down    (flight/hop)  →  0
-
-    The POSITIVE single-support reward is gated by forward speed (``vel_gate_ref``)
-    so stepping in place (no propulsion) earns nothing — kills the tap-dance hack.
-    The double-support penalty is small and UNGATED: brief double support during
-    weight transfer / push-off is NORMAL skating, so we only lightly discourage
-    PERMANENT double support (the swizzle) rather than forbid it. The real
-    anti-swizzle signal is skating_air_time — the swizzle never lifts a foot.
-    """
+    # Reward single-support (a skating stride), mildly discourage the swizzle.
+    #
+    # Real skating is a STRIDE: push off one blade while the other swings, i.e.
+    # single support that alternates left/right. A symmetric swizzle keeps BOTH
+    # blades grounded the whole time and still spins the wheels, so wheel_speed
+    # alone converges to it.
+    #
+    # Per step, counting blades in contact:
+    #   - exactly 1 blade down (stride)  → + clamp(cmd_x,0) · gate
+    #   - 2 blades down    (double supp) → − double_penalty · clamp(cmd_x,0)
+    #   - 0 blades down    (flight/hop)  →  0
+    #
+    # The POSITIVE single-support reward is gated by forward speed (``vel_gate_ref``)
+    # so stepping in place (no propulsion) earns nothing — kills the tap-dance hack.
+    # The double-support penalty is small and UNGATED: brief double support during
+    # weight transfer / push-off is NORMAL skating, so we only lightly discourage
+    # PERMANENT double support (the swizzle) rather than forbid it. The real
+    # anti-swizzle signal is skating_air_time — the swizzle never lifts a foot.
     from mjlab.sensor import ContactSensor
 
     sensor: ContactSensor = env.scene[sensor_name]
@@ -3858,23 +3729,22 @@ def single_support_reward(env: ManagerBasedRlEnv, sensor_name: str, command_name
 
 
 def glide_reward(env: ManagerBasedRlEnv, sensor_name: str, command_name: str, vel_ref: float = 0.2, stillness_std: float = 5.0, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot", joint_names=(r".*(hip|knee|ankle).*",))) -> torch.Tensor:
-    """Reward the GLIDE phase of a stride: coast on ONE blade with quiet legs.
-
-    Nothing else rewards gliding — skating_air_time pays each swing, so the policy
-    maximises swing FREQUENCY (frantic kicking). This term pays staying on one
-    foot and coasting, giving the policy a reason to slow down and commit to each
-    stroke:
-
-        reward = single_support · forward_gate · stillness · (cmd_x >= 0)
-
-    - single_support: exactly ONE blade in contact. REQUIRED — this is the fix vs
-      the earlier broken glide, which omitted it and let a two-blade swizzle-coast
-      farm the reward and regress the gait.
-    - forward_gate = clamp(v_fwd,0,vel_ref)/vel_ref → 0 when not moving forward.
-    - stillness = exp(-Σ leg_joint_vel² / stillness_std²) → high only when legs
-      are quiet; a kick (fast joint motion) gets ~0, so only a real glide pays.
-    - active on push/coast only (cmd_x >= 0); silent on brake.
-    """
+    # Reward the GLIDE phase of a stride: coast on ONE blade with quiet legs.
+    #
+    # Nothing else rewards gliding — skating_air_time pays each swing, so the policy
+    # maximises swing FREQUENCY (frantic kicking). This term pays staying on one
+    # foot and coasting, giving the policy a reason to slow down and commit to each
+    # stroke:
+    #
+    #     reward = single_support · forward_gate · stillness · (cmd_x >= 0)
+    #
+    # - single_support: exactly ONE blade in contact. REQUIRED — this is the fix vs
+    #   the earlier broken glide, which omitted it and let a two-blade swizzle-coast
+    #   farm the reward and regress the gait.
+    # - forward_gate = clamp(v_fwd,0,vel_ref)/vel_ref → 0 when not moving forward.
+    # - stillness = exp(-Σ leg_joint_vel² / stillness_std²) → high only when legs
+    #   are quiet; a kick (fast joint motion) gets ~0, so only a real glide pays.
+    # - active on push/coast only (cmd_x >= 0); silent on brake.
     from mjlab.sensor import ContactSensor
 
     sensor: ContactSensor = env.scene[sensor_name]
@@ -3896,14 +3766,13 @@ def glide_reward(env: ManagerBasedRlEnv, sensor_name: str, command_name: str, ve
 
 
 def leg_symmetry_reward(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, joint_bases: tuple = ("hip_yaw", "hip_roll", "hip_pitch", "knee", "ankle")) -> torch.Tensor:
-    """Reward left/right legs mirroring — the swizzle's defining symmetry.
-
-    The robot uses mirrored L/R sign conventions, so a bilaterally-symmetric config
-    satisfies q_left + q_right ≈ 0 per matched joint pair. Returns
-    ``-mean_pairs |q_left + q_right|`` (L1, constant gradient); use with a POSITIVE
-    weight so asymmetry is penalised and the symmetric swizzle is favoured. L/R index
-    pairs are resolved once by name and cached on env.
-    """
+    # Reward left/right legs mirroring — the swizzle's defining symmetry.
+    #
+    # The robot uses mirrored L/R sign conventions, so a bilaterally-symmetric config
+    # satisfies q_left + q_right ≈ 0 per matched joint pair. Returns
+    # ``-mean_pairs |q_left + q_right|`` (L1, constant gradient); use with a POSITIVE
+    # weight so asymmetry is penalised and the symmetric swizzle is favoured. L/R index
+    # pairs are resolved once by name and cached on env.
     asset: Entity = env.scene[asset_cfg.name]
     if not hasattr(env, "_leg_sym_ids"):
         left, right = [], []
@@ -3919,12 +3788,11 @@ def leg_symmetry_reward(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEF
 
 
 def grounded_reward(env: ManagerBasedRlEnv, sensor_name: str, command_name: str) -> torch.Tensor:
-    """Reward BOTH blades in contact — a classic swizzle stays grounded (no lifting).
-
-    Mirror of single_support_reward but rewarding double support (n_contact >= 2),
-    scaled by |cmd_x| so it shapes the push phase in EITHER direction (forward or
-    backward — the swizzle env drives cmd_x < 0 as "go backward").
-    """
+    # Reward BOTH blades in contact — a classic swizzle stays grounded (no lifting).
+    #
+    # Mirror of single_support_reward but rewarding double support (n_contact >= 2),
+    # scaled by |cmd_x| so it shapes the push phase in EITHER direction (forward or
+    # backward — the swizzle env drives cmd_x < 0 as "go backward").
     from mjlab.sensor import ContactSensor
 
     sensor: ContactSensor = env.scene[sensor_name]
@@ -3937,17 +3805,16 @@ def grounded_reward(env: ManagerBasedRlEnv, sensor_name: str, command_name: str)
 
 
 def gait_symmetry_penalty(env: ManagerBasedRlEnv, sensor_name: str) -> torch.Tensor:
-    """Penalize lopsided left/right foot usage (one blade doing most of the work).
-
-    With symmetry augmentation OFF, nothing stops the policy learning an asymmetric
-    stride that pushes mostly with one leg — which veers and destabilises (esp. at
-    launch). Accumulates per-foot swing time over the episode and penalises the
-    normalised imbalance |L - R| / (L + R):
-      - balanced alternating stride  -> ~0 (no penalty)
-      - one foot swinging much more   -> ~1 (max penalty)
-    Only the CUMULATIVE imbalance is penalised — the instantaneous single-support
-    asymmetry of a real stride (one foot swinging now) is fine.
-    """
+    # Penalize lopsided left/right foot usage (one blade doing most of the work).
+    #
+    # With symmetry augmentation OFF, nothing stops the policy learning an asymmetric
+    # stride that pushes mostly with one leg — which veers and destabilises (esp. at
+    # launch). Accumulates per-foot swing time over the episode and penalises the
+    # normalised imbalance |L - R| / (L + R):
+    #   - balanced alternating stride  -> ~0 (no penalty)
+    #   - one foot swinging much more   -> ~1 (max penalty)
+    # Only the CUMULATIVE imbalance is penalised — the instantaneous single-support
+    # asymmetry of a real stride (one foot swinging now) is fine.
     from mjlab.sensor import ContactSensor
 
     sensor: ContactSensor = env.scene[sensor_name]
@@ -3966,21 +3833,20 @@ def gait_symmetry_penalty(env: ManagerBasedRlEnv, sensor_name: str) -> torch.Ten
 
 
 def heading_hold_reward(env: ManagerBasedRlEnv, std: float = 0.4, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """Reward holding the SPAWN heading (go straight) — corrective, angle-based.
-
-    Rewards the yaw ANGLE staying near the heading captured at reset:
-        reward = exp(-wrap(yaw - yaw_spawn)² / std²)
-
-    This is the RIGHT way to go straight (vs penalising yaw-RATE, which just tells
-    the policy 'never turn' → it can't steer back and drifts open-loop). Here a
-    drift lowers the reward, and the policy is free to yaw back to recover it.
-
-    The spawn heading is captured per-env on the first step(s) after reset
-    (episode_length_buf <= 1), when the robot is still ~at its spawn pose. Reads
-    root_link_quat_w, which is fresh at reward time (post physics step). Heading-
-    invariant: the reference is each env's own random spawn yaw, so it works with
-    the full-circle yaw randomisation at reset.
-    """
+    # Reward holding the SPAWN heading (go straight) — corrective, angle-based.
+    #
+    # Rewards the yaw ANGLE staying near the heading captured at reset:
+    #     reward = exp(-wrap(yaw - yaw_spawn)² / std²)
+    #
+    # This is the RIGHT way to go straight (vs penalising yaw-RATE, which just tells
+    # the policy 'never turn' → it can't steer back and drifts open-loop). Here a
+    # drift lowers the reward, and the policy is free to yaw back to recover it.
+    #
+    # The spawn heading is captured per-env on the first step(s) after reset
+    # (episode_length_buf <= 1), when the robot is still ~at its spawn pose. Reads
+    # root_link_quat_w, which is fresh at reward time (post physics step). Heading-
+    # invariant: the reference is each env's own random spawn yaw, so it works with
+    # the full-circle yaw randomisation at reset.
     asset: Entity = env.scene[asset_cfg.name]
     quat = asset.data.root_link_quat_w  # (N, 4) [w, x, y, z]
     w, x, y, z = quat[:, 0], quat[:, 1], quat[:, 2], quat[:, 3]
@@ -3997,26 +3863,25 @@ def heading_hold_reward(env: ManagerBasedRlEnv, std: float = 0.4, asset_cfg: Sce
 
 
 def action_over_limit_penalty(env: ManagerBasedRlEnv, action_name: str = "joint_pos", overshoot: float = 0.3) -> torch.Tensor:
-    """Penalise commanding a joint target beyond its hard limit (+ overshoot).
-
-    Policy-side deterrent against over-driving a joint onto its mechanical stop:
-    e.g. hip_roll has a ±0.38 rad limit but a ±10 rad ctrlrange, so the low-kp
-    servo can be commanded far past the stop to slam it with max torque — a
-    fragile sim-only trick that will not transfer.
-
-    Reads the commanded target (raw_action · scale + offset) and penalises only
-    the part BEYOND (hard_limit + overshoot):
-
-        penalty = Σ relu(target - (hi + overshoot)) + relu((lo - overshoot) - target)
-
-    Unlike a qpos-limit penalty, this fires on the COMMAND, not the joint
-    position — so the joint may still reach its full range (command ≈ limit) and
-    no usable amplitude is stolen. Because it constrains the policy's OUTPUT, the
-    learned behaviour is baked into the network and transfers to deployment
-    WITHOUT any env-side action clip (which would only exist in sim → mismatch).
-    ``overshoot`` gives the low-kp servo the headroom to reach near-limit targets
-    under load; only the wild over-drive past that is penalised.
-    """
+    # Penalise commanding a joint target beyond its hard limit (+ overshoot).
+    #
+    # Policy-side deterrent against over-driving a joint onto its mechanical stop:
+    # e.g. hip_roll has a ±0.38 rad limit but a ±10 rad ctrlrange, so the low-kp
+    # servo can be commanded far past the stop to slam it with max torque — a
+    # fragile sim-only trick that will not transfer.
+    #
+    # Reads the commanded target (raw_action · scale + offset) and penalises only
+    # the part BEYOND (hard_limit + overshoot):
+    #
+    #     penalty = Σ relu(target - (hi + overshoot)) + relu((lo - overshoot) - target)
+    #
+    # Unlike a qpos-limit penalty, this fires on the COMMAND, not the joint
+    # position — so the joint may still reach its full range (command ≈ limit) and
+    # no usable amplitude is stolen. Because it constrains the policy's OUTPUT, the
+    # learned behaviour is baked into the network and transfers to deployment
+    # WITHOUT any env-side action clip (which would only exist in sim → mismatch).
+    # ``overshoot`` gives the low-kp servo the headroom to reach near-limit targets
+    # under load; only the wild over-drive past that is penalised.
     term = env.action_manager.get_term(action_name)
     target = term.raw_action * term.scale + term.offset  # (B, action_dim) abs targets
     jnt_ids = term.target_ids
@@ -4028,14 +3893,13 @@ def action_over_limit_penalty(env: ManagerBasedRlEnv, action_name: str = "joint_
 
 
 def forward_lean_reward(env: ManagerBasedRlEnv, command_name: str, target_pitch: float = 0.08, std: float = 0.08, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot", body_names=("trunk_base",))) -> torch.Tensor:
-    """Reward leaning slightly forward when pushing, to counteract the backward
-    torque from skating strokes.
-
-    Uses projected_gravity_b x-component as a pitch proxy:
-      forward_lean = -gravity_b[:, 0]  (positive when leaning forward)
-
-    Only fires when cmd_x > 0. Peaks at target_pitch radians of forward lean.
-    """
+    # Reward leaning slightly forward when pushing, to counteract the backward
+    # torque from skating strokes.
+    #
+    # Uses projected_gravity_b x-component as a pitch proxy:
+    #   forward_lean = -gravity_b[:, 0]  (positive when leaning forward)
+    #
+    # Only fires when cmd_x > 0. Peaks at target_pitch radians of forward lean.
     asset: Entity = env.scene[asset_cfg.name]
     cmd_x = env.command_manager.get_command(command_name)[:, 0]
     forward_lean = asset.data.projected_gravity_b[:, 0]
@@ -4044,18 +3908,17 @@ def forward_lean_reward(env: ManagerBasedRlEnv, command_name: str, target_pitch:
 
 
 class GroundPickPhaseCommand(UniformVelocityCommand):
-    """Phase-encoding command for the ground pick / sit-stand tasks.
-
-    Replaces the velocity command with a cyclic phase signal:
-        command = [cos(2π*phase), sin(2π*phase), 0]
-
-    Phase ∈ [0, 0.5]: approach (go down).
-    Phase ∈ [0.5, 1.0]: return (come back up).
-
-    Phase is randomized per environment on episode reset to decorrelate envs.
-    Period defaults to 4s; override via the cfg.period field (sitstand uses 8s
-    for a slower, gentler sit-down).
-    """
+    # Phase-encoding command for the ground pick / sit-stand tasks.
+    #
+    # Replaces the velocity command with a cyclic phase signal:
+    #     command = [cos(2π*phase), sin(2π*phase), 0]
+    #
+    # Phase ∈ [0, 0.5]: approach (go down).
+    # Phase ∈ [0.5, 1.0]: return (come back up).
+    #
+    # Phase is randomized per environment on episode reset to decorrelate envs.
+    # Period defaults to 4s; override via the cfg.period field (sitstand uses 8s
+    # for a slower, gentler sit-down).
 
     PERIOD: float = 4.0  # default; cfg.period overrides
 
@@ -4140,12 +4003,11 @@ from dataclasses import dataclass
 
 
 class UniformPoseCommand(CommandTerm):
-    """Generic N-dim uniform pose command.
-
-    Samples each dim independently uniform in cfg.ranges[i] = (lo, hi) and holds
-    the value between resamples. No metrics, no debug viz — keep it lightweight
-    since we have many of these.
-    """
+    # Generic N-dim uniform pose command.
+    #
+    # Samples each dim independently uniform in cfg.ranges[i] = (lo, hi) and holds
+    # the value between resamples. No metrics, no debug viz — keep it lightweight
+    # since we have many of these.
 
     cfg: "UniformPoseCommandCfg"
 
@@ -4183,7 +4045,7 @@ class UniformPoseCommand(CommandTerm):
 
 @dataclass(kw_only=True)
 class UniformPoseCommandCfg(CommandTermCfg):
-    """Per-dim uniform ranges; builds a UniformPoseCommand."""
+    # Per-dim uniform ranges; builds a UniformPoseCommand.
 
     # Tuple of (lo, hi) per dim. Length defines the command dim.
     ranges: tuple[tuple[float, float], ...] = ()
@@ -4195,44 +4057,42 @@ class UniformPoseCommandCfg(CommandTermCfg):
 
 
 def zero_command_padding(env: ManagerBasedRlEnv, dim: int) -> torch.Tensor:
-    """Constant-zero obs term of width `dim`.
-
-    Used by envs that don't actively track head/body commands (e.g. sitstand,
-    ground_pick) but still need the unified 61D obs shape so the runtime can
-    feed all policies with the same buffer layout.
-    """
+    # Constant-zero obs term of width `dim`.
+    #
+    # Used by envs that don't actively track head/body commands (e.g. sitstand,
+    # ground_pick) but still need the unified 61D obs shape so the runtime can
+    # feed all policies with the same buffer layout.
     return torch.zeros(env.num_envs, dim, device=env.device)
 
 
 def head_pose_tracking(env: ManagerBasedRlEnv, command_name: str = "head_pose", std: float = 0.5, fine_std: float | None = None, fine_weight: float = 0.5, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """Per-joint Gaussian reward for matching commanded neck/head deltas.
-
-    Mean over the 4 neck/head joints of exp(-(err/std)^2). Result is (N,) in
-    [0, 1]. Mean form (vs sum-of-squares) keeps gradient alive when only one
-    joint is off — vs SOS where a single big error kills the whole reward.
-
-    `std` is the per-joint tolerance: at err=std the per-joint reward is 1/e
-    (~0.37). Pick std on the order of the command range so the gradient
-    doesn't die as the curriculum widens.
-
-    `fine_std` (optional) blends in a second, narrow Gaussian:
-    (1-fine_weight)·exp(-(err/std)²) + fine_weight·exp(-(err/fine_std)²).
-    Rationale: a single wide std (0.5 rad ≈ 29°) makes small errors nearly
-    free — a 10° gravity sag on the heavy head costs ~0.03 reward, so the
-    policy lets it droop. The narrow component (~0.1 rad) prices those small
-    errors while the wide one keeps gradient alive at far commands during
-    curriculum widening.
-
-    cmd has shape (N, 4) = deltas from default joint positions in the order
-    [neck_pitch, head_pitch, head_yaw, head_roll].
-
-    On backlash models the measured angle is qpos[servo] + qpos[backlash] —
-    the OUTPUT link, which is also what the encoder obs
-    (joint_pos_rel_backlash) reports. Measuring the servo alone would let the
-    head droop the backlash play reward-free AND penalize the policy for
-    compensating it (servo biased up = servo-side "error"). On models without
-    passive_*_backlash joints the mask is 0 and this reduces to the servo.
-    """
+    # Per-joint Gaussian reward for matching commanded neck/head deltas.
+    #
+    # Mean over the 4 neck/head joints of exp(-(err/std)^2). Result is (N,) in
+    # [0, 1]. Mean form (vs sum-of-squares) keeps gradient alive when only one
+    # joint is off — vs SOS where a single big error kills the whole reward.
+    #
+    # `std` is the per-joint tolerance: at err=std the per-joint reward is 1/e
+    # (~0.37). Pick std on the order of the command range so the gradient
+    # doesn't die as the curriculum widens.
+    #
+    # `fine_std` (optional) blends in a second, narrow Gaussian:
+    # (1-fine_weight)·exp(-(err/std)²) + fine_weight·exp(-(err/fine_std)²).
+    # Rationale: a single wide std (0.5 rad ≈ 29°) makes small errors nearly
+    # free — a 10° gravity sag on the heavy head costs ~0.03 reward, so the
+    # policy lets it droop. The narrow component (~0.1 rad) prices those small
+    # errors while the wide one keeps gradient alive at far commands during
+    # curriculum widening.
+    #
+    # cmd has shape (N, 4) = deltas from default joint positions in the order
+    # [neck_pitch, head_pitch, head_yaw, head_roll].
+    #
+    # On backlash models the measured angle is qpos[servo] + qpos[backlash] —
+    # the OUTPUT link, which is also what the encoder obs
+    # (joint_pos_rel_backlash) reports. Measuring the servo alone would let the
+    # head droop the backlash play reward-free AND penalize the policy for
+    # compensating it (servo biased up = servo-side "error"). On models without
+    # passive_*_backlash joints the mask is 0 and this reduces to the servo.
     asset: Entity = env.scene[asset_cfg.name]
     cmd = env.command_manager.get_command(command_name)  # (N, 4)
 
@@ -4275,50 +4135,49 @@ def _finite(x: torch.Tensor) -> torch.Tensor:
 
 
 def foot_contact_forces_safe(env: ManagerBasedRlEnv, sensor_name: str) -> torch.Tensor:
-    """NaN-safe `foot_contact_forces` (see note above)."""
+    # NaN-safe `foot_contact_forces` (see note above).
     return _finite(_velocity_obs.foot_contact_forces(env, sensor_name))
 
 
 def foot_height_safe(env: ManagerBasedRlEnv, sensor_name: str) -> torch.Tensor:
-    """NaN-safe `foot_height` (see note above)."""
+    # NaN-safe `foot_height` (see note above).
     return _finite(_velocity_obs.foot_height(env, sensor_name))
 
 
 def foot_air_time_safe(env: ManagerBasedRlEnv, sensor_name: str) -> torch.Tensor:
-    """NaN-safe `foot_air_time` (see note above)."""
+    # NaN-safe `foot_air_time` (see note above).
     return _finite(_velocity_obs.foot_air_time(env, sensor_name))
 
 
 def head_pose_bias_penalty(env: ManagerBasedRlEnv, command_name: str = "head_pose", tau_s: float = 1.0, gate_height_low: float | None = None, gate_height_high: float = 0.11, gate_tilt_full_deg: float = 20.0, gate_tilt_zero_deg: float = 45.0, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """Penalize the time-averaged (DC) neck/head tracking error: -mean(|EMA(err)|).
-
-    Companion to ``head_pose_tracking``, which scores the INSTANTANEOUS error.
-    Why a separate DC term instead of just tightening that Gaussian's std:
-    walking unavoidably shakes a head that is 38% of the robot's mass, so an
-    instantaneous tight-tolerance term is a permanent tax on walking that no
-    policy can escape — measured at ~0.77/step against an air_time reward of
-    ~1.01/step, which is exactly what made velocity run 2026-08-20 abandon
-    stepping altogether (wandb 5yay13u4). The steady-state droop IS escapable:
-    the policy can bias its neck command up to cancel gravity sag. Averaging
-    over ``tau_s`` lets the oscillation cancel and prices only the bias.
-
-    L1 (not Gaussian) on purpose: the gradient stays constant at large bias,
-    where a tight Gaussian would be flat and dead.
-
-    On backlash models the measured angle reads through the play, matching
-    head_pose_tracking and the encoder obs.
-
-    ``gate_height_low`` (optional): upright gate for recovery envs (standup /
-    velstand), same smoothstep shape and semantics as body_ang_vel_at_height —
-    zero below gate_height_low or above gate_tilt_zero_deg tilt, full above
-    gate_height_high and below gate_tilt_full_deg. The gate multiplies the
-    ERROR feeding the EMA (not just the output): while fallen/rising the EMA
-    sees zero and decays, so arriving upright starts the bias clock from ~0
-    instead of charging the whole ground phase's accumulated error at the
-    finish line — that would be a reward wall right before recovery completes,
-    the exact failure mode of the retired head_impact_penalty. The output is
-    gated too, so a fresh fall stops the charge immediately.
-    """
+    # Penalize the time-averaged (DC) neck/head tracking error: -mean(|EMA(err)|).
+    #
+    # Companion to ``head_pose_tracking``, which scores the INSTANTANEOUS error.
+    # Why a separate DC term instead of just tightening that Gaussian's std:
+    # walking unavoidably shakes a head that is 38% of the robot's mass, so an
+    # instantaneous tight-tolerance term is a permanent tax on walking that no
+    # policy can escape — measured at ~0.77/step against an air_time reward of
+    # ~1.01/step, which is exactly what made velocity run 2026-08-20 abandon
+    # stepping altogether (wandb 5yay13u4). The steady-state droop IS escapable:
+    # the policy can bias its neck command up to cancel gravity sag. Averaging
+    # over ``tau_s`` lets the oscillation cancel and prices only the bias.
+    #
+    # L1 (not Gaussian) on purpose: the gradient stays constant at large bias,
+    # where a tight Gaussian would be flat and dead.
+    #
+    # On backlash models the measured angle reads through the play, matching
+    # head_pose_tracking and the encoder obs.
+    #
+    # ``gate_height_low`` (optional): upright gate for recovery envs (standup /
+    # velstand), same smoothstep shape and semantics as body_ang_vel_at_height —
+    # zero below gate_height_low or above gate_tilt_zero_deg tilt, full above
+    # gate_height_high and below gate_tilt_full_deg. The gate multiplies the
+    # ERROR feeding the EMA (not just the output): while fallen/rising the EMA
+    # sees zero and decays, so arriving upright starts the bias clock from ~0
+    # instead of charging the whole ground phase's accumulated error at the
+    # finish line — that would be a reward wall right before recovery completes,
+    # the exact failure mode of the retired head_impact_penalty. The output is
+    # gated too, so a fresh fall stops the charge immediately.
     asset: Entity = env.scene[asset_cfg.name]
     cmd = env.command_manager.get_command(command_name)  # (N, 4)
 
@@ -4359,12 +4218,11 @@ def head_pose_bias_penalty(env: ManagerBasedRlEnv, command_name: str = "head_pos
 
 
 def body_pose_tracking_6d(env: ManagerBasedRlEnv, command_name: str = "body_pose", nominal_height: float = 0.095, xy_std: float = 0.02, z_std: float = 0.01, angle_std: float = math.radians(8), asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """Mean of 6 per-axis Gaussian rewards for tracking commanded body pose.
-
-    cmd has shape (N, 6) = [x, y, z, roll, pitch, yaw] all as deltas from the
-    nominal standing pose (xy delta from spawn origin, z delta from
-    nominal_height, angles delta from upright = 0).
-    """
+    # Mean of 6 per-axis Gaussian rewards for tracking commanded body pose.
+    #
+    # cmd has shape (N, 6) = [x, y, z, roll, pitch, yaw] all as deltas from the
+    # nominal standing pose (xy delta from spawn origin, z delta from
+    # nominal_height, angles delta from upright = 0).
     asset: Entity = env.scene[asset_cfg.name]
     cmd = env.command_manager.get_command(command_name)  # (N, 6)
     dx, dy, dz = cmd[:, 0], cmd[:, 1], cmd[:, 2]
@@ -4401,17 +4259,16 @@ def body_pose_tracking_6d(env: ManagerBasedRlEnv, command_name: str = "body_pose
 
 
 def termination_param_curriculum(env: ManagerBasedRlEnv, env_ids: torch.Tensor, term_name: str, param_stages: list[dict]) -> torch.Tensor:
-    """Mutate a termination term's params at scheduled steps.
-
-    TerminationManager keeps its own deepcopy of the cfg dict, so the live
-    term_cfgs list must be edited directly — env.cfg.terminations is a no-op.
-    Useful for disabling a termination later in training (e.g. set
-    bad_orientation's limit_angle to pi at iter N so the robot can fall over
-    without ending the episode and learn to recover).
-
-    param_stages: list of {step: int, params: dict}. The dict is shallow-merged
-    into the live term_cfg.params at the latest matching stage.
-    """
+    # Mutate a termination term's params at scheduled steps.
+    #
+    # TerminationManager keeps its own deepcopy of the cfg dict, so the live
+    # term_cfgs list must be edited directly — env.cfg.terminations is a no-op.
+    # Useful for disabling a termination later in training (e.g. set
+    # bad_orientation's limit_angle to pi at iter N so the robot can fall over
+    # without ending the episode and learn to recover).
+    #
+    # param_stages: list of {step: int, params: dict}. The dict is shallow-merged
+    # into the live term_cfg.params at the latest matching stage.
     del env_ids
     tm = env.termination_manager
     if term_name not in tm._term_names:
@@ -4431,24 +4288,23 @@ def termination_param_curriculum(env: ManagerBasedRlEnv, env_ids: torch.Tensor, 
 
 
 def body_pose_tracking_locomotion(env: ManagerBasedRlEnv, command_name: str = "body_pose", nominal_height: float = 0.105, xy_std: float = 0.02, z_std: float = 0.03, angle_std: float = math.radians(30), axis_weights: tuple[float, float, float, float, float, float] = (1.0, 1.0, 1.0, 1.0, 1.0, 1.0), vel_gate_command_name: str | None = None, vel_gate_std: float = 0.1, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, feet_cfg: SceneEntityCfg = SceneEntityCfg("robot", site_names=("left_foot", "right_foot"))) -> torch.Tensor:
-    """Locomotion-aware 6D body pose tracking.
-
-    Same shape as body_pose_tracking_6d (6D cmd, mean of 6 Gaussians), but
-    x/y/yaw are measured *relative to the feet support polygon*, not the spawn
-    origin. This makes the reward meaningful while the robot walks (or stands):
-
-      x, y  : trunk position − feet-centroid, rotated into trunk body frame.
-              dx = +0.02 means "lean trunk 2 cm forward of foot centroid."
-      z     : trunk world height (− nominal_height) — locomotion-neutral.
-      roll  : trunk world roll                     — locomotion-neutral.
-      pitch : trunk world pitch                    — locomotion-neutral.
-      yaw   : trunk world yaw − circular-mean(feet site yaws). dyaw = +0.3 rad
-              means "twist the trunk 17° relative to where the feet point."
-
-    The body_pose_tracking_6d reward measures x/y/yaw vs spawn origin / world
-    yaw, which kills the gradient as soon as the robot translates or turns. This
-    version stays meaningful regardless of where in the world the robot is.
-    """
+    # Locomotion-aware 6D body pose tracking.
+    #
+    # Same shape as body_pose_tracking_6d (6D cmd, mean of 6 Gaussians), but
+    # x/y/yaw are measured *relative to the feet support polygon*, not the spawn
+    # origin. This makes the reward meaningful while the robot walks (or stands):
+    #
+    #   x, y  : trunk position − feet-centroid, rotated into trunk body frame.
+    #           dx = +0.02 means "lean trunk 2 cm forward of foot centroid."
+    #   z     : trunk world height (− nominal_height) — locomotion-neutral.
+    #   roll  : trunk world roll                     — locomotion-neutral.
+    #   pitch : trunk world pitch                    — locomotion-neutral.
+    #   yaw   : trunk world yaw − circular-mean(feet site yaws). dyaw = +0.3 rad
+    #           means "twist the trunk 17° relative to where the feet point."
+    #
+    # The body_pose_tracking_6d reward measures x/y/yaw vs spawn origin / world
+    # yaw, which kills the gradient as soon as the robot translates or turns. This
+    # version stays meaningful regardless of where in the world the robot is.
     asset: Entity = env.scene[asset_cfg.name]
     cmd = env.command_manager.get_command(command_name)  # (N, 6)
     dx, dy, dz = cmd[:, 0], cmd[:, 1], cmd[:, 2]
@@ -4526,14 +4382,13 @@ def body_pose_tracking_locomotion(env: ManagerBasedRlEnv, command_name: str = "b
 
 
 def pose_command_range_curriculum(env: ManagerBasedRlEnv, env_ids: torch.Tensor, command_name: str, range_stages: list[dict]) -> torch.Tensor:
-    """Ramp a UniformPoseCommand's per-dim ranges over training.
-
-    range_stages: list of {step: int, ranges: tuple[(lo, hi), ...]}.
-    The first stage applies before its step; latest passed stage wins.
-    Always uses the live CommandManager term cfg (NOT env.cfg.commands) so
-    updates take effect — CommandManager keeps its own term refs and reads
-    `term.cfg.ranges` each resample.
-    """
+    # Ramp a UniformPoseCommand's per-dim ranges over training.
+    #
+    # range_stages: list of {step: int, ranges: tuple[(lo, hi), ...]}.
+    # The first stage applies before its step; latest passed stage wins.
+    # Always uses the live CommandManager term cfg (NOT env.cfg.commands) so
+    # updates take effect — CommandManager keeps its own term refs and reads
+    # `term.cfg.ranges` each resample.
     del env_ids
 
     term = env.command_manager.get_term(command_name)
@@ -4555,12 +4410,11 @@ def pose_command_range_curriculum(env: ManagerBasedRlEnv, env_ids: torch.Tensor,
 # Gait-shaping penalties ported from mjlab_microban (microban velocity recipe).
 # ─────────────────────────────────────────────────────────────────────────────
 def no_stepping_penalty(env: ManagerBasedRlEnv, sensor_name: str, command_name: str = "twist", command_threshold: float = 0.01) -> torch.Tensor:
-    """Penalize feet in the air when the commanded speed is below threshold.
-
-    Discourages marching in place when the robot should stand still. Returns the
-    count of airborne feet per environment (use with a negative weight).
-    Ported from mjlab_microban.
-    """
+    # Penalize feet in the air when the commanded speed is below threshold.
+    #
+    # Discourages marching in place when the robot should stand still. Returns the
+    # count of airborne feet per environment (use with a negative weight).
+    # Ported from mjlab_microban.
     command = env.command_manager.get_command(command_name)  # (N, 3)
     cmd_speed = torch.norm(command[:, :2], dim=-1) + torch.abs(command[:, 2])
     below_threshold = cmd_speed < command_threshold
@@ -4575,12 +4429,11 @@ def no_stepping_penalty(env: ManagerBasedRlEnv, sensor_name: str, command_name: 
 
 
 def feet_distance_penalty(env: ManagerBasedRlEnv, min_dist: float, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """Penalize the feet getting too close to each other in the horizontal plane.
-
-    Returns ``clamp(min_dist - d, min=0)`` per env (use with a negative weight),
-    where ``d`` is the horizontal (xy) distance between the two foot sites.
-    Ported from mjlab_microban. Not wired into velocity yet — pinned for later.
-    """
+    # Penalize the feet getting too close to each other in the horizontal plane.
+    #
+    # Returns ``clamp(min_dist - d, min=0)`` per env (use with a negative weight),
+    # where ``d`` is the horizontal (xy) distance between the two foot sites.
+    # Ported from mjlab_microban. Not wired into velocity yet — pinned for later.
     asset: Entity = env.scene[asset_cfg.name]
     foot_pos_xy = asset.data.site_pos_w[:, asset_cfg.site_ids, :2]  # (N, 2, 2)
     dist = torch.norm(foot_pos_xy[:, 0] - foot_pos_xy[:, 1], dim=-1)  # (N,)
@@ -4602,14 +4455,13 @@ def feet_distance_penalty(env: ManagerBasedRlEnv, min_dist: float, asset_cfg: Sc
 # so it is re-sampled per episode but never accumulates.
 # ─────────────────────────────────────────────────────────────────────────────
 def randomize_com(env: ManagerBasedRlEnv, env_ids: torch.Tensor, ranges: tuple[float, float], field: str = "body_ipos", asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """Randomize body CoM (body_ipos) per episode WITHOUT accumulating.
-
-    Drop-in replacement for the buggy mdp.randomize_field(add, body_ipos, reset).
-    ``ranges`` is (lo, hi) applied to all 3 CoM axes; the com_range curriculum
-    updates this same ``ranges`` param. ``field`` is declared so the event can run
-    with ``domain_randomization=True`` (mjlab reads params["field"] to expand that
-    model field per-env).
-    """
+    # Randomize body CoM (body_ipos) per episode WITHOUT accumulating.
+    #
+    # Drop-in replacement for the buggy mdp.randomize_field(add, body_ipos, reset).
+    # ``ranges`` is (lo, hi) applied to all 3 CoM axes; the com_range curriculum
+    # updates this same ``ranges`` param. ``field`` is declared so the event can run
+    # with ``domain_randomization=True`` (mjlab reads params["field"] to expand that
+    # model field per-env).
     if env_ids is None:
         env_ids = torch.arange(env.num_envs, device=env.device, dtype=torch.int)
     else:
@@ -4644,14 +4496,13 @@ def randomize_com(env: ManagerBasedRlEnv, env_ids: torch.Tensor, ranges: tuple[f
 
 
 def randomize_dof_field_scaled(env: ManagerBasedRlEnv, env_ids: torch.Tensor, field: str, scale_range: tuple[float, float], asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """Scale a per-dof model field (e.g. dof_frictionloss/dof_damping) per episode
-    WITHOUT accumulating: restore nominal, then apply a fresh scale.
-
-    ``field`` doubles as the domain_randomization field name. NOTE: under the BAM
-    actuator, dof_frictionloss and dof_damping are zeroed in edit_spec (BAM models
-    friction itself), so scaling them is a no-op — these only matter with the XML
-    position actuator. Kept correct to avoid the accumulation footgun if re-enabled.
-    """
+    # Scale a per-dof model field (e.g. dof_frictionloss/dof_damping) per episode
+    # WITHOUT accumulating: restore nominal, then apply a fresh scale.
+    #
+    # ``field`` doubles as the domain_randomization field name. NOTE: under the BAM
+    # actuator, dof_frictionloss and dof_damping are zeroed in edit_spec (BAM models
+    # friction itself), so scaling them is a no-op — these only matter with the XML
+    # position actuator. Kept correct to avoid the accumulation footgun if re-enabled.
     if env_ids is None:
         env_ids = torch.arange(env.num_envs, device=env.device, dtype=torch.int)
     else:
@@ -4685,12 +4536,11 @@ def randomize_dof_field_scaled(env: ManagerBasedRlEnv, env_ids: torch.Tensor, fi
 
 
 def _ball_kick_dir(env: ManagerBasedRlEnv) -> torch.Tensor:
-    """Per-env world-frame kick direction (XY unit vector), lazily allocated.
-
-    Set by ``reset_ball_in_front_of_foot`` to the robot's forward direction at
-    episode reset. Frozen for the episode so the policy can't redefine "forward"
-    by turning after the kick.
-    """
+    # Per-env world-frame kick direction (XY unit vector), lazily allocated.
+    #
+    # Set by ``reset_ball_in_front_of_foot`` to the robot's forward direction at
+    # episode reset. Frozen for the episode so the policy can't redefine "forward"
+    # by turning after the kick.
     if not hasattr(env, "_ball_kick_dir_w"):
         env._ball_kick_dir_w = torch.zeros(env.num_envs, 2, device=env.device)
         env._ball_kick_dir_w[:, 0] = 1.0
@@ -4698,19 +4548,18 @@ def _ball_kick_dir(env: ManagerBasedRlEnv) -> torch.Tensor:
 
 
 def reset_ball_in_front_of_foot(env: ManagerBasedRlEnv, env_ids: torch.Tensor, offset: tuple = (0.09, -0.042), noise_xy: float = 0.015, ball_radius: float = 0.035, asset_name: str = "ball"):
-    """Place the ball in front of the (right) foot; store the kick direction.
-
-    ``offset`` is the nominal ball-center position in the robot's yaw frame:
-    at HOME the right foot is centered at (0, -0.042) with the toe tip at
-    x≈0.034, so (0.08, -0.042) puts a 35mm-radius ball ~1cm in front of the
-    toe. ``noise_xy`` (uniform ± per axis) is the placement DR: the policy is
-    BLIND to the ball, so this is what forces a swing that works across the
-    real-world placement error.
-
-    Reads the robot root from qpos directly (root_link_pos_w lags until the
-    next forward()); must be registered AFTER reset_base / set_ground_state
-    (events run in dict insertion order) so the robot pose is final.
-    """
+    # Place the ball in front of the (right) foot; store the kick direction.
+    #
+    # ``offset`` is the nominal ball-center position in the robot's yaw frame:
+    # at HOME the right foot is centered at (0, -0.042) with the toe tip at
+    # x≈0.034, so (0.08, -0.042) puts a 35mm-radius ball ~1cm in front of the
+    # toe. ``noise_xy`` (uniform ± per axis) is the placement DR: the policy is
+    # BLIND to the ball, so this is what forces a swing that works across the
+    # real-world placement error.
+    #
+    # Reads the robot root from qpos directly (root_link_pos_w lags until the
+    # next forward()); must be registered AFTER reset_base / set_ground_state
+    # (events run in dict insertion order) so the robot pose is final.
     if env_ids is None or len(env_ids) == 0:
         return
     env_ids = env_ids.to(env.device)
@@ -4740,21 +4589,20 @@ def reset_ball_in_front_of_foot(env: ManagerBasedRlEnv, env_ids: torch.Tensor, o
 
 
 def ball_forward_velocity(env: ManagerBasedRlEnv, asset_name: str = "ball", max_speed: float = 5.0) -> torch.Tensor:
-    """Ball XY velocity along the per-env kick direction, clamped to [0, max].
-
-    Dense and linear-in-speed up to ``max_speed``: every extra bit of forward
-    ball speed pays more every step the ball keeps rolling, so exploration
-    nudges bootstrap the kick with no peak-detection machinery. Backward /
-    lateral ball motion earns 0 rather than a penalty — a mis-hit shouldn't
-    scare the policy away from contacting the ball at all.
-
-    With ``max_speed`` set to a TARGET speed (rather than a large cap), pair
-    with ``ball_speed_overshoot_penalty``: the reward saturating at the target
-    alone does NOT remove "harder is better" — a harder kick keeps the ball
-    at/above the cap for more steps, so the rolling-time integral still grows
-    with strike speed. The overshoot penalty is what makes the target the
-    actual optimum.
-    """
+    # Ball XY velocity along the per-env kick direction, clamped to [0, max].
+    #
+    # Dense and linear-in-speed up to ``max_speed``: every extra bit of forward
+    # ball speed pays more every step the ball keeps rolling, so exploration
+    # nudges bootstrap the kick with no peak-detection machinery. Backward /
+    # lateral ball motion earns 0 rather than a penalty — a mis-hit shouldn't
+    # scare the policy away from contacting the ball at all.
+    #
+    # With ``max_speed`` set to a TARGET speed (rather than a large cap), pair
+    # with ``ball_speed_overshoot_penalty``: the reward saturating at the target
+    # alone does NOT remove "harder is better" — a harder kick keeps the ball
+    # at/above the cap for more steps, so the rolling-time integral still grows
+    # with strike speed. The overshoot penalty is what makes the target the
+    # actual optimum.
     ball: Entity = env.scene[asset_name]
     vel_xy = ball.data.root_link_lin_vel_w[:, :2]
     fwd = (vel_xy * _ball_kick_dir(env)).sum(dim=1)
@@ -4762,15 +4610,14 @@ def ball_forward_velocity(env: ManagerBasedRlEnv, asset_name: str = "ball", max_
 
 
 def ball_speed_overshoot_penalty(env: ManagerBasedRlEnv, asset_name: str = "ball", target_speed: float = 1.0, max_penalty: float = 5.0) -> torch.Tensor:
-    """Ball forward speed in excess of ``target_speed`` (linear, ≥ 0).
-
-    Companion to ``ball_forward_velocity`` for a target-speed kick: below the
-    target this is 0 (the capped linear reward provides the upward gradient);
-    above it, each m/s of overshoot costs linearly every step it persists.
-    Keep this term's |weight| BELOW the capped reward's weight so the combined
-    landscape peaks at the target with a gentler slope on the overshoot side —
-    erring slightly hard must stay cheaper than not kicking at all.
-    """
+    # Ball forward speed in excess of ``target_speed`` (linear, ≥ 0).
+    #
+    # Companion to ``ball_forward_velocity`` for a target-speed kick: below the
+    # target this is 0 (the capped linear reward provides the upward gradient);
+    # above it, each m/s of overshoot costs linearly every step it persists.
+    # Keep this term's |weight| BELOW the capped reward's weight so the combined
+    # landscape peaks at the target with a gentler slope on the overshoot side —
+    # erring slightly hard must stay cheaper than not kicking at all.
     ball: Entity = env.scene[asset_name]
     vel_xy = ball.data.root_link_lin_vel_w[:, :2]
     fwd = (vel_xy * _ball_kick_dir(env)).sum(dim=1)
@@ -4779,12 +4626,11 @@ def ball_speed_overshoot_penalty(env: ManagerBasedRlEnv, asset_name: str = "ball
 
 
 def single_foot_grounded_reward(env: ManagerBasedRlEnv, sensor_name: str) -> torch.Tensor:
-    """Binary reward: 1 while the sensed foot touches the terrain.
-
-    Single-foot variant of ``feet_grounded_reward`` — used to pin the SUPPORT
-    foot during the kick (anti-hop): swinging the right leg is free, lifting
-    the left foot costs this reward every step.
-    """
+    # Binary reward: 1 while the sensed foot touches the terrain.
+    #
+    # Single-foot variant of ``feet_grounded_reward`` — used to pin the SUPPORT
+    # foot during the kick (anti-hop): swinging the right leg is free, lifting
+    # the left foot costs this reward every step.
     if sensor_name not in env.scene.sensors:
         return torch.zeros(env.num_envs, device=env.device)
     found = env.scene.sensors[sensor_name].data.found
@@ -4794,12 +4640,11 @@ def single_foot_grounded_reward(env: ManagerBasedRlEnv, sensor_name: str) -> tor
 
 
 def ball_pos_in_base(env: ManagerBasedRlEnv, asset_name: str = "ball") -> torch.Tensor:
-    """Ball position relative to the robot root, in the robot's base frame.
-
-    CRITIC-ONLY observation (asymmetric actor-critic): the deployed policy has
-    no ball sensing, so the actor must stay blind to the ball — the critic can
-    still use it to predict the kick payoff.
-    """
+    # Ball position relative to the robot root, in the robot's base frame.
+    #
+    # CRITIC-ONLY observation (asymmetric actor-critic): the deployed policy has
+    # no ball sensing, so the actor must stay blind to the ball — the critic can
+    # still use it to predict the kick payoff.
     robot: Entity = env.scene["robot"]
     ball: Entity = env.scene[asset_name]
     rel = ball.data.root_link_pos_w - robot.data.root_link_pos_w
@@ -4808,7 +4653,7 @@ def ball_pos_in_base(env: ManagerBasedRlEnv, asset_name: str = "ball") -> torch.
 
 
 def ball_vel_in_base(env: ManagerBasedRlEnv, asset_name: str = "ball") -> torch.Tensor:
-    """Ball linear velocity in the robot's base frame. CRITIC-ONLY (see above)."""
+    # Ball linear velocity in the robot's base frame. CRITIC-ONLY (see above).
     robot: Entity = env.scene["robot"]
     ball: Entity = env.scene[asset_name]
     rot = matrix_from_quat(robot.data.root_link_quat_w)
@@ -4835,7 +4680,7 @@ SPIN_BRAKE_END = 0.650
 
 
 def spin_rate_by_phase(phase: torch.Tensor, rate_max: float = SPIN_RATE_MAX, accel_end: float = SPIN_ACCEL_END, hold_end: float = SPIN_HOLD_END, brake_end: float = SPIN_BRAKE_END) -> torch.Tensor:
-    """Target yaw rate (rad/s, positive = counter-clockwise) along the phase."""
+    # Target yaw rate (rad/s, positive = counter-clockwise) along the phase.
     w = torch.zeros_like(phase)
     accel = phase < accel_end
     w = torch.where(accel, rate_max * phase / accel_end, w)
@@ -4847,17 +4692,16 @@ def spin_rate_by_phase(phase: torch.Tensor, rate_max: float = SPIN_RATE_MAX, acc
 
 
 def spin_gate_by_phase(phase: torch.Tensor, rate_max: float = SPIN_RATE_MAX, accel_end: float = SPIN_ACCEL_END, hold_end: float = SPIN_HOLD_END, brake_end: float = SPIN_BRAKE_END) -> torch.Tensor:
-    """Shaping gate in [0,1] = normalized envelope.
-
-    Is 0 over the whole rest segment: the primers (leg scissoring,
-    wheel differential) only apply during launch + cruise, so
-    the robot returns to a neutral stance before handing control back to the roller policy.
-    """
+    # Shaping gate in [0,1] = normalized envelope.
+    #
+    # Is 0 over the whole rest segment: the primers (leg scissoring,
+    # wheel differential) only apply during launch + cruise, so
+    # the robot returns to a neutral stance before handing control back to the roller policy.
     return spin_rate_by_phase(phase, rate_max, accel_end, hold_end, brake_end) / rate_max
 
 
 def spin_phase_from_command(cmd: torch.Tensor) -> torch.Tensor:
-    """Recovers the phase [0,1) from the slot command [cos(2πφ), sin(2πφ), 0]."""
+    # Recovers the phase [0,1) from the slot command [cos(2πφ), sin(2πφ), 0].
     return (torch.atan2(cmd[:, 1], cmd[:, 0]) / (2 * torch.pi)) % 1.0
 
 
@@ -4872,17 +4716,16 @@ def _spin_gate(env: ManagerBasedRlEnv, command_name: str, rate_max: float, accel
 
 
 def spin_rate_reward_from_values(omega_z: torch.Tensor, omega_target: torch.Tensor, std: float) -> torch.Tensor:
-    """Gaussian on the yaw rate error (pure, testable function)."""
+    # Gaussian on the yaw rate error (pure, testable function).
     return torch.exp(-(((omega_z - omega_target) / std) ** 2))
 
 
 def spin_rate_track(env: ManagerBasedRlEnv, command_name: str = "twist", std: float = 1.5, rate_max: float = SPIN_RATE_MAX, accel_end: float = SPIN_ACCEL_END, hold_end: float = SPIN_HOLD_END, brake_end: float = SPIN_BRAKE_END, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """Main objective of the spin: track the target yaw rate ω*(φ).
-
-    ω_z is taken in the body frame (this is what the IMU gyro sees, hence what
-    the policy observes). A rotation in the wrong direction is punished more than
-    standing still, the Gaussian being centered on a positive target.
-    """
+    # Main objective of the spin: track the target yaw rate ω*(φ).
+    #
+    # ω_z is taken in the body frame (this is what the IMU gyro sees, hence what
+    # the policy observes). A rotation in the wrong direction is punished more than
+    # standing still, the Gaussian being centered on a positive target.
     asset: Entity = env.scene[asset_cfg.name]
     omega_z = asset.data.root_link_ang_vel_b[:, 2]
     target = _spin_target_rate(env, command_name, rate_max, accel_end, hold_end, brake_end)
@@ -4890,9 +4733,9 @@ def spin_rate_track(env: ManagerBasedRlEnv, command_name: str = "twist", std: fl
 
 
 def spin_rate_l1(env: ManagerBasedRlEnv, command_name: str = "twist", rate_max: float = SPIN_RATE_MAX, accel_end: float = SPIN_ACCEL_END, hold_end: float = SPIN_HOLD_END, brake_end: float = SPIN_BRAKE_END, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """L1 bootstrap: constant gradient towards the target even when the Gaussian
-    of `spin_rate_track` saturates far from the target. To be used with a
-    POSITIVE weight (the returned value is already negative)."""
+    # L1 bootstrap: constant gradient towards the target even when the Gaussian
+    # of `spin_rate_track` saturates far from the target. To be used with a
+    # POSITIVE weight (the returned value is already negative).
     asset: Entity = env.scene[asset_cfg.name]
     omega_z = asset.data.root_link_ang_vel_b[:, 2]
     target = _spin_target_rate(env, command_name, rate_max, accel_end, hold_end, brake_end)
@@ -4903,23 +4746,22 @@ SPIN_LAUNCH_DRIFT_SCALE = 0.2  # attenuation of the drift cost during the launch
 
 
 def spin_stay_in_place(env: ManagerBasedRlEnv, command_name: str = "twist", launch_scale: float = SPIN_LAUNCH_DRIFT_SCALE, accel_end: float = SPIN_ACCEL_END, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """Trunk ‖v_xy‖² cost: turn IN PLACE, and kill the entry momentum.
-
-    No reference state (unlike a drift measured since the reset),
-    so it stays valid over the 5 cycles of an episode. To be used with a
-    NEGATIVE weight.
-
-    ATTENUATED DURING THE LAUNCH: over `[0, accel_end)` the robot must push on the
-    ground to inject angular momentum, and the entry state gives it up to
-    0.3 m/s that it is supposed to CONVERT into rotation. Charging translation at full
-    price at that moment therefore directly opposes the objective. The cost is
-    multiplied by `launch_scale` on that segment only, and is full price afterwards
-    (cruise, braking, rest) where "in place" is the real criterion.
-
-    Unlike the other spin primers, this term is NOT switched off by
-    `spin_gate_by_phase`: during the rest we precisely want it to stay full,
-    since that is when the robot must be motionless.
-    """
+    # Trunk ‖v_xy‖² cost: turn IN PLACE, and kill the entry momentum.
+    #
+    # No reference state (unlike a drift measured since the reset),
+    # so it stays valid over the 5 cycles of an episode. To be used with a
+    # NEGATIVE weight.
+    #
+    # ATTENUATED DURING THE LAUNCH: over `[0, accel_end)` the robot must push on the
+    # ground to inject angular momentum, and the entry state gives it up to
+    # 0.3 m/s that it is supposed to CONVERT into rotation. Charging translation at full
+    # price at that moment therefore directly opposes the objective. The cost is
+    # multiplied by `launch_scale` on that segment only, and is full price afterwards
+    # (cruise, braking, rest) where "in place" is the real criterion.
+    #
+    # Unlike the other spin primers, this term is NOT switched off by
+    # `spin_gate_by_phase`: during the rest we precisely want it to stay full,
+    # since that is when the robot must be motionless.
     asset: Entity = env.scene[asset_cfg.name]
     v_xy = asset.data.root_link_lin_vel_b[:, :2]
     cost = torch.sum(torch.square(v_xy), dim=1)
@@ -4941,17 +4783,16 @@ SPIN_WHEEL_OMEGA_SCALE = 17.0  # rad/s; recalibrated on the measured half-track 
 
 
 def spin_wheel_differential_from_values(diff: torch.Tensor, gate: torch.Tensor, omega_scale: float) -> torch.Tensor:
-    """Pure function: tanh of the wheel differential, scaled by gate, clamped ≥ 0."""
+    # Pure function: tanh of the wheel differential, scaled by gate, clamped ≥ 0.
     return gate * torch.tanh(torch.clamp(diff, min=0.0) / omega_scale)
 
 
 def spin_wheel_differential(env: ManagerBasedRlEnv, command_name: str = "twist", omega_scale: float = SPIN_WHEEL_OMEGA_SCALE, rate_max: float = SPIN_RATE_MAX, accel_end: float = SPIN_ACCEL_END, hold_end: float = SPIN_HOLD_END, brake_end: float = SPIN_BRAKE_END) -> torch.Tensor:
-    """Rewards rotation BY ROLLING (and not by skidding).
-
-    For a counter-clockwise spin, the left skate goes backwards and the right one forwards; the 4
-    wheels spinning positive when going forward, this gives ω_R − ω_L > 0. The tanh
-    saturates at `omega_scale` to avoid a race for wheel speed.
-    """
+    # Rewards rotation BY ROLLING (and not by skidding).
+    #
+    # For a counter-clockwise spin, the left skate goes backwards and the right one forwards; the 4
+    # wheels spinning positive when going forward, this gives ω_R − ω_L > 0. The tanh
+    # saturates at `omega_scale` to avoid a race for wheel speed.
     asset: Entity = env.scene["robot"]
     lf_ids, _ = asset.find_joints("passive_LF_?wheel")
     lr_ids, _ = asset.find_joints("passive_LR_?wheel")
@@ -4966,11 +4807,10 @@ def spin_wheel_differential(env: ManagerBasedRlEnv, command_name: str = "twist",
 
 
 def spin_grounded(env: ManagerBasedRlEnv, sensor_name: str, command_name: str = "twist", rate_max: float = SPIN_RATE_MAX, accel_end: float = SPIN_ACCEL_END, hold_end: float = SPIN_HOLD_END, brake_end: float = SPIN_BRAKE_END) -> torch.Tensor:
-    """Both blades on the ground during the spin — prevents "I jump and twirl".
-
-    Variant of the swizzle's `grounded_reward`, which is not reusable here:
-    it weights by cmd_x, which is cos(2πφ) on the phase command.
-    """
+    # Both blades on the ground during the spin — prevents "I jump and twirl".
+    #
+    # Variant of the swizzle's `grounded_reward`, which is not reusable here:
+    # it weights by cmd_x, which is cos(2πφ) on the phase command.
     from mjlab.sensor import ContactSensor
 
     sensor: ContactSensor = env.scene[sensor_name]
@@ -4983,14 +4823,13 @@ def spin_grounded(env: ManagerBasedRlEnv, sensor_name: str, command_name: str = 
 
 
 def leg_antisymmetry(env: ManagerBasedRlEnv, command_name: str = "twist", asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, joint_bases: tuple = ("hip_pitch", "knee"), rate_max: float = SPIN_RATE_MAX, accel_end: float = SPIN_ACCEL_END, hold_end: float = SPIN_HOLD_END, brake_end: float = SPIN_BRAKE_END) -> torch.Tensor:
-    """Primes the leg SCISSOR (one forward / one backward) during the spin.
-
-    The robot has MIRRORED left/right sign conventions: a symmetric
-    pose satisfies q_L + q_R ≈ 0 (cf. `leg_symmetry_reward`), so the
-    scissor satisfies q_L ≈ q_R. Returns `gate(φ) · (−mean|q_L − q_R|)` — to be
-    used with a POSITIVE weight, decaying via curriculum: the primer
-    fades out to let the policy refine its own gesture.
-    """
+    # Primes the leg SCISSOR (one forward / one backward) during the spin.
+    #
+    # The robot has MIRRORED left/right sign conventions: a symmetric
+    # pose satisfies q_L + q_R ≈ 0 (cf. `leg_symmetry_reward`), so the
+    # scissor satisfies q_L ≈ q_R. Returns `gate(φ) · (−mean|q_L − q_R|)` — to be
+    # used with a POSITIVE weight, decaying via curriculum: the primer
+    # fades out to let the policy refine its own gesture.
     asset: Entity = env.scene[asset_cfg.name]
     left, right = [], []
     for base in joint_bases:
@@ -5020,11 +4859,10 @@ def leg_antisymmetry(env: ManagerBasedRlEnv, command_name: str = "twist", asset_
 
 
 def _backlash_encoder_ids(env: "ManagerBasedRlEnv", asset: Entity, asset_cfg: SceneEntityCfg) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """(main_ids, backlash_ids, mask) — cached per (entity, joint selection).
-
-    mask is 1.0 where a matching passive_<name>_backlash joint exists, so the
-    same obs functions run unchanged on models without backlash joints.
-    """
+    # (main_ids, backlash_ids, mask) — cached per (entity, joint selection).
+    #
+    # mask is 1.0 where a matching passive_<name>_backlash joint exists, so the
+    # same obs functions run unchanged on models without backlash joints.
     key = (asset_cfg.name, str(asset_cfg.joint_ids))
     cache = env.__dict__.setdefault("_backlash_encoder_cache", {})
     hit = cache.get(key)
@@ -5051,12 +4889,11 @@ def _backlash_encoder_ids(env: "ManagerBasedRlEnv", asset: Entity, asset_cfg: Sc
 
 
 def joint_pos_rel_backlash(env: "ManagerBasedRlEnv", biased: bool = False, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """joint_pos_rel where the encoder reads through the backlash hinge.
-
-    Returns (qpos[servo] + qpos[backlash]) - default[servo]. With biased=True
-    the per-env encoder-calibration bias is applied to the servo reading (one
-    encoder per servo → one bias per joint; the backlash summand stays raw).
-    """
+    # joint_pos_rel where the encoder reads through the backlash hinge.
+    #
+    # Returns (qpos[servo] + qpos[backlash]) - default[servo]. With biased=True
+    # the per-env encoder-calibration bias is applied to the servo reading (one
+    # encoder per servo → one bias per joint; the backlash summand stays raw).
     asset: Entity = env.scene[asset_cfg.name]
     main_ids, bl_ids, mask = _backlash_encoder_ids(env, asset, asset_cfg)
     joint_pos = asset.data.joint_pos_biased if biased else asset.data.joint_pos
@@ -5067,11 +4904,10 @@ def joint_pos_rel_backlash(env: "ManagerBasedRlEnv", biased: bool = False, asset
 
 
 def joint_vel_rel_backlash(env: "ManagerBasedRlEnv", asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """joint_vel_rel where the encoder reads through the backlash hinge.
-
-    The firmware derives present_velocity from encoder positions, so it also
-    sees the backlash motion: qvel[servo] + qvel[backlash].
-    """
+    # joint_vel_rel where the encoder reads through the backlash hinge.
+    #
+    # The firmware derives present_velocity from encoder positions, so it also
+    # sees the backlash motion: qvel[servo] + qvel[backlash].
     asset: Entity = env.scene[asset_cfg.name]
     main_ids, bl_ids, mask = _backlash_encoder_ids(env, asset, asset_cfg)
     vel = asset.data.joint_vel[:, main_ids] + asset.data.joint_vel[:, bl_ids] * mask
@@ -5094,31 +4930,30 @@ def joint_vel_rel_backlash(env: "ManagerBasedRlEnv", asset_cfg: SceneEntityCfg =
 
 
 class SitStandCommand(UniformVelocityCommand):
-    """Posture command: cmd = [sit_flag, 0, 0] with dwell-time resampling and a
-    SLEWED internal target blend.
-
-    sit_flag ∈ {0.0, 1.0}. Resampled by the command manager on the cfg's
-    resampling_time_range (the dwell time in each posture) and on episode
-    reset. cfg.sit_prob is the probability a resample commands SIT; with the
-    reset-state mix this trains all four (start-state × command) combinations,
-    including "hold what you're already doing".
-
-    ``alpha`` (0 = STAND target, 1 = SIT target) slews toward the flag at a
-    constant rate (full transition in cfg.ramp_s seconds) and is what the
-    posture_* rewards track. THE anti-crash mechanism: with a binary target,
-    arriving early pays the full goal-state jackpot for every step saved,
-    while the linear speed-cap penalties integrate to a bounded excess-
-    distance cost — an instant drop beat a 1 s descent by ~7×. With the
-    slewed target, being AHEAD of the ramp scores ~0 on the height/composite
-    stack (z far from the commanded height), so tracking the slow setpoint IS
-    the argmax; the caps remain as backstops for overshoot/bounce. The OBS
-    stays the raw binary flag (deployment: runtime writes 0/1; the trained
-    response to a flip is the ~ramp_s glide).
-
-    On episode reset, alpha is initialised from the robot's ACTUAL trunk
-    height, not the flag — a seated spawn must not be dragged upward by a
-    stand-initialised ramp (and vice versa).
-    """
+    # Posture command: cmd = [sit_flag, 0, 0] with dwell-time resampling and a
+    # SLEWED internal target blend.
+    #
+    # sit_flag ∈ {0.0, 1.0}. Resampled by the command manager on the cfg's
+    # resampling_time_range (the dwell time in each posture) and on episode
+    # reset. cfg.sit_prob is the probability a resample commands SIT; with the
+    # reset-state mix this trains all four (start-state × command) combinations,
+    # including "hold what you're already doing".
+    #
+    # ``alpha`` (0 = STAND target, 1 = SIT target) slews toward the flag at a
+    # constant rate (full transition in cfg.ramp_s seconds) and is what the
+    # posture_* rewards track. THE anti-crash mechanism: with a binary target,
+    # arriving early pays the full goal-state jackpot for every step saved,
+    # while the linear speed-cap penalties integrate to a bounded excess-
+    # distance cost — an instant drop beat a 1 s descent by ~7×. With the
+    # slewed target, being AHEAD of the ramp scores ~0 on the height/composite
+    # stack (z far from the commanded height), so tracking the slow setpoint IS
+    # the argmax; the caps remain as backstops for overshoot/bounce. The OBS
+    # stays the raw binary flag (deployment: runtime writes 0/1; the trained
+    # response to a flip is the ~ramp_s glide).
+    #
+    # On episode reset, alpha is initialised from the robot's ACTUAL trunk
+    # height, not the flag — a seated spawn must not be dragged upward by a
+    # stand-initialised ramp (and vice versa).
 
     def __init__(self, cfg, env: ManagerBasedRlEnv):
         super().__init__(cfg, env)
@@ -5135,7 +4970,7 @@ class SitStandCommand(UniformVelocityCommand):
 
     @property
     def alpha(self) -> torch.Tensor:
-        """Slewed target blend: 0 = STAND target, 1 = SIT target."""
+        # Slewed target blend: 0 = STAND target, 1 = SIT target.
         return self._alpha
 
     def _resample_command(self, env_ids: torch.Tensor) -> None:
@@ -5188,11 +5023,10 @@ class SitStandCommandCfg(UniformVelocityCommandCfg):
 
 
 def _posture_blend(env: ManagerBasedRlEnv, command_name: str) -> torch.Tensor:
-    """Target blend ∈ [0, 1] (0 = STAND, 1 = SIT) for the posture rewards.
-
-    Uses the SitStandCommand's slewed ``alpha`` (the moving setpoint) when the
-    term exposes it; falls back to the raw binary flag otherwise.
-    """
+    # Target blend ∈ [0, 1] (0 = STAND, 1 = SIT) for the posture rewards.
+    #
+    # Uses the SitStandCommand's slewed ``alpha`` (the moving setpoint) when the
+    # term exposes it; falls back to the raw binary flag otherwise.
     term = env.command_manager.get_term(command_name)
     alpha = getattr(term, "alpha", None)
     if alpha is not None:
@@ -5201,12 +5035,11 @@ def _posture_blend(env: ManagerBasedRlEnv, command_name: str) -> torch.Tensor:
 
 
 def _posture_targets(env: ManagerBasedRlEnv, asset: Entity, command_name: str, sit_overrides: dict) -> tuple[torch.Tensor, torch.Tensor]:
-    """(target blend, per-env joint target) for the commanded posture.
-
-    STAND target = default_joint_pos (HOME); SIT target = HOME with the
-    keyframe overrides applied; the SLEWED blend interpolates between them,
-    so mid-ramp the rewarded pose folds in sync with the descending height.
-    """
+    # (target blend, per-env joint target) for the commanded posture.
+    #
+    # STAND target = default_joint_pos (HOME); SIT target = HOME with the
+    # keyframe overrides applied; the SLEWED blend interpolates between them,
+    # so mid-ramp the rewarded pose folds in sync with the descending height.
     blend = _posture_blend(env, command_name)
     stand_target = _servo_default_joint_pos(env, asset)
     sit_target = stand_target.clone()
@@ -5217,7 +5050,7 @@ def _posture_targets(env: ManagerBasedRlEnv, asset: Entity, command_name: str, s
 
 
 def _posture_height(env: ManagerBasedRlEnv, command_name: str, sit_z: float, stand_z: float) -> tuple[torch.Tensor, torch.Tensor]:
-    """(slewed target trunk z, actual trunk z) per env."""
+    # (slewed target trunk z, actual trunk z) per env.
     blend = _posture_blend(env, command_name)
     target_z = stand_z + blend * (sit_z - stand_z)
     asset = env.scene["robot"]
@@ -5226,7 +5059,7 @@ def _posture_height(env: ManagerBasedRlEnv, command_name: str, sit_z: float, sta
 
 
 def posture_pose_match(env: ManagerBasedRlEnv, command_name: str, sit_overrides: dict, joint_indices: list, std: float = 0.5, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """Gaussian pose-match against the commanded posture's target pose."""
+    # Gaussian pose-match against the commanded posture's target pose.
     asset = env.scene[asset_cfg.name]
     _, target = _posture_targets(env, asset, command_name, sit_overrides)
     joint_pos = _servo_joint_pos(env, asset)[:, joint_indices]
@@ -5235,7 +5068,7 @@ def posture_pose_match(env: ManagerBasedRlEnv, command_name: str, sit_overrides:
 
 
 def posture_pose_l1(env: ManagerBasedRlEnv, command_name: str, sit_overrides: dict, joint_indices: list, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """L1 companion to ``posture_pose_match`` (constant gradient to target)."""
+    # L1 companion to ``posture_pose_match`` (constant gradient to target).
     asset = env.scene[asset_cfg.name]
     _, target = _posture_targets(env, asset, command_name, sit_overrides)
     joint_pos = _servo_joint_pos(env, asset)[:, joint_indices]
@@ -5244,42 +5077,40 @@ def posture_pose_l1(env: ManagerBasedRlEnv, command_name: str, sit_overrides: di
 
 
 def posture_height_gaussian(env: ManagerBasedRlEnv, command_name: str, sit_z: float, stand_z: float, std: float = 0.02, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """Gaussian on trunk z against the commanded posture's target height."""
+    # Gaussian on trunk z against the commanded posture's target height.
     del asset_cfg  # trunk z read via _posture_height
     target_z, z = _posture_height(env, command_name, sit_z, stand_z)
     return torch.exp(-(((z - target_z) / std) ** 2))
 
 
 def posture_height_l1(env: ManagerBasedRlEnv, command_name: str, sit_z: float, stand_z: float, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """L1 companion to ``posture_height_gaussian`` — the transition driver.
-
-    While the robot rests in the *wrong* posture this charges a constant
-    per-step cost (~|Δz| = 55 mm), which is what makes "ignore the command"
-    a net-negative strategy in both directions.
-    """
+    # L1 companion to ``posture_height_gaussian`` — the transition driver.
+    #
+    # While the robot rests in the *wrong* posture this charges a constant
+    # per-step cost (~|Δz| = 55 mm), which is what makes "ignore the command"
+    # a net-negative strategy in both directions.
     del asset_cfg
     target_z, z = _posture_height(env, command_name, sit_z, stand_z)
     return -torch.abs(z - target_z)
 
 
 def posture_composite(env: ManagerBasedRlEnv, command_name: str, sit_overrides: dict, joint_indices: list, sit_z: float, stand_z: float, height_std: float = 0.03, upright_std: float = 0.40, pose_std: float = 0.40, head_std: float | None = None, head_command_name: str = "head_pose", asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """Multiplicative goal score vs the commanded posture (height·upright·pose
-    [·head]).
-
-    The posture-conditioned version of ``standing_composite_score``: a
-    deficiency in any factor collapses the whole term, so partial-sum
-    compromises (plank, flop, lean) never pay. Both rest states demand an
-    upright trunk, so the upright factor is posture-independent.
-
-    ``head_std`` (optional): adds a fourth factor on the neck/head joints vs
-    the ``head_pose`` command (same error convention as head_pose_tracking).
-    Without it the goal state is head-blind: the trained policy rested with
-    the head dangling to the floor — trunk upright, legs in pose, z on target
-    all held while the head hung, costing only the light tracking term. With
-    the factor, "arrived" REQUIRES the head at its commanded pose, so head
-    assist stays free mid-transition (composite is ≈0 there anyway) but must
-    be retracted to collect the goal reward.
-    """
+    # Multiplicative goal score vs the commanded posture (height·upright·pose
+    # [·head]).
+    #
+    # The posture-conditioned version of ``standing_composite_score``: a
+    # deficiency in any factor collapses the whole term, so partial-sum
+    # compromises (plank, flop, lean) never pay. Both rest states demand an
+    # upright trunk, so the upright factor is posture-independent.
+    #
+    # ``head_std`` (optional): adds a fourth factor on the neck/head joints vs
+    # the ``head_pose`` command (same error convention as head_pose_tracking).
+    # Without it the goal state is head-blind: the trained policy rested with
+    # the head dangling to the floor — trunk upright, legs in pose, z on target
+    # all held while the head hung, costing only the light tracking term. With
+    # the factor, "arrived" REQUIRES the head at its commanded pose, so head
+    # assist stays free mid-transition (composite is ≈0 there anyway) but must
+    # be retracted to collect the goal reward.
     asset = env.scene[asset_cfg.name]
     _, target = _posture_targets(env, asset, command_name, sit_overrides)
     target_z, z = _posture_height(env, command_name, sit_z, stand_z)
@@ -5310,16 +5141,15 @@ def posture_composite(env: ManagerBasedRlEnv, command_name: str, sit_overrides: 
 
 
 def posture_stillness(env: ManagerBasedRlEnv, command_name: str, sit_z: float, stand_z: float, band_full: float = 0.012, band_zero: float = 0.03, vel_std: float = 0.05, tilt_full_deg: float = 25.0, tilt_zero_deg: float = 60.0, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """Reward trunk stillness while AT the commanded posture, upright.
-
-    Generalizes ``seated_stillness`` to both rest states: exp(-(|v|/std)²)
-    gated by a smoothstep on |z − commanded z| (full inside ``band_full``,
-    zero beyond ``band_zero`` → inactive during transitions) and by trunk
-    tilt (a tilted rest — back/face/side — earns nothing). Additionally gated
-    on the target ramp being COMPLETE (|flag − alpha| small), so stillness
-    never pays mid-transition. Makes "rest quietly, upright, at the commanded
-    height" the peak of the stack.
-    """
+    # Reward trunk stillness while AT the commanded posture, upright.
+    #
+    # Generalizes ``seated_stillness`` to both rest states: exp(-(|v|/std)²)
+    # gated by a smoothstep on |z − commanded z| (full inside ``band_full``,
+    # zero beyond ``band_zero`` → inactive during transitions) and by trunk
+    # tilt (a tilted rest — back/face/side — earns nothing). Additionally gated
+    # on the target ramp being COMPLETE (|flag − alpha| small), so stillness
+    # never pays mid-transition. Makes "rest quietly, upright, at the commanded
+    # height" the peak of the stack.
     asset = env.scene[asset_cfg.name]
     target_z, z = _posture_height(env, command_name, sit_z, stand_z)
     v = torch.nan_to_num(asset.data.root_link_lin_vel_w, nan=0.0).norm(dim=-1)
@@ -5343,17 +5173,16 @@ def posture_stillness(env: ManagerBasedRlEnv, command_name: str, sit_z: float, s
 
 
 def posture_rise_bootstrap(env: ManagerBasedRlEnv, command_name: str, max_height: float, max_vz: float | None = None, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """Upward-vz reward, active only when STAND is commanded and z < max_height.
-
-    The standup-env lesson: destination-only rewards have zero gradient at
-    zero motion, so "stay seated and eat the L1" is a local optimum — paying
-    for the rise *motion* itself makes any attempt immediately positive.
-    Gated off above ``max_height`` (set just ABOVE the stand target so the
-    final cm still pays; gating at exactly STAND_Z parks the policy short).
-    Zero whenever SIT is commanded, so it can never fight the descent.
-    ``max_vz`` caps the rewarded speed (any rise ≥ the cap earns the same, so
-    an explosive launch can't out-earn a gentle one).
-    """
+    # Upward-vz reward, active only when STAND is commanded and z < max_height.
+    #
+    # The standup-env lesson: destination-only rewards have zero gradient at
+    # zero motion, so "stay seated and eat the L1" is a local optimum — paying
+    # for the rise *motion* itself makes any attempt immediately positive.
+    # Gated off above ``max_height`` (set just ABOVE the stand target so the
+    # final cm still pays; gating at exactly STAND_Z parks the policy short).
+    # Zero whenever SIT is commanded, so it can never fight the descent.
+    # ``max_vz`` caps the rewarded speed (any rise ≥ the cap earns the same, so
+    # an explosive launch can't out-earn a gentle one).
     asset = env.scene[asset_cfg.name]
     sit = env.command_manager.get_command(command_name)[:, 0]
     z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0)
@@ -5362,14 +5191,13 @@ def posture_rise_bootstrap(env: ManagerBasedRlEnv, command_name: str, max_height
 
 
 def trunk_upward_velocity_penalty(env: ManagerBasedRlEnv, max_up_vel: float = 0.08, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """Penalty on upward trunk velocity beyond ``max_up_vel``.
-
-    Mirror of ``trunk_downward_velocity_penalty`` for the rise: charges every
-    step of a too-fast (violent) stand-up, so the explosive rise can't be
-    amortised against arriving-standing reward. Zero at rest, for any rise
-    slower than the cap, and for all downward motion. Introduce via
-    curriculum AFTER the rise is discovered (attempt-tax lesson).
-    """
+    # Penalty on upward trunk velocity beyond ``max_up_vel``.
+    #
+    # Mirror of ``trunk_downward_velocity_penalty`` for the rise: charges every
+    # step of a too-fast (violent) stand-up, so the explosive rise can't be
+    # amortised against arriving-standing reward. Zero at rest, for any rise
+    # slower than the cap, and for all downward motion. Introduce via
+    # curriculum AFTER the rise is discovered (attempt-tax lesson).
     asset = env.scene[asset_cfg.name]
     vz = torch.nan_to_num(asset.data.root_link_lin_vel_w[:, 2], nan=0.0)
     return -torch.clamp(vz - max_up_vel, min=0.0)
@@ -5464,12 +5292,12 @@ _FLAT_ZERO = 0.866  # sin(60°): zero credit above
 
 
 def _lateral_axis_z(quat: torch.Tensor) -> torch.Tensor:
-    """World-z component of the body's lateral (y) axis. 0 = flat/sagittal."""
+    # World-z component of the body's lateral (y) axis. 0 = flat/sagittal.
     return 2.0 * (quat[:, 2] * quat[:, 3] + quat[:, 0] * quat[:, 1])
 
 
 def _head_top_down(env: ManagerBasedRlEnv, asset: Entity) -> torch.Tensor:
-    """True where the head-top axis points at the floor (dot with -z > min)."""
+    # True where the head-top axis points at the floor (dot with -z > min).
     if not hasattr(env, "_roulade_head_body_id"):
         ids, _ = asset.find_bodies("jaw_soft")
         env._roulade_head_body_id = ids[0]
@@ -5500,20 +5328,19 @@ def _roulade_state(env: ManagerBasedRlEnv) -> tuple:
 
 
 def _update_roulade_accum(env: ManagerBasedRlEnv, asset: Entity) -> None:
-    """Integrate forward pitch rate into the per-env rotation accumulator.
-
-    Step-guarded so that multiple reward terms reading the accumulator in the
-    same control step don't double-integrate. The frontier (max) only moves
-    forward; backward rocking (wind-up) neither pays nor un-pays.
-
-    SUPPORT GATE (run-1 fix): rotation is integrated only while the robot
-    touches the terrain — a roulade is a supported motion; ballistic flips
-    accumulate nothing, so they neither get paid nor open the completion gate.
-
-    Also latches env._roulade_head_latch when the head touches the ground
-    while accum is inside the first-quadrant window — the landing annuity
-    requires this, making "over the head" a hard requirement of the task.
-    """
+    # Integrate forward pitch rate into the per-env rotation accumulator.
+    #
+    # Step-guarded so that multiple reward terms reading the accumulator in the
+    # same control step don't double-integrate. The frontier (max) only moves
+    # forward; backward rocking (wind-up) neither pays nor un-pays.
+    #
+    # SUPPORT GATE (run-1 fix): rotation is integrated only while the robot
+    # touches the terrain — a roulade is a supported motion; ballistic flips
+    # accumulate nothing, so they neither get paid nor open the completion gate.
+    #
+    # Also latches env._roulade_head_latch when the head touches the ground
+    # while accum is inside the first-quadrant window — the landing annuity
+    # requires this, making "over the head" a hard requirement of the task.
     _roulade_state(env)
     step = int(env.common_step_counter)
     if step != env._roulade_last_update_step:
@@ -5539,14 +5366,13 @@ def _update_roulade_accum(env: ManagerBasedRlEnv, asset: Entity) -> None:
 
 
 def _roulade_completion_gate(env: ManagerBasedRlEnv, gate_lo: float, gate_hi: float, require_head: bool = False) -> torch.Tensor:
-    """Smoothstep on the progress frontier: 0 below gate_lo rad, 1 above gate_hi.
-
-    State-based replacement for the old phase-clock landing window — it can
-    only be opened by actually rotating (while SUPPORTED — the accumulator is
-    contact-gated), so neither pre-roll standing nor a ballistic flip collects.
-    With require_head=True the gate additionally requires the head latch —
-    the episode must have rolled over the head to unlock the landing annuity.
-    """
+    # Smoothstep on the progress frontier: 0 below gate_lo rad, 1 above gate_hi.
+    #
+    # State-based replacement for the old phase-clock landing window — it can
+    # only be opened by actually rotating (while SUPPORTED — the accumulator is
+    # contact-gated), so neither pre-roll standing nor a ballistic flip collects.
+    # With require_head=True the gate additionally requires the head latch —
+    # the episode must have rolled over the head to unlock the landing annuity.
     _, max_accum, _ = _roulade_state(env)
     t = torch.clamp((max_accum - gate_lo) / max(gate_hi - gate_lo, 1e-6), 0.0, 1.0)
     gate = t * t * (3.0 - 2.0 * t)
@@ -5556,22 +5382,21 @@ def _roulade_completion_gate(env: ManagerBasedRlEnv, gate_lo: float, gate_hi: fl
 
 
 def reset_roulade_state(env: ManagerBasedRlEnv, env_ids: torch.Tensor, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, standing_prob: float = 0.5, midroll_prob: float = 0.5, standing_z_min: float = 0.11, standing_z_max: float = 0.12, standing_tilt_max: float = 0.0, forward_vel_range: tuple = (0.0, 0.0), midroll_pitch_min: float = math.radians(50.0), midroll_pitch_max: float = math.radians(185.0), midroll_z_min: float = 0.05, midroll_z_max: float = 0.10, midroll_omega_range: tuple = (0.0, 0.0), tuck_overrides: dict | None = None, tuck_factor_range: tuple = (0.3, 1.0), joint_noise_std: float = 0.0):
-    """Reset to a standing start or a mid-roll state (reverse curriculum).
-
-    Standing bucket: upright (±standing_tilt_max pitch/roll noise), random yaw,
-    HOME joints (left from reset_robot_joints), z in [standing_z_min, _max].
-    ``forward_vel_range`` is the run-up hook: a per-env forward base velocity
-    (body x, mapped to world through the spawn yaw) sampled uniformly — 0 for
-    a standstill roll, widen it later to train rolls out of a walk.
-
-    Mid-roll bucket: pitched ``midroll_pitch_min..max`` into the roll (90° =
-    on the head, 180° = on the back), random yaw, legs lerped HOME→tuck by a
-    per-env factor in ``tuck_factor_range``, z in [midroll_z_min, _max],
-    optional forward angular momentum from ``midroll_omega_range``. The
-    rotation accumulator is initialized to the spawn pitch so progress
-    accounting (and the completion gates) stay consistent: a 170° spawn only
-    gets paid for the remaining ~190°.
-    """
+    # Reset to a standing start or a mid-roll state (reverse curriculum).
+    #
+    # Standing bucket: upright (±standing_tilt_max pitch/roll noise), random yaw,
+    # HOME joints (left from reset_robot_joints), z in [standing_z_min, _max].
+    # ``forward_vel_range`` is the run-up hook: a per-env forward base velocity
+    # (body x, mapped to world through the spawn yaw) sampled uniformly — 0 for
+    # a standstill roll, widen it later to train rolls out of a walk.
+    #
+    # Mid-roll bucket: pitched ``midroll_pitch_min..max`` into the roll (90° =
+    # on the head, 180° = on the back), random yaw, legs lerped HOME→tuck by a
+    # per-env factor in ``tuck_factor_range``, z in [midroll_z_min, _max],
+    # optional forward angular momentum from ``midroll_omega_range``. The
+    # rotation accumulator is initialized to the spawn pitch so progress
+    # accounting (and the completion gates) stay consistent: a 170° spawn only
+    # gets paid for the remaining ~190°.
     if env_ids is None or len(env_ids) == 0:
         return
     env_ids = env_ids.to(env.device, dtype=torch.long)
@@ -5658,19 +5483,18 @@ def reset_roulade_state(env: ManagerBasedRlEnv, env_ids: torch.Tensor, asset_cfg
 
 
 def roulade_progress(env: ManagerBasedRlEnv, target_angle: float = 2 * math.pi, max_paid_rate: float = 3.0, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """Pay increments of the progress frontier, up to one full roll.
-
-    reward = Δ(min(max_accum, target)) / (step_dt · target), CAPPED at
-    max_paid_rate rad/s of paid rotation. Nothing to farm by camping
-    face-down (0/step), rocking below the frontier (0/step), or spinning past
-    2π (clamped). The accumulator is support-gated, so airborne rotation pays
-    nothing either.
-
-    max_paid_rate (run-1 fix): rotation faster than the cap FORFEITS the
-    excess — the paid pointer still jumps to the frontier, it just pays the
-    capped amount. A violent whip therefore collects LESS total progress
-    reward than a controlled ≤cap roll, instead of the same total sooner.
-    """
+    # Pay increments of the progress frontier, up to one full roll.
+    #
+    # reward = Δ(min(max_accum, target)) / (step_dt · target), CAPPED at
+    # max_paid_rate rad/s of paid rotation. Nothing to farm by camping
+    # face-down (0/step), rocking below the frontier (0/step), or spinning past
+    # 2π (clamped). The accumulator is support-gated, so airborne rotation pays
+    # nothing either.
+    #
+    # max_paid_rate (run-1 fix): rotation faster than the cap FORFEITS the
+    # excess — the paid pointer still jumps to the frontier, it just pays the
+    # capped amount. A violent whip therefore collects LESS total progress
+    # reward than a controlled ≤cap roll, instead of the same total sooner.
     asset: Entity = env.scene[asset_cfg.name]
     _update_roulade_accum(env, asset)
     _, max_accum, paid = _roulade_state(env)
@@ -5682,16 +5506,15 @@ def roulade_progress(env: ManagerBasedRlEnv, target_angle: float = 2 * math.pi, 
 
 
 def roulade_head_pivot(env: ManagerBasedRlEnv, sensor_name: str = "head_ground_contact", angle_lo: float = math.radians(30.0), angle_hi: float = math.radians(240.0), rate_norm: float = 2.0, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """Reward head-ground contact while rotating forward mid-roll.
-
-    contact × window(accum ∈ [angle_lo, angle_hi]) × clamp(ω_fwd/rate_norm, 0, 1)
-    × (0.3 + 0.7·top_down).
-    The rate factor is the anti-camping guard: a face-planted robot resting its
-    head on the floor has ω_fwd ≈ 0 and earns nothing — the term only pays for
-    pivoting OVER the head. The top_down factor (run-5) aligns this dense
-    shaping with the latch: any head contact mid-roll pays 30%, contact on the
-    FLAT TOP (chin tucked) pays full — the gradient that teaches the tuck.
-    """
+    # Reward head-ground contact while rotating forward mid-roll.
+    #
+    # contact × window(accum ∈ [angle_lo, angle_hi]) × clamp(ω_fwd/rate_norm, 0, 1)
+    # × (0.3 + 0.7·top_down).
+    # The rate factor is the anti-camping guard: a face-planted robot resting its
+    # head on the floor has ω_fwd ≈ 0 and earns nothing — the term only pays for
+    # pivoting OVER the head. The top_down factor (run-5) aligns this dense
+    # shaping with the latch: any head contact mid-roll pays 30%, contact on the
+    # FLAT TOP (chin tucked) pays full — the gradient that teaches the tuck.
     asset: Entity = env.scene[asset_cfg.name]
     _update_roulade_accum(env, asset)
     accum, _, _ = _roulade_state(env)
@@ -5709,13 +5532,12 @@ def roulade_head_pivot(env: ManagerBasedRlEnv, sensor_name: str = "head_ground_c
 
 
 def roulade_landing_composite(env: ManagerBasedRlEnv, target_height: float, height_std: float, upright_std: float, pose_std: float, joint_indices: list, gate_lo: float = math.radians(260.0), gate_hi: float = math.radians(330.0), target_overrides: dict | None = None, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """standing_composite_score × completion gate.
-
-    The big annuity: once the roll is (nearly) complete, every step spent
-    standing at HOME pose pays — finishing on the feet and staying there
-    dominates every partial outcome. Zero before gate_lo of rotation, so the
-    standing spawn cannot farm it by doing nothing.
-    """
+    # standing_composite_score × completion gate.
+    #
+    # The big annuity: once the roll is (nearly) complete, every step spent
+    # standing at HOME pose pays — finishing on the feet and staying there
+    # dominates every partial outcome. Zero before gate_lo of rotation, so the
+    # standing spawn cannot farm it by doing nothing.
     asset: Entity = env.scene[asset_cfg.name]
     _update_roulade_accum(env, asset)
     score = standing_composite_score(env, target_height=target_height, height_std=height_std, upright_std=upright_std, pose_std=pose_std, joint_indices=joint_indices, target_overrides=target_overrides, asset_cfg=asset_cfg)
@@ -5723,12 +5545,11 @@ def roulade_landing_composite(env: ManagerBasedRlEnv, target_height: float, heig
 
 
 def roulade_upright_after_roll(env: ManagerBasedRlEnv, gate_lo: float = math.radians(260.0), gate_hi: float = math.radians(330.0), asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """Linear cos(tilt) × completion gate — bootstrap pull toward vertical.
-
-    Gradient from ANY orientation (the composite is near-zero far from the
-    goal), but only after the roll: before gate_lo it is exactly zero, so it
-    cannot oppose the flip the way the old always-on upright term did.
-    """
+    # Linear cos(tilt) × completion gate — bootstrap pull toward vertical.
+    #
+    # Gradient from ANY orientation (the composite is near-zero far from the
+    # goal), but only after the roll: before gate_lo it is exactly zero, so it
+    # cannot oppose the flip the way the old always-on upright term did.
     asset: Entity = env.scene[asset_cfg.name]
     _update_roulade_accum(env, asset)
     quat = asset.data.root_link_quat_w
@@ -5737,7 +5558,7 @@ def roulade_upright_after_roll(env: ManagerBasedRlEnv, gate_lo: float = math.rad
 
 
 def roulade_height_after_roll(env: ManagerBasedRlEnv, target_height: float, std: float = 0.04, gate_lo: float = math.radians(260.0), gate_hi: float = math.radians(330.0), asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """Broad height Gaussian × completion gate — pull up to standing height."""
+    # Broad height Gaussian × completion gate — pull up to standing height.
     asset: Entity = env.scene[asset_cfg.name]
     _update_roulade_accum(env, asset)
     z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0)
@@ -5746,14 +5567,13 @@ def roulade_height_after_roll(env: ManagerBasedRlEnv, target_height: float, std:
 
 
 def roulade_landing_sharp(env: ManagerBasedRlEnv, target_height: float, height_std: float = 0.015, upright_std: float = 0.3, gate_lo: float = math.radians(260.0), gate_hi: float = math.radians(330.0), asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """Tight-std upright × height Gaussians × completion gate — the last mile.
-
-    Run-4 fix for the 27°-lean / 1-cm-crouch end basin: the broad landing
-    composite (upright_std 0.40) scores ~0.5 at that pose, so the policy
-    parks there. This is standup's two-layer lesson — the broad layers reach,
-    the sharp layers finish. At 27° tilt this term scores ~0.1 (real
-    gradient); at vertical it pays ~1.
-    """
+    # Tight-std upright × height Gaussians × completion gate — the last mile.
+    #
+    # Run-4 fix for the 27°-lean / 1-cm-crouch end basin: the broad landing
+    # composite (upright_std 0.40) scores ~0.5 at that pose, so the policy
+    # parks there. This is standup's two-layer lesson — the broad layers reach,
+    # the sharp layers finish. At 27° tilt this term scores ~0.1 (real
+    # gradient); at vertical it pays ~1.
     asset: Entity = env.scene[asset_cfg.name]
     _update_roulade_accum(env, asset)
     quat = asset.data.root_link_quat_w
@@ -5766,17 +5586,16 @@ def roulade_landing_sharp(env: ManagerBasedRlEnv, target_height: float, height_s
 
 
 def roulade_stand_tax(env: ManagerBasedRlEnv, target_height: float, gate_lo: float = math.radians(260.0), gate_hi: float = math.radians(330.0), asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """SELF-NEGATING height L1 below target, active only after roll completion.
-
-    Returns −max(0, target − z) × completion_gate — use a POSITIVE weight
-    (penalty sign convention). The run-3 fix for post-roll crumple-camping:
-    the gated landing rewards made standing better than lying in a heap, but
-    the heap itself was FREE — with only positive gated terms, "stay crumpled"
-    collects ≈0/step, a comfortable basin (the standup static-sit lesson:
-    the basin must be net NEGATIVE to force the rise). The gate keeps the
-    roll itself untaxed, and requires the head latch so a no-roll episode
-    can't be punished into weird avoidance behaviors.
-    """
+    # SELF-NEGATING height L1 below target, active only after roll completion.
+    #
+    # Returns −max(0, target − z) × completion_gate — use a POSITIVE weight
+    # (penalty sign convention). The run-3 fix for post-roll crumple-camping:
+    # the gated landing rewards made standing better than lying in a heap, but
+    # the heap itself was FREE — with only positive gated terms, "stay crumpled"
+    # collects ≈0/step, a comfortable basin (the standup static-sit lesson:
+    # the basin must be net NEGATIVE to force the rise). The gate keeps the
+    # roll itself untaxed, and requires the head latch so a no-roll episode
+    # can't be punished into weird avoidance behaviors.
     asset: Entity = env.scene[asset_cfg.name]
     _update_roulade_accum(env, asset)
     z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0)
@@ -5785,14 +5604,13 @@ def roulade_stand_tax(env: ManagerBasedRlEnv, target_height: float, gate_lo: flo
 
 
 def roulade_rise_velocity(env: ManagerBasedRlEnv, max_height: float = 0.125, gate_lo: float = math.radians(180.0), gate_hi: float = math.radians(260.0), asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """com_upward_velocity × late-roll gate — bootstrap the exit rise.
-
-    The second half of a roulade (supine → sitting-up → standing) is the
-    face-up recovery problem, and the standup env proved end-state rewards
-    alone have zero gradient at zero motion there: pay for rising vz directly.
-    Gated to open from ~180° (on the back) so pre-roll bobbing earns nothing,
-    and gated off above max_height so it can't be farmed by hopping.
-    """
+    # com_upward_velocity × late-roll gate — bootstrap the exit rise.
+    #
+    # The second half of a roulade (supine → sitting-up → standing) is the
+    # face-up recovery problem, and the standup env proved end-state rewards
+    # alone have zero gradient at zero motion there: pay for rising vz directly.
+    # Gated to open from ~180° (on the back) so pre-roll bobbing earns nothing,
+    # and gated off above max_height so it can't be farmed by hopping.
     asset: Entity = env.scene[asset_cfg.name]
     _update_roulade_accum(env, asset)
     z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0)
@@ -5802,14 +5620,13 @@ def roulade_rise_velocity(env: ManagerBasedRlEnv, max_height: float = 0.125, gat
 
 
 def roulade_overspeed_penalty(env: ManagerBasedRlEnv, omega_max: float = 4.0, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """max(0, |ω_y| − omega_max)² — quadratic tax on whip-speed rotation.
-
-    Positive quantity; use a negative weight. Complements the paid-rate cap
-    in roulade_progress: the cap removes the INCENTIVE to rotate faster than
-    ~3 rad/s, this adds an explicit COST above omega_max, so "violent" is
-    strictly worse than "controlled" rather than merely not-better. A
-    controlled full roll (~2–3 rad/s average) never touches it.
-    """
+    # max(0, |ω_y| − omega_max)² — quadratic tax on whip-speed rotation.
+    #
+    # Positive quantity; use a negative weight. Complements the paid-rate cap
+    # in roulade_progress: the cap removes the INCENTIVE to rotate faster than
+    # ~3 rad/s, this adds an explicit COST above omega_max, so "violent" is
+    # strictly worse than "controlled" rather than merely not-better. A
+    # controlled full roll (~2–3 rad/s average) never touches it.
     asset: Entity = env.scene[asset_cfg.name]
     omega_y = torch.nan_to_num(asset.data.root_link_ang_vel_b[:, 1], nan=0.0)
     excess = torch.clamp(omega_y.abs() - omega_max, min=0.0)
@@ -5817,27 +5634,26 @@ def roulade_overspeed_penalty(env: ManagerBasedRlEnv, omega_max: float = 4.0, as
 
 
 def roulade_flatness_penalty(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """(lateral-axis world-z)² — dense gradient toward a sagittal roll.
-
-    Positive quantity; use a negative weight. Zero when standing, zero
-    through an arbitrarily deep CLEAN forward roll (pure pitch keeps the
-    lateral axis horizontal), up to 1 when tipped fully onto a shoulder.
-    The accumulator's flatness gate makes side rolls unprofitable; this term
-    adds the per-step gradient that steers back toward the plane.
-    """
+    # (lateral-axis world-z)² — dense gradient toward a sagittal roll.
+    #
+    # Positive quantity; use a negative weight. Zero when standing, zero
+    # through an arbitrarily deep CLEAN forward roll (pure pitch keeps the
+    # lateral axis horizontal), up to 1 when tipped fully onto a shoulder.
+    # The accumulator's flatness gate makes side rolls unprofitable; this term
+    # adds the per-step gradient that steers back toward the plane.
     asset: Entity = env.scene[asset_cfg.name]
     return torch.nan_to_num(_lateral_axis_z(asset.data.root_link_quat_w), nan=0.0).pow(2)
 
 
 def roulade_sagittal_penalty(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """Rotation out of the sagittal plane: body-frame ω_x² + ω_z² (positive;
-    use a negative weight). ω_y is the roll axis and stays free."""
+    # Rotation out of the sagittal plane: body-frame ω_x² + ω_z² (positive;
+    # use a negative weight). ω_y is the roll axis and stays free.
     asset: Entity = env.scene[asset_cfg.name]
     omega_b = asset.data.root_link_ang_vel_b
     return torch.nan_to_num(omega_b[:, 0].pow(2) + omega_b[:, 2].pow(2), nan=0.0)
 
 
 def roulade_lateral_velocity_penalty(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
-    """Body-frame lateral (y) linear velocity² — keeps the roll straight."""
+    # Body-frame lateral (y) linear velocity² — keeps the roll straight.
     asset: Entity = env.scene[asset_cfg.name]
     return torch.nan_to_num(asset.data.root_link_lin_vel_b[:, 1].pow(2), nan=0.0)

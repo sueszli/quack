@@ -1,18 +1,17 @@
-"""Microduck roller SWIZZLE environment — clean classic swizzle.
-
-A separate roller task producing a CLASSIC SWIZZLE: both blades stay on the ground,
-the legs spread out and pull back in SYMMETRICALLY (hourglass pattern), propelling
-the duck forward. Simpler / more stable alternative to the alternating stride
-(`Mjlab-Velocity-Flat-MicroDuck-Rollers`), which does not transfer well to the real
-robot. The stride env is left untouched.
-
-Approach A (see docs/superpowers/specs/2026-07-23-swizzle-env-design.md): the base
-roller recipe NATURALLY converges to a swizzle, so we reuse the stride env wholesale
-(robot, 61D obs, command, full DR, curricula, sim2real — deploys identically with
-`--roller`) and only swap the reward recipe:
-  - REMOVE the anti-swizzle / stride terms.
-  - ADD leg_symmetry (legs mirror) + grounded (both blades down).
-"""
+# Microduck roller SWIZZLE environment — clean classic swizzle.
+#
+# A separate roller task producing a CLASSIC SWIZZLE: both blades stay on the ground,
+# the legs spread out and pull back in SYMMETRICALLY (hourglass pattern), propelling
+# the duck forward. Simpler / more stable alternative to the alternating stride
+# (`Mjlab-Velocity-Flat-MicroDuck-Rollers`), which does not transfer well to the real
+# robot. The stride env is left untouched.
+#
+# Approach A (see docs/superpowers/specs/2026-07-23-swizzle-env-design.md): the base
+# roller recipe NATURALLY converges to a swizzle, so we reuse the stride env wholesale
+# (robot, 61D obs, command, full DR, curricula, sim2real — deploys identically with
+# `--roller`) and only swap the reward recipe:
+#   - REMOVE the anti-swizzle / stride terms.
+#   - ADD leg_symmetry (legs mirror) + grounded (both blades down).
 
 import dataclasses
 
@@ -29,8 +28,8 @@ _ANTI_SWIZZLE = ("single_support", "glide", "skating_air_time", "gait_symmetry",
 
 
 def make_microduck_velocity_swizzle_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
-    """Roller swizzle env: the stride env minus its anti-swizzle terms, plus symmetry
-    and grounded rewards. Everything else (robot, obs, command, DR) is identical."""
+    # Roller swizzle env: the stride env minus its anti-swizzle terms, plus symmetry
+    # and grounded rewards. Everything else (robot, obs, command, DR) is identical.
     cfg = make_microduck_velocity_rollers_env_cfg(play=play)
 
     for name in _ANTI_SWIZZLE:
