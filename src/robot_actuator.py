@@ -34,15 +34,8 @@ class FrictionDRBamActuator(BamActuator):
         self.friction_scale = torch.ones_like(self.kp_scale)
         self.default_friction_scale = self.friction_scale.clone()
 
-    def _compute_friction_budget(
-        self,
-        motor_torque: torch.Tensor,
-        external_torque: torch.Tensor,
-        stribeck_coeff: torch.Tensor,
-    ) -> torch.Tensor:
-        base = super()._compute_friction_budget(
-            motor_torque, external_torque, stribeck_coeff
-        )
+    def _compute_friction_budget(self, motor_torque: torch.Tensor, external_torque: torch.Tensor, stribeck_coeff: torch.Tensor) -> torch.Tensor:
+        base = super()._compute_friction_budget(motor_torque, external_torque, stribeck_coeff)
         fs = getattr(self, "friction_scale", None)
         return base if fs is None else base * fs  # (N, J) * (N, 1)
 
@@ -93,10 +86,7 @@ class BacklashEncoderBamActuator(FrictionDRBamActuator):
         self._backlash_joint_ids = torch.tensor(ids, dtype=torch.long, device=device)
         self._backlash_mask = torch.tensor(mask, dtype=torch.float32, device=device)
         n_backlash = int(self._backlash_mask.sum().item())
-        print(
-            f"[BacklashEncoderBamActuator] encoder-through-backlash feedback on "
-            f"{n_backlash}/{len(mask)} joints"
-        )
+        print(f"[BacklashEncoderBamActuator] encoder-through-backlash feedback on {n_backlash}/{len(mask)} joints")
 
     def get_command(self, data) -> ActuatorCmd:
         cmd = super().get_command(data)

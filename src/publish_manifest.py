@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 import subprocess
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
@@ -62,7 +62,7 @@ class Provenance:
 
 
 def _now_utc() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def git_provenance(repo_root: Path | None = None) -> dict[str, Any]:
@@ -71,9 +71,7 @@ def git_provenance(repo_root: Path | None = None) -> dict[str, Any]:
 
     def git(*args: str) -> str | None:
         try:
-            out = subprocess.run(
-                ["git", "-C", root, *args], capture_output=True, text=True, check=True, timeout=10
-            )
+            out = subprocess.run(["git", "-C", root, *args], capture_output=True, text=True, check=True, timeout=10)
         except (OSError, subprocess.SubprocessError):
             return None
         return out.stdout.strip()
@@ -86,22 +84,7 @@ def git_provenance(repo_root: Path | None = None) -> dict[str, Any]:
     return {"commit": commit, "branch": branch, "dirty": bool(status)}
 
 
-def build_manifest(
-    *,
-    name: str,
-    kind: str,
-    description: str,
-    duration_s: float | None = None,
-    chain: bool = False,
-    unwind_s: float | None = None,
-    idle: tuple[float, float, float] = ZERO_TWIST,
-    action_scale: float | None = None,
-    entry_pose: str = "standing",
-    slot: str | None = None,
-    command_help: dict[str, Any] | None = None,
-    training: dict[str, Any] | None = None,
-    eval: dict[str, Any] | None = None,
-) -> dict[str, Any]:
+def build_manifest(*, name: str, kind: str, description: str, duration_s: float | None = None, chain: bool = False, unwind_s: float | None = None, idle: tuple[float, float, float] = ZERO_TWIST, action_scale: float | None = None, entry_pose: str = "standing", slot: str | None = None, command_help: dict[str, Any] | None = None, training: dict[str, Any] | None = None, eval: dict[str, Any] | None = None) -> dict[str, Any]:
     """A single-policy manifest the daemon loads without surprises.
 
     Only the constant-command family is publishable from here — a skill's network is fed a fixed
@@ -114,23 +97,16 @@ def build_manifest(
         raise ManifestError(f"name must be a bare word a client can ask for, not {name!r}")
     if kind == "episodic":
         if duration_s is None or duration_s <= 0:
-            raise ManifestError(
-                "an episodic policy ends itself: say how long it runs with duration_s > 0"
-            )
+            raise ManifestError("an episodic policy ends itself: say how long it runs with duration_s > 0")
         if unwind_s:
-            raise ManifestError(
-                "an episodic policy is already back when duration_s is up; unwind_s is for perpetual"
-            )
+            raise ManifestError("an episodic policy is already back when duration_s is up; unwind_s is for perpetual")
     else:
         # Two things are perpetual: a gait, which lives in a slot (`policy load walk <repo>`) and
         # needs nothing here, and a held pose like the flamingo, which the owner runs as a
         # one-shot with `policy add --hold` and which then needs `unwind_s` so the robot is not
         # let go of on one foot. `unwind_s` is what says which.
         if duration_s is not None:
-            raise ManifestError(
-                "a perpetual policy has no length of its own; leave duration_s unset "
-                "(a gait runs until told otherwise; a held pose gets --hold when added as a skill)"
-            )
+            raise ManifestError("a perpetual policy has no length of its own; leave duration_s unset (a gait runs until told otherwise; a held pose gets --hold when added as a skill)")
         if unwind_s is not None and unwind_s <= 0:
             raise ManifestError("unwind_s must be > 0 when given")
         if chain:
@@ -142,28 +118,11 @@ def build_manifest(
     if len(idle) != 3:
         raise ManifestError("idle is a 3-vector twist")
 
-    command: dict[str, Any] = {
-        "encoding": "constant",
-        "idle": [float(v) for v in idle],
-        "twist": "unused (zeros)",
-        "head": "unused (zeros)",
-        "body": "unused (zeros)",
-    }
+    command: dict[str, Any] = {"encoding": "constant", "idle": [float(v) for v in idle], "twist": "unused (zeros)", "head": "unused (zeros)", "body": "unused (zeros)"}
     if command_help:
         command.update(command_help)
 
-    manifest: dict[str, Any] = {
-        "schema_version": SCHEMA_VERSION,
-        "model_api": MODEL_API,
-        "obs_len": OBS_LEN,
-        "action_len": ACTION_LEN,
-        "robot": dict(ROBOT),
-        "name": name,
-        "kind": kind,
-        "entry_pose": entry_pose,
-        "description": description,
-        "command": command,
-    }
+    manifest: dict[str, Any] = {"schema_version": SCHEMA_VERSION, "model_api": MODEL_API, "obs_len": OBS_LEN, "action_len": ACTION_LEN, "robot": dict(ROBOT), "name": name, "kind": kind, "entry_pose": entry_pose, "description": description, "command": command}
     if kind == "episodic":
         manifest["duration_s"] = float(duration_s)  # type: ignore[arg-type]
         manifest["chain"] = bool(chain)
@@ -239,10 +198,7 @@ def inspect_onnx(path: Path) -> OnnxShape:
     initializers = {i.name for i in graph.initializer}
     inputs = [i for i in graph.input if i.name not in initializers]
     if len(inputs) != 1 or len(graph.output) != 1:
-        raise ManifestError(
-            f"{path.name}: expected one input and one output, found "
-            f"{[i.name for i in inputs]} -> {[o.name for o in graph.output]}"
-        )
+        raise ManifestError(f"{path.name}: expected one input and one output, found {[i.name for i in inputs]} -> {[o.name for o in graph.output]}")
 
     def last_dim(value) -> int:
         dims = value.type.tensor_type.shape.dim
@@ -253,12 +209,7 @@ def inspect_onnx(path: Path) -> OnnxShape:
             raise ManifestError(f"{path.name}: {value.name}'s last dimension is symbolic")
         return int(last.dim_value)
 
-    return OnnxShape(
-        input_name=inputs[0].name,
-        output_name=graph.output[0].name,
-        obs_len=last_dim(inputs[0]),
-        action_len=last_dim(graph.output[0]),
-    )
+    return OnnxShape(input_name=inputs[0].name, output_name=graph.output[0].name, obs_len=last_dim(inputs[0]), action_len=last_dim(graph.output[0]))
 
 
 def check_onnx(path: Path) -> OnnxShape:
@@ -267,10 +218,7 @@ def check_onnx(path: Path) -> OnnxShape:
         raise ManifestError(f"{path}: no such file")
     shape = inspect_onnx(path)
     if shape.obs_len != OBS_LEN:
-        raise ManifestError(
-            f"{path.name}: observation width is {shape.obs_len}, the robot builds {OBS_LEN} "
-            "(a 51-D policy is the legacy 3-value-command family, which the daemon refuses)"
-        )
+        raise ManifestError(f"{path.name}: observation width is {shape.obs_len}, the robot builds {OBS_LEN} (a 51-D policy is the legacy 3-value-command family, which the daemon refuses)")
     if shape.action_len != ACTION_LEN:
         raise ManifestError(f"{path.name}: {shape.action_len} actions, the robot has {ACTION_LEN}")
     return shape
@@ -336,42 +284,11 @@ def render_readme(manifest: dict[str, Any], repo_id: str) -> str:
         if manifest.get("chain"):
             timing += " Holding the button chains another run."
     elif manifest.get("unwind_s") is not None:
-        timing = (
-            f"Holds until told otherwise; the daemon drives `command.idle` for "
-            f"{manifest['unwind_s']} s before handing back to the gait."
-        )
+        timing = f"Holds until told otherwise; the daemon drives `command.idle` for {manifest['unwind_s']} s before handing back to the gait."
     else:
         slot = manifest.get("slot")
-        timing = "Runs until told otherwise" + (
-            f" — a gait for the `{slot}` slot." if slot else " — a gait, loaded into a policy slot."
-        )
-    lines = [
-        "---",
-        "tags:",
-        "- microduck",
-        "- robotics",
-        "- reinforcement-learning",
-        "- onnx",
-        "library_name: onnx",
-        "---",
-        "",
-        f"# {name}",
-        "",
-        description,
-        "",
-        f"A **{kind}** policy for the [microduck](https://github.com/pollen-robotics/microduck) "
-        f"({OBS_LEN}-D observation, {ACTION_LEN} actions, {ROBOT['control_hz']} Hz). {timing}",
-        "",
-        "## Run it on a robot",
-        "",
-        "```bash",
-        run,
-        "```",
-        "",
-        "The observation normalizer is baked into `policy.onnx`; feed raw observations.",
-        "`manifest.json` follows schema 2 of the microduck policy manifest "
-        "(`docs/policy-manifest.md` in the daemon repo).",
-    ]
+        timing = "Runs until told otherwise" + (f" — a gait for the `{slot}` slot." if slot else " — a gait, loaded into a policy slot.")
+    lines = ["---", "tags:", "- microduck", "- robotics", "- reinforcement-learning", "- onnx", "library_name: onnx", "---", "", f"# {name}", "", description, "", f"A **{kind}** policy for the [microduck](https://github.com/pollen-robotics/microduck) ({OBS_LEN}-D observation, {ACTION_LEN} actions, {ROBOT['control_hz']} Hz). {timing}", "", "## Run it on a robot", "", "```bash", run, "```", "", "The observation normalizer is baked into `policy.onnx`; feed raw observations.", "`manifest.json` follows schema 2 of the microduck policy manifest (`docs/policy-manifest.md` in the daemon repo)."]
     if training:
         lines += ["", "## Training", ""]
         for key in ("task_id", "repo", "branch", "commit", "run", "checkpoint", "exported"):

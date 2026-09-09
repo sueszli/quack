@@ -1,4 +1,5 @@
 import torch
+
 from src.task_mdp import phase_pose_blend
 
 DESCENT_END, HOLD_END, RISE_END = 0.15, 0.50, 0.65
@@ -48,6 +49,7 @@ class _FakeCmdMgr:
 class _FakeEnv:
     def __init__(self, names, joint_pos, default_pos, phase):
         import math
+
         self.device = "cpu"
         self.scene = {"robot": _FakeAsset(names, joint_pos, default_pos)}
         ang = 2 * math.pi * phase
@@ -68,6 +70,7 @@ def _env(cur, phase):
 def test_phase_pose_track_perfect_at_down():
     # phase 0.30 -> blend 1 -> target = DOWN ; cur == DOWN -> gaussian 1, l1 0
     from mjlab.managers.scene_entity_config import SceneEntityCfg
+
     cfg = SceneEntityCfg("robot")
     env = _env([1.0, -1.0], phase=0.30)
     r = phase_pose_track(env, target_pose=DOWN, asset_cfg=cfg)
@@ -80,6 +83,7 @@ def test_phase_pose_track_perfect_at_down():
 def test_phase_pose_track_l1_at_home_when_down_target():
     # phase 0.30 -> target DOWN=[1,-1] ; cur=HOME=[0,0] -> l1 = -mean(|1|,|1|) = -1
     from mjlab.managers.scene_entity_config import SceneEntityCfg
+
     cfg = SceneEntityCfg("robot")
     env = _env([0.0, 0.0], phase=0.30)
     l1 = phase_pose_track_l1(env, target_pose=DOWN, asset_cfg=cfg)
@@ -89,6 +93,7 @@ def test_phase_pose_track_l1_at_home_when_down_target():
 def test_phase_pose_track_returns_to_stand():
     # phase 0.80 -> blend 0 -> target = HOME ; cur=HOME -> gaussian 1
     from mjlab.managers.scene_entity_config import SceneEntityCfg
+
     cfg = SceneEntityCfg("robot")
     env = _env([0.0, 0.0], phase=0.80)
     r = phase_pose_track(env, target_pose=DOWN, asset_cfg=cfg)
@@ -99,6 +104,7 @@ def test_phase_pose_track_affine_interpolation_nonzero_home():
     # HOME (source) nonzero, blend 0.5 at phase 0.075:
     # target = home + 0.5*(down-home) = [0.4,-0.4] + 0.5*([1,-1]-[0.4,-0.4]) = [0.7,-0.7]
     from mjlab.managers.scene_entity_config import SceneEntityCfg
+
     cfg = SceneEntityCfg("robot")
     home = torch.tensor([[0.4, -0.4]])
     env = _FakeEnv(NAMES, torch.tensor([[0.7, -0.7]]), home.clone(), phase=0.075)
@@ -107,17 +113,14 @@ def test_phase_pose_track_affine_interpolation_nonzero_home():
 
 
 def test_ground_pick_cmd_cfg_has_randomize_phase_default_true():
-    from src.task_mdp import GroundPickPhaseCommandCfg
     from mjlab.tasks.velocity.mdp import UniformVelocityCommandCfg
+
+    from src.task_mdp import GroundPickPhaseCommandCfg
+
     # build a minimal cfg by copying a default velocity cfg
     # NOTE: adapted from `asset_name` (brief) -> `entity_name` (local API of
     # UniformVelocityCommandCfg, which has no `asset_name` field).
-    base = UniformVelocityCommandCfg(
-        entity_name="robot", resampling_time_range=(10.0, 10.0),
-        ranges=UniformVelocityCommandCfg.Ranges(
-            lin_vel_x=(0.0, 0.0), lin_vel_y=(0.0, 0.0), ang_vel_z=(0.0, 0.0),
-        ),
-    )
-    cfg = GroundPickPhaseCommandCfg(**{**vars(base)})
+    base = UniformVelocityCommandCfg(entity_name="robot", resampling_time_range=(10.0, 10.0), ranges=UniformVelocityCommandCfg.Ranges(lin_vel_x=(0.0, 0.0), lin_vel_y=(0.0, 0.0), ang_vel_z=(0.0, 0.0)))
+    cfg = GroundPickPhaseCommandCfg(**vars(base))
     assert cfg.randomize_phase is True
     assert cfg.period == 4.0
