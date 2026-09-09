@@ -1,10 +1,10 @@
 import pytest
 
-from mjlab_microduck.tasks.microduck_roller_standup_env_cfg import (
+from mjlab_microduck.microduck_roller_standup_env_cfg import (
     EPISODE_LENGTH_S,
     make_microduck_roller_standup_env_cfg,
 )
-from mjlab_microduck.tasks.microduck_velocity_rollers_env_cfg import (
+from mjlab_microduck.microduck_velocity_rollers_env_cfg import (
     make_microduck_velocity_rollers_env_cfg,
 )
 
@@ -77,7 +77,7 @@ def test_twist_command_is_neutralised():
 def test_twist_command_is_not_heading_relative():
     # The roller env installs a RelativeHeadingVelocityCommandCfg (cmd[2] = heading
     # error, computed internally). Here cmd[2] must be a true noisy zero.
-    from mjlab_microduck.tasks import mdp as microduck_mdp
+    from mjlab_microduck import mdp as microduck_mdp
 
     cfg = make_microduck_roller_standup_env_cfg()
     cmd = cfg.commands["twist"]
@@ -114,7 +114,7 @@ def test_terrain_is_plain_plane():
 def test_task_is_registered():
     from mjlab.tasks.registry import list_tasks
 
-    import mjlab_microduck.tasks.registry  # noqa: F401  (the import triggers registration)
+    import mjlab_microduck.registry  # noqa: F401  (the import triggers registration)
 
     assert "Mjlab-RollerStandUp-Flat-MicroDuck" in list_tasks()
 
@@ -128,8 +128,8 @@ def test_joint_indices_match_actual_roller_model():
     """
     import mujoco
 
-    from mjlab_microduck.robot.microduck_constants import get_walk_rollers_spec
-    from mjlab_microduck.tasks.microduck_roller_standup_env_cfg import (
+    from mjlab_microduck.microduck_constants import get_walk_rollers_spec
+    from mjlab_microduck.microduck_roller_standup_env_cfg import (
         _LEG_JOINTS,
         _NECK_JOINTS,
         _WHEEL_JOINTS,
@@ -183,7 +183,7 @@ def test_recovery_rewards_present_with_expected_weights():
 
 
 def test_recovery_rewards_use_roller_heights_not_walker_heights():
-    from mjlab_microduck.tasks.microduck_roller_standup_env_cfg import (
+    from mjlab_microduck.microduck_roller_standup_env_cfg import (
         ROLLER_PRONE_Z,
         ROLLER_STAND_Z,
     )
@@ -202,7 +202,7 @@ def test_recovery_rewards_use_roller_heights_not_walker_heights():
 
 
 def test_pose_rewards_target_legs_only_at_roller_indices():
-    from mjlab_microduck.tasks.microduck_roller_standup_env_cfg import _LEG_JOINTS
+    from mjlab_microduck.microduck_roller_standup_env_cfg import _LEG_JOINTS
 
     cfg = make_microduck_roller_standup_env_cfg()
     for name in ("pose_stand_legs", "pose_stand_l1", "standing_composite"):

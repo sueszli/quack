@@ -33,8 +33,8 @@ from mjlab.managers.scene_entity_config import SceneEntityCfg
 
 from mjlab.entity import EntityCfg
 
-from mjlab_microduck.robot.microduck_constants import MICRODUCK_BACKLASH_ROBOT_CFG
-from mjlab_microduck.tasks import mdp as microduck_mdp
+from mjlab_microduck.microduck_constants import MICRODUCK_BACKLASH_ROBOT_CFG
+from mjlab_microduck import mdp as microduck_mdp
 
 _SERVO_JOINTS_ONLY = (r"^(?!passive_).*",)
 
