@@ -2,7 +2,7 @@
 <!-- Generated using onshape-to-robot -->
 <!-- Onshape https://cad.onshape.com/documents/804927696f06d877f3f1803e/w/5b75db19292e71970de02dee/e/ef6e972847fec8d82570b35e -->
 <mujoco model="microduck">
-  <compiler angle="radian" meshdir="assets" autolimits="true"/>
+  <compiler angle="radian" meshdir="../meshes" autolimits="true"/>
   <default>
     <default class="microduck">
       <joint frictionloss="0.1" armature="0.005"/>
