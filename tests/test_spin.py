@@ -57,13 +57,7 @@ def test_spin_rate_max_integrates_to_2_1_times_itself_per_cycle():
     # target without thinking about the number of turns it implies.
     n = 100_000
     phase = (torch.arange(n, dtype=torch.float64) + 0.5) / n
-    w = mdp.spin_rate_by_phase(
-        phase,
-        rate_max=mdp.SPIN_RATE_MAX,
-        accel_end=mdp.SPIN_ACCEL_END,
-        hold_end=mdp.SPIN_HOLD_END,
-        brake_end=mdp.SPIN_BRAKE_END,
-    )
+    w = mdp.spin_rate_by_phase(phase, rate_max=mdp.SPIN_RATE_MAX, accel_end=mdp.SPIN_ACCEL_END, hold_end=mdp.SPIN_HOLD_END, brake_end=mdp.SPIN_BRAKE_END)
     integral = float(w.mean()) * mdp.SPIN_PERIOD
     expected = 2.1 * mdp.SPIN_RATE_MAX
     assert abs(integral - expected) / expected < 0.01
@@ -285,9 +279,7 @@ def test_wheel_differential_from_values_is_pure():
 def test_spin_grounded_rewards_both_blades_down_and_is_gated():
     contact = torch.tensor([[0.2, 0.3], [0.2, 0.0], [0.0, 0.0], [0.2, 0.3]])
     entity = _FakeEntity(_FakeData())
-    env = _FakeEnv(
-        entity, cmd=_phase_cmd([0.30, 0.30, 0.30, 0.80]), sensors={"feet_ground_contact": _FakeSensor(contact)}
-    )
+    env = _FakeEnv(entity, cmd=_phase_cmd([0.30, 0.30, 0.30, 0.80]), sensors={"feet_ground_contact": _FakeSensor(contact)})
     r = mdp.spin_grounded(env, sensor_name="feet_ground_contact")
     # both blades on the floor at steady rate -> gate 1.0 ; only one or none -> 0 ;
     # both blades on the floor but at rest -> gate 0.
@@ -344,6 +336,4 @@ def test_neck_joint_pos_l2_pattern_can_exclude_head_yaw():
     # default pattern: head_yaw counted -> cost 1.0
     assert torch.allclose(mdp.neck_joint_pos_l2(env), torch.tensor([1.0]), atol=1e-6)
     # spin pattern: head_yaw excluded -> cost 0.0 (head free in yaw)
-    assert torch.allclose(
-        mdp.neck_joint_pos_l2(env, pattern=r"^(neck_pitch|head_pitch|head_roll)$"), torch.tensor([0.0]), atol=1e-6
-    )
+    assert torch.allclose(mdp.neck_joint_pos_l2(env, pattern=r"^(neck_pitch|head_pitch|head_roll)$"), torch.tensor([0.0]), atol=1e-6)

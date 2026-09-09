@@ -120,11 +120,7 @@ def test_ground_pick_cmd_cfg_has_randomize_phase_default_true():
     # build a minimal cfg by copying a default velocity cfg
     # NOTE: adapted from `asset_name` (brief) -> `entity_name` (local API of
     # UniformVelocityCommandCfg, which has no `asset_name` field).
-    base = UniformVelocityCommandCfg(
-        entity_name="robot",
-        resampling_time_range=(10.0, 10.0),
-        ranges=UniformVelocityCommandCfg.Ranges(lin_vel_x=(0.0, 0.0), lin_vel_y=(0.0, 0.0), ang_vel_z=(0.0, 0.0)),
-    )
+    base = UniformVelocityCommandCfg(entity_name="robot", resampling_time_range=(10.0, 10.0), ranges=UniformVelocityCommandCfg.Ranges(lin_vel_x=(0.0, 0.0), lin_vel_y=(0.0, 0.0), ang_vel_z=(0.0, 0.0)))
     cfg = GroundPickPhaseCommandCfg(**vars(base))
     assert cfg.randomize_phase is True
     assert cfg.period == 4.0
