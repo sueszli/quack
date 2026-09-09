@@ -22,6 +22,7 @@ tests:
 precommit:
 	uv sync
 	$(MAKE) precommit-hook
+	$(MAKE) fmt
 	$(MAKE) lint
 	$(MAKE) tests
 
