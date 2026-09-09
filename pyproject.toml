@@ -9,7 +9,7 @@ description = "RL training environments for the Microduck robot, built on mjlab"
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
-# <3.13: bam (better-actuator-models) requires python <3.13.
+# bam (better-actuator-models) requires python <3.13.
 requires-python = ">=3.12, <3.13"
 dependencies = [
     "mjlab==1.3.0",
@@ -22,7 +22,8 @@ dependencies = [
     "matplotlib>=3.10.9",
     # mjlab 1.3.0 imports scipy but does not declare it.
     "scipy>=1.16",
-    # Direct dep with an exact pin so [tool.uv.sources] can route the aarch64 wheel (sources apply to direct deps only).
+    # Must stay a direct dep with an `==` pin, else the aarch64 routing below breaks.
+    # See tests/test_aarch64_cuda_torch.py.
     "torch==2.9.1",
 ]
 
@@ -37,7 +38,6 @@ export = "src.export:main"
 infer = "src.infer:main"
 
 [tool.uv.build-backend]
-# The package IS the src/ directory (import as `src.*`); flat, no __init__.py files.
 module-name = "src"
 module-root = ""
 namespace = true
@@ -48,14 +48,11 @@ line-length = 5000
 target-version = "py312"
 
 [tool.ruff.format]
-# Ignore magic trailing commas so collections inline instead of sitting
-# one-element-per-line. Combined with the very large line-length, this means
-# a collection wraps only when it genuinely cannot fit on one line.
+# With the large line-length, a collection wraps only if it cannot fit on one line.
 skip-magic-trailing-comma = true
 
 [tool.ruff.lint.isort]
-# Must match format.skip-magic-trailing-comma, else isort and the formatter
-# disagree about trailing commas in import blocks.
+# Must match format.skip-magic-trailing-comma, else isort and the formatter disagree.
 split-on-trailing-comma = false
 
 [tool.uv]
@@ -64,14 +61,14 @@ override-dependencies = [
     "protobuf>=4.0,<7.0",
     # Keep onnx on a version with prebuilt wheels.
     "onnx>=1.20.1",
-    # bam depends on the broken PyPI stub `zmq==0.0.0`; we never use bam's zmq messaging.
+    # bam depends on the broken PyPI stub `zmq==0.0.0`; bam's zmq messaging is unused.
     "zmq ; python_version < '3.0'",
 ]
 
 [tool.uv.sources]
-# Official BAM actuator model; the mjlab-facing API lives on this branch.
+# The mjlab-facing BAM API lives on this branch, not on a release.
 better-actuator-models = { git = "https://github.com/Rhoban/bam.git", branch = "mjlab_frictionloss" }
-# PyPI's linux-aarch64 torch wheel is CPU-only; cu129 matches the CUDA toolkit warp 1.12.0 bundles.
+# PyPI's linux-aarch64 torch wheel is CPU-only; cu129 matches warp 1.12.0's CUDA toolkit.
 torch = [
   { index = "pytorch-cu129", marker = "sys_platform == 'linux' and platform_machine == 'aarch64'" },
 ]

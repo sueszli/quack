@@ -1,6 +1,3 @@
-# Formatting / lint config lives in [tool.ruff] in pyproject.toml so editors,
-# pre-commit and `make` all agree.
-
 .PHONY: precommit-hook
 precommit-hook:
 	@common_dir="$$(git rev-parse --git-common-dir 2>/dev/null)"; \
@@ -25,9 +22,7 @@ tests:
 smoke:
 	uv run train Mjlab-Velocity-Flat-MicroDuck --env.scene.num-envs 64 --agent.max_iterations 5
 
-# Note: `lint` is not part of precommit yet — master currently has 151 ruff
-# findings. It is wired up here so the backlog can be cleared incrementally;
-# add it to precommit once `make lint` is clean.
+# `lint` is not in precommit yet: master has 151 ruff findings. Add it once clean.
 .PHONY: precommit
 precommit:
 	uv sync
