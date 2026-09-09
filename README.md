@@ -122,7 +122,7 @@ control law instead of an ideal PD.
 
 ## Robot models
 
-MJCF models live in `src/mjlab_microduck/mjcf/` and are exported
+MJCF models live in `mjcf/` at the repo root and are exported
 from Onshape with [onshape-to-robot](https://github.com/Rhoban/onshape-to-robot),
 one `config_mjcf_*.json` per model:
 
@@ -143,10 +143,10 @@ for quick viewing and for `infer_policy.py`.
 ## Project structure
 
 ```
+mjcf/                                 # MJCF exports, export configs, scenes, meshes, add_backlash.py
+tests/                                # CPU-only cfg-invariant and reward regression tests
 src/mjlab_microduck/                  # flat: no sub-packages, no __init__.py
-├── mjcf/                             # MJCF exports, export configs, scenes, meshes
-├── add_backlash.py                   # generates the robot_*_backlash.xml variants
-├── microduck_constants.py            # robot cfgs, HOME frame, BAM actuator cfg
+├── microduck_constants.py            # robot cfgs, HOME frame, BAM actuator cfg, MJCF_DIR
 ├── friction_dr_bam.py                # BAM + friction DR + backlash encoder feedback
 ├── registry.py                       # task registration (base + backlash variants)
 ├── mdp.py                            # rewards, events, observations, custom classes

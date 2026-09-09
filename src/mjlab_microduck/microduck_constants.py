@@ -10,7 +10,9 @@ from mjlab.entity import EntityArticulationInfoCfg, EntityCfg
 from mjlab.utils.spec_config import CollisionCfg
 
 
-_ROBOT_DIR: Path = Path(__file__).resolve().parent / "mjcf"
+# Repo-level data dir (../../mjcf from this file): MJCF models, export configs, meshes.
+MJCF_DIR: Path = Path(__file__).resolve().parents[2] / "mjcf"
+_ROBOT_DIR: Path = MJCF_DIR
 
 MICRODUCK_WALK_XML: Path = _ROBOT_DIR / "robot_walk.xml"
 # Ground-contact model (formerly "allcollisions"): curated collision set for
