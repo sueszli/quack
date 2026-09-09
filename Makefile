@@ -25,11 +25,11 @@ tests:
 smoke:
 	uv run train Mjlab-Velocity-Flat-MicroDuck --env.scene.num-envs 64 --agent.max_iterations 5
 
-# Note: `lint` is not part of precommit yet — master currently has 151 ruff
-# findings. It is wired up here so the backlog can be cleared incrementally;
-# add it to precommit once `make lint` is clean.
+# NOTE: `lint` only passes once the companion cleanup PRs are in (they remove
+# the last F811/F841/RUF059 findings). Merge those first, or this gate fails.
 .PHONY: precommit
 precommit:
 	uv sync
 	$(MAKE) precommit-hook
+	$(MAKE) lint
 	$(MAKE) tests

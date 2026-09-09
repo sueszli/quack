@@ -31,7 +31,7 @@ class _Scene:
         self._asset = asset
 
     def __getitem__(self, key):
-        return self.sensors[key] if key in self.sensors else self._asset
+        return self.sensors.get(key, self._asset)
 
 
 class _AssetData:
