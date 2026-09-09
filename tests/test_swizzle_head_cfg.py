@@ -1,6 +1,7 @@
 from mjlab.tasks.velocity import mdp
-from src.task_velocity_swizzle import make_microduck_velocity_swizzle_env_cfg
+
 from src.task_velocity_rollers import make_microduck_velocity_rollers_env_cfg
+from src.task_velocity_swizzle import make_microduck_velocity_swizzle_env_cfg
 
 
 def test_swizzle_head_control_wired():

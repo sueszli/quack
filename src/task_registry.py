@@ -15,20 +15,20 @@ class MicroduckOnPolicyRunner(VelocityOnPolicyRunner):
             alg["symmetry_cfg"] = {k: v for k, v in sym.items() if k != "_env"}
 
 
-from .task_velocity import make_microduck_velocity_env_cfg, MicroduckRlCfg
-from .task_standup import make_microduck_standup_env_cfg, MicroduckStandUpRlCfg
-from .task_velstand import make_microduck_velstand_env_cfg, MicroduckVelStandRlCfg
-from .task_ground_pick import make_microduck_ground_pick_env_cfg, MicroduckGroundPickRlCfg
-from .task_ball_kick import make_microduck_ball_kick_env_cfg, MicroduckBallKickRlCfg
-from .task_sitstand import make_microduck_sitstand_env_cfg, MicroduckSitStandRlCfg
-from .task_velocity_rollers import make_microduck_velocity_rollers_env_cfg, MicroduckRollersRlCfg
-from .task_velocity_swizzle import make_microduck_velocity_swizzle_env_cfg, MicroduckSwizzleRlCfg
-from .task_roller_crouch import make_microduck_roller_crouch_env_cfg, MicroduckRollerCrouchRlCfg
-from .task_roller_slope import make_microduck_roller_slope_env_cfg, MicroduckRollerSlopeRlCfg
-from .task_roller_standup import make_microduck_roller_standup_env_cfg, MicroduckRollerStandUpRlCfg
-from .task_spin import make_microduck_spin_env_cfg, MicroduckSpinRlCfg
-from .task_roulade import make_microduck_roulade_env_cfg, MicroduckRouladeRlCfg
 from .task_backlash import make_backlash_variant
+from .task_ball_kick import MicroduckBallKickRlCfg, make_microduck_ball_kick_env_cfg
+from .task_ground_pick import MicroduckGroundPickRlCfg, make_microduck_ground_pick_env_cfg
+from .task_roller_crouch import MicroduckRollerCrouchRlCfg, make_microduck_roller_crouch_env_cfg
+from .task_roller_slope import MicroduckRollerSlopeRlCfg, make_microduck_roller_slope_env_cfg
+from .task_roller_standup import MicroduckRollerStandUpRlCfg, make_microduck_roller_standup_env_cfg
+from .task_roulade import MicroduckRouladeRlCfg, make_microduck_roulade_env_cfg
+from .task_sitstand import MicroduckSitStandRlCfg, make_microduck_sitstand_env_cfg
+from .task_spin import MicroduckSpinRlCfg, make_microduck_spin_env_cfg
+from .task_standup import MicroduckStandUpRlCfg, make_microduck_standup_env_cfg
+from .task_velocity import MicroduckRlCfg, make_microduck_velocity_env_cfg
+from .task_velocity_rollers import MicroduckRollersRlCfg, make_microduck_velocity_rollers_env_cfg
+from .task_velocity_swizzle import MicroduckSwizzleRlCfg, make_microduck_velocity_swizzle_env_cfg
+from .task_velstand import MicroduckVelStandRlCfg, make_microduck_velstand_env_cfg
 
 # Standard velocity task
 register_mjlab_task(

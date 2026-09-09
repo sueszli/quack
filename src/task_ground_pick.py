@@ -68,18 +68,17 @@ from mjlab.envs.mdp import dr
 from mjlab.envs.mdp.actions import JointPositionActionCfg
 from mjlab.managers import CurriculumTermCfg, EventTermCfg, ObservationTermCfg, RewardTermCfg, TerminationTermCfg
 from mjlab.managers.scene_entity_config import SceneEntityCfg
-from mjlab.rl import RslRlOnPolicyRunnerCfg, RslRlModelCfg
+from mjlab.rl import RslRlModelCfg, RslRlOnPolicyRunnerCfg
 from mjlab.sensor import ContactMatch, ContactSensorCfg
 from mjlab.tasks.velocity import mdp
 from mjlab.tasks.velocity.mdp import UniformVelocityCommandCfg
 from mjlab.tasks.velocity.velocity_env_cfg import make_velocity_env_cfg
 from mjlab.utils.noise import UniformNoiseCfg as Unoise
 
-from .robot import MICRODUCK_GROUND_PICK_ROBOT_CFG
 from . import task_mdp as microduck_mdp
-from .task_velocity import MICRODUCK_ROUGH_TERRAINS_CFG, HEAD_BODY_NAMES
-from .task_symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
-
+from .robot import MICRODUCK_GROUND_PICK_ROBOT_CFG
+from .task_symmetry import SYMMETRY_CFG, PpoWithSymmetryCfg
+from .task_velocity import HEAD_BODY_NAMES, MICRODUCK_ROUGH_TERRAINS_CFG
 
 # ── SEGMENTED phase profile (independent durations) ───────────────────────────
 # Instead of the sinusoidal weighting (which couples descent/hold/rise),

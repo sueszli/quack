@@ -1,11 +1,10 @@
 from pathlib import Path
 
 import mujoco
-from mjlab.actuator import XmlActuatorCfg
-from .robot_actuator import BacklashEncoderBamActuatorCfg, FrictionDRBamActuatorCfg
 from mjlab.entity import EntityArticulationInfoCfg, EntityCfg
 from mjlab.utils.spec_config import CollisionCfg
 
+from .robot_actuator import BacklashEncoderBamActuatorCfg, FrictionDRBamActuatorCfg
 
 # Repo-level assets/mjcf (../assets from this file): MJCF models, scenes, export configs.
 MJCF_DIR: Path = Path(__file__).resolve().parents[1] / "assets" / "mjcf"
@@ -237,9 +236,9 @@ MICRODUCK_WALK_ROLLERS_ROBOT_CFG = EntityCfg(
 )
 
 if __name__ == "__main__":
-    import mujoco.viewer as viewer
     from mjlab.scene import Scene, SceneCfg
     from mjlab.terrains import TerrainImporterCfg
+    from mujoco import viewer
 
     SCENE_CFG = SceneCfg(terrain=TerrainImporterCfg(terrain_type="plane"), entities={"robot": MICRODUCK_WALK_ROBOT_CFG})
 
