@@ -138,10 +138,10 @@ from mjlab.tasks.velocity import mdp
 from mjlab.tasks.velocity.velocity_env_cfg import make_velocity_env_cfg
 from mjlab.utils.noise import UniformNoiseCfg as Unoise
 
-from mjlab_microduck.robot.microduck_constants import MICRODUCK_STANDUP_ROBOT_CFG
-from mjlab_microduck.tasks import mdp as microduck_mdp
-from mjlab_microduck.tasks.microduck_velocity_env_cfg import HEAD_BODY_NAMES
-from mjlab_microduck.tasks.symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
+from mjlab_microduck.microduck_constants import MICRODUCK_STANDUP_ROBOT_CFG
+from mjlab_microduck import mdp as microduck_mdp
+from mjlab_microduck.microduck_velocity_env_cfg import HEAD_BODY_NAMES
+from mjlab_microduck.symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
 
 
 def make_microduck_roulade_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:

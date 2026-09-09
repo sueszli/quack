@@ -27,7 +27,7 @@ from typing import Literal, NoReturn
 
 import tyro
 
-from mjlab_microduck.publish import manifest as m
+from mjlab_microduck import publish_manifest as m
 
 
 @dataclass(frozen=True)

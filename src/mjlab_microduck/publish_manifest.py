@@ -67,7 +67,7 @@ def _now_utc() -> str:
 
 def git_provenance(repo_root: Path | None = None) -> dict[str, Any]:
     """`commit`, `branch`, `dirty` of the checkout the export ran from, or `{}` outside git."""
-    root = str(repo_root or Path(__file__).resolve().parents[3])
+    root = str(repo_root or Path(__file__).resolve().parents[2])
 
     def git(*args: str) -> str | None:
         try:

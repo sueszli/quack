@@ -117,9 +117,9 @@ from mjlab.tasks.velocity.mdp import UniformVelocityCommandCfg
 from mjlab.tasks.velocity.velocity_env_cfg import make_velocity_env_cfg
 from mjlab.utils.noise import UniformNoiseCfg as Unoise
 
-from mjlab_microduck.robot.microduck_constants import MICRODUCK_WALK_ROBOT_CFG
-from mjlab_microduck.tasks import mdp as microduck_mdp
-from mjlab_microduck.tasks.symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
+from mjlab_microduck.microduck_constants import MICRODUCK_WALK_ROBOT_CFG
+from mjlab_microduck import mdp as microduck_mdp
+from mjlab_microduck.symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
 
 
 # Microduck-specific rough terrain: much gentler than the default ROUGH_TERRAINS_CFG.
