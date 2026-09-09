@@ -6,7 +6,7 @@ import re
 import sys
 
 SERVO_CLASS = "chosen_actuator"
-JOINT_RE = re.compile(r'^(\s*)<joint\b[^>]*/>\s*$')
+JOINT_RE = re.compile(r"^(\s*)<joint\b[^>]*/>\s*$")
 ATTR_RE = re.compile(r'(\w+)="([^"]*)"')
 
 DEFAULTS_BLOCK = """\
@@ -28,9 +28,7 @@ range="{lo:.17g} {hi:.17g}" solreflimit="0.01 1" solimplimit="0.95 0.999 0.0001 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("xml", help="MJCF file to modify in place")
-    parser.add_argument("--backlash-deg", type=float, default=2.0,
-                        help="TOTAL backlash play in degrees (peak-to-peak); "
-                             "joint range is symmetric +/-deg/2 (default: 2.0)")
+    parser.add_argument("--backlash-deg", type=float, default=2.0, help="TOTAL backlash play in degrees (peak-to-peak); joint range is symmetric +/-deg/2 (default: 2.0)")
     args = parser.parse_args()
 
     half = math.radians(args.backlash_deg) / 2.0
@@ -50,9 +48,7 @@ def main() -> int:
     inserted = False
     for line in lines:
         if not inserted and "<worldbody>" in line:
-            out.append(DEFAULTS_BLOCK.format(
-                total=args.backlash_deg, half_deg=args.backlash_deg / 2,
-                lo=-half, hi=half))
+            out.append(DEFAULTS_BLOCK.format(total=args.backlash_deg, half_deg=args.backlash_deg / 2, lo=-half, hi=half))
             inserted = True
         out.append(line)
 
@@ -64,10 +60,7 @@ def main() -> int:
         if attrs.get("class") != SERVO_CLASS or not name:
             continue
         pos = f' pos="{attrs["pos"]}"' if "pos" in attrs else ""
-        out.append(
-            f'{m.group(1)}<joint axis="{attrs.get("axis", "0 0 1")}"{pos} '
-            f'name="passive_{name}_backlash" type="hinge" class="backlash"/>\n'
-        )
+        out.append(f'{m.group(1)}<joint axis="{attrs.get("axis", "0 0 1")}"{pos} name="passive_{name}_backlash" type="hinge" class="backlash"/>\n')
         added.append(name)
 
     if not added:
@@ -77,9 +70,7 @@ def main() -> int:
     with open(args.xml, "w") as f:
         f.writelines(out)
 
-    print(f"[add_backlash] added {len(added)} backlash joints "
-          f"(+/-{args.backlash_deg / 2:g} deg = +/-{half:.5f} rad) to {args.xml}: "
-          f"{', '.join(added)}")
+    print(f"[add_backlash] added {len(added)} backlash joints (+/-{args.backlash_deg / 2:g} deg = +/-{half:.5f} rad) to {args.xml}: {', '.join(added)}")
     return 0
 
 
