@@ -42,8 +42,8 @@ Mirroring rules (left-right reflection about the sagittal plane):
 from dataclasses import dataclass
 
 import torch
-from tensordict import TensorDict
 from mjlab.rl import RslRlPpoAlgorithmCfg
+from tensordict import TensorDict
 
 
 @dataclass

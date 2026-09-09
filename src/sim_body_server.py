@@ -53,9 +53,9 @@ from pathlib import Path
 import mujoco
 import numpy as np
 
+from .robot import MJCF_DIR
 from .sim_camera import FPS as CAMERA_FPS
 from .sim_camera import Camera, FrameHandler, FrameServer
-from .robot import MJCF_DIR
 from .sim_tof import COLS, ROWS, Tof
 
 PROTOCOL = 1

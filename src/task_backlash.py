@@ -28,13 +28,12 @@ already excludes them.
 
 from copy import deepcopy
 
+from mjlab.entity import EntityCfg
 from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 
-from mjlab.entity import EntityCfg
-
-from .robot import MICRODUCK_BACKLASH_ROBOT_CFG
 from . import task_mdp as microduck_mdp
+from .robot import MICRODUCK_BACKLASH_ROBOT_CFG
 
 _SERVO_JOINTS_ONLY = (r"^(?!passive_).*",)
 

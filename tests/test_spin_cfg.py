@@ -1,5 +1,5 @@
 from src import task_mdp as microduck_mdp
-from src.task_spin import make_microduck_spin_env_cfg, MicroduckSpinRlCfg
+from src.task_spin import MicroduckSpinRlCfg, make_microduck_spin_env_cfg
 
 
 def test_cfg_uses_phase_command_with_runtime_default_period():

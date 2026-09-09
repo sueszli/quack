@@ -2,22 +2,20 @@
 
 import math
 from dataclasses import dataclass as _dataclass
+from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
-from typing import TYPE_CHECKING, Optional
-import mujoco
-
-from mjlab.envs.manager_based_rl_env import ManagerBasedRlEnv
-from mjlab.managers.scene_entity_config import SceneEntityCfg
-from mjlab.managers.reward_manager import RewardManager as _RewardManager
 from mjlab.entity import Entity
-from mjlab.tasks.velocity.mdp.velocity_command import UniformVelocityCommand, UniformVelocityCommandCfg
-from mjlab.tasks.velocity.mdp import observations as _velocity_obs
-from mjlab.managers.command_manager import CommandTerm
+from mjlab.envs.manager_based_rl_env import ManagerBasedRlEnv
 from mjlab.managers import CommandTermCfg
+from mjlab.managers.command_manager import CommandTerm
 from mjlab.managers.event_manager import requires_model_fields
-from mjlab.utils.lab_api.math import matrix_from_quat, wrap_to_pi, quat_apply, quat_from_angle_axis
+from mjlab.managers.reward_manager import RewardManager as _RewardManager
+from mjlab.managers.scene_entity_config import SceneEntityCfg
+from mjlab.tasks.velocity.mdp import observations as _velocity_obs
+from mjlab.tasks.velocity.mdp.velocity_command import UniformVelocityCommand, UniformVelocityCommandCfg
+from mjlab.utils.lab_api.math import matrix_from_quat, quat_apply, quat_from_angle_axis, wrap_to_pi
 from rsl_rl.algorithms.ppo import PPO as _PPO
 
 # ---------------------------------------------------------------------------
@@ -77,8 +75,8 @@ print("[mdp] Patches 1-2 active: NaN-safe reward/advantage")
 # crashing with KeyError on passive_*.  Filter passive joints out of the
 # exported metadata so policies stay consistent with the 14-dim action space.
 # ---------------------------------------------------------------------------
-from mjlab.rl import exporter_utils as _exporter_utils  # noqa: E402
-from mjlab.envs.mdp.actions import JointPositionAction as _JointAction  # noqa: E402
+from mjlab.envs.mdp.actions import JointPositionAction as _JointAction
+from mjlab.rl import exporter_utils as _exporter_utils
 
 
 def _get_base_metadata_no_passive(env, run_path):
@@ -110,7 +108,7 @@ def _get_base_metadata_no_passive(env, run_path):
 _exporter_utils.get_base_metadata = _get_base_metadata_no_passive
 # Also patch the already-imported reference in the velocity task exporter.
 try:
-    from mjlab.tasks.velocity.rl import exporter as _vel_exporter  # noqa: E402
+    from mjlab.tasks.velocity.rl import exporter as _vel_exporter
 
     if hasattr(_vel_exporter, "get_base_metadata"):
         _vel_exporter.get_base_metadata = _get_base_metadata_no_passive
@@ -254,7 +252,7 @@ def reset_action_history(env: ManagerBasedRlEnv, env_ids: torch.Tensor, asset_cf
     if hasattr(env, "_prev_leg_actions"):
         # Set to current action (or zero if no action yet)
         if hasattr(env, "action_manager") and env.action_manager.action is not None:
-            leg_joint_indices = list(range(0, 5)) + list(range(9, 14))
+            leg_joint_indices = list(range(5)) + list(range(9, 14))
             env._prev_leg_actions[env_ids] = env.action_manager.action[env_ids][:, leg_joint_indices]
         else:
             env._prev_leg_actions[env_ids] = 0.0
@@ -270,7 +268,7 @@ def reset_action_history(env: ManagerBasedRlEnv, env_ids: torch.Tensor, asset_cf
     # Reset leg action acceleration cache
     if hasattr(env, "_prev_leg_actions_for_acc"):
         if hasattr(env, "action_manager") and env.action_manager.action is not None:
-            leg_joint_indices = list(range(0, 5)) + list(range(9, 14))
+            leg_joint_indices = list(range(5)) + list(range(9, 14))
             current_action = env.action_manager.action[env_ids][:, leg_joint_indices]
             env._prev_leg_actions_for_acc[env_ids] = current_action
             env._prev_prev_leg_actions_for_acc[env_ids] = current_action
@@ -364,7 +362,7 @@ def leg_action_rate_l2(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFA
         Penalty tensor of shape (num_envs,)
     """
     # Get leg joint indices
-    leg_joint_indices = list(range(0, 5)) + list(range(9, 14))
+    leg_joint_indices = list(range(5)) + list(range(9, 14))
 
     # Get current and previous actions for leg joints only
     # Actions are stored in env (assuming the action is available)
@@ -436,7 +434,7 @@ def leg_action_acceleration_l2(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg
         Penalty tensor of shape (num_envs,)
     """
     # Get leg joint indices
-    leg_joint_indices = list(range(0, 5)) + list(range(9, 14))
+    leg_joint_indices = list(range(5)) + list(range(9, 14))
 
     if not hasattr(env, "action_manager"):
         return torch.zeros(env.num_envs, device=env.device)
@@ -776,7 +774,7 @@ def standing_composite_score(
     upright_std: float,
     pose_std: float,
     joint_indices: list,
-    target_overrides: Optional[dict] = None,
+    target_overrides: dict | None = None,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
 ) -> torch.Tensor:
     """Smooth multiplicative goal-state score (product of three Gaussians).
@@ -820,7 +818,7 @@ def standing_success_bonus(
     upright_threshold: float,
     pose_tol: float,
     joint_indices: list,
-    target_overrides: Optional[dict] = None,
+    target_overrides: dict | None = None,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
 ) -> torch.Tensor:
     """Binary bonus: 1.0 iff height, uprightness AND pose are all within tol.
@@ -1227,7 +1225,7 @@ def _crouch_pose_error(
     descent_end: float,
     hold_end: float,
     rise_end: float,
-    stand_pose: Optional[dict] = None,
+    stand_pose: dict | None = None,
 ):
     """(cur, target) joint tensors for the phase-interpolated crouch pose.
 
@@ -1260,8 +1258,8 @@ def _crouch_pose_error(
 def crouch_glide_pose_by_phase(
     env: ManagerBasedRlEnv,
     command_name: str = "twist",
-    crouch_pose: Optional[dict] = None,
-    stand_pose: Optional[dict] = None,
+    crouch_pose: dict | None = None,
+    stand_pose: dict | None = None,
     std: float = 0.4,
     descent_end: float = 0.10,
     hold_end: float = 0.50,
@@ -1283,8 +1281,8 @@ def crouch_glide_pose_by_phase(
 def crouch_glide_pose_l1(
     env: ManagerBasedRlEnv,
     command_name: str = "twist",
-    crouch_pose: Optional[dict] = None,
-    stand_pose: Optional[dict] = None,
+    crouch_pose: dict | None = None,
+    stand_pose: dict | None = None,
     descent_end: float = 0.10,
     hold_end: float = 0.50,
     rise_end: float = 0.60,
@@ -1366,7 +1364,7 @@ def leg_joint_vel_l2(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAUL
 
     # Get leg joint indices (left hip-ankle: 0-4, right hip-ankle: 9-13).
     # Servo view: passive_* joints (backlash, wheels) don't shift the indices.
-    leg_joint_indices = list(range(0, 5)) + list(range(9, 14))
+    leg_joint_indices = list(range(5)) + list(range(9, 14))
     joint_vel = _servo_joint_vel(env, asset)
     leg_joint_vel = joint_vel[:, leg_joint_indices]
 
@@ -1403,8 +1401,8 @@ def feet_flat_penalty(
     without dim computes a scalar over all envs × 3 dims, making the vector
     ~1/sqrt(num_envs) in magnitude → penalty ~num_envs times too small.
     """
-    from mjlab.utils.lab_api.math import quat_apply_inverse
     import torch.nn.functional as F
+    from mjlab.utils.lab_api.math import quat_apply_inverse
 
     asset: Entity = env.scene[asset_cfg.name]
     gravity_w_n = F.normalize(asset.data.gravity_vec_w, dim=-1)  # (B, 3), unit vector per env
@@ -1789,7 +1787,7 @@ def mouth_perpendicular_to_ground(
 def sit_grounded(
     env: ManagerBasedRlEnv,
     sensor_name: str,
-    command_name: Optional[str] = None,
+    command_name: str | None = None,
     sin_threshold: float = 0.7,
     min_progress_frac: float = 0.0,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
@@ -1841,7 +1839,7 @@ def sit_grounded(
 def sit_stability(
     env: ManagerBasedRlEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
-    command_name: Optional[str] = None,
+    command_name: str | None = None,
     ang_vel_std: float = 0.5,
     sin_threshold: float = 0.7,
     min_progress_frac: float = 0.0,
@@ -1951,8 +1949,8 @@ def pose_target_match(
     env: ManagerBasedRlEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     std: float = 0.3,
-    joint_indices: Optional[list] = None,
-    target_overrides: Optional[dict] = None,
+    joint_indices: list | None = None,
+    target_overrides: dict | None = None,
 ) -> torch.Tensor:
     """Always-on Gaussian on joint positions vs a target pose.
 
@@ -1982,9 +1980,9 @@ def interpolated_pose_target_match(
     env: ManagerBasedRlEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     std: float = 0.3,
-    joint_indices: Optional[list] = None,
-    source_overrides: Optional[dict] = None,
-    target_overrides: Optional[dict] = None,
+    joint_indices: list | None = None,
+    source_overrides: dict | None = None,
+    target_overrides: dict | None = None,
     ramp_start_frac: float = 0.0,
     ramp_end_frac: float = 1.0,
 ) -> torch.Tensor:
@@ -2033,9 +2031,9 @@ def interpolated_pose_target_match(
 def interpolated_pose_l1_penalty(
     env: ManagerBasedRlEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
-    joint_indices: Optional[list] = None,
-    source_overrides: Optional[dict] = None,
-    target_overrides: Optional[dict] = None,
+    joint_indices: list | None = None,
+    source_overrides: dict | None = None,
+    target_overrides: dict | None = None,
     ramp_start_frac: float = 0.0,
     ramp_end_frac: float = 1.0,
 ) -> torch.Tensor:
@@ -2204,7 +2202,7 @@ def multistage_pose_target_match(
     waypoints: list,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     std: float = 0.3,
-    joint_indices: Optional[list] = None,
+    joint_indices: list | None = None,
 ) -> torch.Tensor:
     """Multi-waypoint variant of interpolated_pose_target_match.
 
@@ -2229,7 +2227,7 @@ def multistage_pose_l1_penalty(
     env: ManagerBasedRlEnv,
     waypoints: list,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
-    joint_indices: Optional[list] = None,
+    joint_indices: list | None = None,
 ) -> torch.Tensor:
     """L1 companion to multistage_pose_target_match."""
     asset = env.scene[asset_cfg.name]
@@ -2263,10 +2261,10 @@ def multistage_height_l1_penalty(
 
 def pose_target_match(
     env: ManagerBasedRlEnv,
-    target_overrides: Optional[dict] = None,
+    target_overrides: dict | None = None,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     std: float = 0.3,
-    joint_indices: Optional[list] = None,
+    joint_indices: list | None = None,
 ) -> torch.Tensor:
     """Gaussian pose-match against a single fixed target.
 
@@ -2288,9 +2286,9 @@ def pose_target_match(
 
 def pose_l1_penalty(
     env: ManagerBasedRlEnv,
-    target_overrides: Optional[dict] = None,
+    target_overrides: dict | None = None,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
-    joint_indices: Optional[list] = None,
+    joint_indices: list | None = None,
 ) -> torch.Tensor:
     """L1 companion to ``pose_target_match`` (constant gradient toward target)."""
     asset = env.scene[asset_cfg.name]
@@ -2488,7 +2486,7 @@ def _kick_pose_error(
     windup_end: float,
     kick_end: float,
     return_end: float,
-    joint_names: Optional[list] = None,
+    joint_names: list | None = None,
 ):
     """(cur, target) for the kicking gesture, joints resolved BY NAME.
 
@@ -2518,15 +2516,15 @@ def _kick_pose_error(
 def kick_pose_track(
     env: ManagerBasedRlEnv,
     command_name: str = "twist",
-    stand_pose: Optional[dict] = None,
-    back_pose: Optional[dict] = None,
-    forward_pose: Optional[dict] = None,
+    stand_pose: dict | None = None,
+    back_pose: dict | None = None,
+    forward_pose: dict | None = None,
     std: float = 0.4,
     windup_end: float = 0.35,
     kick_end: float = 0.45,
     return_end: float = 0.75,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
-    joint_names: Optional[list] = None,
+    joint_names: list | None = None,
 ) -> torch.Tensor:
     """Gaussian on the joint pose vs the interpolated kick target.
 
@@ -2553,14 +2551,14 @@ def kick_pose_track(
 def kick_pose_track_l1(
     env: ManagerBasedRlEnv,
     command_name: str = "twist",
-    stand_pose: Optional[dict] = None,
-    back_pose: Optional[dict] = None,
-    forward_pose: Optional[dict] = None,
+    stand_pose: dict | None = None,
+    back_pose: dict | None = None,
+    forward_pose: dict | None = None,
     windup_end: float = 0.35,
     kick_end: float = 0.45,
     return_end: float = 0.75,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
-    joint_names: Optional[list] = None,
+    joint_names: list | None = None,
 ) -> torch.Tensor:
     """L1 bootstrap towards the interpolated target (constant gradient, penalty<=0)."""
     cur, target = _kick_pose_error(
@@ -2634,7 +2632,7 @@ def _phase_pose_error(
     descent_end: float,
     hold_end: float,
     rise_end: float,
-    source_pose: Optional[dict] = None,
+    source_pose: dict | None = None,
 ):
     """(cur, target) for the phase-interpolated pose, resolved BY NAME.
 
@@ -2671,8 +2669,8 @@ def _phase_pose_error(
 def phase_pose_track(
     env: ManagerBasedRlEnv,
     command_name: str = "twist",
-    target_pose: Optional[dict] = None,
-    source_pose: Optional[dict] = None,
+    target_pose: dict | None = None,
+    source_pose: dict | None = None,
     std: float = 0.3,
     descent_end: float = 0.15,
     hold_end: float = 0.50,
@@ -2694,8 +2692,8 @@ def phase_pose_track(
 def phase_pose_track_l1(
     env: ManagerBasedRlEnv,
     command_name: str = "twist",
-    target_pose: Optional[dict] = None,
-    source_pose: Optional[dict] = None,
+    target_pose: dict | None = None,
+    source_pose: dict | None = None,
     descent_end: float = 0.15,
     hold_end: float = 0.50,
     rise_end: float = 0.65,
@@ -2717,8 +2715,8 @@ def phase_pose_match(
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     std: float = 0.3,
     command_name: str = "twist",
-    joint_indices: Optional[list] = None,
-    target_overrides: Optional[dict] = None,
+    joint_indices: list | None = None,
+    target_overrides: dict | None = None,
     phase: str = "approach",
 ) -> torch.Tensor:
     """Reward matching a target pose, weighted by phase-cycle command.
@@ -2759,7 +2757,7 @@ def ground_pick_return_pose(
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     std: float = 0.3,
     command_name: str = "twist",
-    joint_indices: Optional[list] = None,
+    joint_indices: list | None = None,
 ) -> torch.Tensor:
     """Reward for returning to the standing pose after ground pick, weighted by the return phase.
 
@@ -2875,7 +2873,7 @@ def ground_pick_return_pose_phased(
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     std: float = 0.3,
     command_name: str = "twist",
-    joint_indices: Optional[list] = None,
+    joint_indices: list | None = None,
     hold_end: float = 0.35,
     rise_end: float = 0.60,
 ) -> torch.Tensor:
@@ -2912,7 +2910,7 @@ def neck_vel_descent_penalty(
     env: ManagerBasedRlEnv,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     command_name: str = "twist",
-    joint_indices: Optional[list] = None,
+    joint_indices: list | None = None,
     hold_end: float = 0.35,
 ) -> torch.Tensor:
     """Penalizes neck joint velocity during the DESCENT+hold (slows the head's
@@ -3153,8 +3151,9 @@ def standing_envs_curriculum(
     """
     del env_ids  # Unused
 
-    from mjlab.tasks.velocity.mdp import UniformVelocityCommandCfg
     from typing import cast
+
+    from mjlab.tasks.velocity.mdp import UniformVelocityCommandCfg
 
     command_term = env.command_manager.get_term(command_name)
     assert command_term is not None, f"Command term '{command_name}' not found"
@@ -3388,8 +3387,9 @@ def velocity_command_ranges_curriculum(
     """
     del env_ids  # Unused
 
-    from mjlab.tasks.velocity.mdp import UniformVelocityCommandCfg
     from typing import cast
+
+    from mjlab.tasks.velocity.mdp import UniformVelocityCommandCfg
 
     command_term = env.command_manager.get_term(command_name)
     assert command_term is not None, f"Command term '{command_name}' not found"
@@ -3693,7 +3693,7 @@ def joint_vel_l2_when_standing(
     total_speed = torch.norm(command[:, :2], dim=1) + torch.abs(command[:, 2])
     is_standing_cmd = (total_speed < command_threshold).float()
 
-    leg_indices = list(range(0, 5)) + list(range(9, 14))
+    leg_indices = list(range(5)) + list(range(9, 14))
     joint_vel = asset.data.joint_vel[:, leg_indices]
     vel_sq = torch.sum(joint_vel**2, dim=-1)
 
@@ -3977,7 +3977,7 @@ def set_random_ground_state(
     sitting_z_max: float = 0.09,
     standing_z_min: float = 0.11,
     standing_z_max: float = 0.12,
-    sitting_joint_overrides: Optional[dict] = None,
+    sitting_joint_overrides: dict | None = None,
     sitting_joint_noise_std: float = 0.0,
     sitting_tilt_max: float = 0.0,
     face_up_roll_max: float = 0.0,
@@ -4831,7 +4831,7 @@ class GroundPickPhaseCommandCfg(UniformVelocityCommandCfg):
 # --------------------------------------------------------------------------- #
 
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 class UniformPoseCommand(CommandTerm):
@@ -6468,7 +6468,7 @@ def reset_roulade_state(
     midroll_z_min: float = 0.05,
     midroll_z_max: float = 0.10,
     midroll_omega_range: tuple = (0.0, 0.0),
-    tuck_overrides: Optional[dict] = None,
+    tuck_overrides: dict | None = None,
     tuck_factor_range: tuple = (0.3, 1.0),
     joint_noise_std: float = 0.0,
 ):
@@ -6654,7 +6654,7 @@ def roulade_landing_composite(
     joint_indices: list,
     gate_lo: float = math.radians(260.0),
     gate_hi: float = math.radians(330.0),
-    target_overrides: Optional[dict] = None,
+    target_overrides: dict | None = None,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
 ) -> torch.Tensor:
     """standing_composite_score × completion gate.

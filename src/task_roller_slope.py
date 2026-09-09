@@ -15,14 +15,14 @@ from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.envs import mdp as base_mdp
 from mjlab.managers import CurriculumTermCfg, EventTermCfg, RewardTermCfg, TerminationTermCfg
 from mjlab.managers.scene_entity_config import SceneEntityCfg
-from mjlab.rl import RslRlOnPolicyRunnerCfg, RslRlModelCfg
+from mjlab.rl import RslRlModelCfg, RslRlOnPolicyRunnerCfg
 from mjlab.terrains import TerrainEntityCfg
 from mjlab.terrains.terrain_generator import TerrainGeneratorCfg
 
 from . import task_mdp as microduck_mdp
-from .task_slope_terrain import FlatRampTerrainCfg, RAMP_DEG_MAX
-from .task_velocity_rollers import make_microduck_velocity_rollers_env_cfg
+from .task_slope_terrain import RAMP_DEG_MAX, FlatRampTerrainCfg
 from .task_symmetry import PpoWithSymmetryCfg
+from .task_velocity_rollers import make_microduck_velocity_rollers_env_cfg
 
 # Geometry of the flat+ramp+exit terrain.
 FLAT_LENGTH = 2.0

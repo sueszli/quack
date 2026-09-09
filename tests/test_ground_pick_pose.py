@@ -1,4 +1,5 @@
 import torch
+
 from src.task_mdp import phase_pose_blend
 
 DESCENT_END, HOLD_END, RISE_END = 0.15, 0.50, 0.65
@@ -112,8 +113,9 @@ def test_phase_pose_track_affine_interpolation_nonzero_home():
 
 
 def test_ground_pick_cmd_cfg_has_randomize_phase_default_true():
-    from src.task_mdp import GroundPickPhaseCommandCfg
     from mjlab.tasks.velocity.mdp import UniformVelocityCommandCfg
+
+    from src.task_mdp import GroundPickPhaseCommandCfg
 
     # build a minimal cfg by copying a default velocity cfg
     # NOTE: adapted from `asset_name` (brief) -> `entity_name` (local API of
@@ -123,6 +125,6 @@ def test_ground_pick_cmd_cfg_has_randomize_phase_default_true():
         resampling_time_range=(10.0, 10.0),
         ranges=UniformVelocityCommandCfg.Ranges(lin_vel_x=(0.0, 0.0), lin_vel_y=(0.0, 0.0), ang_vel_z=(0.0, 0.0)),
     )
-    cfg = GroundPickPhaseCommandCfg(**{**vars(base)})
+    cfg = GroundPickPhaseCommandCfg(**vars(base))
     assert cfg.randomize_phase is True
     assert cfg.period == 4.0

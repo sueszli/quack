@@ -113,6 +113,7 @@ def _resolve_weights(cfg: PublishConfig, workdir: Path) -> tuple[Path, dict]:
 
     # Heavy imports only on this path: the ONNX path must work without a GPU or mjlab's registry.
     import mjlab.tasks  # noqa: F401  (populates the registry)
+
     from .export import ExportConfig, run_export
 
     out = workdir / m.POLICY_FILE
