@@ -2,7 +2,7 @@ import math
 
 import torch
 
-from mjlab_microduck.tasks import mdp
+from mjlab_microduck import mdp
 
 # Spec envelope: accel 0.5s / steady 1.6s / brake 0.5s / rest 1.4s over 4s.
 _ENV = dict(rate_max=6.0, accel_end=0.125, hold_end=0.525, brake_end=0.650)
