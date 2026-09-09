@@ -56,6 +56,10 @@ class ExportResult:
     checkpoint_iteration: int | None
 
 
+# Only `model_<N>.pt` is a checkpoint. See the comment at the fallback branch in `run_export`.
+CHECKPOINT_PATTERN = r"model_\d+\.pt$"
+
+
 def _iteration_of(checkpoint_path: Path | None) -> int | None:
     if checkpoint_path is None:
         return None
@@ -105,6 +109,8 @@ def run_export(task_id: str, cfg: ExportConfig) -> ExportResult:
     resume_path: Path | None = None
     if TRAINED_MODE:
         log_root_path = (Path("logs") / "rsl_rl" / agent_cfg.experiment_name).resolve()
+        if cfg.checkpoint_file is None and not log_root_path.exists():
+            raise FileNotFoundError(f"No local runs for this task: {log_root_path} does not exist. Train it first, or point at a checkpoint you copied over with `--checkpoint-file <path/to/model_N.pt>`.")
         if cfg.checkpoint_file is not None:
             resume_path = Path(cfg.checkpoint_file)
             if not resume_path.exists():
@@ -117,7 +123,11 @@ def run_export(task_id: str, cfg: ExportConfig) -> ExportResult:
             print(f"[INFO]: Loading checkpoint: {resume_path.name}")
         else:
             # Latest checkpoint of the latest run under logs/rsl_rl/<experiment_name>/.
-            resume_path = get_checkpoint_path(log_root_path)
+            # The pattern matters: mjlab's default (".*") matches every entry in the run
+            # directory, and alphabetical order puts `events.out.tfevents.*` and `params/`
+            # AFTER `model_*.pt` — so the default would hand back the TensorBoard event
+            # file (which logger="tensorboard" guarantees is sitting right there).
+            resume_path = get_checkpoint_path(log_root_path, checkpoint=CHECKPOINT_PATTERN)
             print(f"[INFO]: Loading checkpoint: {resume_path.name} (latest in {log_root_path})")
         log_dir = resume_path.parent
 
@@ -160,7 +170,7 @@ def run_export(task_id: str, cfg: ExportConfig) -> ExportResult:
 
     runner.export_policy_to_onnx(path, filename)
 
-    metadata = get_base_metadata(runner.env.unwrapped, run_path=cfg.checkpoint_file)
+    metadata = get_base_metadata(runner.env.unwrapped, run_path=str(resume_path) if resume_path is not None else None)
     if DUMMY_MODE:
         metadata["untrained"] = "true"
     attach_metadata_to_onnx(onnx_path, metadata)
