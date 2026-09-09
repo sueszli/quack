@@ -10,7 +10,6 @@ from src.task_mdp import descent_speed_reward
 class _Data:
     def __init__(self, vx):
         self.root_link_lin_vel_w = torch.tensor(vx, dtype=torch.float32).reshape(-1, 1).repeat(1, 3)
-        # only column 0 (x) is read; we put vx in x
         self.root_link_lin_vel_w[:, 0] = torch.tensor(vx, dtype=torch.float32)
 
 
