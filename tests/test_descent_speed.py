@@ -4,7 +4,7 @@
 
 import torch
 
-from src.mdp import descent_speed_reward
+from src.task_mdp import descent_speed_reward
 
 
 class _Data:

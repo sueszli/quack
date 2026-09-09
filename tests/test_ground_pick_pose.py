@@ -1,5 +1,5 @@
 import torch
-from src.mdp import phase_pose_blend
+from src.task_mdp import phase_pose_blend
 
 DESCENT_END, HOLD_END, RISE_END = 0.15, 0.50, 0.65
 
@@ -17,7 +17,7 @@ def test_phase_pose_blend_range():
     assert b.min() >= 0.0 and b.max() <= 1.0
 
 
-from src.mdp import phase_pose_track, phase_pose_track_l1
+from src.task_mdp import phase_pose_track, phase_pose_track_l1
 
 
 class _FakeData:
@@ -107,7 +107,7 @@ def test_phase_pose_track_affine_interpolation_nonzero_home():
 
 
 def test_ground_pick_cmd_cfg_has_randomize_phase_default_true():
-    from src.mdp import GroundPickPhaseCommandCfg
+    from src.task_mdp import GroundPickPhaseCommandCfg
     from mjlab.tasks.velocity.mdp import UniformVelocityCommandCfg
     # build a minimal cfg by copying a default velocity cfg
     # NOTE: adapted from `asset_name` (brief) -> `entity_name` (local API of

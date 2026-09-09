@@ -1,6 +1,6 @@
 import math
 import torch
-from src import mdp
+from src import task_mdp as mdp
 
 
 def test_crouch_height_target_endpoints_are_high():

@@ -96,8 +96,8 @@ SIT_PROB         = 0.5
 # hip_pitch HOME) is NOT statically stable — it tips to ~88° in 1 s and
 # silently drove the sit env's whole hop/back-flop/plank exploit chain.
 # If the robot or keyframe changes, RE-RUN THE SWEEP — verify tilt, not z.
-# Keep in sync with microduck_sit_env_cfg.SITTING_TARGET_OVERRIDES and
-# microduck_standup_env_cfg.SITTING_JOINT_OVERRIDES.
+# Keep in sync with task_sitstand.SITTING_TARGET_OVERRIDES and
+# task_standup.SITTING_JOINT_OVERRIDES.
 SITTING_TARGET_OVERRIDES = {
     1:   0.0,      # left  hip_roll   (HOME -0.0873)
     2:  -0.4079,   # left  hip_pitch  (HOME -0.4579; +0.05 = slight fwd lean)
@@ -164,14 +164,14 @@ from mjlab.tasks.velocity import mdp
 from mjlab.tasks.velocity.velocity_env_cfg import make_velocity_env_cfg
 from mjlab.utils.noise import UniformNoiseCfg as Unoise
 
-from .microduck_constants import MICRODUCK_STANDUP_ROBOT_CFG
-from . import mdp as microduck_mdp
-from .microduck_velocity_env_cfg import (
+from .robot import MICRODUCK_STANDUP_ROBOT_CFG
+from . import task_mdp as microduck_mdp
+from .task_velocity import (
     MICRODUCK_ROUGH_TERRAINS_CFG,
     HEAD_BODY_NAMES,
     HEAD_POSE_CMD_RESAMPLE_S,
 )
-from .symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
+from .task_symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
 
 
 def make_microduck_sitstand_env_cfg(

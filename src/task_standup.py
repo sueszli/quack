@@ -58,7 +58,7 @@ EPISODE_LENGTH_S = 6.0
 
 # ── Sitting source pose (asset.data.joint_pos index → angle in rad) ───────────
 # Must match the *actual end-state* of the sit policy. Mirrors the sit env's
-# SITTING_TARGET_OVERRIDES (microduck_sit_env_cfg.py) — the swept stable
+# SITTING_TARGET_OVERRIDES (task_sitstand.py) — the swept stable
 # equilibrium pose (knee ±1.35 ≈ 77°, hip_pitch ∓0.4079 = slight fwd lean,
 # ankles 0). Keep the two in sync: this reset IS the sit→stand hand-off.
 # Neck/head intentionally omitted → reset stays at HOME so the standup policy
@@ -84,7 +84,7 @@ _NECK_JOINTS = [5, 6, 7, 8]
 # Trunk height targets (m).
 # SIT_Z matches the sit env's measured seated equilibrium (trunk z at rest in
 # the swept stable pose above). Was 0.07 (old robot); keep in sync with
-# microduck_sit_env_cfg.py.
+# task_sitstand.py.
 SIT_Z = 0.060
 # STAND_Z = empirically-measured trunk z at the natural standing equilibrium
 # (HOME joint pose, vertical trunk). Previously was 0.120 — 5 mm above
@@ -138,15 +138,15 @@ from mjlab.tasks.velocity import mdp
 from mjlab.tasks.velocity.velocity_env_cfg import make_velocity_env_cfg
 from mjlab.utils.noise import UniformNoiseCfg as Unoise
 
-from .microduck_constants import MICRODUCK_STANDUP_ROBOT_CFG
-from . import mdp as microduck_mdp
-from .microduck_velocity_env_cfg import (
+from .robot import MICRODUCK_STANDUP_ROBOT_CFG
+from . import task_mdp as microduck_mdp
+from .task_velocity import (
     MICRODUCK_ROUGH_TERRAINS_CFG,
     HEAD_BODY_NAMES,
     HEAD_POSE_CMD_RESAMPLE_S,
     BODY_POSE_CMD_RESAMPLE_S,
 )
-from .symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
+from .task_symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
 
 
 def make_microduck_standup_env_cfg(
@@ -722,7 +722,7 @@ def make_microduck_standup_env_cfg(
             # equivalent rewards) because the reward landscape from flat
             # supine to prone is flat — no gradient until the roll completes.
             # Near-on-side spawns put starts partway along the roll → built-in
-            # reverse curriculum. See set_random_ground_state in mdp.py.
+            # reverse curriculum. See set_random_ground_state in task_mdp.py.
             "face_up_roll_max":          math.radians(90),
             "sitting_joint_overrides":   SITTING_JOINT_OVERRIDES,
             "sitting_joint_noise_std":   0.12,           # ≈ 7° per joint

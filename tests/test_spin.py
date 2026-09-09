@@ -2,7 +2,7 @@ import math
 
 import torch
 
-from src import mdp
+from src import task_mdp as mdp
 
 # Spec envelope: accel 0.5s / steady 1.6s / brake 0.5s / rest 1.4s over 4s.
 _ENV = dict(rate_max=6.0, accel_end=0.125, hold_end=0.525, brake_end=0.650)
@@ -52,7 +52,7 @@ def test_spin_rate_max_integrates_to_2_1_times_itself_per_cycle():
     # the test above which only tests the shape at rate_max=6.0. The area under
     # the envelope over one cycle is 2.1 * rate_max rad, whatever rate_max
     # (0.25 + 1.6 + 0.25 = 2.1, cf. the comment above the constants in
-    # mdp.py). With the current setting (SPIN_RATE_MAX = 3.0) that gives 6.3 rad,
+    # task_mdp.py). With the current setting (SPIN_RATE_MAX = 3.0) that gives 6.3 rad,
     # i.e. ~1 turn -- not 2. This test fails loudly if someone changes the
     # target without thinking about the number of turns it implies.
     n = 100_000
@@ -167,7 +167,7 @@ def test_spin_rate_track_uses_yaw_and_phase():
     # phase 0.30 = full rate -> target SPIN_RATE_MAX (3.0 rad/s, default used
     # implicitly here). A robot spinning at the target must hit 1.0; a
     # motionless robot must be far below (exp(-(3/1.5)^2) = 0.018 at the
-    # current setting: std=1.5 stays well calibrated to this target, cf. mdp.py).
+    # current setting: std=1.5 stays well calibrated to this target, cf. task_mdp.py).
     ang = torch.tensor([[0.0, 0.0, mdp.SPIN_RATE_MAX], [0.0, 0.0, 0.0]])
     env = _FakeEnv(
         _FakeEntity(_FakeData(ang_vel_b=ang)), cmd=_phase_cmd([0.30, 0.30])

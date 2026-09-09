@@ -11,7 +11,7 @@ import math
 
 import torch
 
-from src import mdp as microduck_mdp
+from src import task_mdp as microduck_mdp
 
 
 class _Data:
@@ -137,7 +137,7 @@ def test_reset_clears_the_ema():
 
 
 def test_standup_cfg_wiring():
-    from src.microduck_standup_env_cfg import (
+    from src.task_standup import (
         make_microduck_standup_env_cfg,
     )
 
@@ -155,7 +155,7 @@ def test_standup_cfg_wiring():
 
 
 def test_velocity_cfg_unchanged_no_gate():
-    from src.microduck_velocity_env_cfg import (
+    from src.task_velocity import (
         make_microduck_velocity_env_cfg,
     )
 
@@ -166,7 +166,7 @@ def test_velocity_cfg_unchanged_no_gate():
 def test_velstand_inherited_term_is_gated():
     # Velstand episodes survive falls — the inherited velocity-env term must not
     # charge the ground phase.
-    from src.microduck_velstand_env_cfg import (
+    from src.task_velstand import (
         make_microduck_velstand_env_cfg,
     )
 

@@ -1,8 +1,8 @@
 from mjlab.tasks.velocity import mdp
-from src.microduck_velocity_swizzle_env_cfg import (
+from src.task_velocity_swizzle import (
     make_microduck_velocity_swizzle_env_cfg,
 )
-from src.microduck_velocity_rollers_env_cfg import (
+from src.task_velocity_rollers import (
     make_microduck_velocity_rollers_env_cfg,
 )
 
