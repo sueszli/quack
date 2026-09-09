@@ -18,13 +18,13 @@ lint:
 tests:
 	uv run --with pytest pytest -W ignore tests/
 
-.PHONY: smoke
-smoke:
-	uv run train Mjlab-Velocity-Flat-MicroDuck --env.scene.num-envs 64 --agent.max_iterations 5
-
 .PHONY: precommit
 precommit:
 	uv sync
 	$(MAKE) precommit-hook
 	$(MAKE) lint
 	$(MAKE) tests
+
+.PHONY: smoke
+smoke:
+	uv run train Mjlab-Velocity-Flat-MicroDuck --env.scene.num-envs 64 --agent.max_iterations 5
