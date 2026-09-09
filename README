@@ -153,28 +153,12 @@ instant.
 
 
 ================================================================================
-PROJECT STRUCTURE
+CONVENTIONS
 ================================================================================
 
-  assets/mjcf/            MJCF models, scenes, onshape-to-robot configs, add_backlash.py
-  assets/meshes/          STL meshes referenced by the models
-  tests/                  CPU-only cfg-invariant and reward regression tests
-  src/                    flat namespace package, relative imports, no __init__.py;
-                          files are prefixed by role
-    robot.py              MJCF paths, entity cfgs, HOME frame, BAM actuator cfg
-    robot_actuator.py     BAM actuator + friction DR + backlash encoder feedback
-    task_registry.py      task registration (base + backlash) -- the mjlab.tasks entry point
-    task_mdp.py           rewards, events, observations, commands shared by all tasks
-    task_backlash.py      make_backlash_variant() env-cfg wrapper
-    task_symmetry.py      61-D mirror table for the symmetry loss
-    task_slope_terrain.py slope heightfield
-    task_<name>.py        one env + RL cfg module per task (velocity, standup, roulade, spin, ...)
-    export.py             uv run export  -- ONNX with the obs normalizer baked in
-    publish_cli.py        uv run publish -- Hub upload (+ publish_manifest.py)
-    infer.py              uv run infer   -- CPU MuJoCo deployment rehearsal
-    sim_*.py              uv run duck-body -- simulated body for robotd (body_server, camera, tof)
-
-Conventions worth knowing:
+src/ is a flat namespace package (no __init__.py); file names are prefixed by
+role (robot_*, task_*), and one task_<name>.py holds each env + RL cfg. The
+rules that are not obvious from reading the code:
 
   * Observation layout is shared by every policy: 61-D actor obs = 48
     proprioception + commands [twist(3), head_pose(4), body_pose(6)]. This is
