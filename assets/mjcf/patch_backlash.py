@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # Adds a passive backlash hinge next to each servo joint in an MJCF export, so sim has the real robot's gear play.
 import argparse
 import math
@@ -7,9 +6,6 @@ import sys
 
 SERVO_CLASS = "chosen_actuator"
 JOINT_RE = re.compile(r"^(\s*)<joint\b[^>]*/>\s*$")
-# Matches a joint element opening that this line-based scanner cannot handle,
-# i.e. one whose attributes continue onto the next line. Such a joint would be
-# skipped silently, yielding a model with fewer backlash hinges than servos.
 OPEN_JOINT_RE = re.compile(r"^\s*<joint\b(?![^>]*/>)")
 ATTR_RE = re.compile(r'(\w+)="([^"]*)"')
 
