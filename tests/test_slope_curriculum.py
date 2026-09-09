@@ -1,5 +1,5 @@
 import torch
-from mjlab_microduck.mdp import slope_move_masks
+from src.mdp import slope_move_masks
 
 
 def test_move_up_when_reached_bottom():

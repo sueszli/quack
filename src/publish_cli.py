@@ -27,7 +27,7 @@ from typing import Literal, NoReturn
 
 import tyro
 
-from mjlab_microduck import publish_manifest as m
+from . import publish_manifest as m
 
 
 @dataclass(frozen=True)
@@ -113,7 +113,7 @@ def _resolve_weights(cfg: PublishConfig, workdir: Path) -> tuple[Path, dict]:
 
     # Heavy imports only on this path: the ONNX path must work without a GPU or mjlab's registry.
     import mjlab.tasks  # noqa: F401  (populates the registry)
-    from mjlab_microduck.export import ExportConfig, run_export
+    from .export import ExportConfig, run_export
 
     out = workdir / m.POLICY_FILE
     result = run_export(

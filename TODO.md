@@ -100,11 +100,11 @@ the real-world transfer gap has been closed.
 
 ## Repository anchors
 
-- Task: `src/mjlab_microduck/microduck_ball_kick_env_cfg.py`
-- Rewards: `src/mjlab_microduck/mdp.py`
-- Registry: `src/mjlab_microduck/registry.py`
-- Trainer entry point: `src/mjlab_microduck/train_cli.py`
-- Export: `scripts/export.py` and `src/mjlab_microduck/export.py`
+- Task: `src/microduck_ball_kick_env_cfg.py`
+- Rewards: `src/mdp.py`
+- Registry: `src/registry.py`
+- Trainer entry point: `src/train_cli.py`
+- Export: `scripts/export.py` and `src/export.py`
 
 Preserve BAM physics, observation normalization, reward signs, and the 61D
 motor interface. The current kick target constant is `1.0 m/s`; nearby comments
