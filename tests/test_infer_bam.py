@@ -1,9 +1,9 @@
-"""infer_policy.py drives the CPU MuJoCo rehearsal with the SAME BAM M6 actuator
+"""infer.py drives the CPU MuJoCo rehearsal with the SAME BAM M6 actuator
 the policies are trained against in warp (bam.mujoco.MujocoController on a
 motor-converted model). These tests lock the two halves together:
 
 * the script's hardcoded BAM constants mirror ``_BAM_ACTUATOR_KWARGS`` in
-  microduck_constants (not imported there to keep the script torch/warp-free);
+  robot.py (not imported there to keep the script torch/warp-free);
 * the motor conversion matches what ``bam.mjlab.BamActuator.edit_spec`` does
   (torque motors, voltage-bounded forcerange, armature, zeroed XML friction,
   stiff friction constraint) and a step loop runs with a live friction budget.
@@ -16,14 +16,14 @@ import pytest
 
 @pytest.fixture(scope="module")
 def ip():
-    import src.infer_policy as mod
+    import src.infer as mod
 
     return mod
 
 
 def test_cpu_bam_constants_mirror_training_cfg(ip):
     from bam.mjlab import BamActuator
-    from src.microduck_constants import _BAM_ACTUATOR_KWARGS as k
+    from src.robot import _BAM_ACTUATOR_KWARGS as k
 
     assert ip.BAM_MOTOR_NAME == k["motor_name"]
     assert ip.BAM_MODEL == k["model"]

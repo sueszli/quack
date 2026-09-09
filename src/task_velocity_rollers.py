@@ -76,10 +76,10 @@ from mjlab.tasks.velocity.mdp import UniformVelocityCommandCfg
 from mjlab.tasks.velocity.velocity_env_cfg import make_velocity_env_cfg
 from mjlab.utils.noise import UniformNoiseCfg as Unoise
 
-from .microduck_constants import MICRODUCK_WALK_ROLLERS_ROBOT_CFG
-from . import mdp as microduck_mdp
-from .microduck_velocity_env_cfg import HEAD_BODY_NAMES
-from .symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
+from .robot import MICRODUCK_WALK_ROLLERS_ROBOT_CFG
+from . import task_mdp as microduck_mdp
+from .task_velocity import HEAD_BODY_NAMES
+from .task_symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
 
 
 def make_microduck_velocity_rollers_env_cfg(
@@ -160,7 +160,7 @@ def make_microduck_velocity_rollers_env_cfg(
     assert isinstance(joint_pos_action, JointPositionActionCfg)
     joint_pos_action.scale = 1.0
     # NOTE: an env-side action clip was tried here to bound the target, but the
-    # deployment pipeline (infer_policy.py) does NOT clip → the clip would only
+    # deployment pipeline (infer.py) does NOT clip → the clip would only
     # exist in sim, a train/deploy mismatch. The over-command deterrent lives
     # policy-side instead (action_over_limit reward below), baked into the network
     # so it transfers with the ONNX.

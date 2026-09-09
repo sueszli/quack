@@ -52,21 +52,21 @@ from pathlib import Path
 import mujoco
 import numpy as np
 
-from .camera import FPS as CAMERA_FPS
-from .camera import Camera, FrameHandler, FrameServer
-from .microduck_constants import MJCF_DIR
-from .tof import COLS, ROWS, Tof
+from .sim_camera import FPS as CAMERA_FPS
+from .sim_camera import Camera, FrameHandler, FrameServer
+from .robot import MJCF_DIR
+from .sim_tof import COLS, ROWS, Tof
 
 PROTOCOL = 1
 
-# What the policies were trained at, and what `infer_policy.py` sets. The scenes ship 0.002;
+# What the policies were trained at, and what `infer.py` sets. The scenes ship 0.002;
 # with that script's decimation of 4 this is exactly the 50 Hz the daemon's control loop runs at.
 # Not a performance knob: the BAM actuator fit, the contact solref and the joint armature are all
 # tuned at this step, so 0.002 gives a duck whose legs reach the right angles and still cannot hold
 # itself up.
 TIMESTEP = 0.005
 
-# Where `infer_policy.py` puts a duck before it starts: trunk this high, upright, every joint
+# Where `infer.py` puts a duck before it starts: trunk this high, upright, every joint
 # at the home pose. Not a keyframe — the keyframes are poses and this is a *placement*.
 HOME_TRUNK_Z = 0.125
 
@@ -80,7 +80,7 @@ JOINT_NAMES = (
 )
 MOUTH_INDEX = JOINT_NAMES.index("mouth")
 
-# `duck_control::DEFAULT_POSITION`, and `DEFAULT_POSE` in `infer_policy.py` with the mouth put back.
+# `duck_control::DEFAULT_POSITION`, and `DEFAULT_POSE` in `infer.py` with the mouth put back.
 # The right leg is mirrored, not symmetric — worth reading rather than assuming.
 HOME_POSE = (
     0.0, -0.0873, -0.4579, -0.0049, 0.4530,
@@ -249,7 +249,7 @@ class Body:
 
         # **Held until the daemon takes it.** A biped at a static pose is not stable: holding the
         # home pose with position control alone puts this duck on the ground in under a second, at
-        # any timestep, from any placement — `infer_policy.py` never does it, because it has the
+        # any timestep, from any placement — `infer.py` never does it, because it has the
         # policy balancing from step zero. `robotd` deliberately does not enable torque when it
         # starts, so the seconds before it would be spent falling over.
         self.released = limp
@@ -458,7 +458,7 @@ def run(world: World, headless: bool) -> None:
             print(f"== no viewer ({error}); running headless", flush=True)
 
     dt = world.model.opt.timestep
-    # One control tick of world per pass: 20 ms, the same decimation `infer_policy.py` uses.
+    # One control tick of world per pass: 20 ms, the same decimation `infer.py` uses.
     batch = max(1, round(0.020 / dt))
     period = batch * dt
     # A frame every N passes, counted — not `data.time % 0.033`, which is float arithmetic on an
@@ -530,7 +530,7 @@ def main() -> None:
         "--keyframe",
         default="SIT",
         help="where to start. SIT is a duck folded on the floor, which is stable while it waits and "
-        "which the standing policy rises from on its own. HOME is infer_policy.py's placement — "
+        "which the standing policy rises from on its own. HOME is infer.py's placement — "
         "home pose, trunk 0.125 m, upright — and STAND and FOLD are the scene's other poses",
     )
     args = parser.parse_args()

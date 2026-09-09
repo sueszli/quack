@@ -2,7 +2,7 @@ from pathlib import Path
 
 import mujoco
 from mjlab.actuator import XmlActuatorCfg
-from .friction_dr_bam import (
+from .robot_actuator import (
     BacklashEncoderBamActuatorCfg,
     FrictionDRBamActuatorCfg,
 )
@@ -201,7 +201,7 @@ MICRODUCK_GROUND_PICK_ROBOT_CFG = EntityCfg(
 
 # Backlash robots: base model + ±1° serial backlash hinge per servo.
 # Encoder reads through the backlash (BacklashEncoderBamActuator feedback +
-# joint_pos/vel_rel_backlash observations — see backlash.py).
+# joint_pos/vel_rel_backlash observations — see task_backlash.py).
 # Groundcontact variant → VelStand/StandUp backlash tasks (mirrors
 # MICRODUCK_STANDUP_ROBOT_CFG); walk variant → Velocity backlash
 # tasks (mirrors MICRODUCK_WALK_ROBOT_CFG, keeps backlash-vs-base comparisons

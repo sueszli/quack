@@ -21,8 +21,8 @@ from mjlab.managers import CurriculumTermCfg, ObservationTermCfg, RewardTermCfg
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.tasks.velocity import mdp
 
-from . import mdp as microduck_mdp
-from .microduck_velocity_rollers_env_cfg import (
+from . import task_mdp as microduck_mdp
+from .task_velocity_rollers import (
     MicroduckRollersRlCfg,
     make_microduck_velocity_rollers_env_cfg,
 )

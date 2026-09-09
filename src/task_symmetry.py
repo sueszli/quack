@@ -57,7 +57,7 @@ SYMMETRY_CFG = {
     "use_data_augmentation": False,
     "use_mirror_loss": True,
     "mirror_loss_coeff": 0.5,
-    "data_augmentation_func": "src.symmetry.microduck_vel_symmetry",
+    "data_augmentation_func": "src.task_symmetry.microduck_vel_symmetry",
 }
 
 # ---------------------------------------------------------------------------

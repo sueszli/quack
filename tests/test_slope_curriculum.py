@@ -1,5 +1,5 @@
 import torch
-from src.mdp import slope_move_masks
+from src.task_mdp import slope_move_masks
 
 
 def test_move_up_when_reached_bottom():
