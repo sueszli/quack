@@ -14,9 +14,9 @@ policy that worked in the viewer and failed on hardware.
 uv run list-envs                                    # live task registry
 uv run train <TASK_ID> --env.scene.num-envs 4096    # train
 uv run train <TASK_ID> --env.scene.num-envs 64 --agent.max_iterations 5   # SMOKE TEST — always run first
-uv run play <TASK_ID> --wandb-run-path <entity/project/run_id>
-uv run export <TASK_ID> --wandb-run-path <...>   # → ONNX (bakes obs normalizer — mandatory path)
-uv run publish --task <TASK_ID> --wandb-run-path <...> --checkpoint N --repo <user>/microduck-<name> --kind episodic --duration-s 4.0
+uv run play <TASK_ID> --checkpoint-file logs/rsl_rl/<exp>/<run>/model_N.pt
+uv run export <TASK_ID> --checkpoint N   # → ONNX (bakes obs normalizer — mandatory path)
+uv run publish --task <TASK_ID> --checkpoint N --repo <user>/microduck-<name> --kind episodic --duration-s 4.0
                                                     # → HF Hub repo (policy.onnx + schema-2 manifest.json + README) the daemon loads via `robotctl policy add`
 uv run infer --walking out.onnx   # CPU MuJoCo deployment rehearsal (BAM M6 actuators as in training; --no-bam = XML PD)
 uv run --with pytest pytest tests/
@@ -126,7 +126,7 @@ Never launch a long run without one.
   (`*_penalty`, `*_l1` returning ≤ 0) → POSITIVE weight. A negative weight on a
   self-negating penalty double-negates into a reward for the violation, and the
   policy will farm it (butt-hopping, crash-sits). **The infallible check: on
-  every run, every `Episode_Reward/<penalty>` in wandb must be ≤ 0.**
+  every run, every `Episode_Reward/<penalty>` must be ≤ 0.**
 - **RL optimizes the letter of the reward.** Every under-specified degree of
   freedom will be exploited (ballistic whip instead of a roll, shoulder-roll
   instead of sagittal, head-tripod instead of standing). Encode what counts as
@@ -198,7 +198,7 @@ Never launch a long run without one.
   spawn states).
 - **Phase-align every stage with what the policy has actually learned**: don't
   harden spawn mixes before the current slice consolidates; don't introduce
-  taxes before the skill exists. When a wandb metric steps DOWN exactly at
+  taxes before the skill exists. When a logged metric steps DOWN exactly at
   curriculum stage boundaries, the pacing is wrong — stretch stages or move
   the introduction later, never earlier.
 - Reverse-curriculum spawns (starting episodes partway through the maneuver,
@@ -207,8 +207,12 @@ Never launch a long run without one.
 
 ## Training ops & reading a run
 
-- wandb project `mjlab_microduck`; logs in `logs/<experiment_name>/`; resume
-  with `--agent.load-checkpoint model_XXXX.pt --agent.resume True`.
+- Checkpoints land in `logs/rsl_rl/<experiment_name>/<run>/` (gitignored).
+  Resume with `--agent.load-checkpoint model_XXXX.pt --agent.resume True`.
+  Read a run from the per-iteration stdout.
+- Nothing is uploaded anywhere — checkpoints stay on the machine that trained
+  them, so copy the `.pt` yourself. `export`/`publish` take `--checkpoint N`
+  (newest run dir only) or `--checkpoint-file <path>` (any run).
 - Watch per-iteration: mean reward rising AND episode length behaving as the
   task demands; every penalty term ≤ 0; the MAIN task term actually growing
   (total reward can rise purely on regularizers while the trick never happens).

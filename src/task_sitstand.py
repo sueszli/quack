@@ -157,7 +157,7 @@ from mjlab.utils.noise import UniformNoiseCfg as Unoise
 from . import task_mdp as microduck_mdp
 from .robot import MICRODUCK_STANDUP_ROBOT_CFG
 from .task_symmetry import SYMMETRY_CFG, PpoWithSymmetryCfg
-from .task_velocity import HEAD_BODY_NAMES, HEAD_POSE_CMD_RESAMPLE_S, MICRODUCK_ROUGH_TERRAINS_CFG
+from .task_velocity import HEAD_BODY_NAMES, HEAD_POSE_CMD_RESAMPLE_S, LOCAL_CHECKPOINTS_ONLY, MICRODUCK_ROUGH_TERRAINS_CFG
 
 
 def make_microduck_sitstand_env_cfg(play: bool = False, rough: bool = False) -> ManagerBasedRlEnvCfg:
@@ -254,10 +254,10 @@ def make_microduck_sitstand_env_cfg(play: bool = False, rough: bool = False) -> 
     # negative values (-clamp(...), -|a_z|), same convention as the *_l1_penalty
     # helpers (used with +1/+6 here). Run 7ev90yd9 (2026-08-12) had them at
     # negative weights — the double negative made them REWARDS for violence
-    # (wandb: Episode_Reward/descent_speed +4.6, rise_speed +2.1, gentle_motion
+    # (logs: Episode_Reward/descent_speed +4.6, rise_speed +2.1, gentle_motion
     # +0.57, the three biggest positive terms) and trained a butt-hopping,
     # crash-sitting policy. Same bug class roller_standup found in gentle_rise.
-    # After any reward change, check wandb Episode_Reward/<penalty> stays ≤ 0.
+    # After any reward change, check Episode_Reward/<penalty> stays ≤ 0.
     cfg.rewards["descent_speed"] = RewardTermCfg(func=microduck_mdp.trunk_downward_velocity_penalty, weight=10.0, params={"max_down_vel": MAX_DESCENT_SPEED, "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))})
     cfg.rewards["rise_speed"] = RewardTermCfg(func=microduck_mdp.trunk_upward_velocity_penalty, weight=0.0, params={"max_up_vel": MAX_RISE_SPEED, "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))})
     cfg.rewards["gentle_motion"] = RewardTermCfg(func=microduck_mdp.trunk_vertical_accel_penalty, weight=0.05, params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))})
@@ -584,7 +584,7 @@ MicroduckSitStandRlCfg = RslRlOnPolicyRunnerCfg(
     ),
     critic=RslRlModelCfg(hidden_dims=(512, 256, 128), activation="elu", obs_normalization=True),
     algorithm=PpoWithSymmetryCfg(value_loss_coef=1.0, use_clipped_value_loss=True, clip_param=0.2, entropy_coef=0.01, num_learning_epochs=5, num_mini_batches=4, learning_rate=1.0e-3, schedule="adaptive", gamma=0.99, lam=0.95, desired_kl=0.01, max_grad_norm=1.0, symmetry_cfg=SYMMETRY_CFG if ENABLE_SYMMETRY else None),
-    wandb_project="mjlab_microduck",
+    logger=LOCAL_CHECKPOINTS_ONLY,
     experiment_name="microduck_sitstand",
     run_name="microduck_sitstand",
     save_interval=250,
