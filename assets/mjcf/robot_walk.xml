@@ -2,7 +2,7 @@
 <!-- Generated using onshape-to-robot -->
 <!-- Onshape https://cad.onshape.com/documents/804927696f06d877f3f1803e/w/5b75db19292e71970de02dee/e/ef6e972847fec8d82570b35e -->
 <mujoco model="microduck">
-  <compiler angle="radian" meshdir="assets" autolimits="true"/>
+  <compiler angle="radian" meshdir="../meshes" autolimits="true"/>
   <default>
     <default class="microduck">
       <joint frictionloss="0.1" armature="0.005"/>
@@ -99,7 +99,6 @@
       <geom type="mesh" class="self_collision_only" pos="0.004 -0 -0.0175215" quat="0.707107 -0 -0 0.707107" mesh="power_support" material="power_support_material"/>
       <!-- Part np_f970 -->
       <geom type="mesh" class="visual" pos="-0.0359693 0 -0.00385049" quat="0.00617059 0.70708 -0.70708 -0.00617059" mesh="np_f970" material="np_f970_material"/>
-      <geom type="mesh" class="collision" pos="-0.0359693 0 -0.00385049" quat="0.00617059 0.70708 -0.70708 -0.00617059" mesh="np_f970" material="np_f970_material"/>
       <!-- Part xl330_2 -->
       <geom type="mesh" class="visual" pos="0.006 -0.0175 0.0115" quat="0 -0.707107 0 -0.707107" mesh="xl330" material="xl330_material"/>
       <!-- Part left_shell -->
@@ -130,7 +129,6 @@
           <geom type="mesh" class="visual" pos="0.021 0 -0.0185" quat="0.5 0.5 0.5 0.5" mesh="seeed_bearing__configuration__22x16x4" material="seeed_bearing__configuration__22x16x4_material"/>
           <!-- Part hip_l -->
           <geom type="mesh" class="visual" pos="-0.0175 0 -0.0185" quat="0.707107 -0.707107 0 0" mesh="hip_l" material="hip_l_material"/>
-          <geom type="mesh" class="collision" pos="-0.0175 0 -0.0185" quat="0.707107 -0.707107 0 0" mesh="hip_l" material="hip_l_material"/>
           <!-- Link upper_leg_left -->
           <body name="upper_leg_left" pos="0.025 0 -0.0185" quat="0.5 -0.5 0.5 -0.5">
             <!-- Joint from hip_l to upper_leg_left -->
@@ -153,7 +151,7 @@
               <inertial pos="-1.52e-10 0.0318937 -0.00953505" mass="0.0215844" fullinertia="5.25056e-06 2.15507e-06 4.33925e-06 -1e-12 0 7.65005e-07"/>
               <!-- Part leg -->
               <geom type="mesh" class="visual" pos="-0.022 0.0357771 0.0385" quat="0.5 0.5 0.5 -0.5" mesh="leg" material="leg_material"/>
-              <geom type="mesh" class="collision" pos="-0.022 0.0357771 0.0385" quat="0.5 0.5 0.5 -0.5" mesh="leg" material="leg_material"/>
+              <geom type="mesh" class="self_collision_only" pos="-0.022 0.0357771 0.0385" quat="0.5 0.5 0.5 -0.5" mesh="leg" material="leg_material"/>
               <!-- Part xl330_6 -->
               <geom type="mesh" class="visual" pos="-0 0.042 -0.0115" quat="0.5 -0.5 -0.5 -0.5" mesh="xl330" material="xl330_material"/>
               <!-- Link ankle_left -->
@@ -229,7 +227,6 @@
               <geom type="mesh" class="visual" pos="-0.0045 -0 -0.018" quat="0.5 0.5 0.5 0.5" mesh="motor_support" material="motor_support_material"/>
               <!-- Part top_head_shell -->
               <geom type="mesh" class="visual" pos="-0.0045 -0 -0.018" quat="0.5 0.5 0.5 0.5" mesh="top_head_shell" material="top_head_shell_material"/>
-              <geom type="mesh" class="collision" pos="-0.0045 -0 -0.018" quat="0.5 0.5 0.5 0.5" mesh="top_head_shell" material="top_head_shell_material"/>
               <!-- Part xl330_11 -->
               <geom type="mesh" class="visual" pos="0 0 0.0145" quat="0.5 -0.5 -0.5 -0.5" mesh="xl330" material="xl330_material"/>
               <!-- Part seeed_bearing__configuration_default_2 -->
@@ -242,10 +239,8 @@
               <geom type="mesh" class="visual" pos="-0.0045 -9.13778e-05 -0.0178" quat="0.5 0.5 0.5 0.5" mesh="noenoeil" material="noenoeil_material"/>
               <!-- Part jaw -->
               <geom type="mesh" class="visual" pos="-0.0045 -0 -0.018" quat="0.5 0.5 0.5 0.5" mesh="jaw" material="jaw_material"/>
-              <geom type="mesh" class="collision" pos="-0.0045 -0 -0.018" quat="0.5 0.5 0.5 0.5" mesh="jaw" material="jaw_material"/>
               <!-- Part bottom_head_shell -->
               <geom type="mesh" class="visual" pos="-0.0043 -0 -0.018" quat="0.5 0.5 0.5 0.5" mesh="bottom_head_shell" material="bottom_head_shell_material"/>
-              <geom type="mesh" class="collision" pos="-0.0043 -0 -0.018" quat="0.5 0.5 0.5 0.5" mesh="bottom_head_shell" material="bottom_head_shell_material"/>
               <!-- Part m12_lens_holder -->
               <geom type="mesh" class="visual" pos="0.0155 -9.13778e-05 -0.05558" quat="0.5 -0.5 0.5 -0.5" mesh="m12_lens_holder" material="m12_lens_holder_material"/>
               <!-- Part pcb__raspberry_pi_zero_2_w -->
@@ -285,7 +280,6 @@
           <inertial pos="0.014815 1.6212e-08 -0.00829992" mass="0.00618934" fullinertia="8.60626e-07 1.15753e-06 6.51588e-07 1e-12 3.89882e-07 -1e-12"/>
           <!-- Part hip_l_2 -->
           <geom type="mesh" class="visual" pos="-0.0175 0 -0.0185" quat="0.707107 -0.707107 -0 -0" mesh="hip_l" material="hip_l_material"/>
-          <geom type="mesh" class="collision" pos="-0.0175 0 -0.0185" quat="0.707107 -0.707107 -0 -0" mesh="hip_l" material="hip_l_material"/>
           <!-- Part seeed_bearing__configuration__22x16x4_10 -->
           <geom type="mesh" class="visual" pos="0.025 0 -0.0185" quat="0.5 0.5 -0.5 -0.5" mesh="seeed_bearing__configuration__22x16x4" material="seeed_bearing__configuration__22x16x4_material"/>
           <!-- Link upper_leg_right -->
@@ -312,7 +306,7 @@
               <geom type="mesh" class="visual" pos="-0.042 0 -0.0115" quat="0.707107 -0 -0.707107 -0" mesh="xl330" material="xl330_material"/>
               <!-- Part leg_2 -->
               <geom type="mesh" class="visual" pos="-0.0357771 -0.022 0.0385" quat="0.707107 0 0.707107 -0" mesh="leg" material="leg_material"/>
-              <geom type="mesh" class="collision" pos="-0.0357771 -0.022 0.0385" quat="0.707107 0 0.707107 -0" mesh="leg" material="leg_material"/>
+              <geom type="mesh" class="self_collision_only" pos="-0.0357771 -0.022 0.0385" quat="0.707107 0 0.707107 -0" mesh="leg" material="leg_material"/>
               <!-- Link ankle_right -->
               <body name="ankle_right" pos="-0.042 0 -0.026" quat="0 -0.707107 -0.707107 0">
                 <!-- Joint from leg_2 to ankle_right -->
@@ -337,44 +331,44 @@
     </body>
   </worldbody>
   <asset>
-    <mesh file="leg.stl"/>
-    <mesh file="yaw_roll_motion.stl"/>
-    <mesh file="face_part.stl"/>
-    <mesh file="upper_leg_rigidity_plate.stl"/>
-    <mesh file="soft_mouth_top.stl"/>
     <mesh file="right_shell.stl"/>
-    <mesh file="jaw_soft.stl"/>
-    <mesh file="neck.stl"/>
-    <mesh file="foot_right.stl"/>
-    <mesh file="ankle_left.stl"/>
-    <mesh file="trunk_base.stl"/>
+    <mesh file="speaker.stl"/>
+    <mesh file="banana_pcb_locker.stl"/>
+    <mesh file="top_head_shell.stl"/>
     <mesh file="bearing_roll.stl"/>
-    <mesh file="upper_leg_left.stl"/>
+    <mesh file="ankle_left.stl"/>
+    <mesh file="upper_leg_rigidity_plate.stl"/>
     <mesh file="neck_pitch.stl"/>
     <mesh file="noenoeil.stl"/>
-    <mesh file="top_head_shell.stl"/>
+    <mesh file="face_part.stl"/>
     <mesh file="pcb__raspberry_pi_zero_2_w.stl"/>
+    <mesh file="foot_right.stl"/>
     <mesh file="seeed_bearing__configuration__22x16x4.stl"/>
-    <mesh file="yaw2roll.stl"/>
-    <mesh file="m12_lens_holder.stl"/>
-    <mesh file="speaker.stl"/>
-    <mesh file="bottom_head_shell.stl"/>
-    <mesh file="hip_l.stl"/>
     <mesh file="elec_rpi_robot_hat_pcb.stl"/>
     <mesh file="xl330.stl"/>
-    <mesh file="lens.stl"/>
+    <mesh file="jaw_soft.stl"/>
+    <mesh file="hip_l.stl"/>
+    <mesh file="bottom_head_shell.stl"/>
+    <mesh file="yaw2roll.stl"/>
     <mesh file="seeed_bearing__configuration_default.stl"/>
     <mesh file="ankle_right.stl"/>
-    <mesh file="jaw.stl"/>
-    <mesh file="np_f970.stl"/>
-    <mesh file="banana_pcb_locker.stl"/>
-    <mesh file="upper_leg_right.stl"/>
-    <mesh file="left_shell.stl"/>
-    <mesh file="foot_left.stl"/>
-    <mesh file="sole_left.stl"/>
-    <mesh file="sole_right.stl"/>
-    <mesh file="power_support.stl"/>
     <mesh file="motor_support.stl"/>
+    <mesh file="foot_left.stl"/>
+    <mesh file="upper_leg_right.stl"/>
+    <mesh file="power_support.stl"/>
+    <mesh file="np_f970.stl"/>
+    <mesh file="neck.stl"/>
+    <mesh file="yaw_roll_motion.stl"/>
+    <mesh file="lens.stl"/>
+    <mesh file="sole_left.stl"/>
+    <mesh file="upper_leg_left.stl"/>
+    <mesh file="trunk_base.stl"/>
+    <mesh file="left_shell.stl"/>
+    <mesh file="sole_right.stl"/>
+    <mesh file="jaw.stl"/>
+    <mesh file="leg.stl"/>
+    <mesh file="soft_mouth_top.stl"/>
+    <mesh file="m12_lens_holder.stl"/>
     <material name="seeed_bearing__configuration__22x16x4_material" rgba="0.811765 0.858824 0.898039 1"/>
     <material name="right_shell_material" rgba="0.85098 0.85098 0.839216 1"/>
     <material name="banana_pcb_locker_material" rgba="0.647059 0.647059 0.647059 1"/>

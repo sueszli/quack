@@ -37,8 +37,9 @@ Never launch a long run without one.
   (`[tool.uv.build-backend] namespace = true`).
 - `src/mjlab_microduck/backlash.py` — wraps any env cfg into its backlash twin.
 - `src/mjlab_microduck/microduck_constants.py` — robot cfgs, HOME frame, BAM actuator cfg.
-- `src/mjlab_microduck/mjcf/` — MJCF exports from Onshape (onshape-to-robot, one
-  `config_mjcf_*.json` per model), scenes and meshes; `add_backlash.py` generates the backlash variants.
+- `assets/mjcf/` (`MJCF_DIR` in `microduck_constants.py`) — MJCF exports from Onshape
+  (onshape-to-robot, one `config_mjcf_*.json` per model) and scenes; `add_backlash.py` generates
+  the backlash variants. Meshes in `assets/meshes/`.
 - `src/mjlab_microduck/friction_dr_bam.py` — BAM actuator + friction DR + backlash encoder.
 - `src/mjlab_microduck/export.py` — the ONNX export (normalizer baked in) behind `uv run export`.
 - `src/mjlab_microduck/infer_policy.py` — `uv run infer`: CPU MuJoCo deployment rehearsal.
