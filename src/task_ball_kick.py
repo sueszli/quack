@@ -31,7 +31,6 @@
 # at the same relative strength.
 
 import math
-from copy import deepcopy
 
 # ── Kicking foot: "right" or "left" ───────────────────────────────────────────
 # Flips the ball spawn side and the support-foot (anti-hop) sensor. Everything
@@ -108,7 +107,6 @@ from mjlab.rl import RslRlModelCfg, RslRlOnPolicyRunnerCfg
 from mjlab.sensor import ContactMatch, ContactSensorCfg
 from mjlab.tasks.velocity import mdp
 from mjlab.tasks.velocity.velocity_env_cfg import make_velocity_env_cfg
-from mjlab.utils.noise import UniformNoiseCfg as Unoise
 
 from . import task_mdp as microduck_mdp
 from .robot import MICRODUCK_BALL_CFG, MICRODUCK_STANDUP_ROBOT_CFG
@@ -237,53 +235,7 @@ def make_microduck_ball_kick_env_cfg(play: bool = False, kick_foot: str | None =
     del cfg.observations["actor"].terms["height_scan"]
     del cfg.observations["critic"].terms["height_scan"]
 
-    gravity_term_name = "projected_gravity"
-    cfg.observations["actor"].terms[gravity_term_name] = deepcopy(cfg.observations["actor"].terms[gravity_term_name])
-    cfg.observations["actor"].terms["base_ang_vel"] = deepcopy(cfg.observations["actor"].terms["base_ang_vel"])
-
-    # IMU obs delay — match velocity's 2026-07 audit values.
-    cfg.observations["actor"].terms["base_ang_vel"].delay_min_lag = 0
-    cfg.observations["actor"].terms["base_ang_vel"].delay_max_lag = 1
-    cfg.observations["actor"].terms["base_ang_vel"].delay_update_period = 64
-    cfg.observations["actor"].terms[gravity_term_name].delay_min_lag = 0
-    cfg.observations["actor"].terms[gravity_term_name].delay_max_lag = 1
-    cfg.observations["actor"].terms[gravity_term_name].delay_update_period = 64
-
-    # Obs noise — matched to the velocity env.
-    cfg.observations["actor"].terms["base_ang_vel"].noise = Unoise(n_min=-0.03, n_max=0.03)
-    cfg.observations["actor"].terms[gravity_term_name].noise = Unoise(n_min=-0.01, n_max=0.01)
-    cfg.observations["actor"].terms["joint_pos"].noise = Unoise(n_min=-0.001, n_max=0.001)
-    cfg.observations["actor"].terms["joint_vel"].noise = Unoise(n_min=-0.25, n_max=0.25)
-
-    # IMU mounting-misalignment DR (obs-level, actor only).
-    if ENABLE_IMU_ORIENTATION_RANDOMIZATION:
-        av = cfg.observations["actor"].terms["base_ang_vel"]
-        av.func = microduck_mdp.base_ang_vel_imu_misaligned
-        av.params = {"max_angle_deg": IMU_ORIENTATION_RANDOMIZATION_ANGLE}
-        g = cfg.observations["actor"].terms[gravity_term_name]
-        g.func = microduck_mdp.projected_gravity_imu_misaligned
-        g.params = {"max_angle_deg": IMU_ORIENTATION_RANDOMIZATION_ANGLE}
-
-    # 1-ctrl-step lag on joint_vel (Dynamixel moving-average, see velocity env).
-    cfg.observations["actor"].terms["joint_vel"] = deepcopy(cfg.observations["actor"].terms["joint_vel"])
-    cfg.observations["actor"].terms["joint_vel"].delay_min_lag = 1
-    cfg.observations["actor"].terms["joint_vel"].delay_max_lag = 1
-    cfg.observations["actor"].terms["joint_vel"].delay_update_period = 0
-
-    # Deepcopy joint_pos/joint_vel per group so the encoder-bias `biased` flag
-    # below applies to the actor only.
-    passive_excluded = SceneEntityCfg("robot", joint_names=(r"^(?!passive_).*",))
-    for grp in ("actor", "critic"):
-        for term in ("joint_pos", "joint_vel"):
-            cfg.observations[grp].terms[term] = deepcopy(cfg.observations[grp].terms[term])
-            cfg.observations[grp].terms[term].params["asset_cfg"] = deepcopy(passive_excluded)
-
-    if ENABLE_ENCODER_BIAS:
-        cfg.events["encoder_bias"].params["bias_range"] = ENCODER_BIAS_RANGE
-        cfg.observations["actor"].terms["joint_pos"].params["biased"] = True
-        cfg.observations["critic"].terms["joint_pos"].params["biased"] = False
-    else:
-        cfg.events.pop("encoder_bias", None)
+    microduck_mdp.wire_sim2real_obs(cfg, imu_delay_max_lag=1, imu_misalignment_deg=IMU_ORIENTATION_RANDOMIZATION_ANGLE if ENABLE_IMU_ORIENTATION_RANDOMIZATION else None, encoder_bias_range=ENCODER_BIAS_RANGE if ENABLE_ENCODER_BIAS else None, sanitize_critic_sensors=False)
 
     # Command obs slots — unified layout parity: [twist(3), head(4), body(6)],
     # head/body zero-padded (no head/body pose control in this task).

@@ -26,7 +26,6 @@
 #   skating style.
 
 import math
-from copy import deepcopy
 
 # Symmetry — OFF: SYMMETRY_CFG's obs permutation is hardcoded for the old 51D
 # layout and breaks on the 61D obs (same situation as all other v1.5+ envs).
@@ -64,7 +63,6 @@ from mjlab.sensor import ContactMatch, ContactSensorCfg
 from mjlab.tasks.velocity import mdp
 from mjlab.tasks.velocity.mdp import UniformVelocityCommandCfg
 from mjlab.tasks.velocity.velocity_env_cfg import make_velocity_env_cfg
-from mjlab.utils.noise import UniformNoiseCfg as Unoise
 
 from . import task_mdp as microduck_mdp
 from .robot import MICRODUCK_WALK_ROLLERS_ROBOT_CFG
@@ -296,53 +294,7 @@ def make_microduck_velocity_rollers_env_cfg(play: bool = False) -> ManagerBasedR
 
     cfg.observations["critic"].terms["base_lin_vel"] = ObservationTermCfg(func=mdp.base_lin_vel, scale=1.0)
 
-    gravity_term_name = "projected_gravity"
-    cfg.observations["actor"].terms[gravity_term_name] = deepcopy(cfg.observations["actor"].terms[gravity_term_name])
-    cfg.observations["actor"].terms["base_ang_vel"] = deepcopy(cfg.observations["actor"].terms["base_ang_vel"])
-    # IMU delay 0-1 control steps (matches velocity: the real dxl IMU path is fast)
-    cfg.observations["actor"].terms["base_ang_vel"].delay_min_lag = 0
-    cfg.observations["actor"].terms["base_ang_vel"].delay_max_lag = 1
-    cfg.observations["actor"].terms["base_ang_vel"].delay_update_period = 64
-    cfg.observations["actor"].terms[gravity_term_name].delay_min_lag = 0
-    cfg.observations["actor"].terms[gravity_term_name].delay_max_lag = 1
-    cfg.observations["actor"].terms[gravity_term_name].delay_update_period = 64
-
-    # Observation noise — matched to the velocity env
-    cfg.observations["actor"].terms["base_ang_vel"].noise = Unoise(n_min=-0.03, n_max=0.03)
-    cfg.observations["actor"].terms[gravity_term_name].noise = Unoise(n_min=-0.01, n_max=0.01)
-    cfg.observations["actor"].terms["joint_pos"].noise = Unoise(n_min=-0.001, n_max=0.001)
-    cfg.observations["actor"].terms["joint_vel"].noise = Unoise(n_min=-0.25, n_max=0.25)
-
-    # IMU mounting-misalignment DR (obs-level, actor only — matches velocity)
-    if ENABLE_IMU_ORIENTATION_RANDOMIZATION:
-        av = cfg.observations["actor"].terms["base_ang_vel"]
-        av.func = microduck_mdp.base_ang_vel_imu_misaligned
-        av.params = {"max_angle_deg": IMU_ORIENTATION_RANDOMIZATION_ANGLE}
-        g = cfg.observations["actor"].terms[gravity_term_name]
-        g.func = microduck_mdp.projected_gravity_imu_misaligned
-        g.params = {"max_angle_deg": IMU_ORIENTATION_RANDOMIZATION_ANGLE}
-
-    # 1-ctrl-step lag on joint_vel (Dynamixel present_velocity moving average)
-    cfg.observations["actor"].terms["joint_vel"] = deepcopy(cfg.observations["actor"].terms["joint_vel"])
-    cfg.observations["actor"].terms["joint_vel"].delay_min_lag = 1
-    cfg.observations["actor"].terms["joint_vel"].delay_max_lag = 1
-    cfg.observations["actor"].terms["joint_vel"].delay_update_period = 0
-
-    # Exclude the passive wheel joints from joint_pos/vel obs (obs dim 14, matches
-    # the action space). Deepcopy per group so the encoder-bias `biased` flag
-    # below applies to the actor only.
-    passive_excluded = SceneEntityCfg("robot", joint_names=(r"^(?!passive_).*",))
-    for grp in ("actor", "critic"):
-        for term in ("joint_pos", "joint_vel"):
-            cfg.observations[grp].terms[term] = deepcopy(cfg.observations[grp].terms[term])
-            cfg.observations[grp].terms[term].params["asset_cfg"] = deepcopy(passive_excluded)
-
-    if ENABLE_ENCODER_BIAS:
-        cfg.events["encoder_bias"].params["bias_range"] = ENCODER_BIAS_RANGE
-        cfg.observations["actor"].terms["joint_pos"].params["biased"] = True
-        cfg.observations["critic"].terms["joint_pos"].params["biased"] = False
-    else:
-        cfg.events.pop("encoder_bias", None)
+    microduck_mdp.wire_sim2real_obs(cfg, imu_delay_max_lag=1, imu_misalignment_deg=IMU_ORIENTATION_RANDOMIZATION_ANGLE if ENABLE_IMU_ORIENTATION_RANDOMIZATION else None, encoder_bias_range=ENCODER_BIAS_RANGE if ENABLE_ENCODER_BIAS else None, sanitize_critic_sensors=False)
 
     # Privileged wheel speeds for the critic (4 wheels in the new model).
     wheel_cfg = SceneEntityCfg("robot", joint_names=(r"^passive_.*wheel",))

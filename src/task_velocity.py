@@ -94,7 +94,6 @@ from mjlab.tasks.velocity import mdp
 from mjlab.tasks.velocity.mdp import UniformVelocityCommandCfg
 from mjlab.tasks.velocity.velocity_env_cfg import make_velocity_env_cfg
 from mjlab.terrains.terrain_generator import TerrainGeneratorCfg
-from mjlab.utils.noise import UniformNoiseCfg as Unoise
 
 from . import task_mdp as microduck_mdp
 from .robot import MICRODUCK_WALK_ROBOT_CFG
@@ -413,75 +412,7 @@ def make_microduck_velocity_env_cfg(play: bool = False, rough: bool = False) -> 
         del cfg.observations["actor"].terms["projected_gravity"]
         cfg.observations["actor"].terms["raw_accelerometer"] = ObservationTermCfg(func=microduck_mdp.raw_accelerometer, scale=1.0)
 
-    cfg.observations["actor"].terms[gravity_term_name] = deepcopy(cfg.observations["actor"].terms[gravity_term_name])
-    cfg.observations["actor"].terms["base_ang_vel"] = deepcopy(cfg.observations["actor"].terms["base_ang_vel"])
-
-    cfg.observations["actor"].terms["base_ang_vel"].delay_min_lag = 0
-    cfg.observations["actor"].terms["base_ang_vel"].delay_max_lag = 1  # was 3 (=60 ms worst case); real dxl IMU path is fast — ±20 ms envelope (2026-07 audit)
-    cfg.observations["actor"].terms["base_ang_vel"].delay_update_period = 64
-
-    cfg.observations["actor"].terms[gravity_term_name].delay_min_lag = 0
-    cfg.observations["actor"].terms[gravity_term_name].delay_max_lag = 1  # was 3 (=60 ms worst case); real dxl IMU path is fast — ±20 ms envelope (2026-07 audit)
-    cfg.observations["actor"].terms[gravity_term_name].delay_update_period = 64
-
-    # The critic's sensor-derived terms are the one obs path `nan_state` cannot
-    # protect (it checks joint + root state; these read raycast/contact sensor
-    # data, which MuJoCo can return non-finite for while the state is still
-    # clean). A single NaN here kills the whole run via rsl_rl's check_nan —
-    # that is the 2026-08-21 Velocity2-Rough-Backlash crash. Critic-only, so
-    # sanitizing costs the policy nothing.
-    for _term, _safe in (("foot_contact_forces", microduck_mdp.foot_contact_forces_safe), ("foot_height", microduck_mdp.foot_height_safe), ("foot_air_time", microduck_mdp.foot_air_time_safe)):
-        if _term in cfg.observations["critic"].terms:
-            cfg.observations["critic"].terms[_term].func = _safe
-
-    # Observation noise configuration (edit these values as needed)
-    cfg.observations["actor"].terms["base_ang_vel"].noise = Unoise(n_min=-0.03, n_max=0.03)  # was 0.2
-    cfg.observations["actor"].terms[gravity_term_name].noise = Unoise(n_min=-0.01, n_max=0.01)  # was 0.15
-    cfg.observations["actor"].terms["joint_pos"].noise = Unoise(n_min=-0.001, n_max=0.001)  # was 0.05
-    cfg.observations["actor"].terms["joint_vel"].noise = Unoise(n_min=-0.25, n_max=0.25)  # was 2.0
-
-    # IMU mounting-misalignment DR (per-env constant rotation of the IMU-derived
-    # observations). Applied to the ACTOR only (the policy sees a slightly rotated
-    # IMU frame, like a real mounting error); the critic keeps the true values.
-    if ENABLE_IMU_ORIENTATION_RANDOMIZATION:
-        av = cfg.observations["actor"].terms["base_ang_vel"]
-        av.func = microduck_mdp.base_ang_vel_imu_misaligned
-        av.params = {"max_angle_deg": IMU_ORIENTATION_RANDOMIZATION_ANGLE}
-        if USE_PROJECTED_GRAVITY:
-            g = cfg.observations["actor"].terms[gravity_term_name]
-            g.func = microduck_mdp.projected_gravity_imu_misaligned
-            g.params = {"max_angle_deg": IMU_ORIENTATION_RANDOMIZATION_ANGLE}
-
-    # 1-ctrl-step lag on joint_vel: the Dynamixel firmware computes
-    # present_velocity via a moving-average over the previous position-sample
-    # window, so the value the policy actually reads is ~1 control period old.
-    # Matches reality and stops the policy relying on instantaneous qdot feedback.
-    cfg.observations["actor"].terms["joint_vel"] = deepcopy(cfg.observations["actor"].terms["joint_vel"])
-    cfg.observations["actor"].terms["joint_vel"].delay_min_lag = 1
-    cfg.observations["actor"].terms["joint_vel"].delay_max_lag = 1
-    cfg.observations["actor"].terms["joint_vel"].delay_update_period = 0
-
-    # Exclude passive_* joints (jaw linkage) from joint_pos/vel obs so the
-    # observation dim matches the action dim (14) instead of the raw articulation (16).
-    # Deepcopy each joint_pos/joint_vel term first — actor and critic share the
-    # same term objects/params dicts from the base template, so mutating one would
-    # leak into the other (e.g. the encoder-bias `biased` flag below).
-    passive_excluded = SceneEntityCfg("robot", joint_names=(r"^(?!passive_).*",))
-    for grp in ("actor", "critic"):
-        for term in ("joint_pos", "joint_vel"):
-            cfg.observations[grp].terms[term] = deepcopy(cfg.observations[grp].terms[term])
-            cfg.observations[grp].terms[term].params["asset_cfg"] = deepcopy(passive_excluded)
-
-    # Encoder-bias DR: the base template samples a per-env constant joint-encoder
-    # offset (startup event "encoder_bias"), but joint_pos_rel ignores it unless
-    # biased=True. Feed the biased joint pos to the ACTOR only (what the real
-    # encoders report); the critic keeps the true joint pos (privileged).
-    if ENABLE_ENCODER_BIAS:
-        cfg.events["encoder_bias"].params["bias_range"] = ENCODER_BIAS_RANGE
-        cfg.observations["actor"].terms["joint_pos"].params["biased"] = True
-        cfg.observations["critic"].terms["joint_pos"].params["biased"] = False
-    else:
-        cfg.events.pop("encoder_bias", None)
+    microduck_mdp.wire_sim2real_obs(cfg, gravity_term_name=gravity_term_name, imu_delay_max_lag=1, imu_misalignment_deg=IMU_ORIENTATION_RANDOMIZATION_ANGLE if ENABLE_IMU_ORIENTATION_RANDOMIZATION else None, misalign_gravity=USE_PROJECTED_GRAVITY, encoder_bias_range=ENCODER_BIAS_RANGE if ENABLE_ENCODER_BIAS else None)
 
     # Commands — deepcopy to avoid shared-state corruption from other env cfgs
     # (make_velocity_env_cfg() returns objects with shared mutable references;
