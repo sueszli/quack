@@ -84,13 +84,13 @@ from mjlab.tasks.velocity.mdp import UniformVelocityCommandCfg
 from mjlab.tasks.velocity.velocity_env_cfg import make_velocity_env_cfg
 from mjlab.utils.noise import UniformNoiseCfg as Unoise
 
-from mjlab_microduck.robot.microduck_constants import MICRODUCK_GROUND_PICK_ROBOT_CFG
-from mjlab_microduck.tasks import mdp as microduck_mdp
-from mjlab_microduck.tasks.microduck_velocity_env_cfg import (
+from mjlab_microduck.microduck_constants import MICRODUCK_GROUND_PICK_ROBOT_CFG
+from mjlab_microduck import mdp as microduck_mdp
+from mjlab_microduck.microduck_velocity_env_cfg import (
     MICRODUCK_ROUGH_TERRAINS_CFG,
     HEAD_BODY_NAMES,
 )
-from mjlab_microduck.tasks.symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
+from mjlab_microduck.symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
 
 
 # ── Profil de phase SEGMENTÉ (durées indépendantes) ──────────────────────────

@@ -1,26 +1,21 @@
-"""Microduck SPIN task — rotation rapide sur place, sur rollers.
+"""Microduck roller crouch-glide task.
 
-Geste cyclique déclenché au bouton A via le slot --ground-pick du runtime :
-~1 tour anti-horaire à ~3 rad/s puis arrêt propre debout.
+Geste one-shot déclenché au bouton A via le slot --ground-pick du runtime :
+le robot s'accroupit et glisse sur son élan (palier ~1 s), puis se relève et
+rend la main à la policy roller.
 
 Hybride :
   - physique / robot roller  ← microduck_velocity_rollers_env_cfg.py
-  - machinerie phase cyclique ← microduck_roller_crouch_env_cfg.py
+  - machinerie phase one-shot ← microduck_ground_pick_env_cfg.py
     (commande GroundPickPhaseCommand : [cos(2πφ), sin(2πφ), 0], période 4 s)
 
-Différence de fond avec le crouch : la phase pilote une VITESSE DE LACET cible
-(objectif de résultat) et non une pose articulaire. Deux amorces décroissantes
-poussent vers le roulement différentiel — le seul mécanisme physique certain sur
-4 roues passives : patin gauche vers l'arrière, patin droit vers l'avant.
-
-Obs 61D unifié → interchangeable au runtime avec roller / ground_pick / crouch.
-Voir docs/superpowers/specs/2026-08-04-spin-env-design.md.
+Cible de hauteur « en trapèze » (haut→bas→palier 1 s→haut) via
+crouch_glide_height_by_phase. Obs 61D unifié → interchangeable au runtime.
 """
 
 import math
 from copy import deepcopy
 
-# La symétrie G/D transformerait un spin à gauche en spin à droite : interdit ici.
 ENABLE_SYMMETRY = False
 
 # DR — repris du roller env
@@ -44,9 +39,55 @@ VELOCITY_PUSH_RANGE              = (-0.2, 0.2)
 IMU_ORIENTATION_RANDOMIZATION_ANGLE = 6.0
 ENCODER_BIAS_RANGE               = (-0.015, 0.015)
 
-# Le bouton peut être pressé à l'arrêt OU en roulement lent : la policy apprend
-# à tuer l'élan résiduel avant/pendant le lancement de la rotation.
-ENTRY_VELOCITY_X = (0.0, 0.3)
+ENTRY_VELOCITY_X   = (0.2, 0.5)  # m/s : le robot arrive en roulant
+
+# Timing du cycle (phase), 4 segments sur une période de 5 s :
+#   descente     [0, DESCENT_END]        = 0.10*5 = 0.5 s  (se baisser)
+#   bas/accroupi [DESCENT_END, HOLD_END] = 0.40*5 = 2.0 s  (glisse accroupie)
+#   remontée     [HOLD_END, RISE_END]    = 0.10*5 = 0.5 s  (se lever)
+#   haut/debout  [RISE_END, 1.0]         = 0.40*5 = 2.0 s  (repos debout)
+# NB: la période DOIT matcher --ground-pick-period au déploiement (5.0).
+CROUCH_PERIOD = 5.0
+DESCENT_END   = 0.10
+HOLD_END      = 0.50
+RISE_END      = 0.60
+
+# Pose ACCROUPI cible (rad, par NOM d'articulation) — composée dans
+# a since-removed pose-editor script. La reward interpole DEBOUT(HOME) <-> cette pose
+# selon la phase. Résolution par nom -> robuste aux roues intercalées.
+# Pose DEBOUT (départ/fin du trick). Défaut = HOME du sim (convention validée
+# égale à la lecture robot). Remplace ces valeurs par une lecture read_pose.py
+# du robot debout si tu veux une autre station debout.
+# ⚠️ au déploiement, à la fin du trick le runtime rend la main à la policy roller
+# qui repart de HOME — garde STAND_POSE proche de HOME pour un retour propre.
+STAND_POSE = {
+    # Lue sur le VRAI robot (read_pose.py) — station debout voulue pour le trick.
+    "left_hip_yaw": -0.0476, "left_hip_roll": -0.0629, "left_hip_pitch": -0.2869,
+    "left_knee": 0.9618, "left_ankle": 1.1674,
+    "neck_pitch": 0.6029, "head_pitch": 0.543, "head_yaw": -0.069, "head_roll": -0.0414,
+    "right_hip_yaw": -0.0337, "right_hip_roll": -0.0061, "right_hip_pitch": 0.1534,
+    "right_knee": -0.9725, "right_ankle": -1.0646,
+}
+
+CROUCH_POSE = {
+    # Lue sur le VRAI robot (Dynamixel XL330, read_pose.py) — pose tenable.
+    "left_hip_yaw": -0.0184,
+    "left_hip_roll": 0.0307,
+    "left_hip_pitch": 1.4082,
+    "left_knee": 1.5248,
+    "left_ankle": -0.0675,
+    "neck_pitch": 1.0937,
+    "head_pitch": 1.2149,
+    "head_yaw": -0.0184,
+    "head_roll": -0.0368,
+    "right_hip_yaw": 0.0184,
+    "right_hip_roll": -0.0169,
+    "right_hip_pitch": -1.4757,
+    "right_knee": -1.5907,
+    "right_ankle": 0.0568,
+}
+CROUCH_POSE_STD = 0.4  # tolérance gaussienne par joint (rad)
+CROUCH_LEAN_PITCH = 0.08  # léger penché avant pendant l'accroupi (rad ≈ 4.6°)
 
 from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.envs.mdp import dr
@@ -66,26 +107,14 @@ from mjlab.tasks.velocity.mdp import UniformVelocityCommandCfg
 from mjlab.tasks.velocity.velocity_env_cfg import make_velocity_env_cfg
 from mjlab.utils.noise import UniformNoiseCfg as Unoise
 
-from mjlab_microduck.robot.microduck_constants import MICRODUCK_WALK_ROLLERS_ROBOT_CFG
-from mjlab_microduck.tasks import mdp as microduck_mdp
-from mjlab_microduck.tasks.microduck_velocity_env_cfg import HEAD_BODY_NAMES
-from mjlab_microduck.tasks.symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
-
-# Enveloppe de phase : constantes canoniques définies dans mdp.py.
-SPIN_PERIOD = microduck_mdp.SPIN_PERIOD
-_ENVELOPE = {
-    "rate_max": microduck_mdp.SPIN_RATE_MAX,
-    "accel_end": microduck_mdp.SPIN_ACCEL_END,
-    "hold_end": microduck_mdp.SPIN_HOLD_END,
-    "brake_end": microduck_mdp.SPIN_BRAKE_END,
-}
-# Nuque/tête tenues près du neutre SAUF head_yaw, laissé libre : il peut servir
-# de volant d'inertie pour lancer la rotation.
-NECK_PATTERN_NO_YAW = r"^(neck_pitch|head_pitch|head_roll)$"
+from mjlab_microduck.microduck_constants import MICRODUCK_WALK_ROLLERS_ROBOT_CFG
+from mjlab_microduck import mdp as microduck_mdp
+from mjlab_microduck.microduck_velocity_env_cfg import HEAD_BODY_NAMES
+from mjlab_microduck.symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
 
 
-def make_microduck_spin_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
-    """Env spin sur rollers, piloté par la phase du slot ground-pick."""
+def make_microduck_roller_crouch_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
+    """Env crouch-glide sur rollers, piloté par la phase du slot ground-pick."""
 
     feet_ground_cfg = ContactSensorCfg(
         name="feet_ground_contact",
@@ -119,11 +148,7 @@ def make_microduck_spin_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     joint_pos_action.scale = 1.0
 
     # === REWARDS ===
-    # ⚠️ angular_momentum n'est PAS gardée : elle pénalise la norme 3D du moment
-    # angulaire, donc elle combattrait directement le spin. body_ang_vel, elle,
-    # ne pénalise que x/y (« Don't penalize z-angular velocity » dans mjlab) →
-    # gardée, elle mate le ballant roulis/tangage sans gêner la rotation.
-    keep = {"upright", "body_ang_vel", "action_rate_l2"}
+    keep = {"upright", "body_ang_vel", "angular_momentum", "action_rate_l2"}
     for name in list(cfg.rewards.keys()):
         if name not in keep:
             del cfg.rewards[name]
@@ -132,68 +157,54 @@ def make_microduck_spin_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     cfg.rewards["upright"].weight = 2.0
     cfg.rewards["body_ang_vel"].params["asset_cfg"].body_names = ("trunk_base",)
     cfg.rewards["body_ang_vel"].weight = -0.05
+    cfg.rewards["angular_momentum"].weight = -0.02
     cfg.rewards["action_rate_l2"].weight = -1.0
 
-    # Objectif principal : suivre la vitesse de lacet cible ω*(φ) (trapèze).
-    cfg.rewards["spin_rate_track"] = RewardTermCfg(
-        func=microduck_mdp.spin_rate_track,
+    # Reward principale : POSE interpolée par la phase (DEBOUT <-> ACCROUPI).
+    # Directive : dit au robot la configuration articulaire exacte à chaque
+    # instant. « Se relever » (phase->1, cible = HOME) est récompensé EXACTEMENT
+    # comme « s'accroupir » (palier, cible = CROUCH_POSE) — symétrique.
+    _pose_params = {
+        "command_name": "twist",
+        "crouch_pose": CROUCH_POSE,
+        "stand_pose": STAND_POSE,
+        "descent_end": DESCENT_END,
+        "hold_end": HOLD_END,
+        "rise_end": RISE_END,
+    }
+    cfg.rewards["crouch_glide_pose"] = RewardTermCfg(
+        func=microduck_mdp.crouch_glide_pose_by_phase,
         weight=6.0,
-        params={"command_name": "twist", "std": 1.5, **_ENVELOPE},
+        params={**_pose_params, "std": CROUCH_POSE_STD},
     )
-    # Bootstrap L1 : gradient constant quand la gaussienne sature loin de la cible.
-    cfg.rewards["spin_rate_l1"] = RewardTermCfg(
-        func=microduck_mdp.spin_rate_l1,
-        weight=0.5,
-        params={"command_name": "twist", **_ENVELOPE},
+    # Bootstrap L1 : gradient constant vers la cible même quand la gaussienne
+    # sature loin de la pose.
+    cfg.rewards["crouch_glide_pose_l1"] = RewardTermCfg(
+        func=microduck_mdp.crouch_glide_pose_l1,
+        weight=2.0,
+        params=_pose_params,
     )
-    # Tourner SUR PLACE, et tuer l'élan d'entrée. Renforcé -1.0 -> -3.0 : au run de
-    # calibrage à 500 it. le tronc translatait à ~0.35 m/s (~ω·demi-voie), signature
-    # d'un pivot sur un seul patin plutôt qu'un spin centré sur le corps — c'est le
-    # seul terme qui distingue un spin centré d'un pivot excentré.
-    # Atténué pendant la rampe de lancement [0, ACCEL_END) : c'est le moment où le
-    # robot doit pousser au sol pour s'injecter du moment angulaire, et où l'élan
-    # d'entrée (jusqu'à 0.3 m/s) doit être CONVERTI en rotation — le facturer plein
-    # tarif là s'opposerait au lancement. Plein tarif sur régime/freinage/repos.
-    cfg.rewards["spin_stay_in_place"] = RewardTermCfg(
-        func=microduck_mdp.spin_stay_in_place,
-        weight=-3.0,
-        params={
-            "command_name": "twist",
-            "launch_scale": microduck_mdp.SPIN_LAUNCH_DRIFT_SCALE,
-            "accel_end": microduck_mdp.SPIN_ACCEL_END,
-        },
+    # Conserver l'élan (ne pas freiner) — indépendant de la commande.
+    cfg.rewards["forward_speed"] = RewardTermCfg(
+        func=microduck_mdp.forward_speed_reward,
+        weight=1.0,
+        params={"vel_ref": 0.2},
     )
-    # Amorce 1 : tourner EN ROULEMENT (patins en sens opposés), pas en patinage.
-    cfg.rewards["spin_wheel_differential"] = RewardTermCfg(
-        func=microduck_mdp.spin_wheel_differential,
+    # Léger penché avant pendant l'accroupi -> contre la bascule arrière observée
+    # sur le vrai robot lors de la descente rapide. Gaté par le blend (crouch only).
+    cfg.rewards["crouch_forward_lean"] = RewardTermCfg(
+        func=microduck_mdp.crouch_forward_lean,
         weight=1.0,
         params={
             "command_name": "twist",
-            "omega_scale": microduck_mdp.SPIN_WHEEL_OMEGA_SCALE,
-            **_ENVELOPE,
+            "target_pitch": CROUCH_LEAN_PITCH,
+            "std": 0.1,
+            "descent_end": DESCENT_END,
+            "hold_end": HOLD_END,
+            "rise_end": RISE_END,
         },
     )
-    # Amorce 2 : ciseau des jambes (décroît par curriculum, voir plus bas).
-    cfg.rewards["leg_antisymmetry"] = RewardTermCfg(
-        func=microduck_mdp.leg_antisymmetry,
-        weight=1.0,
-        params={
-            "command_name": "twist",
-            "joint_bases": ("hip_pitch", "knee"),
-            **_ENVELOPE,
-        },
-    )
-    # Les deux lames au sol pendant le spin (pas de vrille en l'air).
-    cfg.rewards["spin_grounded"] = RewardTermCfg(
-        func=microduck_mdp.spin_grounded,
-        weight=0.5,
-        params={
-            "sensor_name": "feet_ground_contact",
-            "command_name": "twist",
-            **_ENVELOPE,
-        },
-    )
-    # Stabilité / sim2real
+    # Stabilité de glisse
     cfg.rewards["feet_flat"] = RewardTermCfg(
         func=microduck_mdp.feet_flat_penalty,
         weight=-2.0,
@@ -209,11 +220,6 @@ def make_microduck_spin_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     )
     cfg.rewards["neck_action_rate_l2"] = RewardTermCfg(
         func=microduck_mdp.neck_action_rate_l2, weight=-0.5
-    )
-    cfg.rewards["neck_joint_pos_l2"] = RewardTermCfg(
-        func=microduck_mdp.neck_joint_pos_l2,
-        weight=-0.2,
-        params={"pattern": NECK_PATTERN_NO_YAW},
     )
     cfg.rewards["joint_torques_l2"] = RewardTermCfg(
         func=microduck_mdp.joint_torques_l2, weight=-1e-3
@@ -242,10 +248,11 @@ def make_microduck_spin_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
         )
 
     cfg.events["reset_base"].params["pose_range"]["z"] = (0.1335, 0.1435)
-    # Élan d'entrée : injecté via reset_root_state_uniform (état par défaut PROPRE
-    # + range), et NON via push_by_setting_velocity en mode reset, qui additionne à
-    # une vitesse racine potentiellement divergente et fait exploser le free-joint
-    # de la base -> NaN. Régression connue du roller_crouch.
+    # Vitesse d'entrée : le robot démarre en roulant vers l'avant (élan à conserver
+    # pendant l'accroupi). Injectée via reset_root_state_uniform (état par défaut
+    # PROPRE + range), et NON via push_by_setting_velocity en mode reset qui, lui,
+    # additionne à la vitesse racine courante (potentiellement divergente) et fait
+    # exploser le free-joint de la base -> NaN. Voir le commentaire ENTRY_VELOCITY_X.
     cfg.events["reset_base"].params["velocity_range"] = {"x": ENTRY_VELOCITY_X}
 
     if ENABLE_WHEEL_FRICTION_RANDOMIZATION:
@@ -253,7 +260,7 @@ def make_microduck_spin_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
             func=dr.dof_frictionloss,
             mode="reset",
             params={
-                "asset_cfg": SceneEntityCfg("robot", joint_names=(r"^passive_.*",)),
+                "asset_cfg": SceneEntityCfg("robot", joint_names=(r"^passive_.*wheel",)),
                 "operation": "abs",
                 "ranges": (0.000, 0.000),
             },
@@ -358,7 +365,7 @@ def make_microduck_spin_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     else:
         cfg.events.pop("encoder_bias", None)
 
-    wheel_cfg = SceneEntityCfg("robot", joint_names=(r"^passive_.*",))
+    wheel_cfg = SceneEntityCfg("robot", joint_names=(r"^passive_.*wheel",))
     cfg.observations["critic"].terms["wheel_vel"] = ObservationTermCfg(
         func=mdp.joint_vel_rel, scale=1.0, params={"asset_cfg": wheel_cfg},
     )
@@ -371,18 +378,18 @@ def make_microduck_spin_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
             func=microduck_mdp.zero_command_padding, params={"dim": 6},
         )
 
-    # === COMMAND: phase (comme ground_pick / roller_crouch) ===
+    # === COMMAND: phase (comme ground_pick) ===
     command: UniformVelocityCommandCfg = cfg.commands["twist"]
     command.rel_standing_envs = 0.0
     command.rel_heading_envs = 0.0
-    # period=4.0 = défaut de --ground-pick-period (rien à passer au runtime) ;
-    # randomize_phase=False -> chaque épisode démarre debout à phase 0, comme le
-    # bouton au déploiement. Épisode 20 s = 5 cycles complets du geste.
+    # period=CROUCH_PERIOD (descente plus lente) ; randomize_phase=False -> chaque
+    # épisode démarre debout (phase 0), comme au déploiement (le bouton lance le
+    # cycle à phase 0). Évite d'apprendre "reste bas" depuis des départs déjà bas.
     cfg.commands["twist"] = microduck_mdp.GroundPickPhaseCommandCfg(
         **{
             **vars(command),
             "class_type": microduck_mdp.GroundPickPhaseCommand,
-            "period": SPIN_PERIOD,
+            "period": CROUCH_PERIOD,
             "randomize_phase": False,
         }
     )
@@ -401,19 +408,6 @@ def make_microduck_spin_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
                 {"step": 0, "weight": -0.5},
                 {"step": 250 * 24, "weight": -0.8},
                 {"step": 500 * 24, "weight": -1.0},
-            ],
-        },
-    )
-    # L'amorce ciseau s'efface : elle lance le bon mécanisme puis laisse la policy
-    # affiner son propre geste (fréquence de pompage libre).
-    cfg.curriculum["leg_antisym_weight"] = CurriculumTermCfg(
-        func=microduck_mdp.reward_weight,
-        params={
-            "reward_name": "leg_antisymmetry",
-            "weight_stages": [
-                {"step": 0, "weight": 1.0},
-                {"step": 1500 * 24, "weight": 0.5},
-                {"step": 3000 * 24, "weight": 0.25},
             ],
         },
     )
@@ -445,7 +439,7 @@ def make_microduck_spin_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     return cfg
 
 
-MicroduckSpinRlCfg = RslRlOnPolicyRunnerCfg(
+MicroduckRollerCrouchRlCfg = RslRlOnPolicyRunnerCfg(
     actor=RslRlModelCfg(
         hidden_dims=(512, 256, 128),
         activation="elu",
@@ -477,8 +471,8 @@ MicroduckSpinRlCfg = RslRlOnPolicyRunnerCfg(
         symmetry_cfg=SYMMETRY_CFG if ENABLE_SYMMETRY else None,
     ),
     wandb_project="mjlab_microduck",
-    experiment_name="spin",
-    run_name="spin",
+    experiment_name="roller_crouch",
+    run_name="roller_crouch",
     save_interval=250,
     num_steps_per_env=24,
     max_iterations=8_000,

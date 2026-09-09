@@ -1,7 +1,7 @@
-from mjlab_microduck.tasks.microduck_roller_crouch_env_cfg import (
+from mjlab_microduck.microduck_roller_crouch_env_cfg import (
     make_microduck_roller_crouch_env_cfg,
 )
-from mjlab_microduck.tasks import mdp as microduck_mdp
+from mjlab_microduck import mdp as microduck_mdp
 
 
 def test_cfg_uses_phase_command():

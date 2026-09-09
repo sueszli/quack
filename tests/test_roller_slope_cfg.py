@@ -1,7 +1,7 @@
-from mjlab_microduck.tasks.microduck_roller_slope_env_cfg import (
+from mjlab_microduck.microduck_roller_slope_env_cfg import (
     make_microduck_roller_slope_env_cfg,
 )
-from mjlab_microduck.tasks.slope_terrain import FlatRampTerrainCfg
+from mjlab_microduck.slope_terrain import FlatRampTerrainCfg
 
 
 def test_terrain_is_flat_ramp_generator():
