@@ -3,35 +3,31 @@ from src.task_mdp import GroundPickPhaseCommand
 
 
 def test_ground_pick_cfg_task_space_rewards():
-    """Task-space objective: mouth near the floor (without touching) + oriented."""
+    """Task-space objective: mouth near the floor, oriented down, not touching."""
     cfg = make_microduck_ground_pick_env_cfg()
     r = cfg.rewards
-    # mouth->floor proximity (pulls downward)
     assert "mouth_ground_proximity" in r
     assert r["mouth_ground_proximity"].weight == 3.0
     assert r["mouth_ground_proximity"].params["target_height"] == 0.0
-    # mouth orientation facing down
     assert "mouth_perpendicular_to_ground" in r
     assert r["mouth_perpendicular_to_ground"].weight == 2.0
-    # no-touch: strong contact penalty + low threshold
     assert "head_impact_penalty" in r
     assert r["head_impact_penalty"].weight == -2.0
     assert r["head_impact_penalty"].params["threshold"] == 1.0
-    # feet on the floor AND flat (anti-tipping on the ankle)
+    # Flat feet as well as grounded: the ankle would otherwise tip.
     assert "feet_grounded" in r and r["feet_grounded"].weight == 3.0
     assert "feet_flat" in r and r["feet_flat"].weight == -2.0
-    # return to standing + help getting up (upright gated on the rise)
     assert "ground_pick_return_pose_legs" in r
     assert "ground_pick_return_pose_neck" in r
     assert "return_upright" in r and r["return_upright"].weight == 4.0
-    # no more interpolated-pose approach
+    # The interpolated-pose approach is retired: the policy camped at waypoints.
     assert "phase_pose_track_head" not in r
     assert "phase_pose_track_legs" not in r
 
 
 def test_ground_pick_mouth_payload_wired():
     cfg = make_microduck_ground_pick_env_cfg()
-    # application hook (weight 0) + payload sampling event
+    # Weight 0: the term exists only to apply the sampled payload force.
     assert "mouth_payload_force" in cfg.rewards
     assert cfg.rewards["mouth_payload_force"].weight == 0.0
     assert "sample_mouth_payload" in cfg.events

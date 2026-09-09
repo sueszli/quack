@@ -32,30 +32,26 @@ def test_flat_ramp_builds_geoms_and_origin_on_flat():
     cfg.size = (15.0, 4.0)  # normally set by the generator
     spec = _empty_terrain_spec()
     out = cfg.function(difficulty=0.5, spec=spec, rng=np.random.default_rng(0))
-    # three geometries: start flat + ramp + runout flat
-    assert len(out.geometries) == 3
-    # origin ON the ramp (beyond the flat), so x > flat_length and z < 0
+    assert len(out.geometries) == 3  # start flat + ramp + runout flat
+    # The spawn sits ON the ramp, beyond the flat.
     assert out.origin[0] == cfg.flat_length + cfg.spawn_on_ramp
     assert out.origin[2] < 0.0
-    # z = inclined surface at spawn_on_ramp from the edge (drop = d * tan(angle))
     angle = ramp_angle_by_difficulty(0.5, cfg.deg_min, cfg.deg_max)
     assert abs(out.origin[2] - (-cfg.spawn_on_ramp * math.tan(angle))) < 1e-9
 
 
 def test_flat_ramp_steeper_at_higher_difficulty():
-    # at higher difficulty, the end of the ramp goes further down
     cfg = FlatRampTerrainCfg()
     cfg.size = (15.0, 4.0)
     easy = cfg.function(0.0, _empty_terrain_spec(), np.random.default_rng(0))
     hard = cfg.function(1.0, _empty_terrain_spec(), np.random.default_rng(0))
-    # the ramp (2nd geometry) is lower (more negative z center) at hard difficulty
-    # (same rng -> same sampled length -> only the slope changes)
+    # Same rng -> same sampled length, so only the slope changes.
     assert hard.geometries[1].geom.pos[2] < easy.geometries[1].geom.pos[2]
 
 
 def test_ramp_joins_flat_platform_no_gap():
-    # the top of the ramp must touch the edge of the flat platform (x=flat_length):
-    # ramp center offset by -(t/2)*sin(angle) in x.
+    # The ramp top must touch the platform edge at x=flat_length, which offsets
+    # the ramp center by -(thickness/2)*sin(angle) in x.
     cfg = FlatRampTerrainCfg()
     cfg.size = (15.0, 4.0)
     out = cfg.function(0.5, _empty_terrain_spec(), np.random.default_rng(0))
@@ -68,22 +64,18 @@ def test_ramp_joins_flat_platform_no_gap():
 
 
 def test_flat_ramp_runout_at_ramp_bottom():
-    # the runout flat (3rd geometry) is at the level of the ramp bottom (z<0),
-    # and its surface is flat (unrotated box: identity quat).
     cfg = FlatRampTerrainCfg()
     cfg.size = (15.0, 4.0)
     out = cfg.function(1.0, _empty_terrain_spec(), np.random.default_rng(0))
     runout = out.geometries[2].geom
     assert runout.pos[2] < 0.0  # dropped below the start flat
-    # identity quaternion (flat, not inclined)
-    assert math.isclose(runout.quat[0], 1.0, abs_tol=1e-9)
+    assert math.isclose(runout.quat[0], 1.0, abs_tol=1e-9)  # flat, not inclined
 
 
 def test_ramp_length_within_range():
     cfg = FlatRampTerrainCfg(ramp_length_range=(3.0, 8.0))
     cfg.size = (15.0, 4.0)
-    # ramp surface = ramp_length / cos(angle); at difficulty 0, angle=2°,
-    # so surf_len ~= ramp_length. Checked over several draws.
+    # The ramp surface is ramp_length / cos(angle), and angle=2° at difficulty 0.
     for seed in range(20):
         out = cfg.function(0.0, _empty_terrain_spec(), np.random.default_rng(seed))
         surf_half = out.geometries[1].geom.size[0]

@@ -1,7 +1,6 @@
-"""robot_state_is_nan must catch a non-finite state anywhere (joints OR base
-OR wheels), not only in joint_pos — otherwise a free joint diverging to NaN
-escapes the reset and corrupts the critic obs (base_lin_vel/wheel_vel), which kills
-training via rsl_rl's global check_nan.
+"""robot_state_is_nan must catch a non-finite state anywhere, not only in
+joint_pos: a free joint diverging to NaN otherwise escapes the reset and corrupts
+the critic obs, which kills training via rsl_rl's check_nan.
 """
 
 import torch
@@ -38,7 +37,7 @@ class _Env:
 
 
 def test_catches_base_linear_velocity_nan():
-    # env 1: NaN base velocity (diverged free joint) — joint_pos stays finite.
+    # Diverged free joint: joint_pos stays finite.
     d = _Data(3)
     d.root_link_lin_vel_w[1, 0] = float("nan")
     out = robot_state_is_nan(_Env(d))
@@ -46,7 +45,7 @@ def test_catches_base_linear_velocity_nan():
 
 
 def test_catches_base_velocity_inf():
-    # inf in the base angular velocity (before it becomes NaN).
+    # inf precedes NaN.
     d = _Data(2)
     d.root_link_ang_vel_w[0, 2] = float("inf")
     out = robot_state_is_nan(_Env(d))
@@ -54,7 +53,6 @@ def test_catches_base_velocity_inf():
 
 
 def test_still_catches_joint_pos_nan():
-    # historical behaviour preserved.
     d = _Data(2)
     d.joint_pos[0, 1] = float("nan")
     out = robot_state_is_nan(_Env(d))

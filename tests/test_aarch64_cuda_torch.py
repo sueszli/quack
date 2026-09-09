@@ -1,19 +1,14 @@
-"""On linux-aarch64 (DGX Spark / GB10) PyPI's torch wheel is CPU-ONLY:
-torch.version.cuda is None -> torch.cuda.device_count() == 0 -> mjlab's
-select_gpus() indexes an empty list and dies with
-`IndexError: list index out of range` BEFORE the first training step
-(mjlab/utils/gpu.py:70).
+"""On linux-aarch64 (DGX Spark / GB10) PyPI's torch wheel is CPU-ONLY, so
+torch.cuda.device_count() == 0 and mjlab's select_gpus() indexes an empty list:
+`IndexError` before the first training step.
 
-The fix (pyproject.toml) routes torch to PyTorch's CUDA index, on aarch64
-only. It has two SILENT break points, locked in by these tests — in both
-cases `uv sync` succeeds and you only find out when you launch a run:
+pyproject.toml routes torch to PyTorch's CUDA index on aarch64 only. Both ways of
+breaking that are silent — `uv sync` succeeds and you find out at launch:
 
-1. `torch` must stay a DIRECT dependency: uv applies [tool.uv.sources] to
-   direct dependencies only, so deleting the `torch==...` line (which looks
-   redundant, since torch already comes in via mjlab/rsl_rl) makes the
-   source binding a no-op without any warning.
-2. The x86_64 resolution must stay on PyPI, otherwise x86_64 machines
-   silently switch wheels.
+1. `torch` must stay a DIRECT dependency: uv applies [tool.uv.sources] to direct
+   dependencies only, so deleting the redundant-looking `torch==` pin makes the
+   routing a no-op.
+2. The x86_64 resolution must stay on PyPI, or x86_64 silently switches wheels.
 """
 
 import platform
@@ -43,7 +38,6 @@ def _markers(pkg):
 
 
 def _aarch64_entry(pkgs):
-    """The entry whose resolution-markers SELECT linux-aarch64."""
     hits = [p for p in pkgs if "platform_machine == 'aarch64'" in _markers(p) and "sys_platform == 'linux'" in _markers(p)]
     assert len(hits) == 1, f"expected 1 aarch64 entry, found {len(hits)}"
     return hits[0]
@@ -77,7 +71,6 @@ def test_lockfile_routes_aarch64_torch_to_cuda_wheels():
 
 
 def test_x86_64_resolution_stays_on_pypi():
-    """The x86_64 resolution must not move off PyPI."""
     others = [p for p in _packages("torch") if "platform_machine == 'aarch64'" not in _markers(p)]
     assert others, "no non-aarch64 torch entry found"
     for pkg in others:
@@ -86,9 +79,9 @@ def test_x86_64_resolution_stays_on_pypi():
 
 
 def test_torch_version_identical_across_platforms():
-    """The fix changes only the wheel's SOURCE, not its version: the CUDA
-    index carries newer builds than the PyPI pin, so a `>=` drags torch
-    2.9.1 -> 2.13.0 with nothing having validated that bump."""
+    """Only the wheel's SOURCE may change, not its version: the CUDA index carries
+    newer builds than the PyPI pin, so a `>=` silently dragged torch
+    2.9.1 -> 2.13.0."""
     versions = {p["version"].split("+")[0] for p in _packages("torch")}
     assert len(versions) == 1, f"torch versions diverge across platforms: {versions}"
 
@@ -99,7 +92,7 @@ def _on_spark():
 
 @pytest.mark.skipif(not _on_spark(), reason="not a linux-aarch64 machine with a GPU")
 def test_installed_torch_actually_sees_the_gpu():
-    """Direct reproduction of the crash: this is exactly what select_gpus() reads."""
+    """Exactly what select_gpus() reads."""
     import torch
 
     assert torch.cuda.device_count() > 0, f"torch {torch.__version__} (cuda={torch.version.cuda}) sees no GPU although nvidia-smi reports one -> select_gpus() will raise IndexError."

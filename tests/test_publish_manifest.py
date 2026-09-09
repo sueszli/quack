@@ -1,9 +1,8 @@
-"""`uv run publish` writes what the microduck daemon loads — schema 2, checked before upload.
+"""`uv run publish` writes what the microduck daemon loads.
 
-The daemon (`pollen-robotics/microduck`) refuses a policy whose manifest disagrees with its
-`duck_ipc_proto` constants, refuses at load a graph that is not 61 -> 14, and turns only a
-constant-command `episodic` entry into a skill. These tests pin that this side writes exactly
-that, on CPU, without mjlab.
+The daemon (`pollen-robotics/microduck`) refuses a manifest that disagrees with its
+`duck_ipc_proto` constants, refuses a graph that is not 61 -> 14, and turns only a
+constant-command `episodic` entry into a skill.
 """
 
 from __future__ import annotations
@@ -21,16 +20,15 @@ from src import publish_manifest as m
 
 _ROOT = Path(__file__).resolve().parents[1]
 
-# `RemiFabre/microduck-flamingo-cycle`'s manifest as published — the community convention this
-# schema had to stay compatible with, verbatim except for trimmed prose.
+# `RemiFabre/microduck-flamingo-cycle` as published: the community convention
+# this schema must stay compatible with.
 FLAMINGO = {"schema_version": 2, "model_api": 1, "name": "flamingo-cycle", "kind": "perpetual", "obs_len": 61, "action_len": 14, "action_scale": 1.0, "entry_pose": "standing", "duration_s": None, "description": "Stand on one foot, either side, on command: twist = [flag, side, 0].", "command": {"twist": ["flag: 0 = two feet, 1 = one foot", "side: +1 right down, -1 left down", "unused"], "head": "unused (zeros)", "body": "unused (zeros)", "idle": [0, 0, 0]}, "robot": {"model": "microduck", "hw_rev": 1, "servos": "xl330", "control_hz": 50}, "training": {"task_id": "Mjlab-FlamingoCycleHard-Flat-MicroDuck"}}
 
-# The official set, as uploaded 2026-09-02 (schema 2).
 OFFICIAL_SET = {"schema_version": 2, "model_api": 1, "obs_len": 61, "action_len": 14, "robot": {"model": "microduck", "hw_rev": 1, "servos": "xl330", "control_hz": 50}, "policies": [{"file": "alpha_walking.onnx", "kind": "perpetual"}, {"file": "alpha_sitstand.onnx", "name": "sitstand", "kind": "scripted", "command": {"encoding": "posture_flag", "sit": 1.0, "stand": 0.0, "idle": [0, 0, 0]}, "ramp_s": 2.0, "unwind_s": 1.0}, {"file": "alpha_ground_pick.onnx", "name": "ground_pick", "kind": "episodic", "duration_s": 2.8, "command": {"encoding": "phase", "period_s": 4.0, "end_phase": 0.7}}, {"file": "roulade.onnx", "kind": "episodic", "duration_s": 1.0, "chain": True}]}
 
 
 def _tiny_policy(path: Path, obs_len: int = m.OBS_LEN, action_len: int = m.ACTION_LEN) -> Path:
-    """A one-layer 'policy' with the daemon's shape, so the ONNX checks run without torch."""
+    """One layer, the daemon's shape: the ONNX checks run without torch."""
     rng = np.random.default_rng(0)
     w = numpy_helper.from_array(rng.normal(0, 0.1, (obs_len, action_len)).astype(np.float32), "W")
     node = helper.make_node("MatMul", ["obs", "W"], ["actions"])
@@ -58,12 +56,9 @@ def test_a_normal_export_is_not_flagged_untrained(tmp_path):
     assert m.check_onnx(path).obs_len == m.OBS_LEN
 
 
-# -- the numbers the daemon refuses on -------------------------------------------------------
-
-
 def test_constants_are_the_daemons():
-    """`duck_ipc_proto`: POLICY_OBS_LEN 61, POLICY_ACTION_LEN 14, ROBOT_MODEL microduck. A drift
-    here is a refusal on every robot, before the download."""
+    """Mirrors `duck_ipc_proto`: a drift here is a refusal on every robot, before
+    the download."""
     assert (m.OBS_LEN, m.ACTION_LEN) == (61, 14)
     assert m.ROBOT["model"] == "microduck"
     assert m.MODEL_API == 1
@@ -75,9 +70,6 @@ def test_publish_is_a_declared_script():
     assert scripts["publish"] == "src.publish_cli:main"
 
 
-# -- both shapes validate ----------------------------------------------------------------------
-
-
 def test_the_flamingo_manifest_is_schema_2_and_valid():
     m.validate_manifest(FLAMINGO)
 
@@ -85,7 +77,7 @@ def test_the_flamingo_manifest_is_schema_2_and_valid():
 def test_the_official_set_validates_per_entry():
     m.validate_manifest(OFFICIAL_SET)
     broken = json.loads(json.dumps(OFFICIAL_SET))
-    broken["policies"][3]["duration_s"] = None  # roulade: episodic constant with no length
+    broken["policies"][3]["duration_s"] = None  # episodic constant with no length
     with pytest.raises(m.ManifestError, match="duration_s"):
         m.validate_manifest(broken)
 
@@ -99,9 +91,6 @@ def test_a_present_and_wrong_claim_is_refused(bad, why):
 def test_absence_is_not_evidence():
     m.validate_manifest({})
     m.validate_manifest({"name": "something", "unknown_field": 3})
-
-
-# -- what the builder writes ---------------------------------------------------------------------
 
 
 def test_an_episodic_manifest_is_a_loadable_skill():
@@ -138,7 +127,7 @@ def test_a_name_is_a_bare_word():
 
 
 def test_a_gait_is_perpetual_with_nothing_to_unwind():
-    """A walking policy is perpetual too, and goes in a slot — no hold, no unwind, no skill."""
+    """A gait is perpetual but goes in a slot: no hold, no unwind, no skill."""
     gait = m.build_manifest(name="my-walk", kind="perpetual", description="Walks.", slot="walk")
     m.validate_manifest(gait)
     assert gait["duration_s"] is None and "unwind_s" not in gait and gait["slot"] == "walk"
@@ -154,9 +143,6 @@ def test_the_readme_tells_the_owner_how_to_run_it():
     assert "robot do bow" in text and "chains" in text
     pp = m.build_manifest(name="flamingo", kind="perpetual", description="d", unwind_s=1.5)
     assert "--hold <seconds>" in m.render_readme(pp, "someone/microduck-flamingo")
-
-
-# -- the ONNX gate ------------------------------------------------------------------------------
 
 
 def test_a_61_to_14_graph_passes_and_smoke_runs(tmp_path):
@@ -179,7 +165,7 @@ def test_a_wrong_action_width_is_refused(tmp_path):
 
 
 def test_a_constant_network_fails_the_smoke_run(tmp_path):
-    """A graph that ignores its input is not a policy — the shape gate alone would pass it."""
+    """A graph that ignores its input is not a policy, but passes the shape gate."""
     zero = numpy_helper.from_array(np.zeros((m.OBS_LEN, m.ACTION_LEN), np.float32), "W")
     graph = helper.make_graph([helper.make_node("MatMul", ["obs", "W"], ["actions"])], "dead", [helper.make_tensor_value_info("obs", TensorProto.FLOAT, [1, m.OBS_LEN])], [helper.make_tensor_value_info("actions", TensorProto.FLOAT, [1, m.ACTION_LEN])], initializer=[zero])
     model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)])
@@ -191,7 +177,7 @@ def test_a_constant_network_fails_the_smoke_run(tmp_path):
 
 
 def test_the_cli_dry_run_writes_a_repo(tmp_path, monkeypatch):
-    """End to end without the Hub or a GPU: an ONNX in, the three repo files out."""
+    """End to end without the Hub or a GPU."""
     from src.publish_cli import PublishConfig, run
 
     policy = _tiny_policy(tmp_path / "out.onnx")
