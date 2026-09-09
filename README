@@ -11,16 +11,6 @@ Policies train at 50 Hz, export to ONNX, and are deployed by the runtime in
 pollen-robotics/microduck. It covers the full sim2real recipe: BAM actuator
 physics, domain randomization, backlash simulation, reward design.
 
-  microduck       https://github.com/pollen-robotics/microduck
-  mjlab           https://github.com/mujocolab/mjlab
-  BAM             https://github.com/Rhoban/bam
-  uv              https://docs.astral.sh/uv/
-  onshape-to-robot  https://github.com/Rhoban/onshape-to-robot
-  policy manifest https://github.com/pollen-robotics/microduck/blob/main/docs/policy-manifest.md
-  playbook        CLAUDE.md (env-building workflow + reward-design rules)
-  screenshot      https://github.com/user-attachments/assets/5db7cc83-b3ce-4f7c-83f0-0572a63baed7
-  video           https://github.com/user-attachments/assets/50c3d537-8db2-4005-9d9c-3472faeec4d0
-
 
 ================================================================================
 QUICKSTART
@@ -62,7 +52,6 @@ Resume:
 Remote GPU viewer: `ssh -L 8080:localhost:8080 USER@HOST`, then
 `uv run play ... --viewer viser --num-envs 1`, open http://localhost:8080
 locally and keep the SSH session open.
-
 
 
 ================================================================================
