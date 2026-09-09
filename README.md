@@ -153,7 +153,7 @@ src/mjlab_microduck/                  # flat: no sub-packages, no __init__.py
 ├── backlash.py                       # make_backlash_variant() env-cfg wrapper
 ├── symmetry.py, slope_terrain.py     # mirror-loss table, slope heightfield
 ├── microduck_*_env_cfg.py            # one cfg module per task family
-├── export.py, publish.py             # uv run export / uv run publish
+├── export.py, publish_cli.py         # uv run export / uv run publish
 ├── infer_policy.py                   # uv run infer (CPU MuJoCo rehearsal)
 └── body_server.py, camera.py, tof.py # uv run duck-body: simulated body for robotd
 ```

@@ -42,7 +42,7 @@ Never launch a long run without one.
 - `src/mjlab_microduck/friction_dr_bam.py` — BAM actuator + friction DR + backlash encoder.
 - `src/mjlab_microduck/export.py` — the ONNX export (normalizer baked in) behind `uv run export`.
 - `src/mjlab_microduck/infer_policy.py` — `uv run infer`: CPU MuJoCo deployment rehearsal.
-- `src/mjlab_microduck/publish.py` (+ `publish_manifest.py`) — `uv run publish`: schema-2 manifest builder + ONNX shape/smoke
+- `src/mjlab_microduck/publish_cli.py` + `publish_manifest.py` — `uv run publish`: schema-2 manifest builder + ONNX shape/smoke
   gate + Hub upload. Contract = `docs/policy-manifest.md` in the `microduck` repo; only
   constant-command episodic/perpetual policies are publishable (phase/posture-flag are the set's).
 - `tests/` — cfg-invariant and mdp-function regression tests (CPU, no GPU needed).

@@ -20,7 +20,7 @@ Meant to run as the LAST post_import_command of an onshape-to-robot config
 (see config_mjcf_groundcontact_backlash.json), but works standalone on any
 already-exported robot xml:
 
-    python3 ../add_backlash.py robot_groundcontact_backlash.xml   # from mjcf/ --backlash-deg 2.0
+    python3 ../add_backlash.py robot_groundcontact_backlash.xml --backlash-deg 2.0   # run from the model dir
 
 ``--backlash-deg`` is the TOTAL peak-to-peak play (what you measure wiggling
 the horn with the servo held); the joint range is symmetric ±deg/2.
