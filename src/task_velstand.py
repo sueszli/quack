@@ -79,7 +79,7 @@ from mjlab.rl import RslRlModelCfg, RslRlOnPolicyRunnerCfg
 from . import task_mdp as microduck_mdp
 from .robot import MICRODUCK_STANDUP_ROBOT_CFG
 from .task_symmetry import PpoWithSymmetryCfg
-from .task_velocity import make_microduck_velocity_env_cfg
+from .task_velocity import LOCAL_CHECKPOINTS_ONLY, make_microduck_velocity_env_cfg
 
 # Phase boundaries (PPO iterations; env step counter scales by num_steps_per_env=24)
 FELL_OVER_DISABLE_ITER = 500
@@ -282,4 +282,4 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
     return cfg
 
 
-MicroduckVelStandRlCfg = RslRlOnPolicyRunnerCfg(actor=RslRlModelCfg(hidden_dims=(512, 256, 128), activation="elu", obs_normalization=True, distribution_cfg={"class_name": "GaussianDistribution", "init_std": 1.0, "std_type": "scalar"}), critic=RslRlModelCfg(hidden_dims=(512, 256, 128), activation="elu", obs_normalization=True), algorithm=PpoWithSymmetryCfg(value_loss_coef=1.0, use_clipped_value_loss=True, clip_param=0.2, entropy_coef=0.01, num_learning_epochs=5, num_mini_batches=4, learning_rate=1.0e-3, schedule="adaptive", gamma=0.99, lam=0.95, desired_kl=0.01, max_grad_norm=1.0, symmetry_cfg=None), logger="tensorboard", experiment_name="velstand", run_name="velstand", save_interval=250, num_steps_per_env=24, max_iterations=20_000)
+MicroduckVelStandRlCfg = RslRlOnPolicyRunnerCfg(actor=RslRlModelCfg(hidden_dims=(512, 256, 128), activation="elu", obs_normalization=True, distribution_cfg={"class_name": "GaussianDistribution", "init_std": 1.0, "std_type": "scalar"}), critic=RslRlModelCfg(hidden_dims=(512, 256, 128), activation="elu", obs_normalization=True), algorithm=PpoWithSymmetryCfg(value_loss_coef=1.0, use_clipped_value_loss=True, clip_param=0.2, entropy_coef=0.01, num_learning_epochs=5, num_mini_batches=4, learning_rate=1.0e-3, schedule="adaptive", gamma=0.99, lam=0.95, desired_kl=0.01, max_grad_norm=1.0, symmetry_cfg=None), logger=LOCAL_CHECKPOINTS_ONLY, experiment_name="velstand", run_name="velstand", save_interval=250, num_steps_per_env=24, max_iterations=20_000)
