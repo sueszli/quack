@@ -5,14 +5,10 @@ dist/
 wheels/
 *.egg-info
 .python-version
-# uv.lock
-
 .venv
-
 wandb
 logs
 agents
-
 *.pch
 nohup.out
 *.onnx
@@ -26,9 +22,7 @@ data/
 *.pt
 
 claude_experiments/
-
 backup_onnx/
-
 .claude
 logdir/.claude/
 logdir/
