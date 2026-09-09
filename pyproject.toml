@@ -30,14 +30,12 @@ dependencies = [
 mjlab_microduck = "src.task_registry"
 
 [project.scripts]
-# Serve a simulated body to the real `robotd` — see sim_body_server.py.
 duck-body = "src.sim_body_server:main"
 publish = "src.publish_cli:main"
 export = "src.export:main"
 infer = "src.infer:main"
 
 [tool.uv.build-backend]
-# The package IS the src/ directory (import as `src.*`); flat, no __init__.py files.
 module-name = "src"
 module-root = ""
 namespace = true
@@ -48,40 +46,30 @@ line-length = 5000
 target-version = "py312"
 
 [tool.ruff.format]
-# Ignore magic trailing commas so collections inline instead of sitting
-# one-element-per-line. Combined with the very large line-length, this means
-# a collection wraps only when it genuinely cannot fit on one line.
+# With the very large line-length, this means a collection wraps only when it
+# genuinely cannot fit on one line.
 skip-magic-trailing-comma = true
 
 [tool.ruff.lint]
-# Rules switched off deliberately, with the reason. Everything not listed here
-# is expected to pass, so `make lint` can gate.
+# Everything not listed here is expected to pass, so `make lint` can gate.
 ignore = [
     # mjlab's config idiom: `asset_cfg: SceneEntityCfg = SceneEntityCfg("robot", ...)`
-    # as a parameter default. Every mdp function in task_mdp.py is written this
-    # way (see also _DEFAULT_ASSET_CFG, aliased by 121 functions), so this is
-    # the framework's shape, not something to refactor per-function.
-    #
-    # NB these defaults ARE mutable and mjlab DOES mutate them: SceneEntityCfg
-    # is a non-frozen dataclass, and ManagerBase._resolve_common_term_cfg calls
-    # `value.resolve(scene)` on every SceneEntityCfg in a term's params, filling
-    # in joint/body ids in place. In practice mjlab resolves the cfg objects
-    # held in term params rather than the function defaults, and resolution is
-    # idempotent per scene. Ignoring B008 is a decision to live with mjlab's
-    # idiom, NOT a claim that these defaults are immutable.
+    # as a parameter default, used by every mdp function in task_mdp.py.
+    # These defaults ARE mutable and mjlab DOES mutate them (ManagerBase
+    # ._resolve_common_term_cfg calls `resolve(scene)` in place), but it
+    # resolves the cfg objects held in term params, not the function defaults,
+    # and resolution is idempotent per scene.
     "B008",
-    # `except Exception` around optional monkey-patches and hardware/IO paths
-    # (task_mdp.py Patch 4, infer.py, sim_body_server.py). These are deliberate
-    # best-effort guards: narrowing them changes runtime failure modes on the
+    # Deliberate best-effort guards around optional monkey-patches and
+    # hardware/IO paths; narrowing them changes runtime failure modes on the
     # robot for no correctness gain.
     "BLE001",
     "S110",
-    # Nested `if hasattr(env, "_x"): if "sensor" in env.scene.sensors:` reads as
-    # two distinct preconditions (state exists / sensor is wired). Collapsing
-    # them into one `and` obscures that.
+    # Nested `if` often encodes two distinct preconditions (state exists /
+    # sensor is wired); collapsing into one `and` obscures that.
     "SIM102",
-    # Class-level constant lookup tables (e.g. infer.py `_ARROWS`) are never
-    # mutated; ClassVar annotations everywhere would be noise.
+    # Class-level constant lookup tables are never mutated; ClassVar
+    # annotations everywhere would be noise.
     "RUF012",
 ]
 
@@ -101,7 +89,7 @@ override-dependencies = [
 ]
 
 [tool.uv.sources]
-# Official BAM actuator model; the mjlab-facing API lives on this branch.
+# The mjlab-facing API lives on this branch, not on the default branch.
 better-actuator-models = { git = "https://github.com/Rhoban/bam.git", branch = "mjlab_frictionloss" }
 # PyPI's linux-aarch64 torch wheel is CPU-only; cu129 matches the CUDA toolkit warp 1.12.0 bundles.
 torch = [
