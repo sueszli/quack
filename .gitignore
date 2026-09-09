@@ -19,6 +19,7 @@ artifacts/
 src/mjlab_microduck/robot/microduck.bak/*
 src/mjlab_microduck/robot/microduck_test/*
 data/
+weights/
 *.pt
 
 claude_experiments/

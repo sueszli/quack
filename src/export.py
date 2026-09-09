@@ -26,6 +26,8 @@ from mjlab.utils.torch import configure_torch_backends
 from mjlab.utils.wrappers import VideoRecorder
 from rsl_rl.runners import OnPolicyRunner
 
+from src.utils import weights_path
+
 
 @dataclass(frozen=True)
 class ExportConfig:
@@ -157,7 +159,7 @@ def run_export(task_id: str, cfg: ExportConfig) -> ExportResult:
     # handling needed (the old export_velocity_policy_as_onnx path is gone).
     from mjlab.rl.exporter_utils import attach_metadata_to_onnx, get_base_metadata
 
-    onnx_path = os.path.abspath(cfg.onnx_file)
+    onnx_path = str(weights_path(cfg.onnx_file)) if not os.path.isabs(cfg.onnx_file) else cfg.onnx_file
     path = os.path.dirname(onnx_path)
     filename = os.path.basename(onnx_path)
 
