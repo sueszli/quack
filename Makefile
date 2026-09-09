@@ -26,6 +26,30 @@ precommit:
 	$(MAKE) lint
 	$(MAKE) tests
 
+.PHONY: sync
+sync:
+	UV_HTTP_TIMEOUT=600 uv sync
+
+.PHONY: envs
+envs:
+	uv run list-envs
+
 .PHONY: smoke
 smoke:
 	uv run train Mjlab-Velocity-Flat-MicroDuck --env.scene.num-envs 64 --agent.max_iterations 5
+
+.PHONY: train
+train:
+	uv run train Mjlab-Velocity-Flat-MicroDuck --env.scene.num-envs 4096 $(ARGS)
+
+.PHONY: play
+play:
+	uv run play Mjlab-Velocity-Flat-MicroDuck --wandb-run-path $(RUN) $(ARGS)
+
+.PHONY: export
+export:
+	uv run export Mjlab-Velocity-Flat-MicroDuck --wandb-run-path $(RUN) $(ARGS)
+
+.PHONY: infer
+infer:
+	uv run infer --walking $(ONNX) $(ARGS)
