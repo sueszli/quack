@@ -26,7 +26,7 @@ MICRODUCK_BALL_XML: Path = _ROBOT_DIR / "ball.xml"
 MICRODUCK_GROUNDCONTACT_ROLLERS_XML: Path = _ROBOT_DIR / "robot_groundcontact_rollers.xml"
 # Backlash models: every servo joint gets an unactuated passive_<joint>_backlash
 # hinge in series (±1° play, 2° total). Exported via
-# config_mjcf_{groundcontact,walk}_backlash.json (add_backlash.py post-processor).
+# config_mjcf_{groundcontact,walk}_backlash.json (patch_backlash.py post-processor).
 MICRODUCK_GROUNDCONTACT_BACKLASH_XML: Path = _ROBOT_DIR / "robot_groundcontact_backlash.xml"
 MICRODUCK_WALK_BACKLASH_XML: Path = _ROBOT_DIR / "robot_walk_backlash.xml"
 MICRODUCK_GROUNDCONTACT_ROLLERS_BACKLASH_XML: Path = _ROBOT_DIR / "robot_groundcontact_rollers_backlash.xml"
@@ -175,7 +175,7 @@ MICRODUCK_BACKLASH_ROBOT_CFG = EntityCfg(spec_fn=get_backlash_spec, init_state=B
 MICRODUCK_WALK_BACKLASH_ROBOT_CFG = EntityCfg(spec_fn=get_walk_backlash_spec, init_state=BACKLASH_HOME_FRAME, collisions=(FULL_COLLISION,), articulation=EntityArticulationInfoCfg(actuators=(backlash_actuators,), soft_joint_pos_limit_factor=0.9))
 
 # Roller-skate backlash robot: wheels stay free (passive_*wheel untouched by
-# add_backlash.py). collisions=() mirrors MICRODUCK_WALK_ROLLERS_ROBOT_CFG —
+# patch_backlash.py). collisions=() mirrors MICRODUCK_WALK_ROLLERS_ROBOT_CFG —
 # roller wheel collision geoms have no explicit names; XML defaults apply.
 MICRODUCK_ROLLERS_BACKLASH_ROBOT_CFG = EntityCfg(spec_fn=get_rollers_backlash_spec, init_state=BACKLASH_HOME_FRAME, collisions=(), articulation=EntityArticulationInfoCfg(actuators=(backlash_actuators,), soft_joint_pos_limit_factor=0.9))
 
