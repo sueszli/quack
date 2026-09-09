@@ -4,8 +4,8 @@ Cyclic gesture triggered by button A via the runtime's --ground-pick slot:
 ~1 counter-clockwise turn at ~3 rad/s then a clean stop, standing.
 
 Hybrid:
-  - physics / roller robot  ← microduck_velocity_rollers_env_cfg.py
-  - cyclic phase machinery ← microduck_roller_crouch_env_cfg.py
+  - physics / roller robot  ← task_velocity_rollers.py
+  - cyclic phase machinery ← task_roller_crouch.py
     (GroundPickPhaseCommand command: [cos(2πφ), sin(2πφ), 0], period 4 s)
 
 Fundamental difference from the crouch: the phase drives a target YAW RATE
@@ -66,12 +66,12 @@ from mjlab.tasks.velocity.mdp import UniformVelocityCommandCfg
 from mjlab.tasks.velocity.velocity_env_cfg import make_velocity_env_cfg
 from mjlab.utils.noise import UniformNoiseCfg as Unoise
 
-from .microduck_constants import MICRODUCK_WALK_ROLLERS_ROBOT_CFG
-from . import mdp as microduck_mdp
-from .microduck_velocity_env_cfg import HEAD_BODY_NAMES
-from .symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
+from .robot import MICRODUCK_WALK_ROLLERS_ROBOT_CFG
+from . import task_mdp as microduck_mdp
+from .task_velocity import HEAD_BODY_NAMES
+from .task_symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
 
-# Phase envelope: canonical constants defined in mdp.py.
+# Phase envelope: canonical constants defined in task_mdp.py.
 SPIN_PERIOD = microduck_mdp.SPIN_PERIOD
 _ENVELOPE = {
     "rate_max": microduck_mdp.SPIN_RATE_MAX,

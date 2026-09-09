@@ -25,8 +25,8 @@ guided (knee support, one skate at a time).
 
 Target deployment: in `--standing` opposite the roller policy in `--walking`, with
 the automatic switch on the magnitude of the velocity command
-(infer_policy.py:262, threshold 0.05); the twist slot is left at zero there
-(infer_policy.py:239).
+(infer.py:262, threshold 0.05); the twist slot is left at zero there
+(infer.py:239).
 """
 
 import math
@@ -41,11 +41,11 @@ from mjlab.managers import (
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.rl import RslRlModelCfg, RslRlOnPolicyRunnerCfg
 
-from . import mdp as microduck_mdp
-from .microduck_velocity_rollers_env_cfg import (
+from . import task_mdp as microduck_mdp
+from .task_velocity_rollers import (
     make_microduck_velocity_rollers_env_cfg,
 )
-from .symmetry import PpoWithSymmetryCfg
+from .task_symmetry import PpoWithSymmetryCfg
 
 # ── Trunk heights (m) ─────────────────────────────────────────────────────────
 # Measured by exact kinematics (minimum of the mesh vertices of the colliding
@@ -168,7 +168,7 @@ def make_microduck_roller_standup_env_cfg(play: bool = False) -> ManagerBasedRlE
 
     # ── Standup rewards — transplanted from standup, remapped ─────────────────
     # The weights come from the iterations documented in
-    # microduck_standup_env_cfg.py: only touch them with a reason. Only
+    # task_standup.py: only touch them with a reason. Only
     # the joint indices and the two heights change here.
     # NB: a FRESH SceneEntityCfg per term — mjlab resolves and mutates them in
     # place, a shared object gives stale indices.
@@ -241,9 +241,9 @@ def make_microduck_roller_standup_env_cfg(play: bool = False) -> ManagerBasedRlE
     # constant vertical velocity collects the former AND has a_z = 0 → the two
     # pressures together select a smooth rise at constant velocity.
     #
-    # ⚠️ POSITIVE WEIGHT, and it is not a typo. mdp.py mixes two sign
+    # ⚠️ POSITIVE WEIGHT, and it is not a typo. task_mdp.py mixes two sign
     # conventions: trunk_vertical_accel_penalty already returns -|a_z|
-    # (mdp.py:2171), like height_l1_penalty and pose_l1_penalty — which are moreover
+    # (task_mdp.py:2171), like height_l1_penalty and pose_l1_penalty — which are moreover
     # used here with weights +30 and +5. The -0.02 inherited from standup therefore formed
     # a double negative and REWARDED vertical acceleration: measured at
     # Episode_Reward/gentle_rise = +0.0118 (the only penalty term logged positive) on

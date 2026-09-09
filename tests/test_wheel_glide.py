@@ -7,7 +7,7 @@ import re
 
 import torch
 
-from src.mdp import wheel_glide_reward
+from src.task_mdp import wheel_glide_reward
 
 # Current model joint names (post 2026-07 re-export: underscore spelling).
 _WHEELS = {"passive_LF_wheel": 0, "passive_LR_wheel": 1, "passive_RF_wheel": 2, "passive_RR_wheel": 3}

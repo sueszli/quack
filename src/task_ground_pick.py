@@ -84,13 +84,13 @@ from mjlab.tasks.velocity.mdp import UniformVelocityCommandCfg
 from mjlab.tasks.velocity.velocity_env_cfg import make_velocity_env_cfg
 from mjlab.utils.noise import UniformNoiseCfg as Unoise
 
-from .microduck_constants import MICRODUCK_GROUND_PICK_ROBOT_CFG
-from . import mdp as microduck_mdp
-from .microduck_velocity_env_cfg import (
+from .robot import MICRODUCK_GROUND_PICK_ROBOT_CFG
+from . import task_mdp as microduck_mdp
+from .task_velocity import (
     MICRODUCK_ROUGH_TERRAINS_CFG,
     HEAD_BODY_NAMES,
 )
-from .symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
+from .task_symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
 
 
 # ── SEGMENTED phase profile (independent durations) ───────────────────────────
@@ -102,7 +102,7 @@ from .symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
 #   low hold   [DESCENT_END, HOLD_END) 0.2 s  brush (short)
 #   rise       [HOLD_END, RISE_END)    1.5 s  transition low->STAND
 #   rest       [RISE_END, 1)           0.8 s  standing
-# ⚠️ RISE_END=0.80 > the φ=0.7 cutoff of the infer_policy script: the rise is
+# ⚠️ RISE_END=0.80 > the φ=0.7 cutoff of the infer script: the rise is
 # only complete if the slot plays up to φ~1.0 (the whole period). Check the
 # actual runtime window.  ⚠️ --ground-pick-period at deployment = 4.0.
 GP_PERIOD    = 4.0

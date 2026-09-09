@@ -279,7 +279,7 @@ def check_onnx(path: Path) -> OnnxShape:
 def smoke_run_onnx(path: Path, steps: int = 50, seed: int = 0) -> None:
     """Run the network on plausible inputs and refuse a NaN/inf or a saturated output.
 
-    Not a physics rehearsal — `infer_policy.py` is that — but it catches a broken export
+    Not a physics rehearsal — `infer.py` is that — but it catches a broken export
     (an un-baked normalizer producing NaNs on raw observations, a graph that will not execute)
     before anything is uploaded.
     """

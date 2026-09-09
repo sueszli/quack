@@ -117,9 +117,9 @@ from mjlab.tasks.velocity.mdp import UniformVelocityCommandCfg
 from mjlab.tasks.velocity.velocity_env_cfg import make_velocity_env_cfg
 from mjlab.utils.noise import UniformNoiseCfg as Unoise
 
-from .microduck_constants import MICRODUCK_WALK_ROBOT_CFG
-from . import mdp as microduck_mdp
-from .symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
+from .robot import MICRODUCK_WALK_ROBOT_CFG
+from . import task_mdp as microduck_mdp
+from .task_symmetry import PpoWithSymmetryCfg, SYMMETRY_CFG
 
 
 # Microduck-specific rough terrain: much gentler than the default ROUGH_TERRAINS_CFG.
@@ -702,7 +702,7 @@ def make_microduck_velocity_env_cfg(
 
     # === Pose tracking rewards ===
     # head_pose: primary objective in vel env — the whole point of the rewrite.
-    # std=0.5 with per-joint Gaussian (see head_pose_tracking in mdp.py): at the
+    # std=0.5 with per-joint Gaussian (see head_pose_tracking in task_mdp.py): at the
     # full ±1.0 rad command, a non-tracking policy still sees per-joint reward
     # exp(-(1/0.5)²)=exp(-4)≈0.018 — a small but non-zero gradient — so the
     # curriculum widening doesn't kill the signal. Final reward is the mean

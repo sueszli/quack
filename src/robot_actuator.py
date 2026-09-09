@@ -12,7 +12,7 @@ friction uncertainty (stiction / gearbox). The viscous (velocity-proportional)
 term is left at nominal; scale it too by overriding ``compute`` if ever needed.
 
 Non-accumulating: ``friction_scale`` is reset to 1.0 then set to a fresh sample
-each episode by the ``randomize_bam_friction`` event (see mdp.py).
+each episode by the ``randomize_bam_friction`` event (see task_mdp.py).
 """
 
 from __future__ import annotations

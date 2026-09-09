@@ -27,14 +27,14 @@ dependencies = [
 ]
 
 [project.entry-points."mjlab.tasks"]
-mjlab_microduck = "src.registry"
+mjlab_microduck = "src.task_registry"
 
 [project.scripts]
-# Serve a simulated body to the real `robotd` — see body_server.py.
-duck-body = "src.body_server:main"
+# Serve a simulated body to the real `robotd` — see sim_body_server.py.
+duck-body = "src.sim_body_server:main"
 publish = "src.publish_cli:main"
 export = "src.export:main"
-infer = "src.infer_policy:main"
+infer = "src.infer:main"
 
 [tool.uv.build-backend]
 # The package IS the src/ directory (import as `src.*`); flat, no __init__.py files.

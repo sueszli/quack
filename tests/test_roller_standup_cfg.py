@@ -1,10 +1,10 @@
 import pytest
 
-from src.microduck_roller_standup_env_cfg import (
+from src.task_roller_standup import (
     EPISODE_LENGTH_S,
     make_microduck_roller_standup_env_cfg,
 )
-from src.microduck_velocity_rollers_env_cfg import (
+from src.task_velocity_rollers import (
     make_microduck_velocity_rollers_env_cfg,
 )
 
@@ -63,7 +63,7 @@ def test_smoothness_regularisers_kept():
 
 def test_twist_command_is_neutralised():
     # No steering: the policy is deployed as --standing, where the runtime leaves
-    # the twist slot at zero (cf. infer_policy.py:239).
+    # the twist slot at zero (cf. infer.py:239).
     cfg = make_microduck_roller_standup_env_cfg()
     cmd = cfg.commands["twist"]
     assert cmd.ranges.lin_vel_x == (-0.01, 0.01)
@@ -77,7 +77,7 @@ def test_twist_command_is_neutralised():
 def test_twist_command_is_not_heading_relative():
     # The roller env installs a RelativeHeadingVelocityCommandCfg (cmd[2] = heading
     # error, computed internally). Here cmd[2] must be a true noisy zero.
-    from src import mdp as microduck_mdp
+    from src import task_mdp as microduck_mdp
 
     cfg = make_microduck_roller_standup_env_cfg()
     cmd = cfg.commands["twist"]
@@ -114,7 +114,7 @@ def test_terrain_is_plain_plane():
 def test_task_is_registered():
     from mjlab.tasks.registry import list_tasks
 
-    import src.registry  # noqa: F401  (the import triggers registration)
+    import src.task_registry  # noqa: F401  (the import triggers registration)
 
     assert "Mjlab-RollerStandUp-Flat-MicroDuck" in list_tasks()
 
@@ -128,8 +128,8 @@ def test_joint_indices_match_actual_roller_model():
     """
     import mujoco
 
-    from src.microduck_constants import get_walk_rollers_spec
-    from src.microduck_roller_standup_env_cfg import (
+    from src.robot import get_walk_rollers_spec
+    from src.task_roller_standup import (
         _LEG_JOINTS,
         _NECK_JOINTS,
         _WHEEL_JOINTS,
@@ -183,7 +183,7 @@ def test_recovery_rewards_present_with_expected_weights():
 
 
 def test_recovery_rewards_use_roller_heights_not_walker_heights():
-    from src.microduck_roller_standup_env_cfg import (
+    from src.task_roller_standup import (
         ROLLER_PRONE_Z,
         ROLLER_STAND_Z,
     )
@@ -202,7 +202,7 @@ def test_recovery_rewards_use_roller_heights_not_walker_heights():
 
 
 def test_pose_rewards_target_legs_only_at_roller_indices():
-    from src.microduck_roller_standup_env_cfg import _LEG_JOINTS
+    from src.task_roller_standup import _LEG_JOINTS
 
     cfg = make_microduck_roller_standup_env_cfg()
     for name in ("pose_stand_legs", "pose_stand_l1", "standing_composite"):
@@ -456,7 +456,7 @@ def test_play_face_up_override_none_keyword_disables(monkeypatch):
 def test_already_negative_penalties_use_positive_weights():
     """Lock on the bug class that made the policy violent.
 
-    mdp.py mixes TWO sign conventions: some penalty functions return a positive
+    task_mdp.py mixes TWO sign conventions: some penalty functions return a positive
     magnitude (to be multiplied by a negative weight), others already return a
     negative value (to be multiplied by a POSITIVE weight).
     trunk_vertical_accel_penalty returns -|a_z|: with the -0.02 weight inherited
