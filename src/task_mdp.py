@@ -18,13 +18,11 @@ from mjlab.tasks.velocity.mdp.velocity_command import UniformVelocityCommand, Un
 from mjlab.utils.lab_api.math import euler_xyz_from_quat, matrix_from_quat, quat_apply, quat_from_angle_axis, wrap_to_pi
 from rsl_rl.algorithms.ppo import PPO as _PPO
 
-# ---------------------------------------------------------------------------
 # Patch 1: RewardManager.compute — sanitize NaN rewards before they enter the
 # PPO buffer.  mjlab computes rewards BEFORE resetting environments, so any
 # reward term operating on a NaN physics state returns NaN.  That NaN
 # propagates: NaN reward → NaN advantage → NaN loss → NaN gradient →
 # NaN/negative std → crash in torch.normal on the next mini-batch.
-# ---------------------------------------------------------------------------
 _orig_reward_compute = _RewardManager.compute
 
 
@@ -39,14 +37,12 @@ def _nan_safe_reward_compute(self, dt: float) -> torch.Tensor:
 
 _RewardManager.compute = _nan_safe_reward_compute
 
-# ---------------------------------------------------------------------------
 # Patch 2: PPO.compute_returns — sanitize advantages before normalization.
 # At a sudden curriculum step (e.g. reward weight ×2.5) the value function is
 # badly wrong: all TD errors shift by the same amount, std(advantages) → tiny,
 # and (A − mean) / (std + 1e-8) → huge.  That blows up the gradient for std,
 # which the optimizer then pushes below zero.  Zeroing NaN/Inf advantages
 # before normalization keeps them in a safe range.
-# ---------------------------------------------------------------------------
 _orig_compute_returns = _PPO.compute_returns
 
 
@@ -67,14 +63,12 @@ _PPO.compute_returns = _safe_compute_returns
 
 print("[mdp] Patches 1-2 active: NaN-safe reward/advantage")
 
-# ---------------------------------------------------------------------------
 # Patch 4: exporter_utils.get_base_metadata — the new microduck model has
 # passive joints (jaw linkage closed via equality constraints) that are part
 # of the articulation but have no XML actuator.  The upstream exporter
 # iterates robot.joint_names (16) and indexes joint_name_to_ctrl_id (14),
 # crashing with KeyError on passive_*.  Filter passive joints out of the
 # exported metadata so policies stay consistent with the 14-dim action space.
-# ---------------------------------------------------------------------------
 from mjlab.envs.mdp.actions import JointPositionAction as _JointAction
 from mjlab.rl import exporter_utils as _exporter_utils
 
@@ -1056,9 +1050,7 @@ def braking_reward(env: ManagerBasedRlEnv, command_name: str, vel_std: float = 0
     return braking_strength * stopped
 
 
-# ==============================================================================
 # Ground Pick Rewards
-# ==============================================================================
 
 
 def joint_deviation_l1(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
@@ -1367,9 +1359,7 @@ def apply_mouth_payload_force(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg 
     return torch.zeros(env.num_envs, device=env.device)
 
 
-# ==============================================================================
 # Domain Randomization Events
-# ==============================================================================
 
 
 def randomize_delayed_actuator_gains(env: ManagerBasedRlEnv, env_ids: torch.Tensor, kp_range: tuple[float, float], kd_range: tuple[float, float], asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, operation: str = "scale"):
@@ -2641,7 +2631,6 @@ def head_pose_tracking(env: ManagerBasedRlEnv, command_name: str = "head_pose", 
     return per_joint.mean(dim=-1)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
 # NaN-safe wrappers for the sensor-derived critic observations.
 #
 # `robot_state_is_nan` covers joint + root state, so every obs derived from
@@ -2653,7 +2642,6 @@ def head_pose_tracking(env: ManagerBasedRlEnv, command_name: str = "head_pose", 
 # rsl_rl's check_nan. Sanitizing here does not hide real physics blowups —
 # those still terminate through nan_state and show up as
 # Episode_Termination/nan_state in the training logs.
-# ─────────────────────────────────────────────────────────────────────────────
 
 
 def _finite(x: torch.Tensor) -> torch.Tensor:
@@ -2958,9 +2946,7 @@ def randomize_dof_field_scaled(env: ManagerBasedRlEnv, env_ids: torch.Tensor, fi
     return torch.tensor(float(hi))
 
 
-# =============================================================================
 # BallKick task — ball reset event, kick rewards, critic-only ball observations
-# =============================================================================
 
 
 def _ball_kick_dir(env: ManagerBasedRlEnv) -> torch.Tensor:
@@ -3274,9 +3260,7 @@ def leg_antisymmetry(env: ManagerBasedRlEnv, command_name: str = "twist", asset_
     return gate * scissor
 
 
-# =============================================================================
 # Backlash model — encoder-through-backlash joint observations
-# =============================================================================
 # The backlash model (robot_groundcontact_backlash.xml) puts an unactuated
 # ``passive_<joint>_backlash`` hinge in series with each servo joint. The link
 # angle is qpos[servo] + qpos[backlash], and the real encoder sits on the
@@ -3344,7 +3328,6 @@ def joint_vel_rel_backlash(env: "ManagerBasedRlEnv", asset_cfg: SceneEntityCfg =
     return vel - default_joint_vel[:, main_ids]
 
 
-# ─────────────────────────────────────────────────────────────────────────────
 # Sit↔Stand posture command + posture-conditioned rewards (sitstand env).
 #
 # One policy, both directions: the command is a single sit/stand flag carried
@@ -3354,7 +3337,6 @@ def joint_vel_rel_backlash(env: "ManagerBasedRlEnv", asset_cfg: SceneEntityCfg =
 # live command, per env, so the same reward stack drives the descent, the
 # seated rest, the rise and the standing rest. Uses the _servo_* helpers →
 # backlash-model compatible.
-# ─────────────────────────────────────────────────────────────────────────────
 
 
 class SitStandCommand(UniformVelocityCommand):
@@ -3631,9 +3613,7 @@ def trunk_upward_velocity_penalty(env: ManagerBasedRlEnv, max_up_vel: float = 0.
     return -torch.clamp(vz - max_up_vel, min=0.0)
 
 
-# ==============================================================================
 # Roulade (forward roll) task — episodic dynamic maneuver
-# ==============================================================================
 #
 # Third attempt at the roulade. What the first two taught us:
 #   • origin/roulade (phase-clock + time-windowed reward stages): plateaued

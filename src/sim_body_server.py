@@ -234,7 +234,7 @@ class Body:
         self.kp = kp
         self.held = None
 
-    # ── placement ─────────────────────────────────────────────────────────
+    # placement
 
     def place(self, pose: dict[str, float] | None, trunk_z: float, offset_y: float) -> None:
         data = self.world.data
@@ -267,7 +267,7 @@ class Body:
         data.qvel[self.trunk_dof : self.trunk_dof + 6] = 0.0
         data.qvel[self.qvel_adr] = 0.0
 
-    # ── what the daemon sees ──────────────────────────────────────────────
+    # what the daemon sees
 
     def sensors(self) -> dict:
         data = self.world.data
@@ -321,7 +321,7 @@ class Body:
             distance_mm, status = self.tof.frame(self.world.data)
         return {"rows": ROWS, "cols": COLS, "distance_mm": distance_mm, "status": status}
 
-    # ── what the daemon commands ──────────────────────────────────────────
+    # what the daemon commands
 
     def set_targets(self, wire_targets: list[float]) -> None:
         assert len(wire_targets) == len(JOINT_NAMES), f"want {len(JOINT_NAMES)} targets, got {len(wire_targets)}"

@@ -42,17 +42,7 @@ def test_every_field_is_documented_in_help():
         assert flag in help_text or f"--{field.name}" in help_text, f"{field.name} missing from --help"
 
 
-@pytest.mark.parametrize(
-    ("flag", "snippet"),
-    [
-        ("--repo", "Hub repo id"),
-        ("--kind", "runs `duration_s` and comes back on its own"),
-        ("--task", "Task id to export from"),
-        ("--onnx", "Validated, not re-exported"),
-        ("--dry-run", "and stop"),
-        ("--device", "Default: cuda:0 if available"),
-    ],
-)
+@pytest.mark.parametrize(("flag", "snippet"), [("--repo", "Hub repo id"), ("--kind", "runs `duration_s` and comes back on its own"), ("--task", "Task id to export from"), ("--onnx", "Validated, not re-exported"), ("--dry-run", "and stop"), ("--device", "Default: cuda:0 if available")])
 def test_field_help_text_survives(flag, snippet):
     assert snippet in _help_text(), f"{flag} lost its help text"
 

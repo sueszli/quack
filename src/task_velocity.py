@@ -25,7 +25,6 @@ LOCAL_CHECKPOINTS_ONLY = "tensorboard"
 # Fraction of envs commanded to spin on the spot (lin=0, |ang| ∈ [0.4·max, max]).
 TURN_IN_PLACE_FRACTION = 0.15
 
-# Symmetry
 ENABLE_SYMMETRY = False
 
 # Domain randomization toggles
@@ -197,7 +196,7 @@ def make_microduck_velocity_env_cfg(play: bool = False, rough: bool = False) -> 
     assert isinstance(joint_pos_action, JointPositionActionCfg)
     joint_pos_action.scale = 1.0
 
-    # === REWARDS ===
+    # REWARDS
     # Pose reward configuration
     cfg.rewards["pose"].params["std_standing"] = std_standing  # tight when command=0
     cfg.rewards["pose"].params["std_walking"] = std_walking
@@ -291,8 +290,7 @@ def make_microduck_velocity_env_cfg(play: bool = False, rough: bool = False) -> 
     # Velocity-based pushes for robustness training
     task_dr.apply_dr(cfg, DR, HEAD_BODY_NAMES, play=play)
 
-    # Observations
-    del cfg.observations["actor"].terms["base_lin_vel"]
+        del cfg.observations["actor"].terms["base_lin_vel"]
     # mjlab 1.3.0 adds a height_scan term (terrain ray scan) to both groups by
     # default. The microduck has no such body-mounted terrain sensor for the
     # policy, so drop it from both (mirrors microban).
@@ -373,7 +371,7 @@ def make_microduck_velocity_env_cfg(play: bool = False, rough: bool = False) -> 
         cfg.observations[group].terms["head_command"] = ObservationTermCfg(func=mdp.generated_commands, params={"command_name": "head_pose"})
         cfg.observations[group].terms["body_command"] = ObservationTermCfg(func=mdp.generated_commands, params={"command_name": "body_pose"})
 
-    # === Pose tracking rewards ===
+    # Pose tracking rewards
     # head_pose: primary objective in vel env — the whole point of the rewrite.
     # std=0.5 with per-joint Gaussian (see head_pose_tracking in task_mdp.py): at the
     # full ±1.0 rad command, a non-tracking policy still sees per-joint reward
