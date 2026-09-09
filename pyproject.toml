@@ -32,7 +32,7 @@ mjlab_microduck = "mjlab_microduck.registry"
 [project.scripts]
 # Serve a simulated body to the real `robotd` — see body_server.py.
 duck-body = "mjlab_microduck.body_server:main"
-publish = "mjlab_microduck.publish:main"
+publish = "mjlab_microduck.publish_cli:main"
 export = "mjlab_microduck.export:main"
 infer = "mjlab_microduck.infer_policy:main"
 
