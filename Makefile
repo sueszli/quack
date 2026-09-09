@@ -1,6 +1,3 @@
-# Formatting / lint config lives in [tool.ruff] in pyproject.toml so editors,
-# pre-commit and `make` all agree.
-
 .PHONY: precommit-hook
 precommit-hook:
 	@common_dir="$$(git rev-parse --git-common-dir 2>/dev/null)"; \
@@ -25,8 +22,6 @@ tests:
 smoke:
 	uv run train Mjlab-Velocity-Flat-MicroDuck --env.scene.num-envs 64 --agent.max_iterations 5
 
-# NOTE: `lint` only passes once the companion cleanup PRs are in (they remove
-# the last F811/F841/RUF059 findings). Merge those first, or this gate fails.
 .PHONY: precommit
 precommit:
 	uv sync
