@@ -73,24 +73,14 @@ Phases (as before, but with a recovery backstop):
 import math
 
 from mjlab.envs import ManagerBasedRlEnvCfg
-from mjlab.managers import (
-    CurriculumTermCfg,
-    EventTermCfg,
-    RewardTermCfg,
-    TerminationTermCfg,
-)
+from mjlab.managers import CurriculumTermCfg, EventTermCfg, RewardTermCfg, TerminationTermCfg
 from mjlab.managers.scene_entity_config import SceneEntityCfg
-from mjlab.rl import (
-    RslRlModelCfg,
-    RslRlOnPolicyRunnerCfg,
-)
+from mjlab.rl import RslRlModelCfg, RslRlOnPolicyRunnerCfg
 
 from . import task_mdp as microduck_mdp
 from .robot import MICRODUCK_STANDUP_ROBOT_CFG
 from .task_symmetry import PpoWithSymmetryCfg
-from .task_velocity import (
-    make_microduck_velocity_env_cfg,
-)
+from .task_velocity import make_microduck_velocity_env_cfg
 
 # Phase boundaries (PPO iterations; env step counter scales by num_steps_per_env=24)
 FELL_OVER_DISABLE_ITER = 500
@@ -200,9 +190,7 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
     cfg.rewards["upright_progress"] = RewardTermCfg(
         func=microduck_mdp.upright_progress,
         weight=5.0,
-        params={
-            "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
-        },
+        params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))},
     )
     # z-axis companion to upright_progress (run-5 crouch-endpoint lesson): the
     # crouch→stand last mile is mostly a HEIGHT change at modest tilt — where
@@ -213,10 +201,7 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
     cfg.rewards["height_progress"] = RewardTermCfg(
         func=microduck_mdp.height_progress,
         weight=30.0,
-        params={
-            "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
-            "ceiling": 0.115,
-        },
+        params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)), "ceiling": 0.115},
     )
     cfg.rewards["com_upward_velocity"] = RewardTermCfg(
         func=microduck_mdp.com_upward_velocity,
@@ -238,10 +223,7 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
     # than getting up. joint_torque_rate_l2 below covers landing harshness.
     # Standup's proven anti-jitter term: penalizes torque CHANGE (not magnitude
     # or rotation) → smooths transfer without blocking the recovery flip.
-    cfg.rewards["joint_torque_rate_l2"] = RewardTermCfg(
-        func=microduck_mdp.joint_torque_rate_l2,
-        weight=-2e-3,
-    )
+    cfg.rewards["joint_torque_rate_l2"] = RewardTermCfg(func=microduck_mdp.joint_torque_rate_l2, weight=-2e-3)
 
     # ── Recovery economics (first-run lessons #3-#5) ──────────────────────────
     # air_time zeroed while fallen: a robot lying on its trunk can rhythmically
@@ -334,10 +316,7 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
     # Phase 3: prone-init ramp (face-down first, face-up later, capped 45%).
     cfg.curriculum["prone_init_prob"] = CurriculumTermCfg(
         func=microduck_mdp.event_param_curriculum,
-        params={
-            "event_name": "random_prone_init",
-            "param_stages": PRONE_RAMP_STAGES,
-        },
+        params={"event_name": "random_prone_init", "param_stages": PRONE_RAMP_STAGES},
     )
 
     # Recovery economics ramp: tax + bounty OFF until the walk is established
@@ -381,17 +360,9 @@ MicroduckVelStandRlCfg = RslRlOnPolicyRunnerCfg(
         hidden_dims=(512, 256, 128),
         activation="elu",
         obs_normalization=True,
-        distribution_cfg={
-            "class_name": "GaussianDistribution",
-            "init_std": 1.0,
-            "std_type": "scalar",
-        },
+        distribution_cfg={"class_name": "GaussianDistribution", "init_std": 1.0, "std_type": "scalar"},
     ),
-    critic=RslRlModelCfg(
-        hidden_dims=(512, 256, 128),
-        activation="elu",
-        obs_normalization=True,
-    ),
+    critic=RslRlModelCfg(hidden_dims=(512, 256, 128), activation="elu", obs_normalization=True),
     algorithm=PpoWithSymmetryCfg(
         value_loss_coef=1.0,
         use_clipped_value_loss=True,

@@ -3,12 +3,7 @@ import math
 import mujoco
 import numpy as np
 
-from src.task_slope_terrain import (
-    RAMP_DEG_MAX,
-    RAMP_DEG_MIN,
-    FlatRampTerrainCfg,
-    ramp_angle_by_difficulty,
-)
+from src.task_slope_terrain import RAMP_DEG_MAX, RAMP_DEG_MIN, FlatRampTerrainCfg, ramp_angle_by_difficulty
 
 
 def test_ramp_angle_endpoints():

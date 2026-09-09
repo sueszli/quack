@@ -53,8 +53,21 @@ OFFICIAL_SET = {
     "robot": {"model": "microduck", "hw_rev": 1, "servos": "xl330", "control_hz": 50},
     "policies": [
         {"file": "alpha_walking.onnx", "kind": "perpetual"},
-        {"file": "alpha_sitstand.onnx", "name": "sitstand", "kind": "scripted", "command": {"encoding": "posture_flag", "sit": 1.0, "stand": 0.0, "idle": [0, 0, 0]}, "ramp_s": 2.0, "unwind_s": 1.0},
-        {"file": "alpha_ground_pick.onnx", "name": "ground_pick", "kind": "episodic", "duration_s": 2.8, "command": {"encoding": "phase", "period_s": 4.0, "end_phase": 0.7}},
+        {
+            "file": "alpha_sitstand.onnx",
+            "name": "sitstand",
+            "kind": "scripted",
+            "command": {"encoding": "posture_flag", "sit": 1.0, "stand": 0.0, "idle": [0, 0, 0]},
+            "ramp_s": 2.0,
+            "unwind_s": 1.0,
+        },
+        {
+            "file": "alpha_ground_pick.onnx",
+            "name": "ground_pick",
+            "kind": "episodic",
+            "duration_s": 2.8,
+            "command": {"encoding": "phase", "period_s": 4.0, "end_phase": 0.7},
+        },
         {"file": "roulade.onnx", "kind": "episodic", "duration_s": 1.0, "chain": True},
     ],
 }

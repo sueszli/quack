@@ -121,7 +121,9 @@ def build_manifest(
         # one-shot with `policy add --hold` and which then needs `unwind_s` so the robot is not
         # let go of on one foot. `unwind_s` is what says which.
         if duration_s is not None:
-            raise ManifestError("a perpetual policy has no length of its own; leave duration_s unset (a gait runs until told otherwise; a held pose gets --hold when added as a skill)")
+            raise ManifestError(
+                "a perpetual policy has no length of its own; leave duration_s unset (a gait runs until told otherwise; a held pose gets --hold when added as a skill)"
+            )
         if unwind_s is not None and unwind_s <= 0:
             raise ManifestError("unwind_s must be > 0 when given")
         if chain:
@@ -230,7 +232,9 @@ def inspect_onnx(path: Path) -> OnnxShape:
     initializers = {i.name for i in graph.initializer}
     inputs = [i for i in graph.input if i.name not in initializers]
     if len(inputs) != 1 or len(graph.output) != 1:
-        raise ManifestError(f"{path.name}: expected one input and one output, found {[i.name for i in inputs]} -> {[o.name for o in graph.output]}")
+        raise ManifestError(
+            f"{path.name}: expected one input and one output, found {[i.name for i in inputs]} -> {[o.name for o in graph.output]}"
+        )
 
     def last_dim(value) -> int:
         dims = value.type.tensor_type.shape.dim
@@ -255,7 +259,9 @@ def check_onnx(path: Path) -> OnnxShape:
         raise ManifestError(f"{path}: no such file")
     shape = inspect_onnx(path)
     if shape.obs_len != OBS_LEN:
-        raise ManifestError(f"{path.name}: observation width is {shape.obs_len}, the robot builds {OBS_LEN} (a 51-D policy is the legacy 3-value-command family, which the daemon refuses)")
+        raise ManifestError(
+            f"{path.name}: observation width is {shape.obs_len}, the robot builds {OBS_LEN} (a 51-D policy is the legacy 3-value-command family, which the daemon refuses)"
+        )
     if shape.action_len != ACTION_LEN:
         raise ManifestError(f"{path.name}: {shape.action_len} actions, the robot has {ACTION_LEN}")
     return shape
@@ -325,7 +331,9 @@ def render_readme(manifest: dict[str, Any], repo_id: str) -> str:
         timing = f"Holds until told otherwise; the daemon drives `command.idle` for {manifest['unwind_s']} s before handing back to the gait."
     else:
         slot = manifest.get("slot")
-        timing = "Runs until told otherwise" + (f" — a gait for the `{slot}` slot." if slot else " — a gait, loaded into a policy slot.")
+        timing = "Runs until told otherwise" + (
+            f" — a gait for the `{slot}` slot." if slot else " — a gait, loaded into a policy slot."
+        )
     lines = [
         "---",
         "tags:",

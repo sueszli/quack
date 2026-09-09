@@ -96,9 +96,7 @@ def test_finite_helper_sanitizes_nan_and_inf():
 
 def test_safe_obs_wrappers_are_wired_into_the_critic():
     # Guards must actually be installed on the env cfg, not just exist.
-    from src.task_velocity import (
-        make_microduck_velocity_env_cfg,
-    )
+    from src.task_velocity import make_microduck_velocity_env_cfg
 
     cfg = make_microduck_velocity_env_cfg(rough=True)
     terms = cfg.observations["critic"].terms
@@ -107,9 +105,7 @@ def test_safe_obs_wrappers_are_wired_into_the_critic():
 
 
 def test_nan_state_termination_watches_the_contact_sensor():
-    from src.task_velocity import (
-        make_microduck_velocity_env_cfg,
-    )
+    from src.task_velocity import make_microduck_velocity_env_cfg
 
     cfg = make_microduck_velocity_env_cfg(rough=True)
     params = cfg.terminations["nan_state"].params
@@ -120,12 +116,12 @@ def test_standup_env_is_also_guarded():
     # The deployed standing policy trains on StandUp, which builds on mjlab's
     # base env (NOT the microduck velocity env) and therefore does not inherit
     # the guards wired there.
-    from src.task_standup import (
-        make_microduck_standup_env_cfg,
-    )
+    from src.task_standup import make_microduck_standup_env_cfg
 
     cfg = make_microduck_standup_env_cfg()
     terms = cfg.observations["critic"].terms
     for name in ("foot_contact_forces", "foot_air_time"):
         assert terms[name].func.__name__.endswith("_safe"), f"standup critic/{name} lost its NaN guard"
-    assert cfg.terminations["nan_state"].params.get("sensor_names"), "standup nan_state no longer watches contact forces"
+    assert cfg.terminations["nan_state"].params.get("sensor_names"), (
+        "standup nan_state no longer watches contact forces"
+    )

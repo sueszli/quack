@@ -123,11 +123,7 @@ def test_ground_pick_cmd_cfg_has_randomize_phase_default_true():
     base = UniformVelocityCommandCfg(
         entity_name="robot",
         resampling_time_range=(10.0, 10.0),
-        ranges=UniformVelocityCommandCfg.Ranges(
-            lin_vel_x=(0.0, 0.0),
-            lin_vel_y=(0.0, 0.0),
-            ang_vel_z=(0.0, 0.0),
-        ),
+        ranges=UniformVelocityCommandCfg.Ranges(lin_vel_x=(0.0, 0.0), lin_vel_y=(0.0, 0.0), ang_vel_z=(0.0, 0.0)),
     )
     cfg = GroundPickPhaseCommandCfg(**vars(base))
     assert cfg.randomize_phase is True

@@ -4,10 +4,7 @@ import mujoco
 from mjlab.entity import EntityArticulationInfoCfg, EntityCfg
 from mjlab.utils.spec_config import CollisionCfg
 
-from .robot_actuator import (
-    BacklashEncoderBamActuatorCfg,
-    FrictionDRBamActuatorCfg,
-)
+from .robot_actuator import BacklashEncoderBamActuatorCfg, FrictionDRBamActuatorCfg
 
 # Repo-level assets/mjcf (../assets from this file): MJCF models, scenes, export configs.
 MJCF_DIR: Path = Path(__file__).resolve().parents[1] / "assets" / "mjcf"
@@ -41,7 +38,9 @@ assert MICRODUCK_BALL_XML.exists(), f"XML not found: {MICRODUCK_BALL_XML}"
 assert MICRODUCK_GROUNDCONTACT_ROLLERS_XML.exists(), f"XML not found: {MICRODUCK_GROUNDCONTACT_ROLLERS_XML}"
 assert MICRODUCK_GROUNDCONTACT_BACKLASH_XML.exists(), f"XML not found: {MICRODUCK_GROUNDCONTACT_BACKLASH_XML}"
 assert MICRODUCK_WALK_BACKLASH_XML.exists(), f"XML not found: {MICRODUCK_WALK_BACKLASH_XML}"
-assert MICRODUCK_GROUNDCONTACT_ROLLERS_BACKLASH_XML.exists(), f"XML not found: {MICRODUCK_GROUNDCONTACT_ROLLERS_BACKLASH_XML}"
+assert MICRODUCK_GROUNDCONTACT_ROLLERS_BACKLASH_XML.exists(), (
+    f"XML not found: {MICRODUCK_GROUNDCONTACT_ROLLERS_BACKLASH_XML}"
+)
 
 
 def get_walk_spec() -> mujoco.MjSpec:
@@ -165,38 +164,28 @@ backlash_actuators = BacklashEncoderBamActuatorCfg(**_BAM_ACTUATOR_KWARGS)
 # through to the normal HOME values.
 assert HOME_FRAME.joint_pos is not None
 BACKLASH_HOME_FRAME = EntityCfg.InitialStateCfg(
-    joint_pos={r".*_backlash$": 0.0, **HOME_FRAME.joint_pos},
-    joint_vel={".*": 0.0},
+    joint_pos={r".*_backlash$": 0.0, **HOME_FRAME.joint_pos}, joint_vel={".*": 0.0}
 )
 
 MICRODUCK_WALK_ROBOT_CFG = EntityCfg(
     spec_fn=get_walk_spec,
     init_state=HOME_FRAME,
     collisions=(FULL_COLLISION,),
-    articulation=EntityArticulationInfoCfg(
-        actuators=(actuators,),
-        soft_joint_pos_limit_factor=0.9,
-    ),
+    articulation=EntityArticulationInfoCfg(actuators=(actuators,), soft_joint_pos_limit_factor=0.9),
 )
 
 MICRODUCK_STANDUP_ROBOT_CFG = EntityCfg(
     spec_fn=get_standup_spec,
     init_state=HOME_FRAME,
     collisions=(FULL_COLLISION,),
-    articulation=EntityArticulationInfoCfg(
-        actuators=(actuators,),
-        soft_joint_pos_limit_factor=0.9,
-    ),
+    articulation=EntityArticulationInfoCfg(actuators=(actuators,), soft_joint_pos_limit_factor=0.9),
 )
 
 MICRODUCK_GROUND_PICK_ROBOT_CFG = EntityCfg(
     spec_fn=get_ground_pick_spec,
     init_state=HOME_FRAME,
     collisions=(FULL_COLLISION,),
-    articulation=EntityArticulationInfoCfg(
-        actuators=(actuators,),
-        soft_joint_pos_limit_factor=0.9,
-    ),
+    articulation=EntityArticulationInfoCfg(actuators=(actuators,), soft_joint_pos_limit_factor=0.9),
 )
 
 # Backlash robots: base model + ±1° serial backlash hinge per servo.
@@ -210,20 +199,14 @@ MICRODUCK_BACKLASH_ROBOT_CFG = EntityCfg(
     spec_fn=get_backlash_spec,
     init_state=BACKLASH_HOME_FRAME,
     collisions=(FULL_COLLISION,),
-    articulation=EntityArticulationInfoCfg(
-        actuators=(backlash_actuators,),
-        soft_joint_pos_limit_factor=0.9,
-    ),
+    articulation=EntityArticulationInfoCfg(actuators=(backlash_actuators,), soft_joint_pos_limit_factor=0.9),
 )
 
 MICRODUCK_WALK_BACKLASH_ROBOT_CFG = EntityCfg(
     spec_fn=get_walk_backlash_spec,
     init_state=BACKLASH_HOME_FRAME,
     collisions=(FULL_COLLISION,),
-    articulation=EntityArticulationInfoCfg(
-        actuators=(backlash_actuators,),
-        soft_joint_pos_limit_factor=0.9,
-    ),
+    articulation=EntityArticulationInfoCfg(actuators=(backlash_actuators,), soft_joint_pos_limit_factor=0.9),
 )
 
 # Roller-skate backlash robot: wheels stay free (passive_*wheel untouched by
@@ -233,19 +216,13 @@ MICRODUCK_ROLLERS_BACKLASH_ROBOT_CFG = EntityCfg(
     spec_fn=get_rollers_backlash_spec,
     init_state=BACKLASH_HOME_FRAME,
     collisions=(),
-    articulation=EntityArticulationInfoCfg(
-        actuators=(backlash_actuators,),
-        soft_joint_pos_limit_factor=0.9,
-    ),
+    articulation=EntityArticulationInfoCfg(actuators=(backlash_actuators,), soft_joint_pos_limit_factor=0.9),
 )
 
 # Free-floating, non-articulated ball prop for the BallKick task. Position is
 # set each episode by the reset_ball_in_front_of_foot event; the init pos here
 # only matters for the pristine pre-first-reset state.
-MICRODUCK_BALL_CFG = EntityCfg(
-    spec_fn=get_ball_spec,
-    init_state=EntityCfg.InitialStateCfg(pos=(0.3, 0.0, 0.035)),
-)
+MICRODUCK_BALL_CFG = EntityCfg(spec_fn=get_ball_spec, init_state=EntityCfg.InitialStateCfg(pos=(0.3, 0.0, 0.035)))
 
 # Roller skate robot: the 4 passive wheel joints (passive_*wheel) have no XML
 # actuators; the BAM cfg's target regex already excludes them, so the action
@@ -256,10 +233,7 @@ MICRODUCK_WALK_ROLLERS_ROBOT_CFG = EntityCfg(
     spec_fn=get_walk_rollers_spec,
     init_state=HOME_FRAME,
     collisions=(),  # roller wheel collision geoms have no explicit names; XML defaults apply
-    articulation=EntityArticulationInfoCfg(
-        actuators=(actuators,),
-        soft_joint_pos_limit_factor=0.9,
-    ),
+    articulation=EntityArticulationInfoCfg(actuators=(actuators,), soft_joint_pos_limit_factor=0.9),
 )
 
 if __name__ == "__main__":
@@ -267,10 +241,7 @@ if __name__ == "__main__":
     from mjlab.scene import Scene, SceneCfg
     from mjlab.terrains import TerrainEntityCfg
 
-    SCENE_CFG = SceneCfg(
-        terrain=TerrainEntityCfg(terrain_type="plane"),
-        entities={"robot": MICRODUCK_WALK_ROBOT_CFG},
-    )
+    SCENE_CFG = SceneCfg(terrain=TerrainEntityCfg(terrain_type="plane"), entities={"robot": MICRODUCK_WALK_ROBOT_CFG})
 
     scene = Scene(SCENE_CFG, device="cuda:0")
     mujoco.viewer.launch(scene.compile())

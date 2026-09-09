@@ -44,6 +44,19 @@ namespace = true
 
 [tool.ruff]
 indent-width = 4
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.format]
+# Ignore magic trailing commas so short collections inline instead of staying
+# one-element-per-line. line-length 120 keeps the big tables (task registry,
+# runner cfgs) exploded, which is what makes them readable.
+skip-magic-trailing-comma = true
+
+[tool.ruff.lint.isort]
+# Must match format.skip-magic-trailing-comma, or isort and the formatter fight
+# over trailing commas in import blocks.
+split-on-trailing-comma = false
 
 [tool.uv]
 override-dependencies = [

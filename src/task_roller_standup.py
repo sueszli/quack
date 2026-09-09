@@ -33,19 +33,13 @@ import math
 import os
 
 from mjlab.envs import ManagerBasedRlEnvCfg
-from mjlab.managers import (
-    CurriculumTermCfg,
-    EventTermCfg,
-    RewardTermCfg,
-)
+from mjlab.managers import CurriculumTermCfg, EventTermCfg, RewardTermCfg
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.rl import RslRlModelCfg, RslRlOnPolicyRunnerCfg
 
 from . import task_mdp as microduck_mdp
 from .task_symmetry import PpoWithSymmetryCfg
-from .task_velocity_rollers import (
-    make_microduck_velocity_rollers_env_cfg,
-)
+from .task_velocity_rollers import make_microduck_velocity_rollers_env_cfg
 
 # ── Trunk heights (m) ─────────────────────────────────────────────────────────
 # Measured by exact kinematics (minimum of the mesh vertices of the colliding
@@ -179,20 +173,11 @@ def make_microduck_roller_standup_env_cfg(play: bool = False) -> ManagerBasedRlE
     cfg.rewards["pose_stand_legs"] = RewardTermCfg(
         func=microduck_mdp.pose_target_match,
         weight=8.0,
-        params={
-            "std": 0.5,
-            "joint_indices": _LEG_JOINTS,
-            "target_overrides": None,
-        },
+        params={"std": 0.5, "joint_indices": _LEG_JOINTS, "target_overrides": None},
     )
     # L1 bootstrap: constant gradient even far from HOME (the Gaussian saturates).
     cfg.rewards["pose_stand_l1"] = RewardTermCfg(
-        func=microduck_mdp.pose_l1_penalty,
-        weight=5.0,
-        params={
-            "joint_indices": _LEG_JOINTS,
-            "target_overrides": None,
-        },
+        func=microduck_mdp.pose_l1_penalty, weight=5.0, params={"joint_indices": _LEG_JOINTS, "target_overrides": None}
     )
 
     # Height in three layers: wide Gaussian (pulls from the ground),
@@ -220,10 +205,7 @@ def make_microduck_roller_standup_env_cfg(play: bool = False) -> ManagerBasedRlE
     cfg.rewards["height_stand_l1"] = RewardTermCfg(
         func=microduck_mdp.height_l1_penalty,
         weight=30.0,
-        params={
-            "target_height": ROLLER_STAND_Z,
-            "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
-        },
+        params={"target_height": ROLLER_STAND_Z, "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))},
     )
 
     # Pays for the rising MOTION, not just the destination: without it,
@@ -233,10 +215,7 @@ def make_microduck_roller_standup_env_cfg(play: bool = False) -> ManagerBasedRlE
     cfg.rewards["com_upward_velocity"] = RewardTermCfg(
         func=microduck_mdp.com_upward_velocity,
         weight=3.0,
-        params={
-            "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
-            "max_height": ROLLER_STAND_Z + 0.010,
-        },
+        params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)), "max_height": ROLLER_STAND_Z + 0.010},
     )
     # Gentle rise: penalizes |a_z|. Compatible with com_upward_velocity — a
     # constant vertical velocity collects the former AND has a_z = 0 → the two
@@ -318,10 +297,7 @@ def make_microduck_roller_standup_env_cfg(play: bool = False) -> ManagerBasedRlE
     # If it is still violent, raise THIS term (formula above) rather than
     # body_ang_vel or action_rate, which are motion blockers and froze
     # the rise from the back.
-    cfg.rewards["joint_torque_rate_l2"] = RewardTermCfg(
-        func=microduck_mdp.joint_torque_rate_l2,
-        weight=-0.2,
-    )
+    cfg.rewards["joint_torque_rate_l2"] = RewardTermCfg(func=microduck_mdp.joint_torque_rate_l2, weight=-0.2)
 
     # NO head impact penalty. Tried with the velstand values
     # (body_impact_cost, `neck` subtree, weight -1.0, threshold 2.0): the policy
@@ -398,10 +374,42 @@ def make_microduck_roller_standup_env_cfg(play: bool = False) -> ManagerBasedRlE
         params={
             "event_name": "set_ground_state",
             "param_stages": [
-                {"step": 0, "params": {"standing_prob": 0.50, "sitting_prob": 0.00, "face_down_prob": 0.50, "face_up_prob": 0.00}},
-                {"step": 600 * NUM_STEPS_PER_ENV, "params": {"standing_prob": 0.35, "sitting_prob": 0.00, "face_down_prob": 0.45, "face_up_prob": 0.20}},
-                {"step": 1500 * NUM_STEPS_PER_ENV, "params": {"standing_prob": 0.25, "sitting_prob": 0.00, "face_down_prob": 0.40, "face_up_prob": 0.35}},
-                {"step": 2500 * NUM_STEPS_PER_ENV, "params": {"standing_prob": 0.20, "sitting_prob": 0.00, "face_down_prob": 0.40, "face_up_prob": 0.40}},
+                {
+                    "step": 0,
+                    "params": {
+                        "standing_prob": 0.50,
+                        "sitting_prob": 0.00,
+                        "face_down_prob": 0.50,
+                        "face_up_prob": 0.00,
+                    },
+                },
+                {
+                    "step": 600 * NUM_STEPS_PER_ENV,
+                    "params": {
+                        "standing_prob": 0.35,
+                        "sitting_prob": 0.00,
+                        "face_down_prob": 0.45,
+                        "face_up_prob": 0.20,
+                    },
+                },
+                {
+                    "step": 1500 * NUM_STEPS_PER_ENV,
+                    "params": {
+                        "standing_prob": 0.25,
+                        "sitting_prob": 0.00,
+                        "face_down_prob": 0.40,
+                        "face_up_prob": 0.35,
+                    },
+                },
+                {
+                    "step": 2500 * NUM_STEPS_PER_ENV,
+                    "params": {
+                        "standing_prob": 0.20,
+                        "sitting_prob": 0.00,
+                        "face_down_prob": 0.40,
+                        "face_up_prob": 0.40,
+                    },
+                },
             ],
         },
     )
@@ -506,17 +514,9 @@ MicroduckRollerStandUpRlCfg = RslRlOnPolicyRunnerCfg(
         hidden_dims=(512, 256, 128),
         activation="elu",
         obs_normalization=True,  # the normalizer MUST be baked into the ONNX by export.py
-        distribution_cfg={
-            "class_name": "GaussianDistribution",
-            "init_std": 1.0,
-            "std_type": "scalar",
-        },
+        distribution_cfg={"class_name": "GaussianDistribution", "init_std": 1.0, "std_type": "scalar"},
     ),
-    critic=RslRlModelCfg(
-        hidden_dims=(512, 256, 128),
-        activation="elu",
-        obs_normalization=True,
-    ),
+    critic=RslRlModelCfg(hidden_dims=(512, 256, 128), activation="elu", obs_normalization=True),
     algorithm=PpoWithSymmetryCfg(
         value_loss_coef=1.0,
         use_clipped_value_loss=True,

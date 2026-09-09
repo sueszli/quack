@@ -1,4 +1,5 @@
-RUFF_FLAGS := --line-length 5000 --target-version py312
+# line-length / target-version / format rules live in [tool.ruff] in pyproject.toml.
+RUFF_FLAGS :=
 RUFF_CHECK_FLAGS := $(RUFF_FLAGS) --extend-select I --ignore F403,F405,F821,E731,E402,PLE0643,B008,UP040,RUF016,PLC0206,SIM115
 
 .PHONY: precommit-hook

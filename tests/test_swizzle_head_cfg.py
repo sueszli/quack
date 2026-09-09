@@ -1,11 +1,7 @@
 from mjlab.tasks.velocity import mdp
 
-from src.task_velocity_rollers import (
-    make_microduck_velocity_rollers_env_cfg,
-)
-from src.task_velocity_swizzle import (
-    make_microduck_velocity_swizzle_env_cfg,
-)
+from src.task_velocity_rollers import make_microduck_velocity_rollers_env_cfg
+from src.task_velocity_swizzle import make_microduck_velocity_swizzle_env_cfg
 
 
 def test_swizzle_head_control_wired():
@@ -30,10 +26,14 @@ def test_swizzle_head_control_wired():
     #  - pose reward scoped to leg joints via a negative-lookahead regex that
     #    excludes neck/head (and passive wheels)
     pose_joints = cfg.rewards["pose"].params["asset_cfg"].joint_names
-    assert any("(?!" in j and "neck" in j and "head" in j for j in pose_joints), f"pose reward not scoped away from neck/head: {pose_joints}"
+    assert any("(?!" in j and "neck" in j and "head" in j for j in pose_joints), (
+        f"pose reward not scoped away from neck/head: {pose_joints}"
+    )
 
     # Pose reward function unchanged (not swapped to a different function)
-    assert cfg.rewards["pose"].func is roller_cfg.rewards["pose"].func, "pose reward function was swapped (should only scope asset_cfg)"
+    assert cfg.rewards["pose"].func is roller_cfg.rewards["pose"].func, (
+        "pose reward function was swapped (should only scope asset_cfg)"
+    )
 
     # Late head curricula exist.
     assert "head_pose_tracking_weight" in cfg.curriculum

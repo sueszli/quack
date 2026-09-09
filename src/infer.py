@@ -97,7 +97,9 @@ def load_mujoco_with_bam(xml_path: str, bam_model, timestep: float, vin_drop_gai
     model.opt.timestep = timestep
     data = mujoco.MjData(model)
     bam_ctrl = MujocoController(bam_model, names, model, data, vin_drop_gain=vin_drop_gain, vin_min=vin_min)
-    print(f"BAM {BAM_MODEL} actuators on {len(names)} joints: kt={kt:.4f} R={R:.4f} vin={bam_model.actuator.vin:.2f}V kp_fw={bam_model.actuator.kp:.0f} vin_drop_gain={vin_drop_gain} vin_min={vin_min} max_current={bam_model.actuator.max_current} forcerange=+/-{force_limit:.3f}Nm armature={bam_model.actuator.get_extra_inertia():.2e}")
+    print(
+        f"BAM {BAM_MODEL} actuators on {len(names)} joints: kt={kt:.4f} R={R:.4f} vin={bam_model.actuator.vin:.2f}V kp_fw={bam_model.actuator.kp:.0f} vin_drop_gain={vin_drop_gain} vin_min={vin_min} max_current={bam_model.actuator.max_current} forcerange=+/-{force_limit:.3f}Nm armature={bam_model.actuator.get_extra_inertia():.2e}"
+    )
     return model, data, bam_ctrl, names
 
 
@@ -209,7 +211,30 @@ class TerminalInput:
 
 
 class PolicyInference:
-    def __init__(self, model, data, walking_onnx_path=None, action_scale=1.0, bam_ctrl=None, delay_min_lag=0, delay_max_lag=0, standing_onnx_path=None, switch_threshold=0.05, use_projected_gravity=False, ground_pick_onnx_path=None, ground_pick_period=4.0, sit_onnx_path=None, new_cmd_obs=False, slope_onnx_path=None, sitstand_onnx_path=None, kick_left_onnx_path=None, kick_right_onnx_path=None, roulade_onnx_path=None, kick_duration=3.0, roulade_duration=2.0):
+    def __init__(
+        self,
+        model,
+        data,
+        walking_onnx_path=None,
+        action_scale=1.0,
+        bam_ctrl=None,
+        delay_min_lag=0,
+        delay_max_lag=0,
+        standing_onnx_path=None,
+        switch_threshold=0.05,
+        use_projected_gravity=False,
+        ground_pick_onnx_path=None,
+        ground_pick_period=4.0,
+        sit_onnx_path=None,
+        new_cmd_obs=False,
+        slope_onnx_path=None,
+        sitstand_onnx_path=None,
+        kick_left_onnx_path=None,
+        kick_right_onnx_path=None,
+        roulade_onnx_path=None,
+        kick_duration=3.0,
+        roulade_duration=2.0,
+    ):
         self.bam_ctrl = bam_ctrl  # bam.mujoco.MujocoController (None = legacy position actuators)
         self.model = model
         self.data = data
@@ -237,7 +262,10 @@ class PolicyInference:
             # Try to read gait period from ONNX metadata
             try:
                 model_metadata = self.walking_session.get_modelmeta()
-                if hasattr(model_metadata, "custom_metadata_map") and "gait_period" in model_metadata.custom_metadata_map:
+                if (
+                    hasattr(model_metadata, "custom_metadata_map")
+                    and "gait_period" in model_metadata.custom_metadata_map
+                ):
                     self.default_gait_period_from_onnx = float(model_metadata.custom_metadata_map["gait_period"])
                     print(f"Found gait period in ONNX metadata: {self.default_gait_period_from_onnx:.4f}s")
             except Exception as e:  # noqa: BLE001 - metadata is optional; a bad blob must not abort loading
@@ -318,11 +346,15 @@ class PolicyInference:
             if not path:
                 continue
             if not self.new_cmd_obs:
-                raise ValueError(f"--{name.replace('_', '-')} policies use the unified 13D command obs (61D); run with --new-cmd-obs")
+                raise ValueError(
+                    f"--{name.replace('_', '-')} policies use the unified 13D command obs (61D); run with --new-cmd-obs"
+                )
             print(f"\nLoading {name} policy from: {path}")
             self.behavior_sessions[name] = ort.InferenceSession(path)
             self.behavior_durations[name] = duration
-            print(f"{name} policy input shape: {self.behavior_sessions[name].get_inputs()[0].shape}  (auto-return after {duration:.1f}s)")
+            print(
+                f"{name} policy input shape: {self.behavior_sessions[name].get_inputs()[0].shape}  (auto-return after {duration:.1f}s)"
+            )
 
         # Validate at least one policy loaded. A sitstand policy can run alone
         # (it holds the stand at flag=0), unlike the old one-way sit policy.
@@ -535,10 +567,16 @@ class PolicyInference:
         if self.body_pose_mode:
             print("Body pose mode: ON")
             print(f"  UP/DOWN: Δz ±{self.body_cmd_step_z * 1000:.0f}mm  (max ±{BODY_CMD_MAX_Z * 1000:.0f}mm)")
-            print(f"  LEFT/RIGHT: Δpitch ±{math.degrees(self.body_cmd_step_angle):.0f}°  (max ±{math.degrees(BODY_CMD_MAX_ANGLE):.0f}°)")
-            print(f"  A/E: Δroll ±{math.degrees(self.body_cmd_step_angle):.0f}°  (max ±{math.degrees(BODY_CMD_MAX_ANGLE):.0f}°)")
+            print(
+                f"  LEFT/RIGHT: Δpitch ±{math.degrees(self.body_cmd_step_angle):.0f}°  (max ±{math.degrees(BODY_CMD_MAX_ANGLE):.0f}°)"
+            )
+            print(
+                f"  A/E: Δroll ±{math.degrees(self.body_cmd_step_angle):.0f}°  (max ±{math.degrees(BODY_CMD_MAX_ANGLE):.0f}°)"
+            )
             if self.new_cmd_obs:
-                print(f"  Z/S: Δyaw ±{math.degrees(self.body_cmd_step_angle):.0f}°  (max ±{math.degrees(BODY_CMD_MAX_ANGLE):.0f}°)")
+                print(
+                    f"  Z/S: Δyaw ±{math.degrees(self.body_cmd_step_angle):.0f}°  (max ±{math.degrees(BODY_CMD_MAX_ANGLE):.0f}°)"
+                )
             print("  SPACE: reset body pose to zero")
             self._print_body_cmd()
         else:
@@ -572,9 +610,13 @@ class PolicyInference:
     def _print_body_cmd(self):
         if self.new_cmd_obs:
             x, y, z, roll, pitch, yaw = self.body_cmd
-            print(f"Body cmd: x={x * 1000:5.1f}mm  y={y * 1000:5.1f}mm  z={z * 1000:5.1f}mm  roll={math.degrees(roll):5.1f}°  pitch={math.degrees(pitch):5.1f}°  yaw={math.degrees(yaw):5.1f}°")
+            print(
+                f"Body cmd: x={x * 1000:5.1f}mm  y={y * 1000:5.1f}mm  z={z * 1000:5.1f}mm  roll={math.degrees(roll):5.1f}°  pitch={math.degrees(pitch):5.1f}°  yaw={math.degrees(yaw):5.1f}°"
+            )
         else:
-            print(f"Body cmd: z={self.body_cmd[0] * 1000:.1f}mm  pitch={math.degrees(self.body_cmd[1]):.1f}°  roll={math.degrees(self.body_cmd[2]):.1f}°")
+            print(
+                f"Body cmd: z={self.body_cmd[0] * 1000:.1f}mm  pitch={math.degrees(self.body_cmd[1]):.1f}°  roll={math.degrees(self.body_cmd[2]):.1f}°"
+            )
 
     # --- body command bumpers (index differs between legacy 3D and new 6D) ---
     def _body_idx(self, axis: str) -> int:
@@ -831,7 +873,9 @@ class PolicyInference:
         self.head_mode = not self.head_mode
         if self.head_mode:
             print("Head mode: ON")
-            print(f"  Z/S: neck_pitch  |  UP/DOWN: head_pitch  |  LEFT/RIGHT: head_yaw  |  A/E: head_roll  |  SPACE: reset  (max ±{self.head_max:.2f} rad)")
+            print(
+                f"  Z/S: neck_pitch  |  UP/DOWN: head_pitch  |  LEFT/RIGHT: head_yaw  |  A/E: head_roll  |  SPACE: reset  (max ±{self.head_max:.2f} rad)"
+            )
         else:
             print("Head mode: OFF")
 
@@ -881,37 +925,127 @@ class PolicyInference:
 def main():
     parser = argparse.ArgumentParser(description="Run ONNX policy in MuJoCo")
     parser.add_argument("--roller", action="store_true", help="Use roller skate robot XML (robot_walk_rollers.xml)")
-    parser.add_argument("--scene", type=str, default=None, help="Path to a scene XML, overriding the default pick (e.g. assets/mjcf/scene_allcollisions.xml)")
+    parser.add_argument(
+        "--scene",
+        type=str,
+        default=None,
+        help="Path to a scene XML, overriding the default pick (e.g. assets/mjcf/scene_allcollisions.xml)",
+    )
     parser.add_argument("--walking", type=str, default=None, help="Path to walking policy ONNX file")
     parser.add_argument("--standing", "-s", type=str, default=None, help="Path to standing policy ONNX file")
-    parser.add_argument("--ground-pick", type=str, default=None, help="Path to ground pick policy ONNX file (press G to activate)")
-    parser.add_argument("--sit", type=str, default=None, help="Path to OLD one-way sitting policy ONNX file (press Y to sit, Y again switches back to standing/walking policy)")
-    parser.add_argument("--sitstand", type=str, default=None, help="Path to sitstand policy ONNX (commanded sit<->stand; press Y to sit, Y again the SAME policy stands back up). Requires --new-cmd-obs. Can run standalone.")
+    parser.add_argument(
+        "--ground-pick", type=str, default=None, help="Path to ground pick policy ONNX file (press G to activate)"
+    )
+    parser.add_argument(
+        "--sit",
+        type=str,
+        default=None,
+        help="Path to OLD one-way sitting policy ONNX file (press Y to sit, Y again switches back to standing/walking policy)",
+    )
+    parser.add_argument(
+        "--sitstand",
+        type=str,
+        default=None,
+        help="Path to sitstand policy ONNX (commanded sit<->stand; press Y to sit, Y again the SAME policy stands back up). Requires --new-cmd-obs. Can run standalone.",
+    )
     parser.add_argument("--slope", type=str, default=None, help="Path to slope policy ONNX file (press Y to toggle)")
-    parser.add_argument("--kick-left", type=str, default=None, help="Path to LEFT-foot ball kick policy ONNX (press K to trigger). Requires --new-cmd-obs. Loads a scene with a ball.")
-    parser.add_argument("--kick-right", type=str, default=None, help="Path to RIGHT-foot ball kick policy ONNX (press L to trigger). Requires --new-cmd-obs. Loads a scene with a ball.")
-    parser.add_argument("--roulade", type=str, default=None, help="Path to roulade (forward roll) policy ONNX (press R to trigger). Requires --new-cmd-obs.")
-    parser.add_argument("--kick-duration", type=float, default=3.0, help="Seconds a kick policy stays active before handing back to standing/walking (default: 3.0)")
-    parser.add_argument("--roulade-duration", type=float, default=2.0, help="Seconds the roulade policy stays active before handing back to standing/walking (default: 2.0, ~the roll itself; the standing/walking policy takes over for the settle)")
+    parser.add_argument(
+        "--kick-left",
+        type=str,
+        default=None,
+        help="Path to LEFT-foot ball kick policy ONNX (press K to trigger). Requires --new-cmd-obs. Loads a scene with a ball.",
+    )
+    parser.add_argument(
+        "--kick-right",
+        type=str,
+        default=None,
+        help="Path to RIGHT-foot ball kick policy ONNX (press L to trigger). Requires --new-cmd-obs. Loads a scene with a ball.",
+    )
+    parser.add_argument(
+        "--roulade",
+        type=str,
+        default=None,
+        help="Path to roulade (forward roll) policy ONNX (press R to trigger). Requires --new-cmd-obs.",
+    )
+    parser.add_argument(
+        "--kick-duration",
+        type=float,
+        default=3.0,
+        help="Seconds a kick policy stays active before handing back to standing/walking (default: 3.0)",
+    )
+    parser.add_argument(
+        "--roulade-duration",
+        type=float,
+        default=2.0,
+        help="Seconds the roulade policy stays active before handing back to standing/walking (default: 2.0, ~the roll itself; the standing/walking policy takes over for the settle)",
+    )
     parser.add_argument("--lin-vel-x", type=float, default=0.0, help="Initial linear velocity X command (m/s)")
     parser.add_argument("--lin-vel-y", type=float, default=0.0, help="Initial linear velocity Y command (m/s)")
     parser.add_argument("--ang-vel-z", type=float, default=0.0, help="Initial angular velocity Z command (rad/s)")
     parser.add_argument("--action-scale", type=float, default=1.0, help="Action scale (default: 1.0)")
-    parser.add_argument("--raw-accelerometer", action="store_true", help="Use raw accelerometer instead of projected gravity")
-    parser.add_argument("--delay", type=int, nargs="*", default=None, help="Enable actuator delay: --delay MIN MAX or --delay LAG")
+    parser.add_argument(
+        "--raw-accelerometer", action="store_true", help="Use raw accelerometer instead of projected gravity"
+    )
+    parser.add_argument(
+        "--delay", type=int, nargs="*", default=None, help="Enable actuator delay: --delay MIN MAX or --delay LAG"
+    )
     parser.add_argument("--debug", action="store_true", help="Print observations and actions")
     parser.add_argument("--save-csv", type=str, default=None, help="Save observations and actions to CSV file")
-    parser.add_argument("--record", type=str, default=None, help="Enable recording mode: save observations to pickle file on Ctrl+C")
-    parser.add_argument("--switch-threshold", type=float, default=0.05, help="Vel command magnitude threshold for walking/standing switch (default: 0.05)")
-    parser.add_argument("--ground-pick-period", type=float, default=4.0, help="Ground pick phase period in seconds (default: 4.0)")
-    parser.add_argument("--new-cmd-obs", action="store_true", help="Use the unified 13D command obs layout (twist+head_pose+body_pose). Required for policies trained with the new pose-command-tracking setup. Old policies (51D obs, head_offset added to ctrl) need this flag OFF.")
-    parser.add_argument("--no-bam", action="store_true", help="Use the XML MuJoCo position actuators instead of the BAM M6 voltage/friction model the policies are trained against.")
-    parser.add_argument("--vin", type=float, default=7.4, help=f"BAM battery voltage [V]. Training samples per-env in {BAM_VIN_RANGE}; 7.4 = nominal 2S LiPo.")
-    parser.add_argument("--vin-drop-gain", type=float, default=0.1, help=f"BAM load-dependent voltage sag gain [V/Nm], V = vin - gain*sum|tau|. Training samples per-env in {BAM_VIN_DROP_GAIN_RANGE}. 0 disables.")
-    parser.add_argument("--kp-fw", type=float, default=BAM_KP_FW, help="BAM firmware P-gain (training uses %(default)s).")
-    parser.add_argument("--current-limit", type=float, default=0.0, help="XL330 firmware current limit [A]. With BAM this is the duty-cycle limiter of the voltage model (as bam models it); with --no-bam the actuator force is clipped to +/- current_limit * kt. Training runs WITHOUT a current limit, so the default is off (<=0).")
-    parser.add_argument("--foot-friction", type=float, default=None, help="Override the foot sliding friction (mu) to emulate the real grippy PU sole. Training used mu~1.0 (range 0.7-1.3); real PU is likely ~1.5-2.5. e.g. --foot-friction 2.0")
-    parser.add_argument("--foot-solref", type=float, default=None, help="Soften foot contact: solref time constant (s) for the foot geoms (default sim ~0.02 = stiff/rigid). Larger = softer, to emulate the compliant PU sole. e.g. --foot-solref 0.04")
+    parser.add_argument(
+        "--record", type=str, default=None, help="Enable recording mode: save observations to pickle file on Ctrl+C"
+    )
+    parser.add_argument(
+        "--switch-threshold",
+        type=float,
+        default=0.05,
+        help="Vel command magnitude threshold for walking/standing switch (default: 0.05)",
+    )
+    parser.add_argument(
+        "--ground-pick-period", type=float, default=4.0, help="Ground pick phase period in seconds (default: 4.0)"
+    )
+    parser.add_argument(
+        "--new-cmd-obs",
+        action="store_true",
+        help="Use the unified 13D command obs layout (twist+head_pose+body_pose). Required for policies trained with the new pose-command-tracking setup. Old policies (51D obs, head_offset added to ctrl) need this flag OFF.",
+    )
+    parser.add_argument(
+        "--no-bam",
+        action="store_true",
+        help="Use the XML MuJoCo position actuators instead of the BAM M6 voltage/friction model the policies are trained against.",
+    )
+    parser.add_argument(
+        "--vin",
+        type=float,
+        default=7.4,
+        help=f"BAM battery voltage [V]. Training samples per-env in {BAM_VIN_RANGE}; 7.4 = nominal 2S LiPo.",
+    )
+    parser.add_argument(
+        "--vin-drop-gain",
+        type=float,
+        default=0.1,
+        help=f"BAM load-dependent voltage sag gain [V/Nm], V = vin - gain*sum|tau|. Training samples per-env in {BAM_VIN_DROP_GAIN_RANGE}. 0 disables.",
+    )
+    parser.add_argument(
+        "--kp-fw", type=float, default=BAM_KP_FW, help="BAM firmware P-gain (training uses %(default)s)."
+    )
+    parser.add_argument(
+        "--current-limit",
+        type=float,
+        default=0.0,
+        help="XL330 firmware current limit [A]. With BAM this is the duty-cycle limiter of the voltage model (as bam models it); with --no-bam the actuator force is clipped to +/- current_limit * kt. Training runs WITHOUT a current limit, so the default is off (<=0).",
+    )
+    parser.add_argument(
+        "--foot-friction",
+        type=float,
+        default=None,
+        help="Override the foot sliding friction (mu) to emulate the real grippy PU sole. Training used mu~1.0 (range 0.7-1.3); real PU is likely ~1.5-2.5. e.g. --foot-friction 2.0",
+    )
+    parser.add_argument(
+        "--foot-solref",
+        type=float,
+        default=None,
+        help="Soften foot contact: solref time constant (s) for the foot geoms (default sim ~0.02 = stiff/rigid). Larger = softer, to emulate the compliant PU sole. e.g. --foot-solref 0.04",
+    )
     args = parser.parse_args()
 
     if not args.walking and not args.standing and not args.sitstand:
@@ -919,7 +1053,9 @@ def main():
     if args.sitstand and not args.new_cmd_obs:
         parser.error("--sitstand policies use the unified 13D command obs (61D); add --new-cmd-obs")
     if (args.kick_left or args.kick_right or args.roulade) and not args.new_cmd_obs:
-        parser.error("--kick-left/--kick-right/--roulade policies use the unified 13D command obs (61D); add --new-cmd-obs")
+        parser.error(
+            "--kick-left/--kick-right/--roulade policies use the unified 13D command obs (61D); add --new-cmd-obs"
+        )
     if (args.kick_left or args.kick_right or args.roulade) and args.roller:
         parser.error("kick/roulade policies are trained on the walking robot, not the roller model")
 
@@ -998,7 +1134,9 @@ def main():
                     model.geom_solref[g, 0] = args.foot_solref  # softer contact
                     model.geom_solref[g, 1] = 1.0
                 n_feet += 1
-        print(f"Foot override on {n_feet} geoms: mu={args.foot_friction if args.foot_friction is not None else 'default'}, solref={args.foot_solref if args.foot_solref is not None else 'default'}")
+        print(
+            f"Foot override on {n_feet} geoms: mu={args.foot_friction if args.foot_friction is not None else 'default'}, solref={args.foot_solref if args.foot_solref is not None else 'default'}"
+        )
 
     # Initialize policy
     policy = PolicyInference(
@@ -1090,7 +1228,9 @@ def main():
     if policy.walking_session:
         print("Walking policy: loaded")
     if policy.standing_session:
-        print(f"Standing policy: loaded  (body pose: z=±{BODY_CMD_MAX_Z * 1000:.0f}mm, pitch/roll=±{math.degrees(BODY_CMD_MAX_ANGLE):.0f}°)")
+        print(
+            f"Standing policy: loaded  (body pose: z=±{BODY_CMD_MAX_Z * 1000:.0f}mm, pitch/roll=±{math.degrees(BODY_CMD_MAX_ANGLE):.0f}°)"
+        )
     if policy.walking_session and policy.standing_session:
         print(f"  Switch threshold: {policy.switch_threshold} (vel cmd magnitude)")
     if policy.ground_pick_session:
@@ -1102,7 +1242,9 @@ def main():
         print("Slope policy: loaded  (press Y to toggle, passive descent)")
     _behavior_keys = {"kick_left": "K", "kick_right": "L", "roulade": "R"}
     for _name in policy.behavior_sessions:
-        print(f"{_name} policy: loaded  (press {_behavior_keys[_name]}, auto-return after {policy.behavior_durations[_name]:.1f}s)")
+        print(
+            f"{_name} policy: loaded  (press {_behavior_keys[_name]}, auto-return after {policy.behavior_durations[_name]:.1f}s)"
+        )
     print(f"Active policy: {policy.current_policy}")
     print("Close viewer window to exit")
     print()
@@ -1174,27 +1316,39 @@ def main():
         try:
             if key == "up":
                 if policy.head_mode:
-                    policy.head_offset[1] = np.clip(policy.head_offset[1] + policy.head_step, -policy.head_max, policy.head_max)
+                    policy.head_offset[1] = np.clip(
+                        policy.head_offset[1] + policy.head_step, -policy.head_max, policy.head_max
+                    )
                     policy._update_command()
-                    print(f"Head offset: neck={policy.head_offset[0]:.2f} pitch={policy.head_offset[1]:.2f} yaw={policy.head_offset[2]:.2f} roll={policy.head_offset[3]:.2f}")
+                    print(
+                        f"Head offset: neck={policy.head_offset[0]:.2f} pitch={policy.head_offset[1]:.2f} yaw={policy.head_offset[2]:.2f} roll={policy.head_offset[3]:.2f}"
+                    )
                 elif policy.body_pose_mode:
                     policy.bump_body("z", policy.body_cmd_step_z)
                 else:
                     policy.set_vel_cmd(policy.vel_max_x, policy.vel_cmd[1], policy.vel_cmd[2])
             elif key == "down":
                 if policy.head_mode:
-                    policy.head_offset[1] = np.clip(policy.head_offset[1] - policy.head_step, -policy.head_max, policy.head_max)
+                    policy.head_offset[1] = np.clip(
+                        policy.head_offset[1] - policy.head_step, -policy.head_max, policy.head_max
+                    )
                     policy._update_command()
-                    print(f"Head offset: neck={policy.head_offset[0]:.2f} pitch={policy.head_offset[1]:.2f} yaw={policy.head_offset[2]:.2f} roll={policy.head_offset[3]:.2f}")
+                    print(
+                        f"Head offset: neck={policy.head_offset[0]:.2f} pitch={policy.head_offset[1]:.2f} yaw={policy.head_offset[2]:.2f} roll={policy.head_offset[3]:.2f}"
+                    )
                 elif policy.body_pose_mode:
                     policy.bump_body("z", -policy.body_cmd_step_z)
                 else:
                     policy.set_vel_cmd(policy.vel_min_x, policy.vel_cmd[1], policy.vel_cmd[2])
             elif key == "right":
                 if policy.head_mode:
-                    policy.head_offset[2] = np.clip(policy.head_offset[2] - policy.head_step, -policy.head_max, policy.head_max)
+                    policy.head_offset[2] = np.clip(
+                        policy.head_offset[2] - policy.head_step, -policy.head_max, policy.head_max
+                    )
                     policy._update_command()
-                    print(f"Head offset: neck={policy.head_offset[0]:.2f} pitch={policy.head_offset[1]:.2f} yaw={policy.head_offset[2]:.2f} roll={policy.head_offset[3]:.2f}")
+                    print(
+                        f"Head offset: neck={policy.head_offset[0]:.2f} pitch={policy.head_offset[1]:.2f} yaw={policy.head_offset[2]:.2f} roll={policy.head_offset[3]:.2f}"
+                    )
                 elif policy.body_pose_mode:
                     policy.bump_body("pitch", -policy.body_cmd_step_angle)
                 elif args.roller:
@@ -1204,9 +1358,13 @@ def main():
                     policy.set_vel_cmd(policy.vel_cmd[0], policy.vel_min_y, policy.vel_cmd[2])
             elif key == "left":
                 if policy.head_mode:
-                    policy.head_offset[2] = np.clip(policy.head_offset[2] + policy.head_step, -policy.head_max, policy.head_max)
+                    policy.head_offset[2] = np.clip(
+                        policy.head_offset[2] + policy.head_step, -policy.head_max, policy.head_max
+                    )
                     policy._update_command()
-                    print(f"Head offset: neck={policy.head_offset[0]:.2f} pitch={policy.head_offset[1]:.2f} yaw={policy.head_offset[2]:.2f} roll={policy.head_offset[3]:.2f}")
+                    print(
+                        f"Head offset: neck={policy.head_offset[0]:.2f} pitch={policy.head_offset[1]:.2f} yaw={policy.head_offset[2]:.2f} roll={policy.head_offset[3]:.2f}"
+                    )
                 elif policy.body_pose_mode:
                     policy.bump_body("pitch", policy.body_cmd_step_angle)
                 elif args.roller:
@@ -1256,34 +1414,50 @@ def main():
                 random_push()
             elif key == "a":
                 if policy.head_mode:
-                    policy.head_offset[3] = np.clip(policy.head_offset[3] + policy.head_step, -policy.head_max, policy.head_max)
+                    policy.head_offset[3] = np.clip(
+                        policy.head_offset[3] + policy.head_step, -policy.head_max, policy.head_max
+                    )
                     policy._update_command()
-                    print(f"Head offset: neck={policy.head_offset[0]:.2f} pitch={policy.head_offset[1]:.2f} yaw={policy.head_offset[2]:.2f} roll={policy.head_offset[3]:.2f}")
+                    print(
+                        f"Head offset: neck={policy.head_offset[0]:.2f} pitch={policy.head_offset[1]:.2f} yaw={policy.head_offset[2]:.2f} roll={policy.head_offset[3]:.2f}"
+                    )
                 elif policy.body_pose_mode:
                     policy.bump_body("roll", policy.body_cmd_step_angle)
                 else:
                     policy.set_vel_cmd(policy.vel_cmd[0], policy.vel_cmd[1], policy.vel_max_ang)
             elif key == "e":
                 if policy.head_mode:
-                    policy.head_offset[3] = np.clip(policy.head_offset[3] - policy.head_step, -policy.head_max, policy.head_max)
+                    policy.head_offset[3] = np.clip(
+                        policy.head_offset[3] - policy.head_step, -policy.head_max, policy.head_max
+                    )
                     policy._update_command()
-                    print(f"Head offset: neck={policy.head_offset[0]:.2f} pitch={policy.head_offset[1]:.2f} yaw={policy.head_offset[2]:.2f} roll={policy.head_offset[3]:.2f}")
+                    print(
+                        f"Head offset: neck={policy.head_offset[0]:.2f} pitch={policy.head_offset[1]:.2f} yaw={policy.head_offset[2]:.2f} roll={policy.head_offset[3]:.2f}"
+                    )
                 elif policy.body_pose_mode:
                     policy.bump_body("roll", -policy.body_cmd_step_angle)
                 else:
                     policy.set_vel_cmd(policy.vel_cmd[0], policy.vel_cmd[1], -policy.vel_max_ang)
             elif key == "z":
                 if policy.head_mode:
-                    policy.head_offset[0] = np.clip(policy.head_offset[0] + policy.head_step, -policy.head_max, policy.head_max)
+                    policy.head_offset[0] = np.clip(
+                        policy.head_offset[0] + policy.head_step, -policy.head_max, policy.head_max
+                    )
                     policy._update_command()
-                    print(f"Head offset: neck={policy.head_offset[0]:.2f} pitch={policy.head_offset[1]:.2f} yaw={policy.head_offset[2]:.2f} roll={policy.head_offset[3]:.2f}")
+                    print(
+                        f"Head offset: neck={policy.head_offset[0]:.2f} pitch={policy.head_offset[1]:.2f} yaw={policy.head_offset[2]:.2f} roll={policy.head_offset[3]:.2f}"
+                    )
                 elif policy.body_pose_mode and policy.new_cmd_obs:
                     policy.bump_body("yaw", policy.body_cmd_step_angle)
             elif key == "s":
                 if policy.head_mode:
-                    policy.head_offset[0] = np.clip(policy.head_offset[0] - policy.head_step, -policy.head_max, policy.head_max)
+                    policy.head_offset[0] = np.clip(
+                        policy.head_offset[0] - policy.head_step, -policy.head_max, policy.head_max
+                    )
                     policy._update_command()
-                    print(f"Head offset: neck={policy.head_offset[0]:.2f} pitch={policy.head_offset[1]:.2f} yaw={policy.head_offset[2]:.2f} roll={policy.head_offset[3]:.2f}")
+                    print(
+                        f"Head offset: neck={policy.head_offset[0]:.2f} pitch={policy.head_offset[1]:.2f} yaw={policy.head_offset[2]:.2f} roll={policy.head_offset[3]:.2f}"
+                    )
                 elif policy.body_pose_mode and policy.new_cmd_obs:
                     policy.bump_body("yaw", -policy.body_cmd_step_angle)
         except Exception as e:  # noqa: BLE001 - a keystroke handler must never kill the sim loop
@@ -1322,7 +1496,10 @@ def main():
     print("  A / E:            head_roll ±step")
     print("  SPACE:            reset head offset to zero")
 
-    with TerminalInput() as term, mujoco.viewer.launch_passive(model, data, show_left_ui=False, show_right_ui=False) as viewer:
+    with (
+        TerminalInput() as term,
+        mujoco.viewer.launch_passive(model, data, show_left_ui=False, show_right_ui=False) as viewer,
+    ):
         viewer.sync()
         start_time = time.time()
 
@@ -1346,7 +1523,9 @@ def main():
                     if original_kp is not None:
                         set_standby_gains(False)
                         print("Policy inference enabled (after 1s standby)")
-                        print(f"  Restored original kp gains (range: [{original_kp.min():.2f}, {original_kp.max():.2f}])")
+                        print(
+                            f"  Restored original kp gains (range: [{original_kp.min():.2f}, {original_kp.max():.2f}])"
+                        )
 
                 actual_dt = step_start - prev_step_time
                 prev_step_time = step_start
@@ -1372,11 +1551,7 @@ def main():
                 # actually achieves commanded forward speed and turn rate.
                 quat = data.qpos[qpos_adr + 3 : qpos_adr + 7].astype(np.float32)
                 v_world = np.array(
-                    [
-                        data.qvel[_trunk_qvel_adr + 0],
-                        data.qvel[_trunk_qvel_adr + 1],
-                        data.qvel[_trunk_qvel_adr + 2],
-                    ],
+                    [data.qvel[_trunk_qvel_adr + 0], data.qvel[_trunk_qvel_adr + 1], data.qvel[_trunk_qvel_adr + 2]],
                     dtype=np.float32,
                 )
                 v_body = policy.quat_rotate_inverse(quat, v_world)
@@ -1389,7 +1564,9 @@ def main():
                     avg_yaw = sum(v[2] for v in vel_history) / n
                     cmd_x, cmd_y, cmd_yaw = policy.vel_cmd[0], policy.vel_cmd[1], policy.vel_cmd[2]
                     trunk_z = float(data.qpos[qpos_adr + 2])
-                    print(f"[vel 1s avg] achieved/cmd  fwd={avg_fwd:+.2f}/{cmd_x:+.2f}  lat={avg_lat:+.2f}/{cmd_y:+.2f} m/s  yaw={avg_yaw:+.2f}/{cmd_yaw:+.2f} rad/s   trunk_z={trunk_z * 1000:.1f} mm")
+                    print(
+                        f"[vel 1s avg] achieved/cmd  fwd={avg_fwd:+.2f}/{cmd_x:+.2f}  lat={avg_lat:+.2f}/{cmd_y:+.2f} m/s  yaw={avg_yaw:+.2f}/{cmd_yaw:+.2f} rad/s   trunk_z={trunk_z * 1000:.1f} mm"
+                    )
 
                 if csv_data is not None:
                     obs = policy.get_observations()
@@ -1425,12 +1602,20 @@ def main():
                         print(f"  Ang vel [0:3]:        {obs[0:3]}")
                         print(f"  Proj grav [3:6]:      {obs[3:6]}")
                         print(f"  Joint pos [6:{6 + policy.n_joints}]:     {obs[6 : 6 + policy.n_joints]}")
-                        print(f"  Joint vel [{6 + policy.n_joints}:{6 + 2 * policy.n_joints}]:    {obs[6 + policy.n_joints : 6 + 2 * policy.n_joints]}")
-                        print(f"  Last action [{6 + 2 * policy.n_joints}:{6 + 3 * policy.n_joints}]:  {obs[6 + 2 * policy.n_joints : 6 + 3 * policy.n_joints]}")
+                        print(
+                            f"  Joint vel [{6 + policy.n_joints}:{6 + 2 * policy.n_joints}]:    {obs[6 + policy.n_joints : 6 + 2 * policy.n_joints]}"
+                        )
+                        print(
+                            f"  Last action [{6 + 2 * policy.n_joints}:{6 + 3 * policy.n_joints}]:  {obs[6 + 2 * policy.n_joints : 6 + 3 * policy.n_joints]}"
+                        )
                         cmd_end = 6 + 3 * policy.n_joints + 3
-                        print(f"  Command [{6 + 3 * policy.n_joints}:{cmd_end}]:      {obs[6 + 3 * policy.n_joints : cmd_end]}")
+                        print(
+                            f"  Command [{6 + 3 * policy.n_joints}:{cmd_end}]:      {obs[6 + 3 * policy.n_joints : cmd_end]}"
+                        )
                         if policy.current_policy == "standing":
-                            print(f"  Body cmd (raw): z={policy.body_cmd[0] * 1000:.1f}mm  pitch={math.degrees(policy.body_cmd[1]):.1f}°  roll={math.degrees(policy.body_cmd[2]):.1f}°")
+                            print(
+                                f"  Body cmd (raw): z={policy.body_cmd[0] * 1000:.1f}mm  pitch={math.degrees(policy.body_cmd[1]):.1f}°  roll={math.degrees(policy.body_cmd[2]):.1f}°"
+                            )
                         print("\nAction output:")
                         print(f"  Raw action: {action}")
                         print(f"  Action min/max: [{action.min():.4f}, {action.max():.4f}]")

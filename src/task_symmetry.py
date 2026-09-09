@@ -98,9 +98,7 @@ _OBS_SIGN: list[float] = (
 _cache: dict[torch.device, tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]] = {}
 
 
-def _get_tensors(
-    device: torch.device,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+def _get_tensors(device: torch.device) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     if device not in _cache:
         obs_perm = torch.tensor(_OBS_PERM, dtype=torch.long, device=device)
         obs_sign = torch.tensor(_OBS_SIGN, dtype=torch.float32, device=device)
@@ -116,9 +114,7 @@ def _get_tensors(
 
 
 def microduck_vel_symmetry(
-    env,
-    obs: TensorDict | None,
-    actions: torch.Tensor | None,
+    env, obs: TensorDict | None, actions: torch.Tensor | None
 ) -> tuple[TensorDict | None, torch.Tensor | None]:
     """Bilateral symmetry augmentation / mirror function for the microduck vel env.
 
@@ -156,10 +152,7 @@ def microduck_vel_symmetry(
         critic_repeated = torch.cat([critic_orig, critic_orig], dim=0)
 
         aug_obs = TensorDict(
-            {
-                "actor": torch.cat([actor_orig, actor_sym], dim=0),
-                "critic": critic_repeated,
-            },
+            {"actor": torch.cat([actor_orig, actor_sym], dim=0), "critic": critic_repeated},
             batch_size=[actor_orig.shape[0] * 2],
             device=actor_orig.device,
         )

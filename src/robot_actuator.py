@@ -37,10 +37,7 @@ class FrictionDRBamActuator(BamActuator):
         self.default_friction_scale = self.friction_scale.clone()
 
     def _compute_friction_budget(
-        self,
-        motor_torque: torch.Tensor,
-        external_torque: torch.Tensor,
-        stribeck_coeff: torch.Tensor,
+        self, motor_torque: torch.Tensor, external_torque: torch.Tensor, stribeck_coeff: torch.Tensor
     ) -> torch.Tensor:
         base = super()._compute_friction_budget(motor_torque, external_torque, stribeck_coeff)
         fs = getattr(self, "friction_scale", None)

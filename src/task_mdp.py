@@ -103,7 +103,9 @@ def _get_base_metadata_no_passive(env, run_path):
         "default_joint_pos": [default_jp[i] for i in keep_idx],
         "command_names": list(env.command_manager.active_terms),
         "observation_names": env.observation_manager.active_terms["actor"],
-        "action_scale": joint_action._scale[0].cpu().tolist() if isinstance(joint_action._scale, torch.Tensor) else joint_action._scale,
+        "action_scale": joint_action._scale[0].cpu().tolist()
+        if isinstance(joint_action._scale, torch.Tensor)
+        else joint_action._scale,
     }
 
 
@@ -301,11 +303,7 @@ def reset_with_forward_velocity(
         asset.write_joint_state_to_sim(joint_pos, joint_vel, env_ids=warmstart_ids)
 
 
-def reset_action_history(
-    env: MicroduckEnv,
-    env_ids: torch.Tensor,
-    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
-):
+def reset_action_history(env: MicroduckEnv, env_ids: torch.Tensor, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG):
     """
     Reset cached action history for environments that are being reset.
     This is critical for action rate and acceleration penalty terms.
@@ -567,12 +565,7 @@ def neck_action_acceleration_l2(env: MicroduckEnv, asset_cfg: SceneEntityCfg = _
     return torch.sum(torch.square(action_acc), dim=1)
 
 
-def _fallen_mask(
-    env: MicroduckEnv,
-    asset,
-    gate_z_below: float,
-    gate_tilt_above_deg: float,
-) -> torch.Tensor:
+def _fallen_mask(env: MicroduckEnv, asset, gate_z_below: float, gate_tilt_above_deg: float) -> torch.Tensor:
     """Per-env float mask: 1.0 where the robot counts as FALLEN — trunk height
     below `gate_z_below` OR tilt beyond `gate_tilt_above_deg`. Used to gate the
     recovery rewards so they only steer while actually fallen and contribute
@@ -605,10 +598,7 @@ def feet_air_time_upright(
     return reward * upright
 
 
-def upright_progress(
-    env: MicroduckEnv,
-    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
-) -> torch.Tensor:
+def upright_progress(env: MicroduckEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
     """Potential-based upright shaping: Δcos(tilt) per step.
 
     Pays for PROGRESS toward upright, charges for progress toward fallen, and
@@ -633,9 +623,7 @@ def upright_progress(
 
 
 def height_progress(
-    env: MicroduckEnv,
-    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
-    ceiling: float = 0.115,
+    env: MicroduckEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, ceiling: float = 0.115
 ) -> torch.Tensor:
     """Potential-based height shaping: Δ min(trunk z, ceiling) per step.
 
@@ -723,7 +711,9 @@ def recovery_success(
     fresh = env.episode_length_buf <= 1
     env._recovery_fallen_s[fresh] = 0.0
     env._recovery_armed[fresh] = False
-    env._recovery_fallen_s = torch.where(fallen, env._recovery_fallen_s + env.step_dt, torch.zeros_like(env._recovery_fallen_s))
+    env._recovery_fallen_s = torch.where(
+        fallen, env._recovery_fallen_s + env.step_dt, torch.zeros_like(env._recovery_fallen_s)
+    )
     env._recovery_armed |= env._recovery_fallen_s >= min_fallen_s
     fired = env._recovery_armed & up
     env._recovery_armed &= ~fired
@@ -758,9 +748,7 @@ def body_upright_linear(
 
 
 def body_upright_gaussian(
-    env: MicroduckEnv,
-    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
-    std: float = 0.1,
+    env: MicroduckEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, std: float = 0.1
 ) -> torch.Tensor:
     """Gaussian reward on tilt magnitude — sharp pull toward fully vertical.
 
@@ -782,11 +770,7 @@ def body_upright_gaussian(
 
 
 def upright_gaussian_at_height(
-    env: MicroduckEnv,
-    std: float,
-    height_low: float,
-    height_high: float,
-    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    env: MicroduckEnv, std: float, height_low: float, height_high: float, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG
 ) -> torch.Tensor:
     """``body_upright_gaussian`` weighted by smoothstep on trunk z.
 
@@ -844,11 +828,7 @@ def body_ang_vel_at_height(
         quat = asset.data.root_link_quat_w
         cos_tilt = 1.0 - 2.0 * (quat[:, 1] ** 2 + quat[:, 2] ** 2)
         tilt_deg = torch.rad2deg(torch.acos(cos_tilt.clamp(-1.0, 1.0)))
-        s = torch.clamp(
-            (tilt_zero_deg - tilt_deg) / max(tilt_zero_deg - tilt_full_deg, 1e-6),
-            0.0,
-            1.0,
-        )
+        s = torch.clamp((tilt_zero_deg - tilt_deg) / max(tilt_zero_deg - tilt_full_deg, 1e-6), 0.0, 1.0)
         gate = gate * (s * s * (3.0 - 2.0 * s))
     return cost * gate
 
@@ -999,9 +979,7 @@ def fallen_too_long(
 
 
 def robot_state_is_nan(
-    env: MicroduckEnv,
-    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
-    sensor_names: tuple[str, ...] = (),
+    env: MicroduckEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, sensor_names: tuple[str, ...] = ()
 ) -> torch.Tensor:
     """Terminate environments where MuJoCo produced NaN joint positions.
 
@@ -1053,9 +1031,7 @@ def robot_state_is_nan(
 
 
 def root_height_below(
-    env: MicroduckEnv,
-    min_height: float,
-    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    env: MicroduckEnv, min_height: float, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG
 ) -> torch.Tensor:
     """Terminate when the trunk drops below ``min_height`` in world z.
 
@@ -1071,9 +1047,7 @@ def root_height_below(
 
 
 def descent_speed_reward(
-    env: MicroduckEnv,
-    cap: float = 0.8,
-    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    env: MicroduckEnv, cap: float = 0.8, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG
 ) -> torch.Tensor:
     """Rewards forward speed DOWN the slope (world +x).
 
@@ -1126,11 +1100,7 @@ def reset_rolling_entry(
     asset.write_joint_velocity_to_sim(omega, joint_ids=wheel_ids_t, env_ids=env_ids)
 
 
-def wheel_glide_reward(
-    env: MicroduckEnv,
-    cap_speed: float = 0.35,
-    wheel_radius: float = 0.0175,
-) -> torch.Tensor:
+def wheel_glide_reward(env: MicroduckEnv, cap_speed: float = 0.35, wheel_radius: float = 0.0175) -> torch.Tensor:
     """Rewards the wheels ROLLING forward (glide), capped.
 
     Unlike descent_speed (velocity of the BASE, reachable by
@@ -1209,11 +1179,7 @@ def com_height_target(
 
 
 def crouch_height_target(
-    phase: torch.Tensor,
-    height_low: float,
-    height_high: float,
-    hold_lo: float = 0.375,
-    hold_hi: float = 0.625,
+    phase: torch.Tensor, height_low: float, height_high: float, hold_lo: float = 0.375, hold_hi: float = 0.625
 ) -> torch.Tensor:
     """ "Trapezoid" trunk height target along the phase [0,1).
 
@@ -1282,21 +1248,12 @@ def crouch_glide_height_by_phase(
     com_height = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2], nan=0.0)
     cmd = env.command_manager.get_command(command_name)
     return crouch_glide_reward_from_values(
-        com_height,
-        cmd[:, 0],
-        cmd[:, 1],
-        height_low,
-        height_high,
-        hold_lo,
-        hold_hi,
-        std,
+        com_height, cmd[:, 0], cmd[:, 1], height_low, height_high, hold_lo, hold_hi, std
     )
 
 
 def forward_speed_reward(
-    env: MicroduckEnv,
-    vel_ref: float = 0.2,
-    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    env: MicroduckEnv, vel_ref: float = 0.2, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG
 ) -> torch.Tensor:
     """Rewards the trunk's forward speed (keep the momentum / do not brake).
 
@@ -1308,12 +1265,7 @@ def forward_speed_reward(
     return torch.tanh(torch.clamp(vx, min=0.0) / vel_ref)
 
 
-def crouch_pose_blend(
-    phase: torch.Tensor,
-    descent_end: float,
-    hold_end: float,
-    rise_end: float,
-) -> torch.Tensor:
+def crouch_pose_blend(phase: torch.Tensor, descent_end: float, hold_end: float, rise_end: float) -> torch.Tensor:
     """Blend 0..1 along the phase [0,1) — 0 = standing pose, 1 = crouched pose.
 
     [0, descent_end)      : 0 -> 1  (go down)
@@ -1387,14 +1339,7 @@ def crouch_glide_pose_by_phase(
     crouching (target = crouch_pose) — symmetric by construction.
     """
     cur, target = _crouch_pose_error(
-        env,
-        asset_cfg,
-        command_name,
-        crouch_pose or {},
-        descent_end,
-        hold_end,
-        rise_end,
-        stand_pose,
+        env, asset_cfg, command_name, crouch_pose or {}, descent_end, hold_end, rise_end, stand_pose
     )
     return torch.exp(-(((cur - target) / std) ** 2)).mean(dim=-1)
 
@@ -1415,14 +1360,7 @@ def crouch_glide_pose_l1(
     pose even when the Gaussian above has saturated to ~0 far from it.
     """
     cur, target = _crouch_pose_error(
-        env,
-        asset_cfg,
-        command_name,
-        crouch_pose or {},
-        descent_end,
-        hold_end,
-        rise_end,
-        stand_pose,
+        env, asset_cfg, command_name, crouch_pose or {}, descent_end, hold_end, rise_end, stand_pose
     )
     return -(cur - target).abs().mean(dim=-1)
 
@@ -1506,9 +1444,7 @@ _ROLLER_FEET_SITE_CFG = SceneEntityCfg("robot", site_names=("left_foot", "right_
 
 
 def feet_flat_penalty(
-    env: MicroduckEnv,
-    asset_cfg: SceneEntityCfg = _ROLLER_FEET_SITE_CFG,
-    sensor_name: str | None = None,
+    env: MicroduckEnv, asset_cfg: SceneEntityCfg = _ROLLER_FEET_SITE_CFG, sensor_name: str | None = None
 ) -> torch.Tensor:
     """Penalize foot sites not being parallel to the ground.
 
@@ -1584,10 +1520,7 @@ def feet_tiptoe_alignment(
     return alignment * active
 
 
-def hip_pitch_knee_vel_l2(
-    env: MicroduckEnv,
-    asset_cfg: SceneEntityCfg = _HIP_PITCH_KNEE_CFG,
-) -> torch.Tensor:
+def hip_pitch_knee_vel_l2(env: MicroduckEnv, asset_cfg: SceneEntityCfg = _HIP_PITCH_KNEE_CFG) -> torch.Tensor:
     """Penalize hip_pitch and knee joint velocities (L2 squared).
 
     Walking requires rapid oscillation of these sagittal-plane joints.
@@ -1599,9 +1532,7 @@ def hip_pitch_knee_vel_l2(
 
 
 def neck_joint_pos_l2(
-    env: MicroduckEnv,
-    asset_cfg: SceneEntityCfg = _NECK_JOINT_CFG,
-    pattern: str = r".*(neck|head).*",
+    env: MicroduckEnv, asset_cfg: SceneEntityCfg = _NECK_JOINT_CFG, pattern: str = r".*(neck|head).*"
 ) -> torch.Tensor:
     """Penalize neck/head joint position deviation from default (L2 squared).
 
@@ -1642,10 +1573,7 @@ def joint_torques_l2(env: MicroduckEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASS
     return torch.sum(torch.square(actuator_forces), dim=1)
 
 
-def joint_torque_rate_l2(
-    env: MicroduckEnv,
-    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
-) -> torch.Tensor:
+def joint_torque_rate_l2(env: MicroduckEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
     """Penalize rate of change in actuator torques (proxy for gearbox shock).
 
     Sudden torque spikes occur when the robot impacts the ground and actuators
@@ -1666,10 +1594,7 @@ def joint_torque_rate_l2(
     return torch.sum(torch.square(rate), dim=1)
 
 
-def feet_grounded_reward(
-    env: MicroduckEnv,
-    sensor_name: str,
-) -> torch.Tensor:
+def feet_grounded_reward(env: MicroduckEnv, sensor_name: str) -> torch.Tensor:
     """Positive reward for feet contacting the ground (0, +0.5, or +1.0).
 
     Uses the contact sensor's `found` field. For the feet_ground_contact sensor
@@ -1685,11 +1610,7 @@ def feet_grounded_reward(
     return torch.clamp(found, 0.0, 2.0) / 2.0
 
 
-def body_impact_cost(
-    env: MicroduckEnv,
-    sensor_name: str,
-    threshold: float = 1.0,
-) -> torch.Tensor:
+def body_impact_cost(env: MicroduckEnv, sensor_name: str, threshold: float = 1.0) -> torch.Tensor:
     """Penalize terrain contact forces above a threshold on protected body parts.
 
     Used to discourage slamming the trunk shell or head into the ground during
@@ -1781,11 +1702,7 @@ def coasting_reward(
     return at_speed * stillness
 
 
-def braking_reward(
-    env: MicroduckEnv,
-    command_name: str,
-    vel_std: float = 0.3,
-) -> torch.Tensor:
+def braking_reward(env: MicroduckEnv, command_name: str, vel_std: float = 0.3) -> torch.Tensor:
     """Reward coming to a stop when cmd_x < 0 (brake commanded).
 
     Returns clamp(-cmd_x, 0) * exp(-fwd_vel² / vel_std²).
@@ -2013,10 +1930,7 @@ def sit_stability(
     return in_sit_window * stillness
 
 
-def joint_deviation_l1(
-    env: MicroduckEnv,
-    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
-) -> torch.Tensor:
+def joint_deviation_l1(env: MicroduckEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
     """L1 penalty for joint positions deviating from their default (HOME).
 
     Returns sum of |joint_pos - default| over the selected joints. Unlike the
@@ -2032,9 +1946,7 @@ def joint_deviation_l1(
 
 
 def joint_pos_limit_proximity(
-    env: MicroduckEnv,
-    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
-    margin: float = 0.15,
+    env: MicroduckEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, margin: float = 0.15
 ) -> torch.Tensor:
     """L1 penalty for joint positions entering a ``margin`` (rad) band next to
     their *hard* range limits.
@@ -2272,10 +2184,7 @@ def interpolated_height_target(
 
 
 def bilateral_symmetry_penalty(
-    env: MicroduckEnv,
-    left_indices: list,
-    right_indices: list,
-    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    env: MicroduckEnv, left_indices: list, right_indices: list, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG
 ) -> torch.Tensor:
     """L1 penalty on left/right leg asymmetry.
 
@@ -2300,11 +2209,7 @@ def bilateral_symmetry_penalty(
     return -torch.abs(left + right).mean(dim=-1)
 
 
-def _multistage_target_pose(
-    env: MicroduckEnv,
-    asset_cfg: SceneEntityCfg,
-    waypoints,
-) -> torch.Tensor:
+def _multistage_target_pose(env: MicroduckEnv, asset_cfg: SceneEntityCfg, waypoints) -> torch.Tensor:
     """Compute the time-interpolated joint target across N waypoints.
 
     waypoints: ordered list of dicts {"frac": float in [0,1],
@@ -2342,10 +2247,7 @@ def _multistage_target_pose(
     return out
 
 
-def _multistage_target_height(
-    env: MicroduckEnv,
-    waypoints,
-) -> torch.Tensor:
+def _multistage_target_height(env: MicroduckEnv, waypoints) -> torch.Tensor:
     """Same logic as _multistage_target_pose but for trunk z height.
 
     waypoints: [{"frac": float, "height": float}, ...].
@@ -2406,10 +2308,7 @@ def multistage_pose_l1_penalty(
 
 
 def multistage_height_target(
-    env: MicroduckEnv,
-    waypoints: list,
-    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
-    std: float = 0.03,
+    env: MicroduckEnv, waypoints: list, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, std: float = 0.03
 ) -> torch.Tensor:
     """Multi-waypoint Gaussian on trunk z."""
     target_z = _multistage_target_height(env, waypoints)
@@ -2419,9 +2318,7 @@ def multistage_height_target(
 
 
 def multistage_height_l1_penalty(
-    env: MicroduckEnv,
-    waypoints: list,
-    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    env: MicroduckEnv, waypoints: list, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG
 ) -> torch.Tensor:
     """L1 companion to multistage_height_target."""
     target_z = _multistage_target_height(env, waypoints)
@@ -2450,10 +2347,7 @@ def pose_l1_penalty(
 
 
 def height_target_gaussian(
-    env: MicroduckEnv,
-    target_height: float,
-    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
-    std: float = 0.02,
+    env: MicroduckEnv, target_height: float, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, std: float = 0.02
 ) -> torch.Tensor:
     """Gaussian on trunk z against a single fixed target."""
     asset = env.scene[asset_cfg.name]
@@ -2462,9 +2356,7 @@ def height_target_gaussian(
 
 
 def height_l1_penalty(
-    env: MicroduckEnv,
-    target_height: float,
-    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    env: MicroduckEnv, target_height: float, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG
 ) -> torch.Tensor:
     """L1 companion to ``height_target_gaussian``."""
     asset = env.scene[asset_cfg.name]
@@ -2472,10 +2364,7 @@ def height_l1_penalty(
     return -torch.abs(z - target_height)
 
 
-def trunk_vertical_accel_penalty(
-    env: MicroduckEnv,
-    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
-) -> torch.Tensor:
+def trunk_vertical_accel_penalty(env: MicroduckEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
     """Penalty proportional to ``|a_z|`` of the trunk (finite-diff of v_z).
 
     Captures hard impacts (large deceleration spike on landing) AND incentivises
@@ -2501,9 +2390,7 @@ def trunk_vertical_accel_penalty(
 
 
 def trunk_downward_velocity_penalty(
-    env: MicroduckEnv,
-    max_down_vel: float = 0.05,
-    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    env: MicroduckEnv, max_down_vel: float = 0.05, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG
 ) -> torch.Tensor:
     """Penalty on downward trunk velocity beyond ``max_down_vel``.
 
@@ -2553,10 +2440,7 @@ def seated_stillness(
 
 
 def upright_while_tall(
-    env: MicroduckEnv,
-    height_low: float,
-    height_high: float,
-    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    env: MicroduckEnv, height_low: float, height_high: float, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG
 ) -> torch.Tensor:
     """Linear upright reward weighted by a smoothstep on trunk z.
 
@@ -2578,12 +2462,7 @@ def upright_while_tall(
     return upright * smooth
 
 
-def phase_pose_blend(
-    phase: torch.Tensor,
-    descent_end: float,
-    hold_end: float,
-    rise_end: float,
-) -> torch.Tensor:
+def phase_pose_blend(phase: torch.Tensor, descent_end: float, hold_end: float, rise_end: float) -> torch.Tensor:
     """Blend 0..1 along the phase [0,1) — 0 = STAND pose, 1 = DOWN pose.
 
     [0, descent_end)       : 0 -> 1  (go down)
@@ -2738,11 +2617,7 @@ def kick_pose_track_l1(
     return -(cur - target).abs().mean(dim=-1)
 
 
-def kick_engagement(
-    phase: torch.Tensor,
-    windup_end: float,
-    return_end: float,
-) -> torch.Tensor:
+def kick_engagement(phase: torch.Tensor, windup_end: float, return_end: float) -> torch.Tensor:
     """Gesture engagement gate ∈ [0,1] (pure) — to weight the single-leg
     balance rewards that must only apply outside the STAND rest.
 
@@ -2823,7 +2698,9 @@ def _phase_pose_error(
         for j, n in enumerate(names):
             if n in source_pose:
                 source[:, j] = source_pose[n]
-    target_vec = torch.tensor([target_pose[n] for n in names], device=env.device, dtype=default.dtype).unsqueeze(0)  # (1,k)
+    target_vec = torch.tensor([target_pose[n] for n in names], device=env.device, dtype=default.dtype).unsqueeze(
+        0
+    )  # (1,k)
 
     target = source + blend.unsqueeze(-1) * (target_vec - source)  # (B,k)
     cur = asset.data.joint_pos[:, ids]  # (B,k)
@@ -2848,14 +2725,7 @@ def phase_pose_track(
     DOWN) — symmetric by construction. Resolution BY NAME.
     """
     cur, target = _phase_pose_error(
-        env,
-        asset_cfg,
-        command_name,
-        target_pose or {},
-        descent_end,
-        hold_end,
-        rise_end,
-        source_pose,
+        env, asset_cfg, command_name, target_pose or {}, descent_end, hold_end, rise_end, source_pose
     )
     return torch.exp(-(((cur - target) / std) ** 2)).mean(dim=-1)
 
@@ -2876,14 +2746,7 @@ def phase_pose_track_l1(
     Gaussian above has saturated to ~0 far from the target.
     """
     cur, target = _phase_pose_error(
-        env,
-        asset_cfg,
-        command_name,
-        target_pose or {},
-        descent_end,
-        hold_end,
-        rise_end,
-        source_pose,
+        env, asset_cfg, command_name, target_pose or {}, descent_end, hold_end, rise_end, source_pose
     )
     return -(cur - target).abs().mean(dim=-1)
 
@@ -2965,10 +2828,7 @@ def ground_pick_return_pose(
 
 
 def ground_pick_return_upright(
-    env: MicroduckEnv,
-    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
-    std: float = 0.4,
-    command_name: str = "twist",
+    env: MicroduckEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, std: float = 0.4, command_name: str = "twist"
 ) -> torch.Tensor:
     """Reward trunk verticality, weighted by the RETURN phase (stand-up aid).
 
@@ -3108,12 +2968,7 @@ def neck_vel_descent_penalty(
     return gate * cost
 
 
-def sample_mouth_payload(
-    env: MicroduckEnv,
-    env_ids: torch.Tensor,
-    min_kg: float = 0.01,
-    max_kg: float = 0.04,
-) -> None:
+def sample_mouth_payload(env: MicroduckEnv, env_ids: torch.Tensor, min_kg: float = 0.01, max_kg: float = 0.04) -> None:
     """Reset event: draws a mass for the object 'held in the mouth' per env (kg),
     stored on env._mouth_payload_kg. Used by apply_mouth_payload_force."""
     buf = getattr(env, "_mouth_payload_kg", None)
@@ -3156,11 +3011,7 @@ def apply_mouth_payload_force(
     F = torch.zeros((env.num_envs, 3), device=env.device, dtype=p_mouth.dtype)
     F[:, 2] = fz
     tau = torch.cross(p_mouth - p_com, F, dim=-1)  # applies F at mouth_tip
-    asset.write_external_wrench_to_sim(
-        forces=F.unsqueeze(1),
-        torques=tau.unsqueeze(1),
-        body_ids=[bid],
-    )
+    asset.write_external_wrench_to_sim(forces=F.unsqueeze(1), torques=tau.unsqueeze(1), body_ids=[bid])
     return torch.zeros(env.num_envs, device=env.device)
 
 
@@ -3214,17 +3065,12 @@ def randomize_delayed_actuator_gains(
         # Restore nominal first (prevents accumulation), then apply fresh scale.
         actuator.reset_gains(env_ids)
         actuator.set_gains(
-            env_ids,
-            kp_scale=kp_samples.mean(dim=1, keepdim=True),
-            kd_scale=kd_samples.mean(dim=1, keepdim=True),
+            env_ids, kp_scale=kp_samples.mean(dim=1, keepdim=True), kd_scale=kd_samples.mean(dim=1, keepdim=True)
         )
 
 
 @requires_model_fields("dof_frictionloss", "dof_damping")
-def expand_bam_friction_fields(
-    env: MicroduckEnv,
-    env_ids: torch.Tensor,
-):
+def expand_bam_friction_fields(env: MicroduckEnv, env_ids: torch.Tensor):
     """No-op startup event whose only purpose is the decorator above.
 
     bam's BamActuator (mjlab_frictionloss branch) writes a per-env friction
@@ -3311,7 +3157,9 @@ def randomize_mass_and_inertia(
     # Reset to original first (to prevent accumulation)
     original = env._original_mass_inertia
     env.sim.model.body_mass[env_ids[:, None], body_indices] = original["mass"].unsqueeze(0).expand(num_envs, -1)
-    env.sim.model.body_inertia[env_ids[:, None], body_indices] = original["inertia"].unsqueeze(0).expand(num_envs, -1, -1)
+    env.sim.model.body_inertia[env_ids[:, None], body_indices] = (
+        original["inertia"].unsqueeze(0).expand(num_envs, -1, -1)
+    )
 
     # Apply same scale to both mass and inertia
     env.sim.model.body_mass[env_ids[:, None], body_indices] *= scales
@@ -3319,10 +3167,7 @@ def randomize_mass_and_inertia(
 
 
 def standing_envs_curriculum(
-    env: MicroduckEnv,
-    env_ids: torch.Tensor,
-    command_name: str,
-    standing_stages: list[dict],
+    env: MicroduckEnv, env_ids: torch.Tensor, command_name: str, standing_stages: list[dict]
 ) -> torch.Tensor:
     """Update the relative number of standing environments based on training progress.
 
@@ -3360,10 +3205,7 @@ def standing_envs_curriculum(
 
 
 def velocity_tracking_std_curriculum(
-    env: MicroduckEnv,
-    env_ids: torch.Tensor,
-    reward_name: str,
-    std_stages: list[dict],
+    env: MicroduckEnv, env_ids: torch.Tensor, reward_name: str, std_stages: list[dict]
 ) -> torch.Tensor:
     """Update velocity tracking std parameter based on training progress.
 
@@ -3402,12 +3244,7 @@ def velocity_tracking_std_curriculum(
     return torch.tensor([current_std])
 
 
-def push_curriculum(
-    env: MicroduckEnv,
-    env_ids: torch.Tensor,
-    event_name: str,
-    push_stages: list[dict],
-) -> torch.Tensor:
+def push_curriculum(env: MicroduckEnv, env_ids: torch.Tensor, event_name: str, push_stages: list[dict]) -> torch.Tensor:
     """Update push velocity range based on training progress.
 
     Starts with no/small pushes to learn clean walking, then gradually increases
@@ -3449,10 +3286,7 @@ def push_curriculum(
 
 
 def wheel_friction_curriculum(
-    env: MicroduckEnv,
-    env_ids: torch.Tensor,
-    event_name: str,
-    ranges_stages: list[dict],
+    env: MicroduckEnv, env_ids: torch.Tensor, event_name: str, ranges_stages: list[dict]
 ) -> torch.Tensor:
     """Update wheel friction based on training step stages."""
     del env_ids  # Unused
@@ -3467,10 +3301,7 @@ def wheel_friction_curriculum(
 
 
 def reward_weight(
-    env: MicroduckEnv,
-    env_ids: torch.Tensor,
-    reward_name: str,
-    weight_stages: list[dict],
+    env: MicroduckEnv, env_ids: torch.Tensor, reward_name: str, weight_stages: list[dict]
 ) -> torch.Tensor:
     """Step-staged reward weight curriculum.
 
@@ -3489,10 +3320,7 @@ def reward_weight(
 
 
 def com_range_curriculum(
-    env: MicroduckEnv,
-    env_ids: torch.Tensor,
-    event_name: str,
-    range_stages: list[dict],
+    env: MicroduckEnv, env_ids: torch.Tensor, event_name: str, range_stages: list[dict]
 ) -> torch.Tensor:
     """Update CoM randomization range based on training progress.
 
@@ -3624,10 +3452,7 @@ def velocity_command_ranges_curriculum(
     return torch.tensor([current_lin_vel])
 
 
-def projected_gravity(
-    env: MicroduckEnv,
-    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
-) -> torch.Tensor:
+def projected_gravity(env: MicroduckEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
     """Projected gravity vector in body frame.
 
     Returns the gravity vector projected into the robot's body frame,
@@ -3665,9 +3490,7 @@ def _imu_misalignment_quat(env: MicroduckEnv, max_angle_rad: float) -> torch.Ten
 
 
 def projected_gravity_imu_misaligned(
-    env: MicroduckEnv,
-    max_angle_deg: float = 1.0,
-    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    env: MicroduckEnv, max_angle_deg: float = 1.0, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG
 ) -> torch.Tensor:
     """projected_gravity with a per-env constant IMU mounting misalignment."""
     asset: Entity = env.scene[asset_cfg.name]
@@ -3676,9 +3499,7 @@ def projected_gravity_imu_misaligned(
 
 
 def base_ang_vel_imu_misaligned(
-    env: MicroduckEnv,
-    max_angle_deg: float = 1.0,
-    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    env: MicroduckEnv, max_angle_deg: float = 1.0, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG
 ) -> torch.Tensor:
     """base angular velocity with the SAME per-env IMU misalignment as gravity."""
     asset: Entity = env.scene[asset_cfg.name]
@@ -3686,10 +3507,7 @@ def base_ang_vel_imu_misaligned(
     return quat_apply(q, asset.data.root_link_ang_vel_b)
 
 
-def raw_accelerometer(
-    env: MicroduckEnv,
-    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
-) -> torch.Tensor:
+def raw_accelerometer(env: MicroduckEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
     """Raw accelerometer reading (includes gravity + linear acceleration).
 
     Returns normalized raw accelerometer which mimics what a real IMU measures.
@@ -3731,10 +3549,7 @@ def raw_accelerometer(
 
 
 def randomize_imu_orientation(
-    env: MicroduckEnv,
-    env_ids: torch.Tensor,
-    max_angle_deg: float = 2.0,
-    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    env: MicroduckEnv, env_ids: torch.Tensor, max_angle_deg: float = 2.0, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG
 ):
     """Randomize IMU sensor mounting orientation by small angles.
 
@@ -3799,10 +3614,7 @@ def randomize_imu_orientation(
     env.sim.model.site_quat[env_ids, site_id] = new_quat
 
 
-def standing_phase(
-    env: MicroduckEnv,
-    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
-) -> torch.Tensor:
+def standing_phase(env: MicroduckEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
     """Simple time-based phase for standing task.
 
     Returns a scalar phase value that cycles from 0 to 1 based on time.
@@ -4037,7 +3849,9 @@ def adaptive_pose_weight(
 
     # Compute weight: 1.0 when stationary, min_weight at high velocity
     # Use smooth transition via sigmoid-like function
-    weight = min_weight + (1.0 - min_weight) * torch.exp(-(((vel_magnitude - velocity_threshold) / velocity_threshold).clamp(min=0.0) ** 2))
+    weight = min_weight + (1.0 - min_weight) * torch.exp(
+        -(((vel_magnitude - velocity_threshold) / velocity_threshold).clamp(min=0.0) ** 2)
+    )
 
     return base_pose_reward * weight
 
@@ -4104,11 +3918,7 @@ def randomize_base_orientation(
     env.sim.data.qpos[env_ids, root_quat_idx : root_quat_idx + 4] = new_quat
 
 
-def set_face_down_orientation(
-    env: MicroduckEnv,
-    env_ids: torch.Tensor,
-    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
-):
+def set_face_down_orientation(env: MicroduckEnv, env_ids: torch.Tensor, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG):
     """Set the robot to a prone (belly-down) orientation for stand-up training.
 
     Rotates the robot 90° forward around the pitch axis (Y) so the front/belly
@@ -4282,15 +4092,7 @@ def set_random_ground_state(
         # spin the robot in place like the yaw noise already does.
         # Body-frame rotation → right-multiply: q_fu ⊗ [ct, 0, 0, st].
         w, x, y, z = face_up[:, 0], face_up[:, 1], face_up[:, 2], face_up[:, 3]
-        face_up = torch.stack(
-            [
-                w * ct - z * st,
-                x * ct + y * st,
-                y * ct - x * st,
-                w * st + z * ct,
-            ],
-            dim=1,
-        )
+        face_up = torch.stack([w * ct - z * st, x * ct + y * st, y * ct - x * st, w * st + z * ct], dim=1)
 
     # Sitting and standing share the same upright orientation (identity + optional
     # ±sitting_tilt_max); they differ only in trunk height and joint pose.
@@ -4461,7 +4263,11 @@ def maybe_set_random_prone_orientation(
         env_ids = torch.arange(env.num_envs, device=env.device)
     if len(env_ids) == 0:
         return
-    env_ids_t = env_ids.to(env.device, dtype=torch.long) if isinstance(env_ids, torch.Tensor) else torch.tensor(env_ids, device=env.device, dtype=torch.long)
+    env_ids_t = (
+        env_ids.to(env.device, dtype=torch.long)
+        if isinstance(env_ids, torch.Tensor)
+        else torch.tensor(env_ids, device=env.device, dtype=torch.long)
+    )
     # One draw partitions envs into exclusive prone / crouch / untouched slices.
     u = torch.rand(len(env_ids_t), device=env.device)
     selected = env_ids_t[u < prone_prob]
@@ -4476,10 +4282,7 @@ def maybe_set_random_prone_orientation(
 
 
 def event_param_curriculum(
-    env: MicroduckEnv,
-    env_ids: torch.Tensor,
-    event_name: str,
-    param_stages: list[dict],
+    env: MicroduckEnv, env_ids: torch.Tensor, event_name: str, param_stages: list[dict]
 ) -> torch.Tensor:
     """Mutate an event term's params at scheduled steps.
 
@@ -4500,10 +4303,7 @@ def event_param_curriculum(
 
 
 def face_down_prob_curriculum(
-    env: MicroduckEnv,
-    env_ids: torch.Tensor,
-    event_name: str,
-    prob_stages: list[dict],
+    env: MicroduckEnv, env_ids: torch.Tensor, event_name: str, prob_stages: list[dict]
 ) -> torch.Tensor:
     """Ramp face_down_prob on a reset event over training.
 
@@ -4596,7 +4396,9 @@ def twist_command_cfg(cfg: ManagerBasedRlEnvCfg) -> UniformVelocityCommandCfg:
     a loud failure rather than an AttributeError deep inside a cfg factory.
     """
     command = cfg.commands["twist"]
-    assert isinstance(command, UniformVelocityCommandCfg), f"commands['twist'] is {type(command).__name__}, expected a UniformVelocityCommandCfg"
+    assert isinstance(command, UniformVelocityCommandCfg), (
+        f"commands['twist'] is {type(command).__name__}, expected a UniformVelocityCommandCfg"
+    )
     return command
 
 
@@ -4666,11 +4468,7 @@ class RelativeHeadingVelocityCommandCfg(UniformVelocityCommandCfg):
         return RelativeHeadingVelocityCommand(self, env)
 
 
-def heading_tracking_reward(
-    env: MicroduckEnv,
-    command_name: str,
-    std: float = 0.5,
-) -> torch.Tensor:
+def heading_tracking_reward(env: MicroduckEnv, command_name: str, std: float = 0.5) -> torch.Tensor:
     """Reward for reducing heading error when cmd[2] encodes heading error.
 
     Returns exp(-cmd[2]² / std²).
@@ -4735,11 +4533,7 @@ def _forward_progress_gate(env: MicroduckEnv, v_ref: float) -> torch.Tensor | No
 
 
 def single_support_reward(
-    env: MicroduckEnv,
-    sensor_name: str,
-    command_name: str,
-    vel_gate_ref: float = 0.0,
-    double_penalty: float = 0.25,
+    env: MicroduckEnv, sensor_name: str, command_name: str, vel_gate_ref: float = 0.0, double_penalty: float = 0.25
 ) -> torch.Tensor:
     """Reward single-support (a skating stride), mildly discourage the swizzle.
 
@@ -4844,20 +4638,13 @@ def leg_symmetry_reward(
             ri, _ = asset.find_joints([f"right_{base}"])
             left.append(li[0])
             right.append(ri[0])
-        env._leg_sym_ids = (
-            torch.tensor(left, device=env.device),
-            torch.tensor(right, device=env.device),
-        )
+        env._leg_sym_ids = (torch.tensor(left, device=env.device), torch.tensor(right, device=env.device))
     lids, rids = env._leg_sym_ids
     q = asset.data.joint_pos
     return -torch.abs(q[:, lids] + q[:, rids]).mean(dim=-1)
 
 
-def grounded_reward(
-    env: MicroduckEnv,
-    sensor_name: str,
-    command_name: str,
-) -> torch.Tensor:
+def grounded_reward(env: MicroduckEnv, sensor_name: str, command_name: str) -> torch.Tensor:
     """Reward BOTH blades in contact — a classic swizzle stays grounded (no lifting).
 
     Mirror of single_support_reward but rewarding double support (n_contact >= 2),
@@ -4875,10 +4662,7 @@ def grounded_reward(
     return grounded * cmd_x
 
 
-def gait_symmetry_penalty(
-    env: MicroduckEnv,
-    sensor_name: str,
-) -> torch.Tensor:
+def gait_symmetry_penalty(env: MicroduckEnv, sensor_name: str) -> torch.Tensor:
     """Penalize lopsided left/right foot usage (one blade doing most of the work).
 
     With symmetry augmentation OFF, nothing stops the policy learning an asymmetric
@@ -4908,9 +4692,7 @@ def gait_symmetry_penalty(
 
 
 def heading_hold_reward(
-    env: MicroduckEnv,
-    std: float = 0.4,
-    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    env: MicroduckEnv, std: float = 0.4, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG
 ) -> torch.Tensor:
     """Reward holding the SPAWN heading (go straight) — corrective, angle-based.
 
@@ -4943,9 +4725,7 @@ def heading_hold_reward(
 
 
 def action_over_limit_penalty(
-    env: MicroduckEnv,
-    action_name: str = "joint_pos",
-    overshoot: float = 0.3,
+    env: MicroduckEnv, action_name: str = "joint_pos", overshoot: float = 0.3
 ) -> torch.Tensor:
     """Penalise commanding a joint target beyond its hard limit (+ overshoot).
 
@@ -4968,7 +4748,9 @@ def action_over_limit_penalty(
     under load; only the wild over-drive past that is penalised.
     """
     term = env.action_manager.get_term(action_name)
-    assert isinstance(term, BaseAction), f"action term {action_name!r} is {type(term).__name__}, expected a joint BaseAction"
+    assert isinstance(term, BaseAction), (
+        f"action term {action_name!r} is {type(term).__name__}, expected a joint BaseAction"
+    )
     target = term.raw_action * term.scale + term.offset  # (B, action_dim) abs targets
     jnt_ids = term.target_ids
     hard = env.scene["robot"].data.joint_pos_limits[:, jnt_ids]  # (B, action_dim, 2)
@@ -5151,10 +4933,7 @@ class UniformPoseCommandCfg(CommandTermCfg):
         return UniformPoseCommand(self, env)
 
 
-def zero_command_padding(
-    env: MicroduckEnv,
-    dim: int,
-) -> torch.Tensor:
+def zero_command_padding(env: MicroduckEnv, dim: int) -> torch.Tensor:
     """Constant-zero obs term of width `dim`.
 
     Used by envs that don't actively track head/body commands (e.g. sitstand,
@@ -5308,24 +5087,13 @@ def head_pose_bias_penalty(
     err = (measured - asset.data.default_joint_pos[:, neck_ids]) - cmd
 
     if gate_height_low is not None:
-        z = torch.nan_to_num(
-            asset.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2],
-            nan=0.0,
-        )
-        t = torch.clamp(
-            (z - gate_height_low) / max(gate_height_high - gate_height_low, 1e-6),
-            0.0,
-            1.0,
-        )
+        z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2], nan=0.0)
+        t = torch.clamp((z - gate_height_low) / max(gate_height_high - gate_height_low, 1e-6), 0.0, 1.0)
         gate = t * t * (3.0 - 2.0 * t)
         quat = asset.data.root_link_quat_w
         cos_tilt = 1.0 - 2.0 * (quat[:, 1] ** 2 + quat[:, 2] ** 2)
         tilt_deg = torch.rad2deg(torch.acos(cos_tilt.clamp(-1.0, 1.0)))
-        st = torch.clamp(
-            (gate_tilt_zero_deg - tilt_deg) / max(gate_tilt_zero_deg - gate_tilt_full_deg, 1e-6),
-            0.0,
-            1.0,
-        )
+        st = torch.clamp((gate_tilt_zero_deg - tilt_deg) / max(gate_tilt_zero_deg - gate_tilt_full_deg, 1e-6), 0.0, 1.0)
         gate = gate * (st * st * (3.0 - 2.0 * st))
         err = err * gate.unsqueeze(-1)
     else:
@@ -5396,10 +5164,7 @@ def body_pose_tracking_6d(
 
 
 def termination_param_curriculum(
-    env: MicroduckEnv,
-    env_ids: torch.Tensor,
-    term_name: str,
-    param_stages: list[dict],
+    env: MicroduckEnv, env_ids: torch.Tensor, term_name: str, param_stages: list[dict]
 ) -> torch.Tensor:
     """Mutate a termination term's params at scheduled steps.
 
@@ -5538,10 +5303,7 @@ def body_pose_tracking_locomotion(
 
 
 def pose_command_range_curriculum(
-    env: MicroduckEnv,
-    env_ids: torch.Tensor,
-    command_name: str,
-    range_stages: list[dict],
+    env: MicroduckEnv, env_ids: torch.Tensor, command_name: str, range_stages: list[dict]
 ) -> torch.Tensor:
     """Ramp a UniformPoseCommand's per-dim ranges over training.
 
@@ -5556,7 +5318,9 @@ def pose_command_range_curriculum(
     term = env.command_manager.get_term(command_name)
     assert term is not None, f"Command term '{command_name}' not found"
     cfg = term.cfg
-    assert isinstance(cfg, UniformPoseCommandCfg), f"command '{command_name}' is {type(cfg).__name__}, expected a UniformPoseCommandCfg"
+    assert isinstance(cfg, UniformPoseCommandCfg), (
+        f"command '{command_name}' is {type(cfg).__name__}, expected a UniformPoseCommandCfg"
+    )
 
     current = range_stages[0]["ranges"]
     for stage in range_stages:
@@ -5573,10 +5337,7 @@ def pose_command_range_curriculum(
 # Gait-shaping penalties ported from mjlab_microban (microban velocity recipe).
 # ─────────────────────────────────────────────────────────────────────────────
 def no_stepping_penalty(
-    env: MicroduckEnv,
-    sensor_name: str,
-    command_name: str = "twist",
-    command_threshold: float = 0.01,
+    env: MicroduckEnv, sensor_name: str, command_name: str = "twist", command_threshold: float = 0.01
 ) -> torch.Tensor:
     """Penalize feet in the air when the commanded speed is below threshold.
 
@@ -5598,9 +5359,7 @@ def no_stepping_penalty(
 
 
 def feet_distance_penalty(
-    env: MicroduckEnv,
-    min_dist: float,
-    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    env: MicroduckEnv, min_dist: float, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG
 ) -> torch.Tensor:
     """Penalize the feet getting too close to each other in the horizontal plane.
 
@@ -5785,11 +5544,7 @@ def reset_ball_in_front_of_foot(
     kick_dir[env_ids, 1] = sin_y
 
 
-def ball_forward_velocity(
-    env: MicroduckEnv,
-    asset_name: str = "ball",
-    max_speed: float = 5.0,
-) -> torch.Tensor:
+def ball_forward_velocity(env: MicroduckEnv, asset_name: str = "ball", max_speed: float = 5.0) -> torch.Tensor:
     """Ball XY velocity along the per-env kick direction, clamped to [0, max].
 
     Dense and linear-in-speed up to ``max_speed``: every extra bit of forward
@@ -5812,10 +5567,7 @@ def ball_forward_velocity(
 
 
 def ball_speed_overshoot_penalty(
-    env: MicroduckEnv,
-    asset_name: str = "ball",
-    target_speed: float = 1.0,
-    max_penalty: float = 5.0,
+    env: MicroduckEnv, asset_name: str = "ball", target_speed: float = 1.0, max_penalty: float = 5.0
 ) -> torch.Tensor:
     """Ball forward speed in excess of ``target_speed`` (linear, ≥ 0).
 
@@ -5833,10 +5585,7 @@ def ball_speed_overshoot_penalty(
     return over.clamp(0.0, max_penalty)
 
 
-def single_foot_grounded_reward(
-    env: MicroduckEnv,
-    sensor_name: str,
-) -> torch.Tensor:
+def single_foot_grounded_reward(env: MicroduckEnv, sensor_name: str) -> torch.Tensor:
     """Binary reward: 1 while the sensed foot touches the terrain.
 
     Single-foot variant of ``feet_grounded_reward`` — used to pin the SUPPORT
@@ -5851,10 +5600,7 @@ def single_foot_grounded_reward(
     return torch.clamp(found, 0.0, 1.0)
 
 
-def ball_pos_in_base(
-    env: MicroduckEnv,
-    asset_name: str = "ball",
-) -> torch.Tensor:
+def ball_pos_in_base(env: MicroduckEnv, asset_name: str = "ball") -> torch.Tensor:
     """Ball position relative to the robot root, in the robot's base frame.
 
     CRITIC-ONLY observation (asymmetric actor-critic): the deployed policy has
@@ -5868,10 +5614,7 @@ def ball_pos_in_base(
     return torch.bmm(rot.transpose(1, 2), rel.unsqueeze(-1)).squeeze(-1)
 
 
-def ball_vel_in_base(
-    env: MicroduckEnv,
-    asset_name: str = "ball",
-) -> torch.Tensor:
+def ball_vel_in_base(env: MicroduckEnv, asset_name: str = "ball") -> torch.Tensor:
     """Ball linear velocity in the robot's base frame. CRITIC-ONLY (see above)."""
     robot: Entity = env.scene["robot"]
     ball: Entity = env.scene[asset_name]
@@ -5938,24 +5681,14 @@ def spin_phase_from_command(cmd: torch.Tensor) -> torch.Tensor:
 
 
 def _spin_target_rate(
-    env: MicroduckEnv,
-    command_name: str,
-    rate_max: float,
-    accel_end: float,
-    hold_end: float,
-    brake_end: float,
+    env: MicroduckEnv, command_name: str, rate_max: float, accel_end: float, hold_end: float, brake_end: float
 ) -> torch.Tensor:
     phase = spin_phase_from_command(env.command_manager.get_command(command_name))
     return spin_rate_by_phase(phase, rate_max, accel_end, hold_end, brake_end)
 
 
 def _spin_gate(
-    env: MicroduckEnv,
-    command_name: str,
-    rate_max: float,
-    accel_end: float,
-    hold_end: float,
-    brake_end: float,
+    env: MicroduckEnv, command_name: str, rate_max: float, accel_end: float, hold_end: float, brake_end: float
 ) -> torch.Tensor:
     phase = spin_phase_from_command(env.command_manager.get_command(command_name))
     return spin_gate_by_phase(phase, rate_max, accel_end, hold_end, brake_end)
@@ -6038,11 +5771,7 @@ def spin_stay_in_place(
     cost = torch.sum(torch.square(v_xy), dim=1)
 
     phase = spin_phase_from_command(env.command_manager.get_command(command_name))
-    scale = torch.where(
-        phase < accel_end,
-        torch.full_like(cost, launch_scale),
-        torch.ones_like(cost),
-    )
+    scale = torch.where(phase < accel_end, torch.full_like(cost, launch_scale), torch.ones_like(cost))
     return cost * scale
 
 
@@ -6162,9 +5891,7 @@ def leg_antisymmetry(
 
 
 def _backlash_encoder_ids(
-    env: MicroduckEnv,
-    asset: Entity,
-    asset_cfg: SceneEntityCfg,
+    env: MicroduckEnv, asset: Entity, asset_cfg: SceneEntityCfg
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """(main_ids, backlash_ids, mask) — cached per (entity, joint selection).
 
@@ -6201,9 +5928,7 @@ def _backlash_encoder_ids(
 
 
 def joint_pos_rel_backlash(
-    env: MicroduckEnv,
-    biased: bool = False,
-    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    env: MicroduckEnv, biased: bool = False, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG
 ) -> torch.Tensor:
     """joint_pos_rel where the encoder reads through the backlash hinge.
 
@@ -6220,10 +5945,7 @@ def joint_pos_rel_backlash(
     return pos - default_joint_pos[:, main_ids]
 
 
-def joint_vel_rel_backlash(
-    env: MicroduckEnv,
-    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
-) -> torch.Tensor:
+def joint_vel_rel_backlash(env: MicroduckEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
     """joint_vel_rel where the encoder reads through the backlash hinge.
 
     The firmware derives present_velocity from encoder positions, so it also
@@ -6305,8 +6027,7 @@ class SitStandCommand(UniformVelocityCommand):
 
     def _alpha_from_height(self) -> torch.Tensor:
         z = torch.nan_to_num(
-            self.robot.data.root_link_pos_w[:, 2] - self._env_ref.scene.env_origins[:, 2],
-            nan=self._stand_z,
+            self.robot.data.root_link_pos_w[:, 2] - self._env_ref.scene.env_origins[:, 2], nan=self._stand_z
         )
         return torch.clamp((self._stand_z - z) / max(self._stand_z - self._sit_z, 1e-6), 0.0, 1.0)
 
@@ -6361,10 +6082,7 @@ def _posture_blend(env: MicroduckEnv, command_name: str) -> torch.Tensor:
 
 
 def _posture_targets(
-    env: MicroduckEnv,
-    asset: Entity,
-    command_name: str,
-    sit_overrides: dict,
+    env: MicroduckEnv, asset: Entity, command_name: str, sit_overrides: dict
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """(target blend, per-env joint target) for the commanded posture.
 
@@ -6382,10 +6100,7 @@ def _posture_targets(
 
 
 def _posture_height(
-    env: MicroduckEnv,
-    command_name: str,
-    sit_z: float,
-    stand_z: float,
+    env: MicroduckEnv, command_name: str, sit_z: float, stand_z: float
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """(slewed target trunk z, actual trunk z) per env."""
     blend = _posture_blend(env, command_name)
@@ -6441,11 +6156,7 @@ def posture_height_gaussian(
 
 
 def posture_height_l1(
-    env: MicroduckEnv,
-    command_name: str,
-    sit_z: float,
-    stand_z: float,
-    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    env: MicroduckEnv, command_name: str, sit_z: float, stand_z: float, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG
 ) -> torch.Tensor:
     """L1 companion to ``posture_height_gaussian`` — the transition driver.
 
@@ -6588,9 +6299,7 @@ def posture_rise_bootstrap(
 
 
 def trunk_upward_velocity_penalty(
-    env: MicroduckEnv,
-    max_up_vel: float = 0.08,
-    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    env: MicroduckEnv, max_up_vel: float = 0.08, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG
 ) -> torch.Tensor:
     """Penalty on upward trunk velocity beyond ``max_up_vel``.
 
@@ -6769,10 +6478,7 @@ def _update_roulade_accum(env: MicroduckEnv, asset: Entity) -> None:
 
 
 def _roulade_completion_gate(
-    env: MicroduckEnv,
-    gate_lo: float,
-    gate_hi: float,
-    require_head: bool = False,
+    env: MicroduckEnv, gate_lo: float, gate_hi: float, require_head: bool = False
 ) -> torch.Tensor:
     """Smoothstep on the progress frontier: 0 below gate_lo rad, 1 above gate_hi.
 
@@ -6871,7 +6577,10 @@ def reset_roulade_state(
     # servo joints (passive_* backlash hinges must stay at 0).
     mid_env_ids = env_ids[is_mid]
     if len(mid_env_ids) > 0 and tuck_overrides:
-        u = torch.rand(len(mid_env_ids), device=env.device) * (tuck_factor_range[1] - tuck_factor_range[0]) + tuck_factor_range[0]
+        u = (
+            torch.rand(len(mid_env_ids), device=env.device) * (tuck_factor_range[1] - tuck_factor_range[0])
+            + tuck_factor_range[0]
+        )
         for jnt_idx, angle in tuck_overrides.items():
             col = 7 + servo_ids[jnt_idx]
             home = env.sim.data.qpos[mid_env_ids, col]
@@ -6886,14 +6595,20 @@ def reset_roulade_state(
     # is the forward-roll axis regardless of spawn yaw (verified in the smoke
     # test — a yawed spawn still rolls straight ahead in its own frame).
     if len(mid_env_ids) > 0 and midroll_omega_range[1] > 0.0:
-        omega = torch.rand(len(mid_env_ids), device=env.device) * (midroll_omega_range[1] - midroll_omega_range[0]) + midroll_omega_range[0]
+        omega = (
+            torch.rand(len(mid_env_ids), device=env.device) * (midroll_omega_range[1] - midroll_omega_range[0])
+            + midroll_omega_range[0]
+        )
         env.sim.data.qvel[mid_env_ids, 4] = _ROULADE_FWD_SIGN * omega
 
     # Run-up hook: forward base velocity for STANDING spawns, body x → world xy
     # through the spawn yaw. (0, 0) = standstill start, disabled.
     stand_env_ids = env_ids[~is_mid]
     if len(stand_env_ids) > 0 and forward_vel_range[1] > 0.0:
-        vx = torch.rand(len(stand_env_ids), device=env.device) * (forward_vel_range[1] - forward_vel_range[0]) + forward_vel_range[0]
+        vx = (
+            torch.rand(len(stand_env_ids), device=env.device) * (forward_vel_range[1] - forward_vel_range[0])
+            + forward_vel_range[0]
+        )
         yaw_s = yaw[~is_mid]
         env.sim.data.qvel[stand_env_ids, 0] = vx * torch.cos(yaw_s)
         env.sim.data.qvel[stand_env_ids, 1] = vx * torch.sin(yaw_s)
@@ -7119,9 +6834,7 @@ def roulade_rise_velocity(
 
 
 def roulade_overspeed_penalty(
-    env: MicroduckEnv,
-    omega_max: float = 4.0,
-    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    env: MicroduckEnv, omega_max: float = 4.0, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG
 ) -> torch.Tensor:
     """max(0, |ω_y| − omega_max)² — quadratic tax on whip-speed rotation.
 
@@ -7137,10 +6850,7 @@ def roulade_overspeed_penalty(
     return excess.pow(2)
 
 
-def roulade_flatness_penalty(
-    env: MicroduckEnv,
-    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
-) -> torch.Tensor:
+def roulade_flatness_penalty(env: MicroduckEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
     """(lateral-axis world-z)² — dense gradient toward a sagittal roll.
 
     Positive quantity; use a negative weight. Zero when standing, zero
@@ -7153,10 +6863,7 @@ def roulade_flatness_penalty(
     return torch.nan_to_num(_lateral_axis_z(asset.data.root_link_quat_w), nan=0.0).pow(2)
 
 
-def roulade_sagittal_penalty(
-    env: MicroduckEnv,
-    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
-) -> torch.Tensor:
+def roulade_sagittal_penalty(env: MicroduckEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
     """Rotation out of the sagittal plane: body-frame ω_x² + ω_z² (positive;
     use a negative weight). ω_y is the roll axis and stays free."""
     asset: Entity = env.scene[asset_cfg.name]
@@ -7164,10 +6871,7 @@ def roulade_sagittal_penalty(
     return torch.nan_to_num(omega_b[:, 0].pow(2) + omega_b[:, 2].pow(2), nan=0.0)
 
 
-def roulade_lateral_velocity_penalty(
-    env: MicroduckEnv,
-    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
-) -> torch.Tensor:
+def roulade_lateral_velocity_penalty(env: MicroduckEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
     """Body-frame lateral (y) linear velocity² — keeps the roll straight."""
     asset: Entity = env.scene[asset_cfg.name]
     return torch.nan_to_num(asset.data.root_link_lin_vel_b[:, 1].pow(2), nan=0.0)

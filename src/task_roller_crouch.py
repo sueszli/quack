@@ -101,13 +101,7 @@ CROUCH_LEAN_PITCH = 0.08  # slight forward lean during the crouch (rad ≈ 4.6°
 from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.envs.mdp import dr
 from mjlab.envs.mdp.actions import JointPositionActionCfg
-from mjlab.managers import (
-    CurriculumTermCfg,
-    EventTermCfg,
-    ObservationTermCfg,
-    RewardTermCfg,
-    TerminationTermCfg,
-)
+from mjlab.managers import CurriculumTermCfg, EventTermCfg, ObservationTermCfg, RewardTermCfg, TerminationTermCfg
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.rl import RslRlModelCfg, RslRlOnPolicyRunnerCfg
 from mjlab.sensor import ContactMatch, ContactSensorCfg
@@ -126,11 +120,7 @@ def make_microduck_roller_crouch_env_cfg(play: bool = False) -> ManagerBasedRlEn
 
     feet_ground_cfg = ContactSensorCfg(
         name="feet_ground_contact",
-        primary=ContactMatch(
-            mode="subtree",
-            pattern=r"^(ankle_l_v1|ankle_r_v1)$",
-            entity="robot",
-        ),
+        primary=ContactMatch(mode="subtree", pattern=r"^(ankle_l_v1|ankle_r_v1)$", entity="robot"),
         secondary=ContactMatch(mode="body", pattern="terrain"),
         fields=("found", "force"),
         reduce="netforce",
@@ -181,22 +171,16 @@ def make_microduck_roller_crouch_env_cfg(play: bool = False) -> ManagerBasedRlEn
         "rise_end": RISE_END,
     }
     cfg.rewards["crouch_glide_pose"] = RewardTermCfg(
-        func=microduck_mdp.crouch_glide_pose_by_phase,
-        weight=6.0,
-        params={**_pose_params, "std": CROUCH_POSE_STD},
+        func=microduck_mdp.crouch_glide_pose_by_phase, weight=6.0, params={**_pose_params, "std": CROUCH_POSE_STD}
     )
     # L1 bootstrap: constant gradient towards the target even when the Gaussian
     # saturates far from the pose.
     cfg.rewards["crouch_glide_pose_l1"] = RewardTermCfg(
-        func=microduck_mdp.crouch_glide_pose_l1,
-        weight=2.0,
-        params=_pose_params,
+        func=microduck_mdp.crouch_glide_pose_l1, weight=2.0, params=_pose_params
     )
     # Keep the momentum (do not brake) — independent of the command.
     cfg.rewards["forward_speed"] = RewardTermCfg(
-        func=microduck_mdp.forward_speed_reward,
-        weight=1.0,
-        params={"vel_ref": 0.2},
+        func=microduck_mdp.forward_speed_reward, weight=1.0, params={"vel_ref": 0.2}
     )
     # Slight forward lean during the crouch -> counters the backward tipping observed
     # on the real robot during the fast descent. Gated by the blend (crouch only).
@@ -222,24 +206,16 @@ def make_microduck_roller_crouch_env_cfg(play: bool = False) -> ManagerBasedRlEn
         },
     )
     cfg.rewards["self_collisions"] = RewardTermCfg(
-        func=mdp.self_collision_cost,
-        weight=-1.0,
-        params={"sensor_name": "self_collision"},
+        func=mdp.self_collision_cost, weight=-1.0, params={"sensor_name": "self_collision"}
     )
     cfg.rewards["neck_action_rate_l2"] = RewardTermCfg(func=microduck_mdp.neck_action_rate_l2, weight=-0.5)
     cfg.rewards["joint_torques_l2"] = RewardTermCfg(func=microduck_mdp.joint_torques_l2, weight=-1e-3)
 
     # === TERMINATIONS ===
-    cfg.terminations["nan_state"] = TerminationTermCfg(
-        func=microduck_mdp.robot_state_is_nan,
-        time_out=False,
-    )
+    cfg.terminations["nan_state"] = TerminationTermCfg(func=microduck_mdp.robot_state_is_nan, time_out=False)
 
     # === EVENTS ===
-    cfg.events["reset_action_history"] = EventTermCfg(
-        func=microduck_mdp.reset_action_history,
-        mode="reset",
-    )
+    cfg.events["reset_action_history"] = EventTermCfg(func=microduck_mdp.reset_action_history, mode="reset")
     del cfg.events["foot_friction"]
 
     if ENABLE_VELOCITY_PUSHES:
@@ -305,10 +281,7 @@ def make_microduck_roller_crouch_env_cfg(play: bool = False) -> ManagerBasedRlEn
         cfg.events["randomize_joint_friction"] = EventTermCfg(
             func=microduck_mdp.randomize_bam_friction,
             mode="reset",
-            params={
-                "asset_cfg": SceneEntityCfg("robot"),
-                "scale_range": JOINT_FRICTION_RANDOMIZATION_RANGE,
-            },
+            params={"asset_cfg": SceneEntityCfg("robot"), "scale_range": JOINT_FRICTION_RANDOMIZATION_RANGE},
         )
     if ENABLE_ARMATURE_RANDOMIZATION:
         cfg.events["randomize_armature"] = EventTermCfg(
@@ -326,10 +299,7 @@ def make_microduck_roller_crouch_env_cfg(play: bool = False) -> ManagerBasedRlEn
     del cfg.observations["critic"].terms["foot_height"]
     del cfg.observations["actor"].terms["height_scan"]
     del cfg.observations["critic"].terms["height_scan"]
-    cfg.observations["critic"].terms["base_lin_vel"] = ObservationTermCfg(
-        func=mdp.base_lin_vel,
-        scale=1.0,
-    )
+    cfg.observations["critic"].terms["base_lin_vel"] = ObservationTermCfg(func=mdp.base_lin_vel, scale=1.0)
 
     gravity_term_name = "projected_gravity"
     cfg.observations["actor"].terms[gravity_term_name] = deepcopy(cfg.observations["actor"].terms[gravity_term_name])
@@ -373,19 +343,15 @@ def make_microduck_roller_crouch_env_cfg(play: bool = False) -> ManagerBasedRlEn
 
     wheel_cfg = SceneEntityCfg("robot", joint_names=(r"^passive_.*wheel",))
     cfg.observations["critic"].terms["wheel_vel"] = ObservationTermCfg(
-        func=mdp.joint_vel_rel,
-        scale=1.0,
-        params={"asset_cfg": wheel_cfg},
+        func=mdp.joint_vel_rel, scale=1.0, params={"asset_cfg": wheel_cfg}
     )
 
     for group in ("actor", "critic"):
         cfg.observations[group].terms["head_command"] = ObservationTermCfg(
-            func=microduck_mdp.zero_command_padding,
-            params={"dim": 4},
+            func=microduck_mdp.zero_command_padding, params={"dim": 4}
         )
         cfg.observations[group].terms["body_command"] = ObservationTermCfg(
-            func=microduck_mdp.zero_command_padding,
-            params={"dim": 6},
+            func=microduck_mdp.zero_command_padding, params={"dim": 6}
         )
 
     # === COMMAND: phase (like ground_pick) ===
@@ -456,17 +422,9 @@ MicroduckRollerCrouchRlCfg = RslRlOnPolicyRunnerCfg(
         hidden_dims=(512, 256, 128),
         activation="elu",
         obs_normalization=True,
-        distribution_cfg={
-            "class_name": "GaussianDistribution",
-            "init_std": 1.0,
-            "std_type": "scalar",
-        },
+        distribution_cfg={"class_name": "GaussianDistribution", "init_std": 1.0, "std_type": "scalar"},
     ),
-    critic=RslRlModelCfg(
-        hidden_dims=(512, 256, 128),
-        activation="elu",
-        obs_normalization=True,
-    ),
+    critic=RslRlModelCfg(hidden_dims=(512, 256, 128), activation="elu", obs_normalization=True),
     algorithm=PpoWithSymmetryCfg(
         value_loss_coef=1.0,
         use_clipped_value_loss=True,

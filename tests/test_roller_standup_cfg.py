@@ -1,12 +1,7 @@
 import pytest
 
-from src.task_roller_standup import (
-    EPISODE_LENGTH_S,
-    make_microduck_roller_standup_env_cfg,
-)
-from src.task_velocity_rollers import (
-    make_microduck_velocity_rollers_env_cfg,
-)
+from src.task_roller_standup import EPISODE_LENGTH_S, make_microduck_roller_standup_env_cfg
+from src.task_velocity_rollers import make_microduck_velocity_rollers_env_cfg
 
 # SKATING rewards: none of them may survive in a stand-up env.
 SKATING_REWARDS = (
@@ -98,7 +93,9 @@ def test_obs_parity_with_roller_env():
     standup = make_microduck_roller_standup_env_cfg()
     roller = make_microduck_velocity_rollers_env_cfg()
     for grp in ("actor", "critic"):
-        assert list(standup.observations[grp].terms.keys()) == list(roller.observations[grp].terms.keys()), f"observation layout diverges on group {grp}"
+        assert list(standup.observations[grp].terms.keys()) == list(roller.observations[grp].terms.keys()), (
+            f"observation layout diverges on group {grp}"
+        )
 
 
 def test_terrain_is_plain_plane():
@@ -127,14 +124,14 @@ def test_joint_indices_match_actual_roller_model():
     import mujoco
 
     from src.robot import get_walk_rollers_spec
-    from src.task_roller_standup import (
-        _LEG_JOINTS,
-        _NECK_JOINTS,
-        _WHEEL_JOINTS,
-    )
+    from src.task_roller_standup import _LEG_JOINTS, _NECK_JOINTS, _WHEEL_JOINTS
 
     model = get_walk_rollers_spec().compile()
-    articulated = [mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_JOINT, j) for j in range(model.njnt) if model.jnt_type[j] != mujoco.mjtJoint.mjJNT_FREE]
+    articulated = [
+        mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_JOINT, j)
+        for j in range(model.njnt)
+        if model.jnt_type[j] != mujoco.mjtJoint.mjJNT_FREE
+    ]
 
     assert [articulated[i] for i in _LEG_JOINTS] == [
         "left_hip_yaw",
@@ -148,12 +145,7 @@ def test_joint_indices_match_actual_roller_model():
         "right_knee",
         "right_ankle",
     ]
-    assert [articulated[i] for i in _NECK_JOINTS] == [
-        "neck_pitch",
-        "head_pitch",
-        "head_yaw",
-        "head_roll",
-    ]
+    assert [articulated[i] for i in _NECK_JOINTS] == ["neck_pitch", "head_pitch", "head_yaw", "head_roll"]
     assert [articulated[i] for i in _WHEEL_JOINTS] == [
         "passive_LF_wheel",
         "passive_LR_wheel",
@@ -191,10 +183,7 @@ def test_recovery_rewards_present_with_expected_weights():
 
 
 def test_recovery_rewards_use_roller_heights_not_walker_heights():
-    from src.task_roller_standup import (
-        ROLLER_PRONE_Z,
-        ROLLER_STAND_Z,
-    )
+    from src.task_roller_standup import ROLLER_PRONE_Z, ROLLER_STAND_Z
 
     cfg = make_microduck_roller_standup_env_cfg()
     assert ROLLER_STAND_Z == 0.138  # NOT the 0.115 of the wheel-less model
@@ -475,7 +464,9 @@ def test_already_negative_penalties_use_positive_weights():
     # These three terms call functions that already return a negative value
     # (height_l1_penalty, pose_l1_penalty, trunk_vertical_accel_penalty).
     for name in ("height_stand_l1", "pose_stand_l1", "gentle_rise"):
-        assert cfg.rewards[name].weight > 0, f"{name} calls a function that already returns a negative value: a negative weight would turn it into a reward"
+        assert cfg.rewards[name].weight > 0, (
+            f"{name} calls a function that already returns a negative value: a negative weight would turn it into a reward"
+        )
     # And these terms return a positive magnitude → negative weight.
     for name in ("joint_torques_l2", "joint_torque_rate_l2", "action_rate_l2"):
         assert cfg.rewards[name].weight < 0, f"{name} expects a negative weight"

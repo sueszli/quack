@@ -121,18 +121,9 @@ _NECK_JOINTS = [5, 6, 7, 8]
 from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.envs.mdp import dr
 from mjlab.envs.mdp.actions import JointPositionActionCfg
-from mjlab.managers import (
-    CurriculumTermCfg,
-    EventTermCfg,
-    ObservationTermCfg,
-    RewardTermCfg,
-    TerminationTermCfg,
-)
+from mjlab.managers import CurriculumTermCfg, EventTermCfg, ObservationTermCfg, RewardTermCfg, TerminationTermCfg
 from mjlab.managers.scene_entity_config import SceneEntityCfg
-from mjlab.rl import (
-    RslRlModelCfg,
-    RslRlOnPolicyRunnerCfg,
-)
+from mjlab.rl import RslRlModelCfg, RslRlOnPolicyRunnerCfg
 from mjlab.sensor import ContactMatch, ContactSensorCfg
 from mjlab.tasks.velocity import mdp
 from mjlab.tasks.velocity.velocity_env_cfg import make_velocity_env_cfg
@@ -149,11 +140,7 @@ def make_microduck_roulade_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
 
     feet_ground_cfg = ContactSensorCfg(
         name="feet_ground_contact",
-        primary=ContactMatch(
-            mode="geom",
-            pattern=r"^(left_foot_collision|right_foot_collision)$",
-            entity="robot",
-        ),
+        primary=ContactMatch(mode="geom", pattern=r"^(left_foot_collision|right_foot_collision)$", entity="robot"),
         secondary=ContactMatch(mode="body", pattern="terrain"),
         fields=("found", "force"),
         reduce="netforce",
@@ -244,9 +231,7 @@ def make_microduck_roulade_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     # Whip-speed tax — run-4 threshold 4 → 7 rad/s (above the measured p90
     # transit speed of ~5.5): taxes genuine whips, not the natural tumble.
     cfg.rewards["roulade_overspeed"] = RewardTermCfg(
-        func=microduck_mdp.roulade_overspeed_penalty,
-        weight=-0.1,
-        params={"omega_max": 7.0},
+        func=microduck_mdp.roulade_overspeed_penalty, weight=-0.1, params={"omega_max": 7.0}
     )
 
     # Head-as-pivot shaping: contact × mid-roll window × forward-rate factor
@@ -289,12 +274,7 @@ def make_microduck_roulade_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     cfg.rewards["roulade_height_after_roll"] = RewardTermCfg(
         func=microduck_mdp.roulade_height_after_roll,
         weight=1.0,
-        params={
-            "target_height": STAND_Z,
-            "std": 0.04,
-            "gate_lo": LANDING_GATE_LO,
-            "gate_hi": LANDING_GATE_HI,
-        },
+        params={"target_height": STAND_Z, "std": 0.04, "gate_lo": LANDING_GATE_LO, "gate_hi": LANDING_GATE_HI},
     )
 
     # Sharp landing layer (run-4): tight-std upright × height product on top
@@ -323,11 +303,7 @@ def make_microduck_roulade_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     cfg.rewards["roulade_stand_tax"] = RewardTermCfg(
         func=microduck_mdp.roulade_stand_tax,
         weight=5.0,
-        params={
-            "target_height": STAND_Z,
-            "gate_lo": LANDING_GATE_LO,
-            "gate_hi": LANDING_GATE_HI,
-        },
+        params={"target_height": STAND_Z, "gate_lo": LANDING_GATE_LO, "gate_hi": LANDING_GATE_HI},
     )
 
     # Exit-rise bootstrap: upward CoM velocity, gated to the late-roll region
@@ -336,11 +312,7 @@ def make_microduck_roulade_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     cfg.rewards["roulade_rise_velocity"] = RewardTermCfg(
         func=microduck_mdp.roulade_rise_velocity,
         weight=0.75,
-        params={
-            "max_height": STAND_Z + 0.01,
-            "gate_lo": RISE_GATE_LO,
-            "gate_hi": RISE_GATE_HI,
-        },
+        params={"max_height": STAND_Z + 0.01, "gate_lo": RISE_GATE_LO, "gate_hi": RISE_GATE_HI},
     )
 
     # Straightness — run-5: the run-4 policy rolled over the SHOULDER (lower
@@ -350,18 +322,9 @@ def make_microduck_roulade_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     # rolls no longer count as rotation at all); these penalties provide the
     # dense per-step gradient back toward the plane, weights raised 5× from
     # the run-2 values that were noise against progress@8.
-    cfg.rewards["roulade_sagittal"] = RewardTermCfg(
-        func=microduck_mdp.roulade_sagittal_penalty,
-        weight=-0.1,
-    )
-    cfg.rewards["roulade_lateral_vel"] = RewardTermCfg(
-        func=microduck_mdp.roulade_lateral_velocity_penalty,
-        weight=-0.5,
-    )
-    cfg.rewards["roulade_flatness"] = RewardTermCfg(
-        func=microduck_mdp.roulade_flatness_penalty,
-        weight=-0.5,
-    )
+    cfg.rewards["roulade_sagittal"] = RewardTermCfg(func=microduck_mdp.roulade_sagittal_penalty, weight=-0.1)
+    cfg.rewards["roulade_lateral_vel"] = RewardTermCfg(func=microduck_mdp.roulade_lateral_velocity_penalty, weight=-0.5)
+    cfg.rewards["roulade_flatness"] = RewardTermCfg(func=microduck_mdp.roulade_flatness_penalty, weight=-0.5)
 
     # ── Sim2real regularisers ─────────────────────────────────────────────────
     # Motion-blockers stay near zero during discovery (the roll IS a large
@@ -406,9 +369,7 @@ def make_microduck_roulade_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     # Self-collision — LIGHT: a tucked roll needs body-on-body contact
     # (knees against trunk); standup's -1.0 would fight the tuck.
     cfg.rewards["self_collisions"] = RewardTermCfg(
-        func=mdp.self_collision_cost,
-        weight=-0.1,
-        params={"sensor_name": self_collision_cfg.name},
+        func=mdp.self_collision_cost, weight=-0.1, params={"sensor_name": self_collision_cfg.name}
     )
 
     # Always-on upright would oppose the flip (the old attempt's core failure);
@@ -419,10 +380,7 @@ def make_microduck_roulade_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     # ── Observations (identical layout to walking / standup policies) ─────────
     del cfg.observations["actor"].terms["base_lin_vel"]
 
-    cfg.observations["critic"].terms["base_lin_vel"] = ObservationTermCfg(
-        func=mdp.base_lin_vel,
-        scale=1.0,
-    )
+    cfg.observations["critic"].terms["base_lin_vel"] = ObservationTermCfg(func=mdp.base_lin_vel, scale=1.0)
     del cfg.observations["critic"].terms["foot_height"]
     del cfg.observations["actor"].terms["height_scan"]
     del cfg.observations["critic"].terms["height_scan"]
@@ -475,12 +433,10 @@ def make_microduck_roulade_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     # stack works unchanged (send zeros).
     for group in ("actor", "critic"):
         cfg.observations[group].terms["head_command"] = ObservationTermCfg(
-            func=microduck_mdp.zero_command_padding,
-            params={"dim": 4},
+            func=microduck_mdp.zero_command_padding, params={"dim": 4}
         )
         cfg.observations[group].terms["body_command"] = ObservationTermCfg(
-            func=microduck_mdp.zero_command_padding,
-            params={"dim": 6},
+            func=microduck_mdp.zero_command_padding, params={"dim": 6}
         )
 
     # ── Command: tiny noise around zero (kept for obs-shape parity) ──────────
@@ -500,20 +456,13 @@ def make_microduck_roulade_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     # Falling over is the task — keep only the NaN guard + timeout.
     if "fell_over" in cfg.terminations:
         del cfg.terminations["fell_over"]
-    cfg.terminations["nan_state"] = TerminationTermCfg(
-        func=microduck_mdp.robot_state_is_nan,
-        time_out=False,
-    )
+    cfg.terminations["nan_state"] = TerminationTermCfg(func=microduck_mdp.robot_state_is_nan, time_out=False)
 
     # ── Events ────────────────────────────────────────────────────────────────
     cfg.events["expand_bam_friction_fields"] = EventTermCfg(
-        func=microduck_mdp.expand_bam_friction_fields,
-        mode="startup",
+        func=microduck_mdp.expand_bam_friction_fields, mode="startup"
     )
-    cfg.events["reset_action_history"] = EventTermCfg(
-        func=microduck_mdp.reset_action_history,
-        mode="reset",
-    )
+    cfg.events["reset_action_history"] = EventTermCfg(func=microduck_mdp.reset_action_history, mode="reset")
     cfg.events["foot_friction"].params["asset_cfg"].geom_names = foot_frictions_geom_names
     cfg.events["foot_friction"].params["ranges"] = (0.7, 1.3)
 
@@ -606,10 +555,7 @@ def make_microduck_roulade_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
         cfg.events["randomize_joint_friction"] = EventTermCfg(
             func=microduck_mdp.randomize_bam_friction,
             mode="reset",
-            params={
-                "asset_cfg": SceneEntityCfg("robot"),
-                "scale_range": JOINT_FRICTION_RANDOMIZATION_RANGE,
-            },
+            params={"asset_cfg": SceneEntityCfg("robot"), "scale_range": JOINT_FRICTION_RANDOMIZATION_RANGE},
         )
 
     # ── Terrain ───────────────────────────────────────────────────────────────
@@ -717,10 +663,7 @@ def make_microduck_roulade_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
         params={
             # POSITIVE weights: the func is self-negating (returns -|a_z|).
             "reward_name": "gentle_landing",
-            "weight_stages": [
-                {"step": 0, "weight": 0.002},
-                {"step": 2500 * 24, "weight": 0.005},
-            ],
+            "weight_stages": [{"step": 0, "weight": 0.002}, {"step": 2500 * 24, "weight": 0.005}],
         },
     )
 
@@ -734,17 +677,9 @@ MicroduckRouladeRlCfg = RslRlOnPolicyRunnerCfg(
         hidden_dims=(512, 256, 128),
         activation="elu",
         obs_normalization=True,  # normalizer MUST be baked into ONNX by export.py
-        distribution_cfg={
-            "class_name": "GaussianDistribution",
-            "init_std": 1.0,
-            "std_type": "scalar",
-        },
+        distribution_cfg={"class_name": "GaussianDistribution", "init_std": 1.0, "std_type": "scalar"},
     ),
-    critic=RslRlModelCfg(
-        hidden_dims=(512, 256, 128),
-        activation="elu",
-        obs_normalization=True,
-    ),
+    critic=RslRlModelCfg(hidden_dims=(512, 256, 128), activation="elu", obs_normalization=True),
     algorithm=PpoWithSymmetryCfg(
         value_loss_coef=1.0,
         use_clipped_value_loss=True,

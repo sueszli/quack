@@ -22,9 +22,7 @@ from mjlab.terrains.terrain_generator import TerrainGeneratorCfg
 from . import task_mdp as microduck_mdp
 from .task_slope_terrain import RAMP_DEG_MAX, FlatRampTerrainCfg
 from .task_symmetry import PpoWithSymmetryCfg
-from .task_velocity_rollers import (
-    make_microduck_velocity_rollers_env_cfg,
-)
+from .task_velocity_rollers import make_microduck_velocity_rollers_env_cfg
 
 # Geometry of the flat+ramp+exit terrain.
 FLAT_LENGTH = 2.0
@@ -144,18 +142,12 @@ def make_microduck_roller_slope_env_cfg(play: bool = False) -> ManagerBasedRlEnv
     # rolling) pays nothing. Without a glide reward, the optimum would be to
     # stay still; with it, it lets itself roll as long as it keeps its balance.
     cfg.rewards["wheel_glide"] = RewardTermCfg(
-        func=microduck_mdp.wheel_glide_reward,
-        weight=2.0,
-        params={"cap_speed": 0.35},
+        func=microduck_mdp.wheel_glide_reward, weight=2.0, params={"cap_speed": 0.35}
     )
     # GO STRAIGHT: hold the spawn yaw (= 0 = facing the descent). Corrective
     # (the robot can recover), this is the right way to go straight. NB: the
     # PPO symmetry (SYMMETRY_CFG) is coded for the old 51D obs -> unusable here.
-    cfg.rewards["heading_hold"] = RewardTermCfg(
-        func=microduck_mdp.heading_hold_reward,
-        weight=1.5,
-        params={"std": 0.4},
-    )
+    cfg.rewards["heading_hold"] = RewardTermCfg(func=microduck_mdp.heading_hold_reward, weight=1.5, params={"std": 0.4})
     cfg.rewards["feet_flat"] = RewardTermCfg(
         func=microduck_mdp.feet_flat_penalty,
         weight=-2.0,
@@ -164,22 +156,13 @@ def make_microduck_roller_slope_env_cfg(play: bool = False) -> ManagerBasedRlEnv
             "sensor_name": "feet_ground_contact",
         },
     )
-    cfg.rewards["neck_action_rate_l2"] = RewardTermCfg(
-        func=microduck_mdp.neck_action_rate_l2,
-        weight=-0.5,
-    )
+    cfg.rewards["neck_action_rate_l2"] = RewardTermCfg(func=microduck_mdp.neck_action_rate_l2, weight=-0.5)
     # KEEP THE HEAD STRAIGHT: penalizes the deviation of the neck/head joints from
     # the home position. The fixed LEG pose was removed (for free
     # balance), but nothing held the head -> it went anywhere. This only
     # constrains the head/neck, not the legs.
-    cfg.rewards["neck_joint_pos_l2"] = RewardTermCfg(
-        func=microduck_mdp.neck_joint_pos_l2,
-        weight=-0.75,
-    )
-    cfg.rewards["joint_torques_l2"] = RewardTermCfg(
-        func=microduck_mdp.joint_torques_l2,
-        weight=-1e-3,
-    )
+    cfg.rewards["neck_joint_pos_l2"] = RewardTermCfg(func=microduck_mdp.neck_joint_pos_l2, weight=-0.75)
+    cfg.rewards["joint_torques_l2"] = RewardTermCfg(func=microduck_mdp.joint_torques_l2, weight=-1e-3)
     cfg.rewards["action_rate_l2"].weight = -1.0
 
     # === TERMINATIONS: fall + fell into the void ===
@@ -197,10 +180,7 @@ def make_microduck_roller_slope_env_cfg(play: bool = False) -> ManagerBasedRlEnv
         func=microduck_mdp.root_height_below,
         params={"min_height": VOID_FLOOR, "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))},
     )
-    cfg.terminations["nan_state"] = TerminationTermCfg(
-        func=microduck_mdp.robot_state_is_nan,
-        time_out=False,
-    )
+    cfg.terminations["nan_state"] = TerminationTermCfg(func=microduck_mdp.robot_state_is_nan, time_out=False)
 
     # === OBS: sanitize NaN/Inf (robustness to rare contact divergences) ===
     # A rare contact (~1/25M env-steps) makes the free-joint diverge to NaN. Because
@@ -212,15 +192,10 @@ def make_microduck_roller_slope_env_cfg(play: bool = False) -> ManagerBasedRlEnv
         cfg.observations[grp].nan_policy = "sanitize"
 
     # === EVENTS ===
-    cfg.events["reset_action_history"] = EventTermCfg(
-        func=microduck_mdp.reset_action_history,
-        mode="reset",
-    )
+    cfg.events["reset_action_history"] = EventTermCfg(func=microduck_mdp.reset_action_history, mode="reset")
     # Rolling start (momentum at the wheels, no skidding). AFTER reset_base.
     cfg.events["reset_rolling_entry"] = EventTermCfg(
-        func=microduck_mdp.reset_rolling_entry,
-        mode="reset",
-        params={"speed_range": ENTRY_VELOCITY_X},
+        func=microduck_mdp.reset_rolling_entry, mode="reset", params={"speed_range": ENTRY_VELOCITY_X}
     )
 
     # === CURRICULUM: steepness gentle -> steep ===

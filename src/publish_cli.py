@@ -193,7 +193,9 @@ def run(cfg: PublishConfig) -> int:
         existing = set(api.list_repo_files(cfg.repo))
         onnx_files = {f for f in existing if f.endswith(".onnx")}
         if onnx_files and not cfg.force:
-            _fail(f"{cfg.repo} already carries {sorted(onnx_files)}; --force overwrites. A repo carries exactly one .onnx, so a second name is a new repo.")
+            _fail(
+                f"{cfg.repo} already carries {sorted(onnx_files)}; --force overwrites. A repo carries exactly one .onnx, so a second name is a new repo."
+            )
         stale = onnx_files - {m.POLICY_FILE}
         commit = api.upload_folder(
             repo_id=cfg.repo,

@@ -147,18 +147,9 @@ MAX_RISE_SPEED = 0.08
 from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.envs.mdp import dr
 from mjlab.envs.mdp.actions import JointPositionActionCfg
-from mjlab.managers import (
-    CurriculumTermCfg,
-    EventTermCfg,
-    ObservationTermCfg,
-    RewardTermCfg,
-    TerminationTermCfg,
-)
+from mjlab.managers import CurriculumTermCfg, EventTermCfg, ObservationTermCfg, RewardTermCfg, TerminationTermCfg
 from mjlab.managers.scene_entity_config import SceneEntityCfg
-from mjlab.rl import (
-    RslRlModelCfg,
-    RslRlOnPolicyRunnerCfg,
-)
+from mjlab.rl import RslRlModelCfg, RslRlOnPolicyRunnerCfg
 from mjlab.sensor import ContactMatch, ContactSensorCfg
 from mjlab.tasks.velocity import mdp
 from mjlab.tasks.velocity.velocity_env_cfg import make_velocity_env_cfg
@@ -167,26 +158,15 @@ from mjlab.utils.noise import UniformNoiseCfg as Unoise
 from . import task_mdp as microduck_mdp
 from .robot import MICRODUCK_STANDUP_ROBOT_CFG
 from .task_symmetry import SYMMETRY_CFG, PpoWithSymmetryCfg
-from .task_velocity import (
-    HEAD_BODY_NAMES,
-    HEAD_POSE_CMD_RESAMPLE_S,
-    MICRODUCK_ROUGH_TERRAINS_CFG,
-)
+from .task_velocity import HEAD_BODY_NAMES, HEAD_POSE_CMD_RESAMPLE_S, MICRODUCK_ROUGH_TERRAINS_CFG
 
 
-def make_microduck_sitstand_env_cfg(
-    play: bool = False,
-    rough: bool = False,
-) -> ManagerBasedRlEnvCfg:
+def make_microduck_sitstand_env_cfg(play: bool = False, rough: bool = False) -> ManagerBasedRlEnvCfg:
     """Create Microduck sitstand environment configuration."""
 
     feet_ground_cfg = ContactSensorCfg(
         name="feet_ground_contact",
-        primary=ContactMatch(
-            mode="geom",
-            pattern=r"^(left_foot_collision|right_foot_collision)$",
-            entity="robot",
-        ),
+        primary=ContactMatch(mode="geom", pattern=r"^(left_foot_collision|right_foot_collision)$", entity="robot"),
         secondary=ContactMatch(mode="body", pattern="terrain"),
         fields=("found", "force"),
         reduce="netforce",
@@ -263,20 +243,14 @@ def make_microduck_sitstand_env_cfg(
     # active in BOTH postures. Weight kept light so a transient head-assist
     # during a transition only pays a small tracking cost.
     cfg.rewards["head_pose_tracking"] = RewardTermCfg(
-        func=microduck_mdp.head_pose_tracking,
-        weight=0.75,
-        params={"command_name": "head_pose", "std": 0.5},
+        func=microduck_mdp.head_pose_tracking, weight=0.75, params={"command_name": "head_pose", "std": 0.5}
     )
 
     # L1 bootstrap — constant gradient toward the commanded pose.
     cfg.rewards["posture_pose_l1"] = RewardTermCfg(
         func=microduck_mdp.posture_pose_l1,
         weight=1.0,
-        params={
-            "command_name": "twist",
-            "joint_indices": _LEG_JOINTS,
-            "sit_overrides": SITTING_TARGET_OVERRIDES,
-        },
+        params={"command_name": "twist", "joint_indices": _LEG_JOINTS, "sit_overrides": SITTING_TARGET_OVERRIDES},
     )
 
     # Trunk height — two-layer Gaussian (standup recipe: wide layer for the
@@ -285,22 +259,12 @@ def make_microduck_sitstand_env_cfg(
     cfg.rewards["posture_height"] = RewardTermCfg(
         func=microduck_mdp.posture_height_gaussian,
         weight=1.0,
-        params={
-            "command_name": "twist",
-            "sit_z": SIT_Z,
-            "stand_z": STAND_Z,
-            "std": 0.04,
-        },
+        params={"command_name": "twist", "sit_z": SIT_Z, "stand_z": STAND_Z, "std": 0.04},
     )
     cfg.rewards["posture_height_sharp"] = RewardTermCfg(
         func=microduck_mdp.posture_height_gaussian,
         weight=1.0,
-        params={
-            "command_name": "twist",
-            "sit_z": SIT_Z,
-            "stand_z": STAND_Z,
-            "std": 0.015,
-        },
+        params={"command_name": "twist", "sit_z": SIT_Z, "stand_z": STAND_Z, "std": 0.015},
     )
     # L1 weight 6.0: between sit's 5.0 and standup's 7.5 — resting in the
     # WRONG posture must be clearly net-negative in both directions (staying
@@ -308,11 +272,7 @@ def make_microduck_sitstand_env_cfg(
     cfg.rewards["posture_height_l1"] = RewardTermCfg(
         func=microduck_mdp.posture_height_l1,
         weight=6.0,
-        params={
-            "command_name": "twist",
-            "sit_z": SIT_Z,
-            "stand_z": STAND_Z,
-        },
+        params={"command_name": "twist", "sit_z": SIT_Z, "stand_z": STAND_Z},
     )
 
     # Rise bootstrap — pays for upward motion itself when STAND is commanded
@@ -352,18 +312,12 @@ def make_microduck_sitstand_env_cfg(
     cfg.rewards["descent_speed"] = RewardTermCfg(
         func=microduck_mdp.trunk_downward_velocity_penalty,
         weight=10.0,
-        params={
-            "max_down_vel": MAX_DESCENT_SPEED,
-            "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
-        },
+        params={"max_down_vel": MAX_DESCENT_SPEED, "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))},
     )
     cfg.rewards["rise_speed"] = RewardTermCfg(
         func=microduck_mdp.trunk_upward_velocity_penalty,
         weight=0.0,
-        params={
-            "max_up_vel": MAX_RISE_SPEED,
-            "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
-        },
+        params={"max_up_vel": MAX_RISE_SPEED, "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))},
     )
     cfg.rewards["gentle_motion"] = RewardTermCfg(
         func=microduck_mdp.trunk_vertical_accel_penalty,
@@ -454,9 +408,7 @@ def make_microduck_sitstand_env_cfg(
     cfg.rewards.pop("soft_landing", None)  # velocity removes it
 
     cfg.rewards["self_collisions"] = RewardTermCfg(
-        func=mdp.self_collision_cost,
-        weight=-1.0,
-        params={"sensor_name": self_collision_cfg.name},
+        func=mdp.self_collision_cost, weight=-1.0, params={"sensor_name": self_collision_cfg.name}
     )
 
     # Drop the base "upright" Gaussian — replaced by the two-layer upright above.
@@ -466,10 +418,7 @@ def make_microduck_sitstand_env_cfg(
     # ── Observations (identical layout to walking / sit / standup policies) ───
     del cfg.observations["actor"].terms["base_lin_vel"]
 
-    cfg.observations["critic"].terms["base_lin_vel"] = ObservationTermCfg(
-        func=mdp.base_lin_vel,
-        scale=1.0,
-    )
+    cfg.observations["critic"].terms["base_lin_vel"] = ObservationTermCfg(func=mdp.base_lin_vel, scale=1.0)
     # mjlab 1.3.0 base template adds sensor-based foot_height + height_scan obs.
     # Sitstand has no terrain-height sensor (and drops the walking foot rewards),
     # so remove these terms. foot_air_time/foot_contact(_forces) use the
@@ -546,12 +495,10 @@ def make_microduck_sitstand_env_cfg(
     # Layout parity with velocity/standup: [twist(3), head_pose(4), body_pose(6)].
     for group in ("actor", "critic"):
         cfg.observations[group].terms["head_command"] = ObservationTermCfg(
-            func=mdp.generated_commands,
-            params={"command_name": "head_pose"},
+            func=mdp.generated_commands, params={"command_name": "head_pose"}
         )
         cfg.observations[group].terms["body_command"] = ObservationTermCfg(
-            func=microduck_mdp.zero_command_padding,
-            params={"dim": 6},
+            func=microduck_mdp.zero_command_padding, params={"dim": 6}
         )
 
     # ── Command: sit/stand posture flag in the twist slot ────────────────────
@@ -569,13 +516,7 @@ def make_microduck_sitstand_env_cfg(
     command.resampling_time_range = POSTURE_DWELL_S
     command.debug_vis = False
     cfg.commands["twist"] = microduck_mdp.SitStandCommandCfg(
-        **{
-            **vars(command),
-            "sit_prob": SIT_PROB,
-            "ramp_s": POSTURE_RAMP_S,
-            "sit_z": SIT_Z,
-            "stand_z": STAND_Z,
-        }
+        **{**vars(command), "sit_prob": SIT_PROB, "ramp_s": POSTURE_RAMP_S, "sit_z": SIT_Z, "stand_z": STAND_Z}
     )
 
     # ── Terminations ──────────────────────────────────────────────────────────
@@ -583,23 +524,16 @@ def make_microduck_sitstand_env_cfg(
     # policy experiences the impact/upright costs instead of a truncated episode.
     if "fell_over" in cfg.terminations:
         del cfg.terminations["fell_over"]
-    cfg.terminations["nan_state"] = TerminationTermCfg(
-        func=microduck_mdp.robot_state_is_nan,
-        time_out=False,
-    )
+    cfg.terminations["nan_state"] = TerminationTermCfg(func=microduck_mdp.robot_state_is_nan, time_out=False)
 
     # ── Events ────────────────────────────────────────────────────────────────
     # BAM (mjlab_frictionloss branch) writes per-env dof_frictionloss/dof_damping
     # every step; this no-op event registers those fields for per-world expansion.
     cfg.events["expand_bam_friction_fields"] = EventTermCfg(
-        func=microduck_mdp.expand_bam_friction_fields,
-        mode="startup",
+        func=microduck_mdp.expand_bam_friction_fields, mode="startup"
     )
 
-    cfg.events["reset_action_history"] = EventTermCfg(
-        func=microduck_mdp.reset_action_history,
-        mode="reset",
-    )
+    cfg.events["reset_action_history"] = EventTermCfg(func=microduck_mdp.reset_action_history, mode="reset")
     cfg.events["foot_friction"].params["asset_cfg"].geom_names = foot_frictions_geom_names
     cfg.events["foot_friction"].params["ranges"] = (0.7, 1.3)  # match velocity
 
@@ -646,10 +580,7 @@ def make_microduck_sitstand_env_cfg(
             mode="interval",
             interval_range_s=interval,
             params={
-                "velocity_range": {
-                    "x": VELOCITY_PUSH_RANGE,
-                    "y": VELOCITY_PUSH_RANGE,
-                },
+                "velocity_range": {"x": VELOCITY_PUSH_RANGE, "y": VELOCITY_PUSH_RANGE},
                 "asset_cfg": SceneEntityCfg("robot"),
             },
         )
@@ -722,10 +653,7 @@ def make_microduck_sitstand_env_cfg(
         cfg.events["randomize_joint_friction"] = EventTermCfg(
             func=microduck_mdp.randomize_bam_friction,
             mode="reset",
-            params={
-                "asset_cfg": SceneEntityCfg("robot"),
-                "scale_range": JOINT_FRICTION_RANDOMIZATION_RANGE,
-            },
+            params={"asset_cfg": SceneEntityCfg("robot"), "scale_range": JOINT_FRICTION_RANDOMIZATION_RANGE},
         )
 
     # NOTE: IMU mounting-misalignment is applied at the OBSERVATION level above
@@ -839,10 +767,7 @@ def make_microduck_sitstand_env_cfg(
         func=microduck_mdp.reward_weight,
         params={
             "reward_name": "descent_speed",
-            "weight_stages": [
-                {"step": 0, "weight": 10.0},
-                {"step": 500 * 24, "weight": 20.0},
-            ],
+            "weight_stages": [{"step": 0, "weight": 10.0}, {"step": 500 * 24, "weight": 20.0}],
         },
     )
 
@@ -891,17 +816,9 @@ MicroduckSitStandRlCfg = RslRlOnPolicyRunnerCfg(
         hidden_dims=(512, 256, 128),
         activation="elu",
         obs_normalization=True,  # matches velocity; normalizer MUST be baked into ONNX by export.py
-        distribution_cfg={
-            "class_name": "GaussianDistribution",
-            "init_std": 1.0,
-            "std_type": "scalar",
-        },
+        distribution_cfg={"class_name": "GaussianDistribution", "init_std": 1.0, "std_type": "scalar"},
     ),
-    critic=RslRlModelCfg(
-        hidden_dims=(512, 256, 128),
-        activation="elu",
-        obs_normalization=True,
-    ),
+    critic=RslRlModelCfg(hidden_dims=(512, 256, 128), activation="elu", obs_normalization=True),
     algorithm=PpoWithSymmetryCfg(
         value_loss_coef=1.0,
         use_clipped_value_loss=True,

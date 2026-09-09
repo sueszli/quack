@@ -66,18 +66,9 @@ ENCODER_BIAS_RANGE = (-0.015, 0.015)
 from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.envs.mdp import dr
 from mjlab.envs.mdp.actions import JointPositionActionCfg
-from mjlab.managers import (
-    CurriculumTermCfg,
-    EventTermCfg,
-    ObservationTermCfg,
-    RewardTermCfg,
-    TerminationTermCfg,
-)
+from mjlab.managers import CurriculumTermCfg, EventTermCfg, ObservationTermCfg, RewardTermCfg, TerminationTermCfg
 from mjlab.managers.scene_entity_config import SceneEntityCfg
-from mjlab.rl import (
-    RslRlModelCfg,
-    RslRlOnPolicyRunnerCfg,
-)
+from mjlab.rl import RslRlModelCfg, RslRlOnPolicyRunnerCfg
 from mjlab.sensor import ContactMatch, ContactSensorCfg
 from mjlab.tasks.velocity import mdp
 from mjlab.tasks.velocity.velocity_env_cfg import make_velocity_env_cfg
@@ -86,10 +77,7 @@ from mjlab.utils.noise import UniformNoiseCfg as Unoise
 from . import task_mdp as microduck_mdp
 from .robot import MICRODUCK_GROUND_PICK_ROBOT_CFG
 from .task_symmetry import SYMMETRY_CFG, PpoWithSymmetryCfg
-from .task_velocity import (
-    HEAD_BODY_NAMES,
-    MICRODUCK_ROUGH_TERRAINS_CFG,
-)
+from .task_velocity import HEAD_BODY_NAMES, MICRODUCK_ROUGH_TERRAINS_CFG
 
 # ── SEGMENTED phase profile (independent durations) ───────────────────────────
 # Instead of the sinusoidal weighting (which couples descent/hold/rise),
@@ -114,11 +102,7 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
 
     feet_ground_cfg = ContactSensorCfg(
         name="feet_ground_contact",
-        primary=ContactMatch(
-            mode="geom",
-            pattern=r"^(left_foot_collision|right_foot_collision)$",
-            entity="robot",
-        ),
+        primary=ContactMatch(mode="geom", pattern=r"^(left_foot_collision|right_foot_collision)$", entity="robot"),
         secondary=ContactMatch(mode="body", pattern="terrain"),
         fields=("found", "force"),
         reduce="netforce",
@@ -268,11 +252,7 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     cfg.rewards["neck_vel_descent"] = RewardTermCfg(
         func=microduck_mdp.neck_vel_descent_penalty,
         weight=-0.1,
-        params={
-            "command_name": "twist",
-            "joint_indices": _NECK_JOINTS,
-            "hold_end": HOLD_END,
-        },
+        params={"command_name": "twist", "joint_indices": _NECK_JOINTS, "hold_end": HOLD_END},
     )
 
     # Random weight "in the mouth" when standing up (lifted object, 10-40 g/episode).
@@ -306,9 +286,7 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     # NB: this is CONTACT only; the foot tipping over the ankle is handled
     # by feet_flat below (not by this term).
     cfg.rewards["feet_grounded"] = RewardTermCfg(
-        func=microduck_mdp.feet_grounded_reward,
-        weight=3.0,
-        params={"sensor_name": feet_ground_cfg.name},
+        func=microduck_mdp.feet_grounded_reward, weight=3.0, params={"sensor_name": feet_ground_cfg.name}
     )
 
     # FLAT feet. feet_grounded only sees CONTACT (found per foot): a foot
@@ -320,9 +298,7 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     cfg.rewards["feet_flat"] = RewardTermCfg(
         func=microduck_mdp.feet_flat_penalty,
         weight=-2.0,
-        params={
-            "asset_cfg": SceneEntityCfg("robot", site_names=("left_foot", "right_foot")),
-        },
+        params={"asset_cfg": SceneEntityCfg("robot", site_names=("left_foot", "right_foot"))},
     )
 
     # ── Rewards: regularisation (HEAVIER than velocity — slow careful reaching) ─
@@ -342,9 +318,7 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
 
     # Self-collision — head and neck could clip the legs during deep crouch.
     cfg.rewards["self_collisions"] = RewardTermCfg(
-        func=mdp.self_collision_cost,
-        weight=-1.0,
-        params={"sensor_name": self_collision_cfg.name},
+        func=mdp.self_collision_cost, weight=-1.0, params={"sensor_name": self_collision_cfg.name}
     )
 
     # No-touch enforcement: we do NOT want contact (the mouth must stay just
@@ -352,18 +326,13 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     # This is the term that, against mouth_ground_proximity, sets the equilibrium "as close
     # as possible without touching".
     cfg.rewards["head_impact_penalty"] = RewardTermCfg(
-        func=microduck_mdp.body_impact_cost,
-        weight=-2.0,
-        params={"sensor_name": head_impact_cfg.name, "threshold": 1.0},
+        func=microduck_mdp.body_impact_cost, weight=-2.0, params={"sensor_name": head_impact_cfg.name, "threshold": 1.0}
     )
 
     # ── Observations (identical 61D layout to walking policy) ──────────────────
     del cfg.observations["actor"].terms["base_lin_vel"]
 
-    cfg.observations["critic"].terms["base_lin_vel"] = ObservationTermCfg(
-        func=mdp.base_lin_vel,
-        scale=1.0,
-    )
+    cfg.observations["critic"].terms["base_lin_vel"] = ObservationTermCfg(func=mdp.base_lin_vel, scale=1.0)
     # mjlab 1.3.0 base template adds sensor-based foot_height + height_scan obs.
     # Ground-pick has no terrain-height sensor (and drops the walking foot
     # rewards), so remove these terms.
@@ -434,12 +403,10 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     # slots (head 4 + body 6) are constant zero.
     for group in ("actor", "critic"):
         cfg.observations[group].terms["head_command"] = ObservationTermCfg(
-            func=microduck_mdp.zero_command_padding,
-            params={"dim": 4},
+            func=microduck_mdp.zero_command_padding, params={"dim": 4}
         )
         cfg.observations[group].terms["body_command"] = ObservationTermCfg(
-            func=microduck_mdp.zero_command_padding,
-            params={"dim": 6},
+            func=microduck_mdp.zero_command_padding, params={"dim": 6}
         )
 
     # ── Command: cyclic phase encoding ────────────────────────────────────────
@@ -449,34 +416,27 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     # Period = GP_PERIOD (6 s). The segmented profile (constants at the top of the file)
     # decouples descent/hold/rise/rest: descent & rise ~1.5 s
     # (slow -> no loss of balance), low hold ~0.6 s (short), rest ~2.4 s.
-    cfg.commands["twist"] = microduck_mdp.GroundPickPhaseCommandCfg(**{**vars(command), "class_type": microduck_mdp.GroundPickPhaseCommand, "period": GP_PERIOD})
+    cfg.commands["twist"] = microduck_mdp.GroundPickPhaseCommandCfg(
+        **{**vars(command), "class_type": microduck_mdp.GroundPickPhaseCommand, "period": GP_PERIOD}
+    )
 
     # ── Terminations ──────────────────────────────────────────────────────────
     # Terminate on NaN physics (extreme contact impulses) before it corrupts obs.
-    cfg.terminations["nan_state"] = TerminationTermCfg(
-        func=microduck_mdp.robot_state_is_nan,
-        time_out=False,
-    )
+    cfg.terminations["nan_state"] = TerminationTermCfg(func=microduck_mdp.robot_state_is_nan, time_out=False)
 
     # ── Events ────────────────────────────────────────────────────────────────
     # BAM (mjlab_frictionloss branch) writes per-env dof_frictionloss/dof_damping
     # every step; this no-op event registers those fields for per-world expansion.
     cfg.events["expand_bam_friction_fields"] = EventTermCfg(
-        func=microduck_mdp.expand_bam_friction_fields,
-        mode="startup",
+        func=microduck_mdp.expand_bam_friction_fields, mode="startup"
     )
 
-    cfg.events["reset_action_history"] = EventTermCfg(
-        func=microduck_mdp.reset_action_history,
-        mode="reset",
-    )
+    cfg.events["reset_action_history"] = EventTermCfg(func=microduck_mdp.reset_action_history, mode="reset")
 
     # Random weight "in the mouth": drawn per episode (10-40 g), applied when
     # standing up by the mouth_payload_force hook. Imagine the robot lifting an object.
     cfg.events["sample_mouth_payload"] = EventTermCfg(
-        func=microduck_mdp.sample_mouth_payload,
-        mode="reset",
-        params={"min_kg": 0.01, "max_kg": 0.04},
+        func=microduck_mdp.sample_mouth_payload, mode="reset", params={"min_kg": 0.01, "max_kg": 0.04}
     )
     cfg.events["foot_friction"].params["asset_cfg"].geom_names = foot_frictions_geom_names
     cfg.events["foot_friction"].params["ranges"] = (0.7, 1.3)  # match velocity
@@ -492,10 +452,7 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
             mode="interval",
             interval_range_s=interval,
             params={
-                "velocity_range": {
-                    "x": VELOCITY_PUSH_RANGE,
-                    "y": VELOCITY_PUSH_RANGE,
-                },
+                "velocity_range": {"x": VELOCITY_PUSH_RANGE, "y": VELOCITY_PUSH_RANGE},
                 "asset_cfg": SceneEntityCfg("robot"),
             },
         )
@@ -562,10 +519,7 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
         cfg.events["randomize_joint_friction"] = EventTermCfg(
             func=microduck_mdp.randomize_bam_friction,
             mode="reset",
-            params={
-                "asset_cfg": SceneEntityCfg("robot"),
-                "scale_range": JOINT_FRICTION_RANDOMIZATION_RANGE,
-            },
+            params={"asset_cfg": SceneEntityCfg("robot"), "scale_range": JOINT_FRICTION_RANDOMIZATION_RANGE},
         )
 
     if ENABLE_ARMATURE_RANDOMIZATION:
@@ -658,17 +612,9 @@ MicroduckGroundPickRlCfg = RslRlOnPolicyRunnerCfg(
         hidden_dims=(512, 256, 128),
         activation="elu",
         obs_normalization=True,  # matches velocity; normalizer baked into ONNX by export.py
-        distribution_cfg={
-            "class_name": "GaussianDistribution",
-            "init_std": 1.0,
-            "std_type": "scalar",
-        },
+        distribution_cfg={"class_name": "GaussianDistribution", "init_std": 1.0, "std_type": "scalar"},
     ),
-    critic=RslRlModelCfg(
-        hidden_dims=(512, 256, 128),
-        activation="elu",
-        obs_normalization=True,
-    ),
+    critic=RslRlModelCfg(hidden_dims=(512, 256, 128), activation="elu", obs_normalization=True),
     algorithm=PpoWithSymmetryCfg(
         value_loss_coef=1.0,
         use_clipped_value_loss=True,

@@ -141,10 +141,7 @@ class _FakeEnv:
 def _phase_cmd(phases):
     """Slot command as the policy sees it: [cos(2*pi*phi), sin(...), 0]."""
     p = torch.as_tensor(phases, dtype=torch.float32)
-    return torch.stack(
-        [torch.cos(2 * math.pi * p), torch.sin(2 * math.pi * p), torch.zeros_like(p)],
-        dim=-1,
-    )
+    return torch.stack([torch.cos(2 * math.pi * p), torch.sin(2 * math.pi * p), torch.zeros_like(p)], dim=-1)
 
 
 # ── phase recover ────────────────────────────────────────────────────────────
@@ -235,12 +232,7 @@ def test_spin_stay_in_place_is_full_price_during_rest():
 
 
 # ── spin_wheel_differential ──────────────────────────────────────────────────
-_WHEEL_IDS = {
-    "passive_LF_wheel": 0,
-    "passive_LR_wheel": 1,
-    "passive_RF_wheel": 2,
-    "passive_RR_wheel": 3,
-}
+_WHEEL_IDS = {"passive_LF_wheel": 0, "passive_LR_wheel": 1, "passive_RF_wheel": 2, "passive_RR_wheel": 3}
 
 
 def _wheel_env(vel_rows, phases):
@@ -294,9 +286,7 @@ def test_spin_grounded_rewards_both_blades_down_and_is_gated():
     contact = torch.tensor([[0.2, 0.3], [0.2, 0.0], [0.0, 0.0], [0.2, 0.3]])
     entity = _FakeEntity(_FakeData())
     env = _FakeEnv(
-        entity,
-        cmd=_phase_cmd([0.30, 0.30, 0.30, 0.80]),
-        sensors={"feet_ground_contact": _FakeSensor(contact)},
+        entity, cmd=_phase_cmd([0.30, 0.30, 0.30, 0.80]), sensors={"feet_ground_contact": _FakeSensor(contact)}
     )
     r = mdp.spin_grounded(env, sensor_name="feet_ground_contact")
     # both blades on the floor at steady rate -> gate 1.0 ; only one or none -> 0 ;
@@ -305,12 +295,7 @@ def test_spin_grounded_rewards_both_blades_down_and_is_gated():
 
 
 # ── leg_antisymmetry ─────────────────────────────────────────────────────────
-_LEG_IDS = {
-    "left_hip_pitch": 0,
-    "left_knee": 1,
-    "right_hip_pitch": 2,
-    "right_knee": 3,
-}
+_LEG_IDS = {"left_hip_pitch": 0, "left_knee": 1, "right_hip_pitch": 2, "right_knee": 3}
 
 
 def _leg_env(pos_rows, phases):
@@ -342,12 +327,7 @@ def test_leg_antisymmetry_is_gated_off_during_rest():
 
 
 # ── neck_joint_pos_l2: pattern parameter ─────────────────────────────────────
-_NECK_IDS = {
-    "neck_pitch": 0,
-    "head_pitch": 1,
-    "head_roll": 2,
-    "head_yaw": 3,
-}
+_NECK_IDS = {"neck_pitch": 0, "head_pitch": 1, "head_roll": 2, "head_yaw": 3}
 
 
 def test_neck_joint_pos_l2_pattern_can_exclude_head_yaw():
@@ -365,7 +345,5 @@ def test_neck_joint_pos_l2_pattern_can_exclude_head_yaw():
     assert torch.allclose(mdp.neck_joint_pos_l2(env), torch.tensor([1.0]), atol=1e-6)
     # spin pattern: head_yaw excluded -> cost 0.0 (head free in yaw)
     assert torch.allclose(
-        mdp.neck_joint_pos_l2(env, pattern=r"^(neck_pitch|head_pitch|head_roll)$"),
-        torch.tensor([0.0]),
-        atol=1e-6,
+        mdp.neck_joint_pos_l2(env, pattern=r"^(neck_pitch|head_pitch|head_roll)$"), torch.tensor([0.0]), atol=1e-6
     )

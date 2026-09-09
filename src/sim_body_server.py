@@ -296,10 +296,7 @@ class Body:
 
     def remember(self) -> None:
         data = self.world.data
-        self.held = (
-            data.qpos[self.trunk : self.trunk + 7].copy(),
-            data.qpos[self.qpos_adr].copy(),
-        )
+        self.held = (data.qpos[self.trunk : self.trunk + 7].copy(), data.qpos[self.qpos_adr].copy())
 
     def restore(self) -> None:
         """Put this duck back where it was, for the one that has not been enabled yet."""
@@ -505,10 +502,7 @@ def run(world: World, headless: bool) -> None:
                 time.sleep(slack)
             elif slack < -0.25:
                 behind += 1
-                print(
-                    f"== behind real time by {-slack:.2f}s (x{behind}) — fewer ducks, or --headless",
-                    flush=True,
-                )
+                print(f"== behind real time by {-slack:.2f}s (x{behind}) — fewer ducks, or --headless", flush=True)
                 next_step = time.perf_counter()
             step += 1
             if viewer is not None and step % passes_per_frame == 0:
@@ -551,7 +545,9 @@ def main() -> None:
     args = parser.parse_args()
 
     if not args.scene.exists():
-        raise SystemExit(f"no scene at {args.scene}. Available:\n  " + "\n  ".join(sorted(p.name for p in SCENES.glob("scene*.xml"))))
+        raise SystemExit(
+            f"no scene at {args.scene}. Available:\n  " + "\n  ".join(sorted(p.name for p in SCENES.glob("scene*.xml")))
+        )
     if args.ducks < 1:
         raise SystemExit("--ducks needs at least one duck")
 

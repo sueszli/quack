@@ -65,12 +65,7 @@ class _Env:
         self._head_pose_bl_mask = torch.zeros(4)
 
 
-GATE = {
-    "gate_height_low": 0.09,
-    "gate_height_high": 0.11,
-    "gate_tilt_full_deg": 20.0,
-    "gate_tilt_zero_deg": 45.0,
-}
+GATE = {"gate_height_low": 0.09, "gate_height_high": 0.11, "gate_tilt_full_deg": 20.0, "gate_tilt_zero_deg": 45.0}
 
 
 def _set_pose(env, z, pitch_deg):
@@ -140,9 +135,7 @@ def test_reset_clears_the_ema():
 
 
 def test_standup_cfg_wiring():
-    from src.task_standup import (
-        make_microduck_standup_env_cfg,
-    )
+    from src.task_standup import make_microduck_standup_env_cfg
 
     cfg = make_microduck_standup_env_cfg()
     term = cfg.rewards["head_pose_bias"]
@@ -158,9 +151,7 @@ def test_standup_cfg_wiring():
 
 
 def test_velocity_cfg_unchanged_no_gate():
-    from src.task_velocity import (
-        make_microduck_velocity_env_cfg,
-    )
+    from src.task_velocity import make_microduck_velocity_env_cfg
 
     cfg = make_microduck_velocity_env_cfg()
     assert "gate_height_low" not in cfg.rewards["head_pose_bias"].params
@@ -169,9 +160,7 @@ def test_velocity_cfg_unchanged_no_gate():
 def test_velstand_inherited_term_is_gated():
     # Velstand episodes survive falls — the inherited velocity-env term must not
     # charge the ground phase.
-    from src.task_velstand import (
-        make_microduck_velstand_env_cfg,
-    )
+    from src.task_velstand import make_microduck_velstand_env_cfg
 
     cfg = make_microduck_velstand_env_cfg()
     params = cfg.rewards["head_pose_bias"].params
