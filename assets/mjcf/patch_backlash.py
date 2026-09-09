@@ -7,6 +7,10 @@ import sys
 
 SERVO_CLASS = "chosen_actuator"
 JOINT_RE = re.compile(r"^(\s*)<joint\b[^>]*/>\s*$")
+# Matches a joint element opening that this line-based scanner cannot handle,
+# i.e. one whose attributes continue onto the next line. Such a joint would be
+# skipped silently, yielding a model with fewer backlash hinges than servos.
+OPEN_JOINT_RE = re.compile(r"^\s*<joint\b(?![^>]*/>)")
 ATTR_RE = re.compile(r'(\w+)="([^"]*)"')
 
 DEFAULTS_BLOCK = """\
@@ -26,7 +30,7 @@ range="{lo:.17g} {hi:.17g}" solreflimit="0.01 1" solimplimit="0.95 0.999 0.0001 
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description="Patch an onshape-to-robot MJCF export in place, adding one passive backlash hinge per servo joint. Must run as the LAST post_import_command, after the sed passes.")
     parser.add_argument("xml", help="MJCF file to modify in place")
     parser.add_argument("--backlash-deg", type=float, default=2.0, help="TOTAL backlash play in degrees (peak-to-peak); joint range is symmetric +/-deg/2 (default: 2.0)")
     args = parser.parse_args()
@@ -41,6 +45,11 @@ def main() -> int:
         return 1
     if not any("<worldbody>" in line for line in lines):
         print("[patch_backlash] ERROR: no <worldbody> found — is this an MJCF file?")
+        return 1
+
+    straddling = [i + 1 for i, line in enumerate(lines) if OPEN_JOINT_RE.match(line)]
+    if straddling:
+        print(f"[patch_backlash] ERROR: {args.xml} has <joint> elements spanning multiple lines (line(s) {', '.join(map(str, straddling))}). This line-based scanner would skip them and emit fewer backlash hinges than servos; aborting instead.")
         return 1
 
     out: list[str] = []
