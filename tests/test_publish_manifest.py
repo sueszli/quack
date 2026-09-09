@@ -41,12 +41,7 @@ def _tiny_policy(path: Path, obs_len: int = m.OBS_LEN, action_len: int = m.ACTIO
     return path
 
 
-# -- the untrained shape fixture must never reach the Hub -------------------------------------
-
-
 def test_an_untrained_export_is_refused(tmp_path):
-    """The stamp is the only signal separating a fixture from a real policy: the
-    widths are right and random weights still smoke-run finite."""
     path = _tiny_policy(tmp_path / "policy.onnx")
     model = onnx.load(str(path))
     model.metadata_props.append(onnx.StringStringEntryProto(key="untrained", value="true"))

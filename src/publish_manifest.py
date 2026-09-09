@@ -213,7 +213,6 @@ def inspect_onnx(path: Path) -> OnnxShape:
 
 
 def is_untrained_onnx(path: Path) -> bool:
-    """True if the artifact is stamped by `export --agent untrained`."""
     import onnx
 
     model = onnx.load(str(path), load_external_data=False)
@@ -223,8 +222,7 @@ def is_untrained_onnx(path: Path) -> bool:
 def check_onnx(path: Path) -> OnnxShape:
     """Refuse a file the daemon would refuse at load: wrong widths, or one that is not 61 -> 14.
 
-    Also refuses an `--agent untrained` fixture: correct widths and a passing smoke
-    run by construction mean no other check here would catch it.
+    Also refuses an `--agent untrained` fixture, which passes every other check by construction.
     """
     if not path.exists():
         raise ManifestError(f"{path}: no such file")
