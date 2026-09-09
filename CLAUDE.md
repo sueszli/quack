@@ -207,15 +207,12 @@ Never launch a long run without one.
 
 ## Training ops & reading a run
 
-- Metrics go to local TensorBoard (`logger="tensorboard"`); logs and
-  checkpoints in `logs/rsl_rl/<experiment_name>/<run>/`; view with
-  `uvx tensorboard --logdir logs/rsl_rl`; resume with
+- Metrics and checkpoints land in `logs/rsl_rl/<experiment_name>/<run>/`.
+  Curves: `uvx tensorboard --logdir logs/rsl_rl` (localhost:6006). Resume:
   `--agent.load-checkpoint model_XXXX.pt --agent.resume True`.
-- There is NO remote experiment tracker or artifact store: checkpoints live on
-  the machine that trained them. `export`/`publish` take `--checkpoint N` or
-  `--checkpoint-file <path>`; copy the `.pt` across machines yourself.
-  `--checkpoint N` looks ONLY inside the newest run dir of that experiment (it
-  does not search older runs) — use `--checkpoint-file` to reach an older run.
+- Nothing is uploaded anywhere — checkpoints stay on the machine that trained
+  them, so copy the `.pt` yourself. `export`/`publish` take `--checkpoint N`
+  (newest run dir only) or `--checkpoint-file <path>` (any run).
 - Watch per-iteration: mean reward rising AND episode length behaving as the
   task demands; every penalty term ≤ 0; the MAIN task term actually growing
   (total reward can rise purely on regularizers while the trick never happens).

@@ -120,8 +120,6 @@ def run_export(task_id: str, cfg: ExportConfig) -> ExportResult:
             resume_path = get_checkpoint_path(log_root_path, checkpoint=re.escape(checkpoint_filename))
             print(f"[INFO]: Loading checkpoint: {resume_path.name}")
         else:
-            # CHECKPOINT_PATTERN, not mjlab's default ".*": that matches every entry in the
-            # run dir and sorts `events.out.tfevents.*` after `model_*.pt`.
             resume_path = get_checkpoint_path(log_root_path, checkpoint=CHECKPOINT_PATTERN)
             print(f"[INFO]: Loading checkpoint: {resume_path.name} (latest in {log_root_path})")
         log_dir = resume_path.parent
