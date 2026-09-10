@@ -1,9 +1,11 @@
-              _                     __           __           __
-   ____ ___  (_)_____________  ____/ /_  _______/ /__   _____/ /
-  / __ `__ \/ / ___/ ___/ __ \/ __  / / / / ___/ //_/  / ___/ /
- / / / / / / / /__/ /  / /_/ / /_/ / /_/ / /__/ ,<    / /  / /
-/_/ /_/ /_/_/\___/_/   \____/\__,_/\__,_/\___/_/|_|  /_/  /_/
+                          __
+  ____ ___  ______ ______/ /__
+ / __ `/ / / / __ `/ ___/ //_/
+/ /_/ / /_/ / /_/ / /__/ ,<
+\__, /\__,_/\__,_/\___/_/|_|
+  /_/
 
+debloated microduck RL framework
 
 quack: RL training environments for Microduck, a ~800 g, 25 cm bipedal robot with 14 Dynamixel XL330 servos. Built on mjlab (MuJoCo Warp) + PPO (rsl_rl). Policies train at 50 Hz and export to ONNX for the robot runtime (robotd/robotctl, a separate repo). Servos are simulated with the BAM XL330 voltage/friction model; at this scale actuator fidelity is most of the sim2real gap.
 
