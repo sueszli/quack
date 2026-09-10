@@ -2,6 +2,7 @@
 
 .PHONY: sync
 sync:
+	# aarch64 pulls ~2 GB of CUDA wheels; uv's default 30 s timeout aborts the download
 	UV_HTTP_TIMEOUT=600 uv sync
 
 .PHONY: precommit-hook

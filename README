@@ -60,7 +60,7 @@ The runtime hot-swaps policies behind a shared 61-D observation contract. Rehear
 
     uv run infer --walking walk.onnx --standing stand.onnx --sitstand sitstand.onnx --roulade roulade.onnx --new-cmd-obs
 
-Keyboard: velocity commands, G ground pick, Y sit/stand, R roulade, K/L kicks. `--new-cmd-obs` is required for current policies; forgetting it fails silently. `--debug`, `--save-csv`, `--record` for sim2real comparisons. `--no-bam` swaps the BAM actuators for the XML PD ones.
+Keyboard: velocity commands, G ground pick, Y sit/stand, R roulade, K/L kicks. `--new-cmd-obs` is required for current policies; without it infer builds 51-D obs and ONNX Runtime fails at the first inference with an 'invalid dimensions ... Got 51 Expected 61' error. `--debug`, `--save-csv`, `--record` for sim2real comparisons. `--no-bam` swaps the BAM actuators for the XML PD ones.
 
 PUBLISHING
 
