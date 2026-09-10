@@ -1,6 +1,4 @@
 # Uploads policy.onnx + a schema-2 manifest.json + README in the shape the microduck daemon loads.
-# The ONNX is checked for the 61 -> 14 shape and smoke-run before anything is uploaded, and an
-# existing policy.onnx is never overwritten without --force.
 
 from __future__ import annotations
 

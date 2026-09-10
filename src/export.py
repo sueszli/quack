@@ -39,7 +39,6 @@ class ExportConfig:
     camera: int | str | None = None
     viewer: Literal["auto", "native", "viser"] = "auto"
 
-    # Internal flag used by demo script.
     _demo_mode: tyro.conf.Suppress[bool] = False
 
 
