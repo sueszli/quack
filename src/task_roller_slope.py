@@ -1,6 +1,3 @@
-# Balanced passive descent: roll onto a ramp and glide down upright. No steering
-# (the twist command is neutralized). 61D obs inherited as-is from the rollers env.
-
 import math
 import os
 
@@ -27,7 +24,6 @@ TILE_SIZE = (15.0, 4.0)  # >= flat + ramp_max + runout (= 14) + margin
 SPAWN_YAW = (0.0, 0.0)  # facing the descent (+x)
 
 # None = random steepness, as in training; 0..1 forces a slope (1.0 = steepest ~20°).
-# Overridable via SLOPE_PLAY_DIFFICULTY ("none"/"random" = random).
 PLAY_DIFFICULTY = None
 
 
@@ -82,7 +78,6 @@ def make_microduck_roller_slope_env_cfg(play: bool = False) -> ManagerBasedRlEnv
     if getattr(command.ranges, "ang_vel_z", None) is not None:
         command.ranges.ang_vel_z = (0.0, 0.0)
 
-    # Inherited yaw is random; fix it facing the descent.
     cfg.events["reset_base"].params["pose_range"]["yaw"] = SPAWN_YAW
     # No base push: a moving base with stationary wheels skids on step 1 -> contact
     # spike -> NaN divergence. reset_rolling_entry below spins base and wheels
