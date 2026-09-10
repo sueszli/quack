@@ -5,6 +5,7 @@
 \__, /\__,_/\__,_/\___/_/|_|
   /_/
 
+
 A simplified fork of: https://github.com/pollen-robotics/microduck_rl
 
 This repo lets you simulate the Microduck robot in MuJoCo and learn RL policies for it.
