@@ -5,105 +5,23 @@
 \__, /\__,_/\__,_/\___/_/|_|
   /_/
 
-debloated microduck RL framework
+teach a small robot duck to move
 
-Microduck: ~800 g, 25 cm bipedal robot, 14 Dynamixel XL330 servos.
-Stack: mjlab (MuJoCo Warp) + PPO (rsl_rl), 50 Hz policies, ONNX export.
-Servos use the BAM XL330 voltage/friction model -- at this scale actuator
-fidelity is most of the sim2real gap.
-Deployment lives in a separate repo (robotd/robotctl).
+Microduck is a two-legged robot, about 800 g and 25 cm tall. This repo lets
+you teach it through trial and error in a physics simulator, then run what it
+learns on the real robot. It can learn to walk, get up after a fall, kick a
+ball and roller skate.
 
-CREDIT
+This is a simplified fork of Pollen Robotics' original training code. They
+built the robot and did the original research:
 
-The robot, the physics and the RL recipes are Pollen Robotics' work: upstream
-is https://github.com/pollen-robotics/microduck_rl and the robot itself is
-https://github.com/pollen-robotics/microduck. This is a debloated fork
-(Apache-2.0, like upstream) that keeps the science and drops the scaffolding:
-no Hugging Face or wandb in the training path (tensorboard only, checkpoints
-stay on the machine that trained them, huggingface_hub survives solely in the
-opt-in `uv run publish`), French comments translated to English,
-self-explanatory comments and docstrings deleted, and no nested packages --
-the old src/mjlab_microduck/robot/microduck/... tree became a flat src/
-namespace package, 6 levels deep to 3, one task_<name>.py per env -- plus dead
-code, unused dependencies and stale docs removed. Track upstream for the
-authoritative version; come here to read the whole thing in an afternoon and
-hack on it.
+    https://github.com/pollen-robotics/microduck_rl
+    https://github.com/pollen-robotics/microduck
 
-SETUP
+You'll need a graphics card that supports CUDA, plus uv and make.
 
-Needs a CUDA GPU, uv and make. `git clone https://github.com/sueszli/quack &&
-cd quack`, then `make sync` and `make help` for every target, from the smoke
-test to the ONNX export.
+    make sync    # install
+    make help    # list every target
 
-- checkpoints: logs/rsl_rl/<exp>/<run>/, <exp> = the cfg's experiment_name.
-  --checkpoint N uses the newest run, --checkpoint-file <path> any run.
-- always deploy ONNX from `uv run export`, never a hand-converted checkpoint.
-
-TASKS
-
-  Mjlab-Velocity-{Flat,Rough}-MicroDuck    walking, velocity + head cmds (main)
-  Mjlab-VelStand-{Flat,Rough}-MicroDuck    walking + fall recovery
-  Mjlab-StandUp-{Flat,Rough}-MicroDuck     stand up, then body-pose control
-  Mjlab-SitStand-{Flat,Rough}-MicroDuck    commanded sit <-> stand
-  Mjlab-GroundPick-{Flat,Rough}-MicroDuck  touch the ground with the mouth
-  Mjlab-BallKick-Flat-MicroDuck            kick a ball forward
-  Mjlab-Roulade-Flat-MicroDuck             forward roll, land on feet
-  Mjlab-Velocity-Flat-MicroDuck-Rollers    roller-skate velocity tracking
-  Mjlab-Velocity-Swizzle-MicroDuck         swizzle skating
-  Mjlab-RollerCrouch-Flat-MicroDuck        crouch while gliding on rollers
-  Mjlab-RollerSlope-Flat-MicroDuck         glide down slopes on rollers
-  Mjlab-RollerStandUp-Flat-MicroDuck       stand up onto the wheels
-  Mjlab-Spin-Flat-MicroDuck                spin in place on rollers
-
-Backlash twins: insert `-Backlash` before `MicroDuck` for +-1 deg of gear play
-per servo, same obs/action dims (src/task_backlash.py). Not for Roulade,
-RollerStandUp, Spin.
-
-DEPLOYMENT REHEARSAL
-
-The runtime hot-swaps policies behind one 61-D obs contract. Rehearse on CPU:
-
-    uv run infer --walking walk.onnx --standing stand.onnx \
-        --sitstand sitstand.onnx --roulade roulade.onnx --new-cmd-obs
-
-- keys: velocity commands, G ground pick, Y sit/stand, R roulade, K/L kicks.
-- --new-cmd-obs is required for current policies; without it infer builds 51-D
-  obs and ONNX Runtime dies with 'invalid dimensions ... Got 51 Expected 61'.
-- --debug / --save-csv / --record for sim2real comparisons.
-- --no-bam swaps the BAM actuators for the XML PD ones.
-
-PUBLISHING
-
-`uv run publish` uploads policy.onnx + manifest.json + README to the Hugging
-Face Hub in the shape the robot daemon loads. Needs `hf auth login` unless
---dry-run.
-
-    uv run publish --task Mjlab-BallKick-Flat-MicroDuck --checkpoint 3000 \
-        --repo <user>/microduck-kick --kind episodic --duration-s 4.0
-    uv run publish --onnx out.onnx --repo <user>/microduck-flamingo \
-        --kind perpetual --unwind-s 1.5
-    uv run publish --onnx out.onnx --repo <user>/microduck-my-walk \
-        --kind perpetual --slot walk
-
-- --kind episodic: runs for --duration-s, returns to standing.
-- --kind perpetual: runs until stopped -- a gait (--slot walk|stand) or a held
-  pose (--unwind-s).
-- not publishable: GroundPick (phase-driven), SitStand (posture flag) -- the
-  daemon owns those.
-
-On the robot:
-
-    sudo robotctl policy add kick <user>/microduck-kick
-    sudo robotctl policy add flamingo <user>/microduck-flamingo --hold 5
-    sudo robotctl policy load walk <user>/microduck-my-walk
-    robotctl robot do kick
-
-CONVENTIONS
-
-- 61-D actor obs, shared by every policy: 48 proprioception + commands
-  [twist(3), head_pose(4), body_pose(6)]. Unused slots are zero-padded, never
-  removed.
-- joints: 0-4 left leg, 5-8 neck/head, 9-13 right leg. Unactuated joints are
-  named passive_*; servo selectors use `^(?!passive_).*`.
-- ENABLE_* toggles (e.g. ENABLE_SYMMETRY) sit at the top of each cfg file.
-- CLAUDE.md holds the env-building workflow and the reward-design rules.
+Work with a coding agent. Have it read CLAUDE.md for the tasks, workflow and
+rules learned the hard way, then ask it your questions.
