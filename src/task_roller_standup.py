@@ -1,10 +1,3 @@
-# Getting up on rollers, then holding the stance. Port of the `standup` recipe to
-# the rollers model.
-#
-# The head/body command slots stay zero-padded (61D obs parity with the rest of the
-# family); the head is held by neck_joint_pos_l2, which resolves by NAME.
-# Deployed as the `--standing` policy opposite the roller walker, twist slot at zero.
-
 import math
 import os
 
@@ -89,11 +82,9 @@ def make_microduck_roller_standup_env_cfg(play: bool = False) -> ManagerBasedRlE
     for grp in ("actor", "critic"):
         cfg.observations[grp].nan_policy = "sanitize"
 
-    # Weights are standup's, tuned there; only the joint indices and heights change.
     # A FRESH SceneEntityCfg per term: mjlab resolves and mutates them in place, so a
     # shared object hands out stale indices.
     cfg.rewards["pose_stand_legs"] = RewardTermCfg(func=microduck_mdp.pose_target_match, weight=8.0, params={"std": 0.5, "joint_indices": _LEG_JOINTS, "target_overrides": None})
-    # Constant gradient far from HOME, where the Gaussian above saturates.
     cfg.rewards["pose_stand_l1"] = RewardTermCfg(func=microduck_mdp.pose_l1_penalty, weight=5.0, params={"joint_indices": _LEG_JOINTS, "target_overrides": None})
 
     # Three layers: wide Gaussian pulls off the ground, narrow one forces the last cm,
@@ -102,7 +93,6 @@ def make_microduck_roller_standup_env_cfg(play: bool = False) -> ManagerBasedRlE
     cfg.rewards["height_stand_sharp"] = RewardTermCfg(func=microduck_mdp.height_target_gaussian, weight=4.0, params={"std": 0.015, "target_height": ROLLER_STAND_Z, "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))})
     cfg.rewards["height_stand_l1"] = RewardTermCfg(func=microduck_mdp.height_l1_penalty, weight=30.0, params={"target_height": ROLLER_STAND_Z, "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))})
 
-    # Pays for the rising MOTION, else sitting still collecting partial pose wins.
     # Cutoff sits 10 mm ABOVE the target: at the target the policy parks there instead
     # of finishing the rise.
     cfg.rewards["com_upward_velocity"] = RewardTermCfg(func=microduck_mdp.com_upward_velocity, weight=3.0, params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)), "max_height": ROLLER_STAND_Z + 0.010})
@@ -119,8 +109,6 @@ def make_microduck_roller_standup_env_cfg(play: bool = False) -> ManagerBasedRlE
     cfg.rewards["upright_linear"] = RewardTermCfg(func=microduck_mdp.body_upright_linear, weight=6.0, params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))})
     cfg.rewards["upright_sharp"] = RewardTermCfg(func=microduck_mdp.upright_gaussian_at_height, weight=6.0, params={"std": 0.3, "height_low": ROLLER_PRONE_Z, "height_high": ROLLER_STAND_Z, "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))})
 
-    # Multiplicative, so 2 good criteria out of 3 pay nothing — kills the
-    # "leaning at the right height" compromise an additive stack lets through.
     # Stds deliberately WIDE: tight ones scored ~5e-5, i.e. no gradient at all.
     cfg.rewards["standing_composite"] = RewardTermCfg(func=microduck_mdp.standing_composite_score, weight=15.0, params={"target_height": ROLLER_STAND_Z, "height_std": 0.04, "upright_std": 0.40, "pose_std": 0.40, "joint_indices": _LEG_JOINTS, "target_overrides": None, "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))})
 
