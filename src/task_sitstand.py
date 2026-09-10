@@ -47,9 +47,9 @@ import math
 # Symmetry
 ENABLE_SYMMETRY = False
 
-# ── Domain randomisation (matched to the velocity env for sim2real parity) ────
+# Domain randomisation (matched to the velocity env for sim2real parity)
 
-# ── Ranges (matched to the velocity env) ──────────────────────────────────────
+# Ranges (matched to the velocity env)
 # Final magnitude matches velocity's ±0.3 but the ramp is DELAYED (see the
 # push_magnitude curriculum): the sit env's lesson — pushes mid-descent before
 # the transition motions have consolidated make the policy unlearn them and
@@ -66,7 +66,7 @@ POSTURE_DWELL_S = (3.5, 6.5)
 # of (reset state × command) get equal coverage, including both holds.
 SIT_PROB = 0.5
 
-# ── SIT keyframe (joint_pos index → angle in rad). Single fixed target. ─────
+# SIT keyframe (joint_pos index → angle in rad). Single fixed target.
 # STABILITY-VERIFIED 2026-07-27 (sit env, scratchpad sweep_sit_pose2.py):
 # knee ±1.35, hip_pitch = HOME ∓ 0.05 lean, ankle 0, hip_roll 0 settles at
 # 3-5° tilt for 95-100% of noisy resets. The old keyframe (knee ±1.0472,
@@ -154,7 +154,7 @@ def make_microduck_sitstand_env_cfg(play: bool = False, rough: bool = False) -> 
 
     foot_frictions_geom_names = ("left_foot_collision", "right_foot_collision")
 
-    # ── Base config ───────────────────────────────────────────────────────────
+    # Base config
     cfg = make_velocity_env_cfg()
 
     # Standup robot variant: full collision meshes — the body must physically
@@ -165,17 +165,17 @@ def make_microduck_sitstand_env_cfg(play: bool = False, rough: bool = False) -> 
 
     cfg.episode_length_s = EPISODE_LENGTH_S
 
-    # ── Actions ───────────────────────────────────────────────────────────────
+    # Actions
     joint_pos_action = cfg.actions["joint_pos"]
     assert isinstance(joint_pos_action, JointPositionActionCfg)
     joint_pos_action.scale = 1.0
 
-    # ── Rewards: drop walking-specific terms ──────────────────────────────────
+    # Rewards: drop walking-specific terms
     for name in ["track_linear_velocity", "track_angular_velocity", "air_time", "foot_clearance", "foot_swing_height", "foot_slip", "pose"]:
         if name in cfg.rewards:
             del cfg.rewards[name]
 
-    # ── Rewards: posture-conditioned single-target stack ──────────────────────
+    # Rewards: posture-conditioned single-target stack
     # Every task term below reads the commanded posture and selects its target
     # (SIT keyframe + SIT_Z vs HOME + STAND_Z) per env. Weights mirror the sit
     # env's proven stack (positive task mass ≈ velocity scale, so the shared
@@ -218,7 +218,7 @@ def make_microduck_sitstand_env_cfg(play: bool = False, rough: bool = False) -> 
         },
     )
 
-    # ── Gentleness (the point of this env) — three complementary signals ─────
+    # Gentleness (the point of this env) — three complementary signals
     #  - ``descent_speed``: per-step penalty on downward vz beyond 0.05 m/s.
     #    THE anti-brutality term for the sit: a fast drop pays on every step
     #    of the fall so it can't be amortised. -10 from step 0 (sit lesson:
@@ -281,7 +281,7 @@ def make_microduck_sitstand_env_cfg(play: bool = False, rough: bool = False) -> 
         },
     )
 
-    # ── Sim2real regularisers — MATCHED to velocity ─────────────────────────
+    # Sim2real regularisers — MATCHED to velocity
     # velocity's exact set and absolute weights:
     #   • action_rate_l2: -0.1 at stage 0, ramped -0.1 → -1.0 by iter 1500
     #   • body_ang_vel -0.05, angular_momentum -0.02
@@ -305,7 +305,7 @@ def make_microduck_sitstand_env_cfg(play: bool = False, rough: bool = False) -> 
     if "upright" in cfg.rewards:
         del cfg.rewards["upright"]
 
-    # ── Observations (identical layout to walking / sit / standup policies) ───
+    # Observations (identical layout to walking / sit / standup policies)
     del cfg.observations["actor"].terms["base_lin_vel"]
 
     cfg.observations["critic"].terms["base_lin_vel"] = ObservationTermCfg(func=mdp.base_lin_vel, scale=1.0)
@@ -319,7 +319,7 @@ def make_microduck_sitstand_env_cfg(play: bool = False, rough: bool = False) -> 
 
     microduck_mdp.wire_sim2real_obs(cfg, imu_delay_max_lag=1, imu_misalignment_deg=DR.imu_orientation_angle_deg if DR.imu_orientation else None, encoder_bias_range=DR.encoder_bias_range if DR.encoder_bias else None, sanitize_critic_sensors=False)
 
-    # ── Head pose command (commandable head control, like velocity/standup) ──
+    # Head pose command (commandable head control, like velocity/standup)
     cfg.commands["head_pose"] = microduck_mdp.UniformPoseCommandCfg(
         resampling_time_range=HEAD_POSE_CMD_RESAMPLE_S,
         ranges=(
@@ -337,7 +337,7 @@ def make_microduck_sitstand_env_cfg(play: bool = False, rough: bool = False) -> 
         cfg.observations[group].terms["head_command"] = ObservationTermCfg(func=mdp.generated_commands, params={"command_name": "head_pose"})
         cfg.observations[group].terms["body_command"] = ObservationTermCfg(func=microduck_mdp.zero_command_padding, params={"dim": 6})
 
-    # ── Command: sit/stand posture flag in the twist slot ────────────────────
+    # Command: sit/stand posture flag in the twist slot
     # cmd = [sit_flag, 0, 0]; dwell-time resampling flips the posture mid-
     # episode. "Stand" is the all-zero command (deployment idle parity). The
     # runtime drives this by writing 0/1 into the vx slot of the command
@@ -353,7 +353,7 @@ def make_microduck_sitstand_env_cfg(play: bool = False, rough: bool = False) -> 
     command.debug_vis = False
     cfg.commands["twist"] = microduck_mdp.SitStandCommandCfg(**{**vars(command), "sit_prob": SIT_PROB, "ramp_s": POSTURE_RAMP_S, "sit_z": SIT_Z, "stand_z": STAND_Z})
 
-    # ── Terminations ──────────────────────────────────────────────────────────
+    # Terminations
     # No fall termination: wobbles/tips during transitions must play out so the
     # policy experiences the impact/upright costs instead of a truncated episode.
     if "fell_over" in cfg.terminations:
@@ -406,7 +406,7 @@ def make_microduck_sitstand_env_cfg(play: bool = False, rough: bool = False) -> 
     # (matching velocity) — the old event-based randomize_imu_orientation wrote
     # site_quat, which under mjlab 1.3.0 is neither per-env nor read by the obs.
 
-    # ── Terrain ───────────────────────────────────────────────────────────────
+    # Terrain
     if not rough:
         cfg.scene.terrain.terrain_type = "plane"
         cfg.scene.terrain.terrain_generator = None
@@ -418,7 +418,7 @@ def make_microduck_sitstand_env_cfg(play: bool = False, rough: bool = False) -> 
             cfg.scene.terrain.terrain_generator.num_cols = 5
             cfg.scene.terrain.terrain_generator.num_rows = 5
 
-    # ── Curriculum ────────────────────────────────────────────────────────────
+    # Curriculum
     if not rough:
         del cfg.curriculum["terrain_levels"]
     del cfg.curriculum["command_vel"]
@@ -469,7 +469,7 @@ def make_microduck_sitstand_env_cfg(play: bool = False, rough: bool = False) -> 
     return cfg
 
 
-# ── RL runner config ──────────────────────────────────────────────────────────
+# RL runner config
 
 MicroduckSitStandRlCfg = RslRlOnPolicyRunnerCfg(
     actor=RslRlModelCfg(

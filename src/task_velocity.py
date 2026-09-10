@@ -290,7 +290,7 @@ def make_microduck_velocity_env_cfg(play: bool = False, rough: bool = False) -> 
     # Velocity-based pushes for robustness training
     task_dr.apply_dr(cfg, DR, HEAD_BODY_NAMES, play=play)
 
-        del cfg.observations["actor"].terms["base_lin_vel"]
+    del cfg.observations["actor"].terms["base_lin_vel"]
     # mjlab 1.3.0 adds a height_scan term (terrain ray scan) to both groups by
     # default. The microduck has no such body-mounted terrain sensor for the
     # policy, so drop it from both (mirrors microban).
