@@ -53,7 +53,7 @@ MICRODUCK_ROUGH_TERRAINS_CFG = TerrainGeneratorCfg(
         "flat": terrain_gen.BoxFlatTerrainCfg(proportion=0.25),
         "pyramid_stairs": terrain_gen.BoxPyramidStairsTerrainCfg(
             proportion=0.25,
-            step_height_range=(0.0, 0.015),
+            step_height_range=(0.0, 0.015),  # max 1.5 cm (vs 10 cm default)
             step_width=0.15,
             platform_width=2.0,
             border_width=1.0,
@@ -67,7 +67,7 @@ MICRODUCK_ROUGH_TERRAINS_CFG = TerrainGeneratorCfg(
         "random_grid": terrain_gen.BoxRandomGridTerrainCfg(
             proportion=0.30,
             grid_width=0.45,
-            grid_height_range=(0.0, 0.010),
+            grid_height_range=(0.0, 0.010),  # max 1 cm
             platform_width=1.5,
         ),
         # Gentle slopes (heightfield pyramid, platform on TOP — robot spawns on
@@ -319,7 +319,7 @@ def make_microduck_velocity_env_cfg(play: bool = False, rough: bool = False) -> 
     # At the optimum this costs a walking policy nothing.
     cfg.rewards["head_pose_bias"] = RewardTermCfg(
         func=microduck_mdp.head_pose_bias_penalty,
-        weight=0.0,
+        weight=0.0,  # ramped by the head_pose_bias_weight curriculum below
         params={"command_name": "head_pose", "tau_s": 1.0},
     )
 
@@ -441,7 +441,7 @@ MicroduckRlCfg = RslRlOnPolicyRunnerCfg(
     algorithm=PpoWithSymmetryCfg(value_loss_coef=1.0, use_clipped_value_loss=True, clip_param=0.2, entropy_coef=0.01, num_learning_epochs=5, num_mini_batches=4, learning_rate=1.0e-3, schedule="adaptive", gamma=0.99, lam=0.95, desired_kl=0.01, max_grad_norm=1.0, symmetry_cfg=SYMMETRY_CFG if ENABLE_SYMMETRY else None),
     logger=LOCAL_CHECKPOINTS_ONLY,
     experiment_name="velocity",
-    run_name="velocity",
+    run_name="velocity",  # Appended to datetime in the log dir: <datetime>_velocity
     save_interval=250,
     num_steps_per_env=24,
     max_iterations=50_000,
