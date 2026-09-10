@@ -25,6 +25,53 @@ uv run --with pytest pytest tests/
 A 5-iteration smoke test at 64 envs catches ~95% of config errors for cents.
 Never launch a long run without one.
 
+`make help` lists the same workflow wrapped as make targets (they hardcode
+`Mjlab-Velocity-Flat-MicroDuck`; `ARGS="..."` appends flags, `CKPT=` picks the
+checkpoint). Checkpoints land in `logs/rsl_rl/<experiment_name>/<run>/`.
+
+## Tasks
+
+`uv run list-envs` is the live registry; this is the map.
+
+```
+Mjlab-Velocity-{Flat,Rough}-MicroDuck    walking, velocity + head cmds (main)
+Mjlab-VelStand-{Flat,Rough}-MicroDuck    walking + fall recovery
+Mjlab-StandUp-{Flat,Rough}-MicroDuck     stand up, then body-pose control
+Mjlab-SitStand-{Flat,Rough}-MicroDuck    commanded sit <-> stand
+Mjlab-GroundPick-{Flat,Rough}-MicroDuck  touch the ground with the mouth
+Mjlab-BallKick-Flat-MicroDuck            kick a ball forward
+Mjlab-Roulade-Flat-MicroDuck             forward roll, land on feet
+Mjlab-Velocity-Flat-MicroDuck-Rollers    roller-skate velocity tracking
+Mjlab-Velocity-Swizzle-MicroDuck         swizzle skating
+Mjlab-RollerCrouch-Flat-MicroDuck        crouch while gliding on rollers
+Mjlab-RollerSlope-Flat-MicroDuck         glide down slopes on rollers
+Mjlab-RollerStandUp-Flat-MicroDuck       stand up onto the wheels
+Mjlab-Spin-Flat-MicroDuck                spin in place on rollers
+```
+
+Backlash twins: insert `-Backlash` before `MicroDuck` for ±1° of gear play per
+servo, same obs/action dims. Not registered for Roulade, RollerStandUp, Spin.
+
+## Deployment rehearsal and publishing
+
+The runtime hot-swaps policies behind one 61D obs contract; `uv run infer`
+rehearses that on CPU MuJoCo:
+
+```bash
+uv run infer --walking walk.onnx --standing stand.onnx \
+    --sitstand sitstand.onnx --roulade roulade.onnx --new-cmd-obs
+```
+
+Keys: velocity commands, G ground pick, Y sit/stand, R roulade, K/L kicks.
+`--debug` / `--save-csv` / `--record` for sim2real comparisons.
+
+`uv run publish` uploads policy.onnx + manifest.json + README to the Hub in the
+shape the daemon loads (`hf auth login` unless `--dry-run`). `--kind episodic`
+runs for `--duration-s` and returns to standing; `--kind perpetual` runs until
+stopped, either a gait (`--slot walk|stand`) or a held pose (`--unwind-s`). On
+the robot: `robotctl policy add <name> <repo>` (`--hold N` for a held pose),
+`robotctl policy load walk <repo>` for a gait, `robotctl robot do <name>`.
+
 ## Repo map
 
 - `src/task_mdp.py` — ALL custom MDP functions (rewards, events,
