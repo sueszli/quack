@@ -5,15 +5,11 @@
 \__, /\__,_/\__,_/\___/_/|_|
   /_/
 
-teach a small robot duck to move
+teach a small robot duck to move!
 
-Microduck is a two-legged robot, about 800 g and 25 cm tall. This repo lets
-you teach it through trial and error in a physics simulator, then run what it
-learns on the real robot. It can learn to walk, get up after a fall, kick a
-ball and roller skate.
+Microduck is a two-legged robot, about 800 g and 25 cm tall. This repo lets you teach it through trial and error in a physics simulator, then run what it learns on the real robot. It can learn to walk, get up after a fall, kick a ball and roller skate.
 
-This is a simplified fork of Pollen Robotics' original training code. They
-built the robot and did the original research:
+This is a simplified fork of Pollen Robotics' original training code. They built the robot and did the original research:
 
     https://github.com/pollen-robotics/microduck_rl
     https://github.com/pollen-robotics/microduck
@@ -22,6 +18,3 @@ You'll need a graphics card that supports CUDA, plus uv and make.
 
     make sync    # install
     make help    # list every target
-
-Work with a coding agent. Have it read CLAUDE.md for the tasks, workflow and
-rules learned the hard way, then ask it your questions.
