@@ -32,31 +32,24 @@ from .task_velocity_rollers import MicroduckRollersRlCfg, make_microduck_velocit
 from .task_velocity_swizzle import MicroduckSwizzleRlCfg, make_microduck_velocity_swizzle_env_cfg
 from .task_velstand import MicroduckVelStandRlCfg, make_microduck_velstand_env_cfg
 
-# Standard velocity task
 register_mjlab_task(task_id="Mjlab-Velocity-Flat-MicroDuck", env_cfg=make_microduck_velocity_env_cfg(), play_env_cfg=make_microduck_velocity_env_cfg(play=True), rl_cfg=MicroduckRlCfg, runner_cls=MicroduckOnPolicyRunner)
 
 register_mjlab_task(task_id="Mjlab-Velocity-Rough-MicroDuck", env_cfg=make_microduck_velocity_env_cfg(rough=True), play_env_cfg=make_microduck_velocity_env_cfg(play=True, rough=True), rl_cfg=MicroduckRlCfg, runner_cls=MicroduckOnPolicyRunner)
 
-# VelStand — walking + fall recovery + body pose control in one policy.
 register_mjlab_task(task_id="Mjlab-VelStand-Flat-MicroDuck", env_cfg=make_microduck_velstand_env_cfg(), play_env_cfg=make_microduck_velstand_env_cfg(play=True), rl_cfg=MicroduckVelStandRlCfg, runner_cls=MicroduckOnPolicyRunner)
 
 register_mjlab_task(task_id="Mjlab-VelStand-Rough-MicroDuck", env_cfg=make_microduck_velstand_env_cfg(rough=True), play_env_cfg=make_microduck_velstand_env_cfg(play=True, rough=True), rl_cfg=MicroduckVelStandRlCfg, runner_cls=MicroduckOnPolicyRunner)
 
-# Stand-up task — robot starts inverted (lying on back) and must stand up
 register_mjlab_task(task_id="Mjlab-StandUp-Flat-MicroDuck", env_cfg=make_microduck_standup_env_cfg(), play_env_cfg=make_microduck_standup_env_cfg(play=True), rl_cfg=MicroduckStandUpRlCfg, runner_cls=MicroduckOnPolicyRunner)
 
 register_mjlab_task(task_id="Mjlab-StandUp-Rough-MicroDuck", env_cfg=make_microduck_standup_env_cfg(rough=True), play_env_cfg=make_microduck_standup_env_cfg(play=True, rough=True), rl_cfg=MicroduckStandUpRlCfg, runner_cls=MicroduckOnPolicyRunner)
 
-# SitStand task — commanded sit ↔ stand in one policy, gently, head commandable
 register_mjlab_task(task_id="Mjlab-SitStand-Flat-MicroDuck", env_cfg=make_microduck_sitstand_env_cfg(), play_env_cfg=make_microduck_sitstand_env_cfg(play=True), rl_cfg=MicroduckSitStandRlCfg, runner_cls=MicroduckOnPolicyRunner)
 
 register_mjlab_task(task_id="Mjlab-SitStand-Rough-MicroDuck", env_cfg=make_microduck_sitstand_env_cfg(rough=True), play_env_cfg=make_microduck_sitstand_env_cfg(play=True, rough=True), rl_cfg=MicroduckSitStandRlCfg, runner_cls=MicroduckOnPolicyRunner)
 
-# Ground-pick task — crouch, touch the ground with the mouth tip, return to stand
 register_mjlab_task(task_id="Mjlab-GroundPick-Flat-MicroDuck", env_cfg=make_microduck_ground_pick_env_cfg(), play_env_cfg=make_microduck_ground_pick_env_cfg(play=True), rl_cfg=MicroduckGroundPickRlCfg, runner_cls=MicroduckOnPolicyRunner)
 
-# BallKick task — kick a 70mm/15g ball forward hard with the right foot from a
-# standing start (flat terrain only — a ball on rough terrain is another task).
 register_mjlab_task(task_id="Mjlab-BallKick-Flat-MicroDuck", env_cfg=make_microduck_ball_kick_env_cfg(), play_env_cfg=make_microduck_ball_kick_env_cfg(play=True), rl_cfg=MicroduckBallKickRlCfg, runner_cls=MicroduckOnPolicyRunner)
 
 register_mjlab_task(task_id="Mjlab-GroundPick-Rough-MicroDuck", env_cfg=make_microduck_ground_pick_env_cfg(rough=True), play_env_cfg=make_microduck_ground_pick_env_cfg(play=True, rough=True), rl_cfg=MicroduckGroundPickRlCfg, runner_cls=MicroduckOnPolicyRunner)
@@ -64,33 +57,20 @@ register_mjlab_task(task_id="Mjlab-GroundPick-Rough-MicroDuck", env_cfg=make_mic
 # Roller skate velocity task (passive-wheel model; historical task id kept)
 register_mjlab_task(task_id="Mjlab-Velocity-Flat-MicroDuck-Rollers", env_cfg=make_microduck_velocity_rollers_env_cfg(), play_env_cfg=make_microduck_velocity_rollers_env_cfg(play=True), rl_cfg=MicroduckRollersRlCfg, runner_cls=MicroduckOnPolicyRunner)
 
-# Roller SWIZZLE task — clean classic swizzle (symmetric, feet grounded).
 register_mjlab_task(task_id="Mjlab-Velocity-Swizzle-MicroDuck", env_cfg=make_microduck_velocity_swizzle_env_cfg(), play_env_cfg=make_microduck_velocity_swizzle_env_cfg(play=True), rl_cfg=MicroduckSwizzleRlCfg, runner_cls=MicroduckOnPolicyRunner)
 
 register_mjlab_task(task_id="Mjlab-RollerCrouch-Flat-MicroDuck", env_cfg=make_microduck_roller_crouch_env_cfg(), play_env_cfg=make_microduck_roller_crouch_env_cfg(play=True), rl_cfg=MicroduckRollerCrouchRlCfg, runner_cls=MicroduckOnPolicyRunner)
 
 register_mjlab_task(task_id="Mjlab-RollerSlope-Flat-MicroDuck", env_cfg=make_microduck_roller_slope_env_cfg(), play_env_cfg=make_microduck_roller_slope_env_cfg(play=True), rl_cfg=MicroduckRollerSlopeRlCfg, runner_cls=MicroduckOnPolicyRunner)
 
-# Roller STANDUP — getting up on rollers (dedicated policy, starts on the ground).
 register_mjlab_task(task_id="Mjlab-RollerStandUp-Flat-MicroDuck", env_cfg=make_microduck_roller_standup_env_cfg(), play_env_cfg=make_microduck_roller_standup_env_cfg(play=True), rl_cfg=MicroduckRollerStandUpRlCfg, runner_cls=MicroduckOnPolicyRunner)
 
-# Spin task — fast in-place rotation, on rollers (ground-pick slot).
 register_mjlab_task(task_id="Mjlab-Spin-Flat-MicroDuck", env_cfg=make_microduck_spin_env_cfg(), play_env_cfg=make_microduck_spin_env_cfg(play=True), rl_cfg=MicroduckSpinRlCfg, runner_cls=MicroduckOnPolicyRunner)
 
-# Roulade — forward roll over the flat head top, land back on the feet.
 register_mjlab_task(task_id="Mjlab-Roulade-Flat-MicroDuck", env_cfg=make_microduck_roulade_env_cfg(), play_env_cfg=make_microduck_roulade_env_cfg(play=True), rl_cfg=MicroduckRouladeRlCfg, runner_cls=MicroduckOnPolicyRunner)
 
-# Backlash variants — ±1° serial gear play per servo + encoder-through-backlash
-# actuator feedback and joint obs (see task_backlash.py). Each family keeps its
-# base task's collision model: Velocity → robot_walk_backlash.xml,
-# VelStand/StandUp → robot_groundcontact_backlash.xml. Obs/action dims are
-# unchanged vs the base tasks.
 from .robot import MICRODUCK_BACKLASH_ROBOT_CFG, MICRODUCK_ROLLERS_BACKLASH_ROBOT_CFG, MICRODUCK_WALK_BACKLASH_ROBOT_CFG
 
-# (task_id, make_fn, make_kwargs, rl_cfg, backlash robot cfg). Task ids mirror
-# the base ids with "-Backlash" inserted. Walk-model tasks get the walk
-# backlash robot, roller tasks the wheels+backlash robot, the rest the
-# groundcontact backlash robot — same model as their base task in each case.
 _BL_GROUNDCONTACT = MICRODUCK_BACKLASH_ROBOT_CFG
 _BL_WALK = MICRODUCK_WALK_BACKLASH_ROBOT_CFG
 _BL_ROLLERS = MICRODUCK_ROLLERS_BACKLASH_ROBOT_CFG
