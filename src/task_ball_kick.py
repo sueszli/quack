@@ -1,52 +1,11 @@
-# Microduck BallKick task — kick a ball forward with one foot (KICK_FOOT flag).
-#
-# Episodic policy: the robot starts STANDING (HOME pose + noise) with a 70mm /
-# 15g ball sitting just in front of its kicking foot (KICK_FOOT below — train a
-# right-footed and a left-footed policy as two separate runs). The goal is to
-# kick the ball forward (robot's heading at reset) at BALL_TARGET_SPEED while
-# keeping balance and staying robust to external pushes, then settle back into
-# a clean stand.
-#
-# Key design decisions:
-#   - The policy is BLIND to the ball (no ball obs in the actor): the real robot
-#     has no ball sensing — the operator aims the robot at the ball. Robustness
-#     to placement error comes from ±2cm ball-position DR at reset instead. The
-#     CRITIC does see ball pos/vel (asymmetric actor-critic) so the value
-#     function can anticipate the kick payoff.
-#   - No phase command: the kick reward is available from t=0 and an earlier
-#     kick collects more ball-rolling reward, so the policy kicks immediately.
-#     At deployment: hard ONNX swap to this policy (à la jump/ground-pick), it
-#     kicks, then auto-swap back after ~2s.
-#   - Right-foot kick is enforced geometrically + economically: the ball spawns
-#     at the right toe, and an always-on LEFT-foot-grounded reward makes the
-#     left leg the support leg (lifting it costs reward every step; anti-hop).
-#   - Kick reward is LINEAR in ball forward speed (clamped at 5 m/s), not a
-#     saturating tanh — "as hard as possible" needs gradient at high speeds.
-#   - Obs layout is the unified 61D actor layout (twist + zero-padded head/body
-#     command slots) so the runtime can hard-swap ONNX files with one buffer.
-#
-# DR / noise / regularization: velocity-parity, copied from the standup env
-# (which is itself matched to velocity — the recipe with proven transfer).
-# Task reward mass ~10 ≈ velocity's ~11, so the shared regularizer weights act
-# at the same relative strength.
-
 import math
 
-# Kicking foot: "right" or "left"
-# Flips the ball spawn side and the support-foot (anti-hop) sensor. Everything
-# else is left/right symmetric (HOME pose has mirrored signs). Train the two
-# policies as separate runs — the experiment/run name follows this flag.
 KICK_FOOT = "right"
 assert KICK_FOOT in ("right", "left")
 
 # Symmetry — must stay OFF: the kick task is inherently one-footed.
 ENABLE_SYMMETRY = False
 
-# Domain randomisation (matched to velocity / standup)
-
-# Ranges (matched to velocity / standup)
-
-# Task constants
 # Long enough for kick + several seconds of ball-rolling reward + settle-back.
 EPISODE_LENGTH_S = 5.0
 
@@ -57,7 +16,6 @@ BALL_RADIUS = 0.035
 # the ball's rear surface is at worst x=0.040 → always ≥6mm clear of the toe.
 # (0.08 ± 0.02 allowed spawn-penetration with the toe: the solver ejected the
 # ball at reset — free "kick" reward with no kick.)
-# The lateral sign follows the kicking foot (right = -y, left = +y).
 BALL_OFFSET_X = 0.09
 BALL_OFFSET_ABS_Y = 0.042
 # Uniform ± placement noise per axis. This is the DR that makes the BLIND
@@ -97,24 +55,18 @@ ENCODER_BIAS_RANGE = DR.encoder_bias_range
 
 
 def make_microduck_ball_kick_env_cfg(play: bool = False, kick_foot: str | None = None) -> ManagerBasedRlEnvCfg:
-    # Create the Microduck BallKick environment configuration.
-    #
-    # ``kick_foot`` overrides the module-level KICK_FOOT flag (used by tests);
-    # normal training just sets the flag at the top of this file.
     kick_foot = kick_foot or KICK_FOOT
     assert kick_foot in ("right", "left")
     support_foot = "left" if kick_foot == "right" else "right"
 
     feet_ground_cfg = ContactSensorCfg(name="feet_ground_contact", primary=ContactMatch(mode="geom", pattern=r"^(left_foot_collision|right_foot_collision)$", entity="robot"), secondary=ContactMatch(mode="body", pattern="terrain"), fields=("found", "force"), reduce="netforce", num_slots=1, track_air_time=True)
 
-    # Support-foot sensor: the non-kicking foot must stay planted through the kick.
     support_foot_ground_cfg = ContactSensorCfg(name="support_foot_ground_contact", primary=ContactMatch(mode="geom", pattern=rf"^{support_foot}_foot_collision$", entity="robot"), secondary=ContactMatch(mode="body", pattern="terrain"), fields=("found",), reduce="netforce", num_slots=1)
 
     self_collision_cfg = ContactSensorCfg(name="self_collision", primary=ContactMatch(mode="subtree", pattern="trunk_base", entity="robot"), secondary=ContactMatch(mode="subtree", pattern="trunk_base", entity="robot"), fields=("found",), reduce="none", num_slots=1)
 
     foot_frictions_geom_names = ("left_foot_collision", "right_foot_collision")
 
-    # Base config
     cfg = make_velocity_env_cfg()
 
     # Full-collision robot (same spec as standup/ground-pick): the ball must be
@@ -131,12 +83,10 @@ def make_microduck_ball_kick_env_cfg(play: bool = False, kick_foot: str | None =
     # on top of the full-collision robot's budget).
     cfg.sim.nconmax = 50
 
-    # Actions
     joint_pos_action = cfg.actions["joint_pos"]
     assert isinstance(joint_pos_action, JointPositionActionCfg)
     joint_pos_action.scale = 1.0
 
-    # Rewards: drop walking-specific terms
     for name in [
         "track_linear_velocity",
         "track_angular_velocity",
@@ -145,36 +95,24 @@ def make_microduck_ball_kick_env_cfg(play: bool = False, kick_foot: str | None =
         "foot_swing_height",
         "foot_slip",
         "pose",  # gait-conditioned; replaced by pose_target_match below
-        "soft_landing",  # velocity removes it
+        "soft_landing",
     ]:
         if name in cfg.rewards:
             del cfg.rewards[name]
 
-    # Rewards: kick objective — TARGET speed, not max speed
-    # Two-sided landscape peaking at BALL_TARGET_SPEED (0.25 m/s — a gentle tap):
-    #   • ball_forward_velocity, linear and CAPPED at the target: dense
-    #     bootstrap gradient from the first touch. Weight 12.0 = 3.0/target so
-    #     the at-target payoff stays ≈ +3/step (with the old weight 3.0 the
-    #     payoff would be 0.75/step — too weak vs the ~7/step standing stack to
-    #     justify the swing's transient pose/upright cost).
     #   • ball_speed_overshoot_penalty (weight -4.0): each m/s above target
     #     costs -4/step while it persists. Needed because the cap alone does
     #     NOT tame the kick — a harder kick keeps the ball at the cap for more
     #     steps, so total (per-step × rolling time) reward still grows with
     #     strike speed.
-    # Slopes stay asymmetric (+12/(m/s) below, -4/(m/s) above): the optimum
-    # sits at the target, but erring hard stays much cheaper than not kicking
-    # (net reward only hits 0 at ~1.0 m/s, 4× the target).
     cfg.rewards["ball_forward_velocity"] = RewardTermCfg(func=microduck_mdp.ball_forward_velocity, weight=12.0, params={"asset_name": "ball", "max_speed": BALL_TARGET_SPEED})
     cfg.rewards["ball_speed_overshoot"] = RewardTermCfg(func=microduck_mdp.ball_speed_overshoot_penalty, weight=-4.0, params={"asset_name": "ball", "target_speed": BALL_TARGET_SPEED})
 
-    # Support foot: binary +1 while the non-kicking foot touches the ground.
     # Always-on anti-hop — swinging the kicking leg is free, lifting the
     # support foot costs this every step. Also suppresses walking/dribbling
     # exploits (any gait loses this reward half the time).
     cfg.rewards["support_foot_grounded"] = RewardTermCfg(func=microduck_mdp.single_foot_grounded_reward, weight=2.0, params={"sensor_name": support_foot_ground_cfg.name})
 
-    # Rewards: stand cleanly before/after the kick
     # Legs at HOME. std=0.5 is deliberately loose: the kick itself is a big
     # transient leg deviation and must stay affordable.
     cfg.rewards["pose_stand_legs"] = RewardTermCfg(
@@ -187,40 +125,30 @@ def make_microduck_ball_kick_env_cfg(play: bool = False, kick_foot: str | None =
         },
     )
 
-    # Neck/head at HOME (no head command in this task; tighter std — the head
-    # takes no part in the kick).
     cfg.rewards["pose_stand_neck"] = RewardTermCfg(func=microduck_mdp.pose_target_match, weight=1.0, params={"std": 0.3, "joint_indices": _NECK_JOINTS, "target_overrides": None})
 
-    # Upright — velocity's exact recipe (weight 2.0, std²=0.05).
     cfg.rewards["upright"].params["asset_cfg"].body_names = ("trunk_base",)
     cfg.rewards["upright"].weight = 2.0
     cfg.rewards["upright"].params["std"] = math.sqrt(0.05)
 
-    # Trunk at standing height — discourages crouching/squatting as a kick prep.
     cfg.rewards["height_stand"] = RewardTermCfg(func=microduck_mdp.height_target_gaussian, weight=1.0, params={"std": 0.04, "target_height": STAND_Z, "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))})
 
-    # Sim2real regularisers — velocity parity (see standup env rationale)
-    cfg.rewards["action_rate_l2"].weight = -0.1  # stage-0; curriculum ramps to -1.0
+    cfg.rewards["action_rate_l2"].weight = -0.1
     cfg.rewards["body_ang_vel"].params["asset_cfg"].body_names = ("trunk_base",)
     cfg.rewards["body_ang_vel"].weight = -0.05
     cfg.rewards["angular_momentum"].weight = -0.02
 
     cfg.rewards["self_collisions"] = RewardTermCfg(func=mdp.self_collision_cost, weight=-1.0, params={"sensor_name": self_collision_cfg.name})
 
-    # Observations (unified 61D actor layout, ball-blind)
     del cfg.observations["actor"].terms["base_lin_vel"]
 
     cfg.observations["critic"].terms["base_lin_vel"] = ObservationTermCfg(func=mdp.base_lin_vel, scale=1.0)
-    # No terrain-height sensor in this env (flat only) — drop the base
-    # template's sensor-backed terms, like standup/ground-pick do.
     del cfg.observations["critic"].terms["foot_height"]
     del cfg.observations["actor"].terms["height_scan"]
     del cfg.observations["critic"].terms["height_scan"]
 
     microduck_mdp.wire_sim2real_obs(cfg, imu_delay_max_lag=1, imu_misalignment_deg=DR.imu_orientation_angle_deg if DR.imu_orientation else None, encoder_bias_range=DR.encoder_bias_range if DR.encoder_bias else None, sanitize_critic_sensors=False)
 
-    # Command obs slots — unified layout parity: [twist(3), head(4), body(6)],
-    # head/body zero-padded (no head/body pose control in this task).
     for group in ("actor", "critic"):
         cfg.observations[group].terms["head_command"] = ObservationTermCfg(func=microduck_mdp.zero_command_padding, params={"dim": 4})
         cfg.observations[group].terms["body_command"] = ObservationTermCfg(func=microduck_mdp.zero_command_padding, params={"dim": 6})
@@ -244,20 +172,17 @@ def make_microduck_ball_kick_env_cfg(play: bool = False, kick_foot: str | None =
     command.ranges.ang_vel_z = (-0.05, 0.05)
     cfg.commands["twist"] = microduck_mdp.VelocityCommandCommandOnlyCfg(**vars(command))
 
-    # Terminations
     # fell_over KEPT (robot starts standing and must stay up through the kick).
     cfg.terminations["nan_state"] = TerminationTermCfg(func=microduck_mdp.robot_state_is_nan, time_out=False)
 
     cfg.events["reset_action_history"] = EventTermCfg(func=microduck_mdp.reset_action_history, mode="reset")
     cfg.events["foot_friction"].params["asset_cfg"].geom_names = foot_frictions_geom_names
-    cfg.events["foot_friction"].params["ranges"] = (0.7, 1.3)  # match velocity
+    cfg.events["foot_friction"].params["ranges"] = (0.7, 1.3)
 
     # Joint noise on the standing start: deployment hands off from the walk /
     # velstand policy, whose settled stand won't match HOME exactly.
     cfg.events["reset_robot_joints"].params["position_range"] = (-0.05, 0.05)
 
-    # Standing-only start (reuses the standup env's ground-state machinery for
-    # the noisy upright spawn: random yaw ± tilt noise, z near equilibrium).
     cfg.events["set_ground_state"] = EventTermCfg(
         func=microduck_mdp.set_random_ground_state,
         mode="reset",
@@ -274,24 +199,17 @@ def make_microduck_ball_kick_env_cfg(play: bool = False, kick_foot: str | None =
 
     # Ball placement — MUST come after set_ground_state (events run in dict
     # insertion order; the ball position derives from the final robot pose).
-    # Also stores the per-env kick direction (robot heading at reset).
     ball_offset_y = -BALL_OFFSET_ABS_Y if kick_foot == "right" else BALL_OFFSET_ABS_Y
     cfg.events["reset_ball"] = EventTermCfg(func=microduck_mdp.reset_ball_in_front_of_foot, mode="reset", params={"offset": (BALL_OFFSET_X, ball_offset_y), "noise_xy": BALL_POS_NOISE_XY, "ball_radius": BALL_RADIUS, "asset_name": "ball"})
 
     task_dr.apply_dr(cfg, DR, HEAD_BODY_NAMES, play=play)
 
-    # Terrain: flat only (a ball on rough terrain is a different task)
     cfg.scene.terrain.terrain_type = "plane"
     cfg.scene.terrain.terrain_generator = None
 
-    # Curriculum
     del cfg.curriculum["terrain_levels"]
     del cfg.curriculum["command_vel"]
 
-    # action_rate ramp — velocity's exact stages (-0.1 → -1.0 by iter 1500).
-    # NOTE: the kick is a fast one-shot swing; if the converged kick is too
-    # weak, softening the ramp end (-1.0 → -0.6) is the first knob to try
-    # (motion-blocker vs dynamic-task tradeoff, see standup regularization notes).
     cfg.curriculum["action_rate_weight"] = CurriculumTermCfg(func=microduck_mdp.reward_weight, params={"reward_name": "action_rate_l2", "weight_stages": [{"step": 0, "weight": -0.1}, {"step": 500 * 24, "weight": -0.2}, {"step": 750 * 24, "weight": -0.4}, {"step": 1000 * 24, "weight": -0.6}, {"step": 1250 * 24, "weight": -0.8}, {"step": 1500 * 24, "weight": -1.0}]})
 
     if DR.com:
@@ -301,15 +219,10 @@ def make_microduck_ball_kick_env_cfg(play: bool = False, kick_foot: str | None =
         cfg.curriculum["head_com_range"] = CurriculumTermCfg(func=microduck_mdp.com_range_curriculum, params={"event_name": "randomize_head_com", "range_stages": [{"step": 0, "range": 0.003}, {"step": 500 * 24, "range": 0.005}, {"step": 1000 * 24, "range": 0.01}]})
 
     if DR.pushes:
-        # Ramp pushes in AFTER the kick skill starts forming: a full-strength
-        # shove during the one-legged strike phase at iter 0 would tax the
-        # discovery of the swing itself (same timing lesson as standup).
         cfg.curriculum["push_magnitude"] = CurriculumTermCfg(func=microduck_mdp.push_curriculum, params={"event_name": "push_robot", "push_stages": [{"step": 0, "velocity_range": {"x": (0.0, 0.0), "y": (0.0, 0.0)}}, {"step": 500 * 24, "velocity_range": {"x": (-0.08, 0.08), "y": (-0.08, 0.08)}}, {"step": 1000 * 24, "velocity_range": {"x": DR.push_range, "y": DR.push_range}}]})
 
     return cfg
 
-
-# RL runner config
 
 MicroduckBallKickRlCfg = RslRlOnPolicyRunnerCfg(
     actor=RslRlModelCfg(
