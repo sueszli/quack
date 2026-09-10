@@ -6,7 +6,7 @@
   /_/
 
 
-A simplified fork of: https://github.com/pollen-robotics/microduck_rl
+An (almost) de-sloppified fork of: https://github.com/pollen-robotics/microduck_rl
 
 This repo lets you simulate the Microduck robot in MuJoCo and learn RL policies for it. It can learn to walk, get up after a fall, kick a ball and roller skate.
 
