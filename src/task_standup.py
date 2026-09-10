@@ -23,33 +23,12 @@ import math
 ENABLE_SYMMETRY = False
 
 # ── Domain randomisation (matched to the velocity env for sim2real parity) ────
-ENABLE_COM_RANDOMIZATION = True
-ENABLE_HEAD_COM_RANDOMIZATION = True  # match velocity: randomize head-assembly CoM
-ENABLE_KP_RANDOMIZATION = False  # match velocity (OFF)
-ENABLE_KD_RANDOMIZATION = False  # match velocity (OFF)
-ENABLE_MASS_INERTIA_RANDOMIZATION = True  # match velocity: dr.pseudo_inertia (mass+inertia)
-ENABLE_JOINT_FRICTION_RANDOMIZATION = True  # match velocity: FrictionDRBamActuator.friction_scale
-ENABLE_ARMATURE_RANDOMIZATION = True  # match velocity: reflected rotor inertia
-ENABLE_VELOCITY_PUSHES = True
-ENABLE_IMU_ORIENTATION_RANDOMIZATION = True  # match velocity: obs-level per-env misalignment
-ENABLE_ENCODER_BIAS = True  # match velocity: per-env joint encoder offset (actor obs)
 
 # ── Ranges (matched to the velocity env) ──────────────────────────────────────
-COM_RANDOMIZATION_RANGE = 0.003  # ramped to 0.015 via com_range curriculum (velocity's 2026-07 audit cap; was 0.02 here)
-HEAD_COM_RANDOMIZATION_RANGE = 0.003  # ramped to 0.01 via head_com_range curriculum
-MASS_INERTIA_RANDOMIZATION_RANGE = (0.95, 1.05)
-ARMATURE_RANDOMIZATION_RANGE = (0.9, 1.1)
-JOINT_FRICTION_RANDOMIZATION_RANGE = (0.9, 1.1)
-ENCODER_BIAS_RANGE = (-0.015, 0.015)
-KP_RANDOMIZATION_RANGE = (0.85, 1.15)  # unused (kp DR off)
-KD_RANDOMIZATION_RANGE = (0.9, 1.1)  # unused (kd DR off)
-VELOCITY_PUSH_INTERVAL_S = (3.0, 6.0)
 # Match velocity's ±0.3 (velocity was itself softened from ±0.5 in the 2026-07
 # audit). The push curriculum below still ramps 0 → ±0.08 → this final value so
 # the sit-rise bootstrap isn't shoved around from step 0 (velocity pushes at
 # full strength from step 0, but it starts standing, not seated/prone).
-VELOCITY_PUSH_RANGE = (-0.3, 0.3)
-IMU_ORIENTATION_RANDOMIZATION_ANGLE = 6.0  # match velocity (was 2.0 — pre-audit value; real IMU has ~5° systematic pitch error + estimator drift, 2° trained too narrow a band)
 
 # Episode length: long enough for a gentle rise + brief stabilisation.
 EPISODE_LENGTH_S = 6.0
@@ -117,7 +96,6 @@ BODY_CMD_ALIVE_ANGLE = 0.05  # rad, stage-0 / permanent-yaw range
 BODY_CMD_ZERO_PROB = 0.3
 
 from mjlab.envs import ManagerBasedRlEnvCfg
-from mjlab.envs.mdp import dr
 from mjlab.envs.mdp.actions import JointPositionActionCfg
 from mjlab.managers import CurriculumTermCfg, EventTermCfg, ObservationTermCfg, RewardTermCfg, TerminationTermCfg
 from mjlab.managers.scene_entity_config import SceneEntityCfg
@@ -126,10 +104,14 @@ from mjlab.sensor import ContactMatch, ContactSensorCfg
 from mjlab.tasks.velocity import mdp
 from mjlab.tasks.velocity.velocity_env_cfg import make_velocity_env_cfg
 
+from . import task_dr
 from . import task_mdp as microduck_mdp
 from .robot import MICRODUCK_STANDUP_ROBOT_CFG
 from .task_symmetry import SYMMETRY_CFG, PpoWithSymmetryCfg
 from .task_velocity import BODY_POSE_CMD_RESAMPLE_S, HEAD_BODY_NAMES, HEAD_POSE_CMD_RESAMPLE_S, LOCAL_CHECKPOINTS_ONLY, MICRODUCK_ROUGH_TERRAINS_CFG
+
+DR = task_dr.DEFAULT_DR
+ENCODER_BIAS_RANGE = DR.encoder_bias_range
 
 
 def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> ManagerBasedRlEnvCfg:
@@ -409,7 +391,7 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
         if _term in cfg.observations["critic"].terms:
             cfg.observations["critic"].terms[_term].func = _safe
 
-    microduck_mdp.wire_sim2real_obs(cfg, imu_delay_max_lag=1, imu_misalignment_deg=IMU_ORIENTATION_RANDOMIZATION_ANGLE if ENABLE_IMU_ORIENTATION_RANDOMIZATION else None, encoder_bias_range=ENCODER_BIAS_RANGE if ENABLE_ENCODER_BIAS else None)
+    microduck_mdp.wire_sim2real_obs(cfg, imu_delay_max_lag=1, imu_misalignment_deg=DR.imu_orientation_angle_deg if DR.imu_orientation else None, encoder_bias_range=DR.encoder_bias_range if DR.encoder_bias else None)
 
     # ── Head pose command (commandable head control, like the velocity env) ───
     # 4D deltas-from-HOME on neck/head joints: [neck_pitch, head_pitch, head_yaw,
@@ -474,11 +456,6 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
         del cfg.terminations["fell_over"]
     cfg.terminations["nan_state"] = TerminationTermCfg(func=microduck_mdp.robot_state_is_nan, time_out=False, params={"sensor_names": ("feet_ground_contact",)})
 
-    # ── Events ────────────────────────────────────────────────────────────────
-    # BAM (mjlab_frictionloss branch) writes per-env dof_frictionloss/dof_damping
-    # every step; this no-op event registers those fields for per-world expansion.
-    cfg.events["expand_bam_friction_fields"] = EventTermCfg(func=microduck_mdp.expand_bam_friction_fields, mode="startup")
-
     cfg.events["reset_action_history"] = EventTermCfg(func=microduck_mdp.reset_action_history, mode="reset")
     cfg.events["foot_friction"].params["asset_cfg"].geom_names = foot_frictions_geom_names
     cfg.events["foot_friction"].params["ranges"] = (0.7, 1.3)  # match velocity
@@ -527,39 +504,7 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
         },
     )
 
-    if ENABLE_VELOCITY_PUSHES:
-        interval = (0.5, 1.0) if play else VELOCITY_PUSH_INTERVAL_S
-        cfg.events["push_robot"] = EventTermCfg(func=mdp.push_by_setting_velocity, mode="interval", interval_range_s=interval, params={"velocity_range": {"x": VELOCITY_PUSH_RANGE, "y": VELOCITY_PUSH_RANGE}, "asset_cfg": SceneEntityCfg("robot")})
-
-    if ENABLE_COM_RANDOMIZATION:
-        # mjlab 1.3.0: stock dr.body_ipos (operation="add") reads the compile-time
-        # default each reset → non-accumulating natively.
-        cfg.events["randomize_com"] = EventTermCfg(func=dr.body_ipos, mode="reset", params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)), "operation": "add", "ranges": (-COM_RANDOMIZATION_RANGE, COM_RANDOMIZATION_RANGE)})
-
-    if ENABLE_HEAD_COM_RANDOMIZATION:
-        # Match velocity: randomize the CoM of the head-assembly bodies.
-        cfg.events["randomize_head_com"] = EventTermCfg(func=dr.body_ipos, mode="reset", params={"asset_cfg": SceneEntityCfg("robot", body_names=HEAD_BODY_NAMES), "operation": "add", "ranges": (-HEAD_COM_RANDOMIZATION_RANGE, HEAD_COM_RANDOMIZATION_RANGE)})
-
-    if ENABLE_ARMATURE_RANDOMIZATION:
-        # Match velocity: reflected rotor inertia (non-accumulating, affects BAM).
-        cfg.events["randomize_armature"] = EventTermCfg(func=dr.joint_armature, mode="reset", params={"asset_cfg": SceneEntityCfg("robot", joint_names=(r".*",)), "operation": "scale", "ranges": ARMATURE_RANDOMIZATION_RANGE})
-
-    if ENABLE_KP_RANDOMIZATION or ENABLE_KD_RANDOMIZATION:
-        kp_range = KP_RANDOMIZATION_RANGE if ENABLE_KP_RANDOMIZATION else (1.0, 1.0)
-        kd_range = KD_RANDOMIZATION_RANGE if ENABLE_KD_RANDOMIZATION else (1.0, 1.0)
-        cfg.events["randomize_motor_gains"] = EventTermCfg(func=microduck_mdp.randomize_delayed_actuator_gains, mode="reset", params={"asset_cfg": SceneEntityCfg("robot"), "operation": "scale", "kp_range": kp_range, "kd_range": kd_range})
-
-    if ENABLE_MASS_INERTIA_RANDOMIZATION:
-        # match velocity: physics-consistent mass+inertia via pseudo_inertia
-        # (alpha scales both by e^(2α), CoM untouched). Startup mode. The old
-        # custom randomize_mass_and_inertia was a no-op under mjlab 1.3.0.
-        _mi_lo, _mi_hi = MASS_INERTIA_RANDOMIZATION_RANGE
-        cfg.events["randomize_mass_inertia"] = EventTermCfg(func=dr.pseudo_inertia, mode="startup", params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)), "alpha_range": (math.log(_mi_lo) / 2.0, math.log(_mi_hi) / 2.0)})
-
-    if ENABLE_JOINT_FRICTION_RANDOMIZATION:
-        # match velocity: scale BAM's friction budget per-env via the
-        # FrictionDRBamActuator hook (dof_frictionloss is zeroed under BAM).
-        cfg.events["randomize_joint_friction"] = EventTermCfg(func=microduck_mdp.randomize_bam_friction, mode="reset", params={"asset_cfg": SceneEntityCfg("robot"), "scale_range": JOINT_FRICTION_RANDOMIZATION_RANGE})
+    task_dr.apply_dr(cfg, DR, HEAD_BODY_NAMES, play=play)
 
     # NOTE: IMU mounting-misalignment is applied at the OBSERVATION level below
     # (matching velocity) — the old event-based randomize_imu_orientation wrote
@@ -618,14 +563,14 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
     # ±15 mm per velocity's 2026-07 audit: beyond that the randomized CoM can
     # leave the foot support polygon entirely, which trains hyper-reactive
     # correction. (The old 0.02 final stage here exceeded that cap.)
-    if ENABLE_COM_RANDOMIZATION:
+    if DR.com:
         cfg.curriculum["com_range"] = CurriculumTermCfg(func=microduck_mdp.com_range_curriculum, params={"event_name": "randomize_com", "range_stages": [{"step": 0, "range": 0.003}, {"step": 500 * 24, "range": 0.005}, {"step": 1000 * 24, "range": 0.01}, {"step": 1500 * 24, "range": 0.015}]})
 
-    if ENABLE_HEAD_COM_RANDOMIZATION:
+    if DR.head_com:
         cfg.curriculum["head_com_range"] = CurriculumTermCfg(func=microduck_mdp.com_range_curriculum, params={"event_name": "randomize_head_com", "range_stages": [{"step": 0, "range": 0.003}, {"step": 500 * 24, "range": 0.005}, {"step": 1000 * 24, "range": 0.01}]})
 
-    if ENABLE_VELOCITY_PUSHES:
-        cfg.curriculum["push_magnitude"] = CurriculumTermCfg(func=microduck_mdp.push_curriculum, params={"event_name": "push_robot", "push_stages": [{"step": 0, "velocity_range": {"x": (0.0, 0.0), "y": (0.0, 0.0)}}, {"step": 500 * 24, "velocity_range": {"x": (-0.08, 0.08), "y": (-0.08, 0.08)}}, {"step": 1000 * 24, "velocity_range": {"x": VELOCITY_PUSH_RANGE, "y": VELOCITY_PUSH_RANGE}}]})
+    if DR.pushes:
+        cfg.curriculum["push_magnitude"] = CurriculumTermCfg(func=microduck_mdp.push_curriculum, params={"event_name": "push_robot", "push_stages": [{"step": 0, "velocity_range": {"x": (0.0, 0.0), "y": (0.0, 0.0)}}, {"step": 500 * 24, "velocity_range": {"x": (-0.08, 0.08), "y": (-0.08, 0.08)}}, {"step": 1000 * 24, "velocity_range": {"x": DR.push_range, "y": DR.push_range}}]})
 
     # action_rate curriculum — velocity's exact ramp (-0.1 → -1.0 by iter 1500).
     # Gentler early stages than the old -0.4/-0.8/-1.0-by-500 ramp: the rise

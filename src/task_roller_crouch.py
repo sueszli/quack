@@ -12,30 +12,11 @@
 # "Trapezoid" height target (up→down→1 s plateau→up) via
 # crouch_glide_height_by_phase. Unified 61D obs → interchangeable at runtime.
 
-import math
 
 ENABLE_SYMMETRY = False
 
 # DR — taken from the roller env
-ENABLE_COM_RANDOMIZATION = True
-ENABLE_HEAD_COM_RANDOMIZATION = True
-ENABLE_MASS_INERTIA_RANDOMIZATION = True
-ENABLE_JOINT_FRICTION_RANDOMIZATION = True
-ENABLE_ARMATURE_RANDOMIZATION = True
-ENABLE_WHEEL_FRICTION_RANDOMIZATION = True
-ENABLE_VELOCITY_PUSHES = True
-ENABLE_IMU_ORIENTATION_RANDOMIZATION = True
-ENABLE_ENCODER_BIAS = True
 
-COM_RANDOMIZATION_RANGE = 0.003
-HEAD_COM_RANDOMIZATION_RANGE = 0.003
-MASS_INERTIA_RANDOMIZATION_RANGE = (0.95, 1.05)
-JOINT_FRICTION_RANDOMIZATION_RANGE = (0.9, 1.1)
-ARMATURE_RANDOMIZATION_RANGE = (0.9, 1.1)
-VELOCITY_PUSH_INTERVAL_S = (3.0, 6.0)
-VELOCITY_PUSH_RANGE = (-0.2, 0.2)
-IMU_ORIENTATION_RANDOMIZATION_ANGLE = 6.0
-ENCODER_BIAS_RANGE = (-0.015, 0.015)
 
 ENTRY_VELOCITY_X = (0.2, 0.5)  # m/s: the robot arrives rolling
 
@@ -97,7 +78,6 @@ CROUCH_POSE_STD = 0.4  # per-joint Gaussian tolerance (rad)
 CROUCH_LEAN_PITCH = 0.08  # slight forward lean during the crouch (rad ≈ 4.6°)
 
 from mjlab.envs import ManagerBasedRlEnvCfg
-from mjlab.envs.mdp import dr
 from mjlab.envs.mdp.actions import JointPositionActionCfg
 from mjlab.managers import CurriculumTermCfg, EventTermCfg, ObservationTermCfg, RewardTermCfg, TerminationTermCfg
 from mjlab.managers.scene_entity_config import SceneEntityCfg
@@ -107,10 +87,14 @@ from mjlab.tasks.velocity import mdp
 from mjlab.tasks.velocity.mdp import UniformVelocityCommandCfg
 from mjlab.tasks.velocity.velocity_env_cfg import make_velocity_env_cfg
 
+from . import task_dr
 from . import task_mdp as microduck_mdp
 from .robot import MICRODUCK_WALK_ROLLERS_ROBOT_CFG
 from .task_symmetry import SYMMETRY_CFG, PpoWithSymmetryCfg
 from .task_velocity import HEAD_BODY_NAMES, LOCAL_CHECKPOINTS_ONLY
+
+DR = task_dr.ROLLER_DR
+ENCODER_BIAS_RANGE = DR.encoder_bias_range
 
 
 def make_microduck_roller_crouch_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
@@ -168,30 +152,10 @@ def make_microduck_roller_crouch_env_cfg(play: bool = False) -> ManagerBasedRlEn
     cfg.events["reset_action_history"] = EventTermCfg(func=microduck_mdp.reset_action_history, mode="reset")
     del cfg.events["foot_friction"]
 
-    if ENABLE_VELOCITY_PUSHES:
-        cfg.events["push_robot"] = EventTermCfg(func=mdp.push_by_setting_velocity, mode="interval", interval_range_s=VELOCITY_PUSH_INTERVAL_S, params={"velocity_range": {"x": VELOCITY_PUSH_RANGE, "y": VELOCITY_PUSH_RANGE}, "asset_cfg": SceneEntityCfg("robot")})
-
     cfg.events["reset_base"].params["pose_range"]["z"] = (0.1335, 0.1435)
-    # Entry velocity: the robot starts rolling forward (momentum to keep
-    # during the crouch). Injected via reset_root_state_uniform (CLEAN default
-    # state + range), and NOT via push_by_setting_velocity in reset mode, which
-    # adds to the current root velocity (potentially divergent) and blows up
-    # the base free-joint -> NaN. See the ENTRY_VELOCITY_X comment.
     cfg.events["reset_base"].params["velocity_range"] = {"x": ENTRY_VELOCITY_X}
 
-    if ENABLE_WHEEL_FRICTION_RANDOMIZATION:
-        cfg.events["randomize_wheel_friction"] = EventTermCfg(func=dr.dof_frictionloss, mode="reset", params={"asset_cfg": SceneEntityCfg("robot", joint_names=(r"^passive_.*wheel",)), "operation": "abs", "ranges": (0.000, 0.000)})
-    if ENABLE_COM_RANDOMIZATION:
-        cfg.events["randomize_com"] = EventTermCfg(func=dr.body_ipos, mode="reset", params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)), "operation": "add", "ranges": (-COM_RANDOMIZATION_RANGE, COM_RANDOMIZATION_RANGE)})
-    if ENABLE_HEAD_COM_RANDOMIZATION:
-        cfg.events["randomize_head_com"] = EventTermCfg(func=dr.body_ipos, mode="reset", params={"asset_cfg": SceneEntityCfg("robot", body_names=HEAD_BODY_NAMES), "operation": "add", "ranges": (-HEAD_COM_RANDOMIZATION_RANGE, HEAD_COM_RANDOMIZATION_RANGE)})
-    if ENABLE_MASS_INERTIA_RANDOMIZATION:
-        _mi_lo, _mi_hi = MASS_INERTIA_RANDOMIZATION_RANGE
-        cfg.events["randomize_mass_inertia"] = EventTermCfg(func=dr.pseudo_inertia, mode="startup", params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)), "alpha_range": (math.log(_mi_lo) / 2.0, math.log(_mi_hi) / 2.0)})
-    if ENABLE_JOINT_FRICTION_RANDOMIZATION:
-        cfg.events["randomize_joint_friction"] = EventTermCfg(func=microduck_mdp.randomize_bam_friction, mode="reset", params={"asset_cfg": SceneEntityCfg("robot"), "scale_range": JOINT_FRICTION_RANDOMIZATION_RANGE})
-    if ENABLE_ARMATURE_RANDOMIZATION:
-        cfg.events["randomize_armature"] = EventTermCfg(func=dr.joint_armature, mode="reset", params={"asset_cfg": SceneEntityCfg("robot", joint_names=(r"^(?!passive_).*",)), "operation": "scale", "ranges": ARMATURE_RANDOMIZATION_RANGE})
+    task_dr.apply_dr(cfg, DR, HEAD_BODY_NAMES, play=play, bam_friction_fields=False)
 
     # === OBSERVATIONS (unified 61D layout) ===
     del cfg.observations["actor"].terms["base_lin_vel"]
@@ -200,7 +164,7 @@ def make_microduck_roller_crouch_env_cfg(play: bool = False) -> ManagerBasedRlEn
     del cfg.observations["critic"].terms["height_scan"]
     cfg.observations["critic"].terms["base_lin_vel"] = ObservationTermCfg(func=mdp.base_lin_vel, scale=1.0)
 
-    microduck_mdp.wire_sim2real_obs(cfg, imu_delay_max_lag=1, imu_misalignment_deg=IMU_ORIENTATION_RANDOMIZATION_ANGLE if ENABLE_IMU_ORIENTATION_RANDOMIZATION else None, encoder_bias_range=ENCODER_BIAS_RANGE if ENABLE_ENCODER_BIAS else None, sanitize_critic_sensors=False)
+    microduck_mdp.wire_sim2real_obs(cfg, imu_delay_max_lag=1, imu_misalignment_deg=DR.imu_orientation_angle_deg if DR.imu_orientation else None, encoder_bias_range=DR.encoder_bias_range if DR.encoder_bias else None, sanitize_critic_sensors=False)
 
     wheel_cfg = SceneEntityCfg("robot", joint_names=(r"^passive_.*wheel",))
     cfg.observations["critic"].terms["wheel_vel"] = ObservationTermCfg(func=mdp.joint_vel_rel, scale=1.0, params={"asset_cfg": wheel_cfg})
@@ -225,9 +189,9 @@ def make_microduck_roller_crouch_env_cfg(play: bool = False) -> ManagerBasedRlEn
     del cfg.curriculum["terrain_levels"]
     del cfg.curriculum["command_vel"]
     cfg.curriculum["action_rate_weight"] = CurriculumTermCfg(func=microduck_mdp.reward_weight, params={"reward_name": "action_rate_l2", "weight_stages": [{"step": 0, "weight": -0.5}, {"step": 250 * 24, "weight": -0.8}, {"step": 500 * 24, "weight": -1.0}]})
-    if ENABLE_COM_RANDOMIZATION:
+    if DR.com:
         cfg.curriculum["com_range"] = CurriculumTermCfg(func=microduck_mdp.com_range_curriculum, params={"event_name": "randomize_com", "range_stages": [{"step": 0, "range": 0.003}, {"step": 500 * 24, "range": 0.005}, {"step": 1000 * 24, "range": 0.01}]})
-    if ENABLE_HEAD_COM_RANDOMIZATION:
+    if DR.head_com:
         cfg.curriculum["head_com_range"] = CurriculumTermCfg(func=microduck_mdp.com_range_curriculum, params={"event_name": "randomize_head_com", "range_stages": [{"step": 0, "range": 0.003}, {"step": 500 * 24, "range": 0.005}, {"step": 1000 * 24, "range": 0.01}]})
 
     return cfg

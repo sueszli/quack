@@ -25,36 +25,16 @@
 #   wheels; braking/skating_air_time/forward_lean/heading_tracking shape the
 #   skating style.
 
-import math
 
 # Symmetry — OFF: SYMMETRY_CFG's obs permutation is hardcoded for the old 51D
 # layout and breaks on the 61D obs (same situation as all other v1.5+ envs).
 ENABLE_SYMMETRY = False
 
 # ── Domain randomisation toggles (matched to the velocity env) ────────────────
-ENABLE_COM_RANDOMIZATION = True
-ENABLE_HEAD_COM_RANDOMIZATION = True
-ENABLE_MASS_INERTIA_RANDOMIZATION = True
-ENABLE_JOINT_FRICTION_RANDOMIZATION = True  # BAM friction budget per-env (legs)
-ENABLE_ARMATURE_RANDOMIZATION = True  # legs only — NOT the wheel bearings
-ENABLE_WHEEL_FRICTION_RANDOMIZATION = True  # bearing frictionloss on passive wheels
-ENABLE_VELOCITY_PUSHES = True
-ENABLE_IMU_ORIENTATION_RANDOMIZATION = True  # obs-level per-env rotation
-ENABLE_ENCODER_BIAS = True
 
 # ── Ranges (matched to the velocity env unless roller-specific) ───────────────
-COM_RANDOMIZATION_RANGE = 0.003  # ±3mm initial, ramped via curriculum
-HEAD_COM_RANDOMIZATION_RANGE = 0.003
-MASS_INERTIA_RANDOMIZATION_RANGE = (0.95, 1.05)
-JOINT_FRICTION_RANDOMIZATION_RANGE = (0.9, 1.1)
-ARMATURE_RANDOMIZATION_RANGE = (0.9, 1.1)
-VELOCITY_PUSH_INTERVAL_S = (3.0, 6.0)
-VELOCITY_PUSH_RANGE = (-0.2, 0.2)  # roller-specific: gentler than walk ±0.3
-IMU_ORIENTATION_RANDOMIZATION_ANGLE = 6.0
-ENCODER_BIAS_RANGE = (-0.015, 0.015)
 
 from mjlab.envs import ManagerBasedRlEnvCfg
-from mjlab.envs.mdp import dr
 from mjlab.envs.mdp.actions import JointPositionActionCfg
 from mjlab.managers import CurriculumTermCfg, EventTermCfg, ObservationTermCfg, RewardTermCfg, TerminationTermCfg
 from mjlab.managers.scene_entity_config import SceneEntityCfg
@@ -64,10 +44,14 @@ from mjlab.tasks.velocity import mdp
 from mjlab.tasks.velocity.mdp import UniformVelocityCommandCfg
 from mjlab.tasks.velocity.velocity_env_cfg import make_velocity_env_cfg
 
+from . import task_dr
 from . import task_mdp as microduck_mdp
 from .robot import MICRODUCK_WALK_ROLLERS_ROBOT_CFG
 from .task_symmetry import SYMMETRY_CFG, PpoWithSymmetryCfg
 from .task_velocity import HEAD_BODY_NAMES, LOCAL_CHECKPOINTS_ONLY
+
+DR = task_dr.ROLLER_DR
+ENCODER_BIAS_RANGE = DR.encoder_bias_range
 
 
 def make_microduck_velocity_rollers_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
@@ -237,52 +221,13 @@ def make_microduck_velocity_rollers_env_cfg(play: bool = False) -> ManagerBasedR
     # === TERMINATIONS ===
     cfg.terminations["nan_state"] = TerminationTermCfg(func=microduck_mdp.robot_state_is_nan, time_out=False)
 
-    # === EVENTS ===
-    # BAM (mjlab_frictionloss branch) writes per-env dof_frictionloss/dof_damping
-    # every step; this no-op event registers those fields for per-world expansion.
-    cfg.events["expand_bam_friction_fields"] = EventTermCfg(func=microduck_mdp.expand_bam_friction_fields, mode="startup")
-
     cfg.events["reset_action_history"] = EventTermCfg(func=microduck_mdp.reset_action_history, mode="reset")
 
     del cfg.events["foot_friction"]  # wheels roll; ground friction lives in the XML
 
-    if ENABLE_VELOCITY_PUSHES:
-        cfg.events["push_robot"] = EventTermCfg(func=mdp.push_by_setting_velocity, mode="interval", interval_range_s=VELOCITY_PUSH_INTERVAL_S, params={"velocity_range": {"x": VELOCITY_PUSH_RANGE, "y": VELOCITY_PUSH_RANGE}, "asset_cfg": SceneEntityCfg("robot")})
-
     cfg.events["reset_base"].params["pose_range"]["z"] = (0.1335, 0.1435)
 
-    # Wheel-bearing friction DR: real bearings have a little drag; the XML keeps
-    # frictionloss=0 for trainability and the curriculum ramps it in. mjlab 1.3.0
-    # stock dr op (operation="abs" writes the value directly; non-accumulating).
-    if ENABLE_WHEEL_FRICTION_RANDOMIZATION:
-        cfg.events["randomize_wheel_friction"] = EventTermCfg(
-            func=dr.dof_frictionloss,
-            mode="reset",
-            params={
-                "asset_cfg": SceneEntityCfg("robot", joint_names=(r"^passive_.*wheel",)),
-                "operation": "abs",
-                "ranges": (0.000, 0.000),  # ramped up by wheel_friction_curriculum
-            },
-        )
-
-    # ── DR matched to the velocity env's FIXED versions ───────────────────────
-    if ENABLE_COM_RANDOMIZATION:
-        cfg.events["randomize_com"] = EventTermCfg(func=dr.body_ipos, mode="reset", params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)), "operation": "add", "ranges": (-COM_RANDOMIZATION_RANGE, COM_RANDOMIZATION_RANGE)})
-
-    if ENABLE_HEAD_COM_RANDOMIZATION:
-        cfg.events["randomize_head_com"] = EventTermCfg(func=dr.body_ipos, mode="reset", params={"asset_cfg": SceneEntityCfg("robot", body_names=HEAD_BODY_NAMES), "operation": "add", "ranges": (-HEAD_COM_RANDOMIZATION_RANGE, HEAD_COM_RANDOMIZATION_RANGE)})
-
-    if ENABLE_MASS_INERTIA_RANDOMIZATION:
-        _mi_lo, _mi_hi = MASS_INERTIA_RANDOMIZATION_RANGE
-        cfg.events["randomize_mass_inertia"] = EventTermCfg(func=dr.pseudo_inertia, mode="startup", params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)), "alpha_range": (math.log(_mi_lo) / 2.0, math.log(_mi_hi) / 2.0)})
-
-    if ENABLE_JOINT_FRICTION_RANDOMIZATION:
-        cfg.events["randomize_joint_friction"] = EventTermCfg(func=microduck_mdp.randomize_bam_friction, mode="reset", params={"asset_cfg": SceneEntityCfg("robot"), "scale_range": JOINT_FRICTION_RANDOMIZATION_RANGE})
-
-    if ENABLE_ARMATURE_RANDOMIZATION:
-        # Legs/head only — the wheel bearings' tiny armature is excluded (its DR
-        # is the frictionloss event above).
-        cfg.events["randomize_armature"] = EventTermCfg(func=dr.joint_armature, mode="reset", params={"asset_cfg": SceneEntityCfg("robot", joint_names=(r"^(?!passive_).*",)), "operation": "scale", "ranges": ARMATURE_RANDOMIZATION_RANGE})
+    task_dr.apply_dr(cfg, DR, HEAD_BODY_NAMES, play=play)
 
     # === OBSERVATIONS (unified 61D layout) ===
     del cfg.observations["actor"].terms["base_lin_vel"]
@@ -294,7 +239,7 @@ def make_microduck_velocity_rollers_env_cfg(play: bool = False) -> ManagerBasedR
 
     cfg.observations["critic"].terms["base_lin_vel"] = ObservationTermCfg(func=mdp.base_lin_vel, scale=1.0)
 
-    microduck_mdp.wire_sim2real_obs(cfg, imu_delay_max_lag=1, imu_misalignment_deg=IMU_ORIENTATION_RANDOMIZATION_ANGLE if ENABLE_IMU_ORIENTATION_RANDOMIZATION else None, encoder_bias_range=ENCODER_BIAS_RANGE if ENABLE_ENCODER_BIAS else None, sanitize_critic_sensors=False)
+    microduck_mdp.wire_sim2real_obs(cfg, imu_delay_max_lag=1, imu_misalignment_deg=DR.imu_orientation_angle_deg if DR.imu_orientation else None, encoder_bias_range=DR.encoder_bias_range if DR.encoder_bias else None, sanitize_critic_sensors=False)
 
     # Privileged wheel speeds for the critic (4 wheels in the new model).
     wheel_cfg = SceneEntityCfg("robot", joint_names=(r"^passive_.*wheel",))
@@ -335,7 +280,7 @@ def make_microduck_velocity_rollers_env_cfg(play: bool = False) -> ManagerBasedR
     # / can't push enough to move.
     cfg.curriculum["action_rate_weight"] = CurriculumTermCfg(func=microduck_mdp.reward_weight, params={"reward_name": "action_rate_l2", "weight_stages": [{"step": 0, "weight": -1.0}, {"step": 250 * 24, "weight": -1.5}, {"step": 500 * 24, "weight": -2.0}]})
 
-    if ENABLE_WHEEL_FRICTION_RANDOMIZATION:
+    if DR.wheel_friction:
         # Delayed + softened ramp: the previous schedule started adding bearing
         # drag at iter 750 — right when wheel_speed peaked — and reached 0.003,
         # which (with the heading ramp below) pushed the policy off skating into
@@ -349,9 +294,9 @@ def make_microduck_velocity_rollers_env_cfg(play: bool = False) -> ManagerBasedR
     # CoM randomization curricula — velocity's ramp, capped lower for the
     # balance-sensitive skating task (audit lesson: ±30 mm forced a nervous
     # gait on the walker; skates are even less forgiving).
-    if ENABLE_COM_RANDOMIZATION:
+    if DR.com:
         cfg.curriculum["com_range"] = CurriculumTermCfg(func=microduck_mdp.com_range_curriculum, params={"event_name": "randomize_com", "range_stages": [{"step": 0, "range": 0.003}, {"step": 500 * 24, "range": 0.005}, {"step": 1000 * 24, "range": 0.01}]})
-    if ENABLE_HEAD_COM_RANDOMIZATION:
+    if DR.head_com:
         cfg.curriculum["head_com_range"] = CurriculumTermCfg(func=microduck_mdp.com_range_curriculum, params={"event_name": "randomize_head_com", "range_stages": [{"step": 0, "range": 0.003}, {"step": 500 * 24, "range": 0.005}, {"step": 1000 * 24, "range": 0.01}]})
 
     return cfg
