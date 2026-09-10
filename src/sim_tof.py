@@ -44,7 +44,7 @@ class Tof:
         # own geometry would hide mounting problems.
         origin = data.site_xpos[self.site].copy()
         rotation = data.site_xmat[self.site].reshape(3, 3)
-        world = rotation @ self.directions.T  # (3, ZONES)
+        world = rotation @ self.directions.T
 
         distance_mm = [0] * ZONES
         status = [STATUS_NO_TARGET] * ZONES
