@@ -1,13 +1,10 @@
-                          __
-  ____ ___  ______ ______/ /__
- / __ `/ / / / __ `/ ___/ //_/
-/ /_/ / /_/ / /_/ / /__/ ,<
-\__, /\__,_/\__,_/\___/_/|_|
-  /_/
+quack -- RL training environments for Microduck
 
-debloated microduck RL framework
-
-RL training environments for Microduck, a ~800 g, 25 cm bipedal robot with 14 Dynamixel XL330 servos. Built on mjlab (MuJoCo Warp) + PPO (rsl_rl). Policies train at 50 Hz and export to ONNX for the robot runtime (robotd/robotctl, a separate repo). Servos are simulated with the BAM XL330 voltage/friction model; at this scale actuator fidelity is most of the sim2real gap.
+Microduck: ~800 g, 25 cm bipedal robot, 14 Dynamixel XL330 servos.
+Stack: mjlab (MuJoCo Warp) + PPO (rsl_rl), 50 Hz policies, ONNX export.
+Servos use the BAM XL330 voltage/friction model -- at this scale actuator
+fidelity is most of the sim2real gap.
+Deployment lives in a separate repo (robotd/robotctl).
 
 SETUP
 
@@ -19,30 +16,33 @@ Needs a CUDA GPU, uv, make.
 
 WORKFLOW
 
-    make envs                                                  # list tasks
-    make smoke                                                 # 64 envs, 5 iters; run before every long run
-    make train                                                 # 4096 envs, 6000 iters, ~1-2 h for a usable gait
-    make play CKPT=logs/rsl_rl/velocity/<run>/model_3000.pt    # headless GPU: ARGS="--viewer viser" serves a browser viewer on :8080
-    make export CKPT=3000                                      # -> weights/output.onnx, obs normalizer baked in
-    make infer                                                 # CPU MuJoCo deployment rehearsal
-    make train ARGS="--agent.resume True --agent.load-checkpoint model_3000.pt"
+    make envs      list tasks
+    make smoke     64 envs, 5 iters -- run before every long run
+    make train     4096 envs, 6000 iters, ~1-2 h for a usable gait
+    make play CKPT=logs/rsl_rl/velocity/<run>/model_3000.pt
+    make export CKPT=3000    -> weights/output.onnx, obs normalizer baked in
+    make infer     CPU MuJoCo deployment rehearsal
 
-The make targets hardcode Mjlab-Velocity-Flat-MicroDuck. For other tasks call the tools directly:
+- resume: make train ARGS="--agent.resume True
+  --agent.load-checkpoint model_3000.pt"
+- headless GPU viewer: make play ... ARGS="--viewer viser" (browser on :8080)
+- make targets hardcode Mjlab-Velocity-Flat-MicroDuck; for other tasks:
 
-    uv run train <TASK> --env.scene.num-envs 64 --agent.max_iterations 5
-    uv run train <TASK> --env.scene.num-envs 4096 --agent.max_iterations 6000
-    uv run play <TASK> --checkpoint-file logs/rsl_rl/<exp>/<run>/model_N.pt
+    uv run train  <TASK> --env.scene.num-envs 4096 --agent.max_iterations 6000
+    uv run play   <TASK> --checkpoint-file logs/rsl_rl/<exp>/<run>/model_N.pt
     uv run export <TASK> --checkpoint N
 
-Checkpoints land in logs/rsl_rl/<exp>/<run>/ (<exp> is the cfg's experiment_name). `--checkpoint N` picks the newest run; `--checkpoint-file <path>` for any run. Always deploy ONNX from `uv run export`, never a hand-converted checkpoint.
+- checkpoints: logs/rsl_rl/<exp>/<run>/, <exp> = the cfg's experiment_name.
+  --checkpoint N uses the newest run, --checkpoint-file <path> any run.
+- always deploy ONNX from `uv run export`, never a hand-converted checkpoint.
 
 TASKS
 
-  Mjlab-Velocity-{Flat,Rough}-MicroDuck    walking, velocity + head-pose commands (main task)
+  Mjlab-Velocity-{Flat,Rough}-MicroDuck    walking, velocity + head cmds (main)
   Mjlab-VelStand-{Flat,Rough}-MicroDuck    walking + fall recovery
-  Mjlab-StandUp-{Flat,Rough}-MicroDuck     stand up from the ground, then body-pose control
+  Mjlab-StandUp-{Flat,Rough}-MicroDuck     stand up, then body-pose control
   Mjlab-SitStand-{Flat,Rough}-MicroDuck    commanded sit <-> stand
-  Mjlab-GroundPick-{Flat,Rough}-MicroDuck  crouch, touch the ground with the mouth, stand back up
+  Mjlab-GroundPick-{Flat,Rough}-MicroDuck  touch the ground with the mouth
   Mjlab-BallKick-Flat-MicroDuck            kick a ball forward
   Mjlab-Roulade-Flat-MicroDuck             forward roll, land on feet
   Mjlab-Velocity-Flat-MicroDuck-Rollers    roller-skate velocity tracking
@@ -52,26 +52,41 @@ TASKS
   Mjlab-RollerStandUp-Flat-MicroDuck       stand up onto the wheels
   Mjlab-Spin-Flat-MicroDuck                spin in place on rollers
 
-Backlash variants: insert `-Backlash` before `MicroDuck` (e.g. Mjlab-Velocity-Flat-Backlash-MicroDuck) to train on a model with +-1 deg of gear play per servo. Same obs/action dims. Not for Roulade, RollerStandUp, Spin. See src/task_backlash.py.
+Backlash twins: insert `-Backlash` before `MicroDuck` for +-1 deg of gear play
+per servo, same obs/action dims (src/task_backlash.py). Not for Roulade,
+RollerStandUp, Spin.
 
 DEPLOYMENT REHEARSAL
 
-The runtime hot-swaps policies behind a shared 61-D observation contract. Rehearse that on CPU:
+The runtime hot-swaps policies behind one 61-D obs contract. Rehearse on CPU:
 
-    uv run infer --walking walk.onnx --standing stand.onnx --sitstand sitstand.onnx --roulade roulade.onnx --new-cmd-obs
+    uv run infer --walking walk.onnx --standing stand.onnx \
+        --sitstand sitstand.onnx --roulade roulade.onnx --new-cmd-obs
 
-Keyboard: velocity commands, G ground pick, Y sit/stand, R roulade, K/L kicks. `--new-cmd-obs` is required for current policies; without it infer builds 51-D obs and ONNX Runtime fails at the first inference with an 'invalid dimensions ... Got 51 Expected 61' error. `--debug`, `--save-csv`, `--record` for sim2real comparisons. `--no-bam` swaps the BAM actuators for the XML PD ones.
+- keys: velocity commands, G ground pick, Y sit/stand, R roulade, K/L kicks.
+- --new-cmd-obs is required for current policies; without it infer builds 51-D
+  obs and ONNX Runtime dies with 'invalid dimensions ... Got 51 Expected 61'.
+- --debug / --save-csv / --record for sim2real comparisons.
+- --no-bam swaps the BAM actuators for the XML PD ones.
 
 PUBLISHING
 
-`uv run publish` uploads policy.onnx + manifest.json + README to the Hugging Face Hub in the shape the robot daemon loads. Needs `hf auth login` unless `--dry-run`.
+`uv run publish` uploads policy.onnx + manifest.json + README to the Hugging
+Face Hub in the shape the robot daemon loads. Needs `hf auth login` unless
+--dry-run.
 
-    uv run publish --task Mjlab-BallKick-Flat-MicroDuck --checkpoint 3000 --repo <user>/microduck-kick --kind episodic --duration-s 4.0
-    uv run publish --onnx out.onnx --repo <user>/microduck-flamingo --kind perpetual --unwind-s 1.5
-    uv run publish --onnx out.onnx --repo <user>/microduck-my-walk --kind perpetual --slot walk
-    uv run publish --onnx out.onnx --repo <user>/microduck-kick --kind episodic --duration-s 4.0 --dry-run
+    uv run publish --task Mjlab-BallKick-Flat-MicroDuck --checkpoint 3000 \
+        --repo <user>/microduck-kick --kind episodic --duration-s 4.0
+    uv run publish --onnx out.onnx --repo <user>/microduck-flamingo \
+        --kind perpetual --unwind-s 1.5
+    uv run publish --onnx out.onnx --repo <user>/microduck-my-walk \
+        --kind perpetual --slot walk
 
-`--kind episodic` runs for `--duration-s` and returns to standing. `--kind perpetual` runs until stopped: a gait (`--slot walk|stand`) or a held pose (`--unwind-s`). Not publishable: GroundPick (phase-driven) and SitStand (posture flag), the daemon owns those.
+- --kind episodic: runs for --duration-s, returns to standing.
+- --kind perpetual: runs until stopped -- a gait (--slot walk|stand) or a held
+  pose (--unwind-s).
+- not publishable: GroundPick (phase-driven), SitStand (posture flag) -- the
+  daemon owns those.
 
 On the robot:
 
@@ -82,6 +97,10 @@ On the robot:
 
 CONVENTIONS
 
-- 61-D actor obs shared by every policy: 48 proprioception + commands [twist(3), head_pose(4), body_pose(6)]. Unused command slots are zero-padded, never removed.
-- Joints: 0-4 left leg, 5-8 neck/head, 9-13 right leg. Unactuated joints are named passive_*; servo selectors use `^(?!passive_).*`.
-- ENABLE_* toggles (e.g. ENABLE_SYMMETRY) at the top of cfg files.
+- 61-D actor obs, shared by every policy: 48 proprioception + commands
+  [twist(3), head_pose(4), body_pose(6)]. Unused slots are zero-padded, never
+  removed.
+- joints: 0-4 left leg, 5-8 neck/head, 9-13 right leg. Unactuated joints are
+  named passive_*; servo selectors use `^(?!passive_).*`.
+- ENABLE_* toggles (e.g. ENABLE_SYMMETRY) sit at the top of each cfg file.
+- CLAUDE.md holds the env-building workflow and the reward-design rules.
