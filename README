@@ -1,10 +1,40 @@
-quack -- RL training environments for Microduck
+                          __
+  ____ ___  ______ ______/ /__
+ / __ `/ / / / __ `/ ___/ //_/
+/ /_/ / /_/ / /_/ / /__/ ,<
+\__, /\__,_/\__,_/\___/_/|_|
+  /_/
+
+debloated microduck RL framework
 
 Microduck: ~800 g, 25 cm bipedal robot, 14 Dynamixel XL330 servos.
 Stack: mjlab (MuJoCo Warp) + PPO (rsl_rl), 50 Hz policies, ONNX export.
 Servos use the BAM XL330 voltage/friction model -- at this scale actuator
 fidelity is most of the sim2real gap.
 Deployment lives in a separate repo (robotd/robotctl).
+
+CREDIT
+
+All of the robot, the physics and the RL recipes are Pollen Robotics' work:
+
+    upstream    https://github.com/pollen-robotics/microduck_rl
+    the robot   https://github.com/pollen-robotics/microduck
+
+This is a debloated fork, Apache-2.0 like upstream. It keeps the science and
+drops the scaffolding:
+
+- no Hugging Face or wandb in the training path -- tensorboard only, and
+  checkpoints stay on the machine that trained them (huggingface_hub survives
+  in exactly one place, `uv run publish`, which is opt-in).
+- all French comments and messages translated to English.
+- every self-explanatory comment and docstring deleted; comments are for facts
+  you cannot infer from the code.
+- no nested packages: src/mjlab_microduck/robot/microduck/... became a flat
+  src/ namespace package (6 levels deep -> 3), one task_<name>.py per env.
+- dead code, unused dependencies and stale docs removed.
+
+Track upstream for the authoritative version; come here if you want to read the
+whole thing in an afternoon and hack on it.
 
 SETUP
 
