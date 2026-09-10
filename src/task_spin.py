@@ -27,7 +27,6 @@ ENABLE_SYMMETRY = False
 # to kill the residual momentum before/during the launch of the rotation.
 ENTRY_VELOCITY_X = (0.0, 0.3)
 
-import dataclasses
 
 from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.envs.mdp.actions import JointPositionActionCfg
@@ -45,7 +44,7 @@ from .robot import MICRODUCK_WALK_ROLLERS_ROBOT_CFG
 from .task_symmetry import SYMMETRY_CFG, PpoWithSymmetryCfg
 from .task_velocity import HEAD_BODY_NAMES, LOCAL_CHECKPOINTS_ONLY
 
-DR = dataclasses.replace(task_dr.ROLLER_DR, wheel_friction_joints=task_dr.WHEEL_JOINTS_ALL_PASSIVE)
+DR = task_dr.ROLLER_DR
 ENCODER_BIAS_RANGE = DR.encoder_bias_range
 
 # Phase envelope: canonical constants defined in task_mdp.py.
@@ -127,7 +126,7 @@ def make_microduck_spin_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     # -> NaN. Known regression from roller_crouch.
     cfg.events["reset_base"].params["velocity_range"] = {"x": ENTRY_VELOCITY_X}
 
-    task_dr.apply_dr(cfg, DR, HEAD_BODY_NAMES, play=play, bam_friction_fields=False)
+    task_dr.apply_dr(cfg, DR, HEAD_BODY_NAMES, play=play)
 
     # === OBSERVATIONS (unified 61D layout) ===
     del cfg.observations["actor"].terms["base_lin_vel"]

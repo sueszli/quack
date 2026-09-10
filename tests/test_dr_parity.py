@@ -6,7 +6,7 @@ import pytest
 
 from src import task_dr
 
-EXPECTED_EVENTS = {"Mjlab-Velocity-Flat-MicroDuck": {"expand_bam_friction_fields", "push_robot", "randomize_com", "randomize_head_com", "randomize_mass_inertia", "randomize_joint_friction", "randomize_armature"}, "Mjlab-StandUp-Flat-MicroDuck": {"expand_bam_friction_fields", "push_robot", "randomize_com", "randomize_head_com", "randomize_mass_inertia", "randomize_joint_friction", "randomize_armature"}, "Mjlab-SitStand-Flat-MicroDuck": {"expand_bam_friction_fields", "push_robot", "randomize_com", "randomize_head_com", "randomize_mass_inertia", "randomize_joint_friction", "randomize_armature"}, "Mjlab-BallKick-Flat-MicroDuck": {"expand_bam_friction_fields", "push_robot", "randomize_com", "randomize_head_com", "randomize_mass_inertia", "randomize_joint_friction", "randomize_armature"}, "Mjlab-GroundPick-Flat-MicroDuck": {"expand_bam_friction_fields", "push_robot", "randomize_com", "randomize_head_com", "randomize_mass_inertia", "randomize_joint_friction", "randomize_armature"}, "Mjlab-Roulade-Flat-MicroDuck": {"expand_bam_friction_fields", "randomize_com", "randomize_head_com", "randomize_mass_inertia", "randomize_joint_friction", "randomize_armature"}, "Mjlab-Velocity-Flat-MicroDuck-Rollers": {"expand_bam_friction_fields", "push_robot", "randomize_com", "randomize_head_com", "randomize_mass_inertia", "randomize_joint_friction", "randomize_armature", "randomize_wheel_friction"}, "Mjlab-Spin-Flat-MicroDuck": {"push_robot", "randomize_com", "randomize_head_com", "randomize_mass_inertia", "randomize_joint_friction", "randomize_armature", "randomize_wheel_friction"}, "Mjlab-RollerCrouch-Flat-MicroDuck": {"push_robot", "randomize_com", "randomize_head_com", "randomize_mass_inertia", "randomize_joint_friction", "randomize_armature", "randomize_wheel_friction"}}
+EXPECTED_EVENTS = {"Mjlab-Velocity-Flat-MicroDuck": {"expand_bam_friction_fields", "push_robot", "randomize_com", "randomize_head_com", "randomize_mass_inertia", "randomize_joint_friction", "randomize_armature"}, "Mjlab-StandUp-Flat-MicroDuck": {"expand_bam_friction_fields", "push_robot", "randomize_com", "randomize_head_com", "randomize_mass_inertia", "randomize_joint_friction", "randomize_armature"}, "Mjlab-SitStand-Flat-MicroDuck": {"expand_bam_friction_fields", "push_robot", "randomize_com", "randomize_head_com", "randomize_mass_inertia", "randomize_joint_friction", "randomize_armature"}, "Mjlab-BallKick-Flat-MicroDuck": {"expand_bam_friction_fields", "push_robot", "randomize_com", "randomize_head_com", "randomize_mass_inertia", "randomize_joint_friction", "randomize_armature"}, "Mjlab-GroundPick-Flat-MicroDuck": {"expand_bam_friction_fields", "push_robot", "randomize_com", "randomize_head_com", "randomize_mass_inertia", "randomize_joint_friction", "randomize_armature"}, "Mjlab-Roulade-Flat-MicroDuck": {"expand_bam_friction_fields", "randomize_com", "randomize_head_com", "randomize_mass_inertia", "randomize_joint_friction", "randomize_armature"}, "Mjlab-Velocity-Flat-MicroDuck-Rollers": {"expand_bam_friction_fields", "push_robot", "randomize_com", "randomize_head_com", "randomize_mass_inertia", "randomize_joint_friction", "randomize_armature", "randomize_wheel_friction"}, "Mjlab-Spin-Flat-MicroDuck": {"expand_bam_friction_fields", "push_robot", "randomize_com", "randomize_head_com", "randomize_mass_inertia", "randomize_joint_friction", "randomize_armature", "randomize_wheel_friction"}, "Mjlab-RollerCrouch-Flat-MicroDuck": {"expand_bam_friction_fields", "push_robot", "randomize_com", "randomize_head_com", "randomize_mass_inertia", "randomize_joint_friction", "randomize_armature", "randomize_wheel_friction"}}
 
 WALK_TASKS = ("Mjlab-Velocity-Flat-MicroDuck", "Mjlab-StandUp-Flat-MicroDuck", "Mjlab-SitStand-Flat-MicroDuck", "Mjlab-BallKick-Flat-MicroDuck", "Mjlab-GroundPick-Flat-MicroDuck", "Mjlab-Roulade-Flat-MicroDuck")
 ROLLER_TASKS = ("Mjlab-Velocity-Flat-MicroDuck-Rollers", "Mjlab-Spin-Flat-MicroDuck", "Mjlab-RollerCrouch-Flat-MicroDuck")
@@ -61,13 +61,14 @@ def test_roulade_has_no_pushes():
 
 def test_wheel_friction_regex_does_not_match_backlash_joints():
     assert task_dr.WHEEL_JOINTS == (r"^passive_.*wheel",)
-    assert task_dr.ROLLER_DR.wheel_friction_joints == task_dr.WHEEL_JOINTS
 
 
-def test_spin_keeps_its_broader_wheel_regex():
-    from src import task_spin
+def test_every_roller_task_shares_one_roller_dr():
+    from src import task_roller_crouch, task_spin, task_velocity_rollers
 
-    assert task_spin.DR.wheel_friction_joints == task_dr.WHEEL_JOINTS_ALL_PASSIVE
+    assert task_spin.DR is task_dr.ROLLER_DR
+    assert task_roller_crouch.DR is task_dr.ROLLER_DR
+    assert task_velocity_rollers.DR is task_dr.ROLLER_DR
 
 
 def test_defaults_match_the_velocity_recipe():
@@ -93,3 +94,50 @@ def test_roller_dr_differs_from_default_in_exactly_three_fields():
 def test_dr_cfg_is_frozen():
     with pytest.raises(dataclasses.FrozenInstanceError):
         task_dr.DEFAULT_DR.com = False
+
+
+BAM_MODEL_FIELDS = ("dof_frictionloss", "dof_damping")
+
+ALL_MICRODUCK_TASKS = ("Mjlab-Velocity-Flat-MicroDuck", "Mjlab-Velocity-Rough-MicroDuck", "Mjlab-VelStand-Flat-MicroDuck", "Mjlab-StandUp-Flat-MicroDuck", "Mjlab-SitStand-Flat-MicroDuck", "Mjlab-GroundPick-Flat-MicroDuck", "Mjlab-BallKick-Flat-MicroDuck", "Mjlab-Roulade-Flat-MicroDuck", "Mjlab-Velocity-Flat-MicroDuck-Rollers", "Mjlab-Velocity-Swizzle-MicroDuck", "Mjlab-Spin-Flat-MicroDuck", "Mjlab-RollerCrouch-Flat-MicroDuck", "Mjlab-RollerSlope-Flat-MicroDuck", "Mjlab-RollerStandUp-Flat-MicroDuck")
+
+
+def _expanded_model_fields(task_id):
+    import src.task_registry  # noqa: F401
+
+    fields = set()
+    for term in _env_cfg(task_id).events.values():
+        fields |= set(getattr(term.func, "model_fields", ()) or ())
+    return fields
+
+
+@pytest.mark.parametrize("task_id", ALL_MICRODUCK_TASKS)
+def test_every_bam_env_expands_the_fields_bam_writes(task_id):
+    missing = set(BAM_MODEL_FIELDS) - _expanded_model_fields(task_id)
+    assert not missing, f"{task_id} does not expand {sorted(missing)}; BAM writes it per-env every step"
+
+
+@pytest.mark.parametrize("task_id", ("Mjlab-Spin-Flat-MicroDuck", "Mjlab-RollerCrouch-Flat-MicroDuck", "Mjlab-Velocity-Flat-MicroDuck-Rollers"))
+def test_wheel_friction_selects_only_wheels(task_id):
+    import src.task_registry  # noqa: F401
+
+    term = _env_cfg(task_id).events["randomize_wheel_friction"]
+    assert term.params["asset_cfg"].joint_names == task_dr.WHEEL_JOINTS
+
+
+def test_the_wheel_regex_excludes_backlash_joints_on_the_backlash_model():
+    import re
+
+    import mujoco
+
+    from src.robot import MJCF_DIR
+
+    model = mujoco.MjModel.from_xml_path(str(MJCF_DIR / "robot_groundcontact_rollers_backlash.xml"))
+    names = [mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_JOINT, i) for i in range(model.njnt)]
+    passive = [n for n in names if n and n.startswith("passive_")]
+
+    pattern = re.compile(task_dr.WHEEL_JOINTS[0])
+    matched = [n for n in passive if pattern.match(n)]
+
+    assert len(passive) == 18
+    assert sorted(matched) == ["passive_LF_wheel", "passive_LR_wheel", "passive_RF_wheel", "passive_RR_wheel"]
+    assert not [n for n in matched if "backlash" in n]

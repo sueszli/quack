@@ -155,7 +155,7 @@ def make_microduck_roller_crouch_env_cfg(play: bool = False) -> ManagerBasedRlEn
     cfg.events["reset_base"].params["pose_range"]["z"] = (0.1335, 0.1435)
     cfg.events["reset_base"].params["velocity_range"] = {"x": ENTRY_VELOCITY_X}
 
-    task_dr.apply_dr(cfg, DR, HEAD_BODY_NAMES, play=play, bam_friction_fields=False)
+    task_dr.apply_dr(cfg, DR, HEAD_BODY_NAMES, play=play)
 
     # === OBSERVATIONS (unified 61D layout) ===
     del cfg.observations["actor"].terms["base_lin_vel"]
