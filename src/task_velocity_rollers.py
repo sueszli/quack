@@ -1,38 +1,6 @@
-# Microduck velocity environment — roller skate variant.
-#
-# MIGRATED to mjlab 1.3.0 + canonical BAM (2026-07), matching the velocity env's
-# sim2real machinery, and updated for the NEW roller model:
-#
-#   - `get_walk_rollers_spec` now loads `robot_groundcontact_rollers.xml`
-#     (it silently loaded the wheel-less standup model before): 14 actuated
-#     joints + 4 passive wheels (passive_{L,R}{F,R}wheel), two per blade,
-#     INTERSPERSED in the joint order (after each ankle) — everything resolves
-#     joints by NAME, never by index.
-#   - Legs run the canonical BAM actuator like every other variant (was a plain
-#     XML PD — an actuator-physics mismatch, and no joint-friction DR).
-#   - Obs migrated to the unified 61D layout (twist + zero-padded head/body
-#     command slots) so roller policies load through the runtime's
-#     --new-cmd-obs path. Symmetry OFF (SYMMETRY_CFG is hardcoded for the old
-#     51D layout).
-#   - DR/noise/delays matched to the velocity env's FIXED (non-accumulating,
-#     per-env-verified) versions; wheel-bearing frictionloss DR kept
-#     (dr.dof_frictionloss on the passive wheels + existing curriculum).
-#
-# Task design (unchanged — the roller recipe):
-#   cmd_x semantics: 0 = coast, >0 = push to accelerate, <0 = brake.
-#   cmd[2] = heading error via RelativeHeadingVelocityCommand.
-#   Sole positive task reward is wheel_speed — the robot must actually spin its
-#   wheels; braking/skating_air_time/forward_lean/heading_tracking shape the
-#   skating style.
-
-
 # Symmetry — OFF: SYMMETRY_CFG's obs permutation is hardcoded for the old 51D
 # layout and breaks on the 61D obs (same situation as all other v1.5+ envs).
 ENABLE_SYMMETRY = False
-
-# Domain randomisation toggles (matched to the velocity env)
-
-# Ranges (matched to the velocity env unless roller-specific)
 
 from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.envs.mdp.actions import JointPositionActionCfg
@@ -55,8 +23,6 @@ ENCODER_BIAS_RANGE = DR.encoder_bias_range
 
 
 def make_microduck_velocity_rollers_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
-    # Create Microduck roller skate velocity tracking environment configuration.
-
     # passive_.*: 999.0 → passive wheel joints are matched but effectively ignored
     std_standing = {r".*hip_yaw.*": 0.05, r".*hip_roll.*": 0.05, r".*hip_pitch.*": 0.05, r".*knee.*": 0.05, r".*ankle.*": 0.05, r".*neck.*": 0.05, r".*head.*": 0.05, r".*passive_.*": 999.0}
 
@@ -92,12 +58,10 @@ def make_microduck_velocity_rollers_env_cfg(play: bool = False) -> ManagerBasedR
 
     cfg = make_velocity_env_cfg()
 
-    # Robot setup
     cfg.scene.entities = {"robot": MICRODUCK_WALK_ROLLERS_ROBOT_CFG}
     cfg.scene.sensors = (feet_ground_cfg, self_collision_cfg)
     cfg.viewer.body_name = "trunk_base"
 
-    # Action configuration
     joint_pos_action = cfg.actions["joint_pos"]
     assert isinstance(joint_pos_action, JointPositionActionCfg)
     joint_pos_action.scale = 1.0
@@ -107,7 +71,6 @@ def make_microduck_velocity_rollers_env_cfg(play: bool = False) -> ManagerBasedR
     # policy-side instead (action_over_limit reward below), baked into the network
     # so it transfers with the ONNX.
 
-    # REWARDS
     keep = {"pose", "upright", "body_ang_vel", "angular_momentum", "action_rate_l2"}
     for name in list(cfg.rewards.keys()):
         if name not in keep:
@@ -130,10 +93,6 @@ def make_microduck_velocity_rollers_env_cfg(play: bool = False) -> ManagerBasedR
 
     cfg.rewards["com_height_target"] = RewardTermCfg(func=microduck_mdp.com_height_target, weight=2.0, params={"target_height_min": 0.0935, "target_height_max": 0.1235})
     cfg.rewards["self_collisions"] = RewardTermCfg(func=mdp.self_collision_cost, weight=-1.0, params={"sensor_name": "self_collision"})
-    # Gated to the STANCE foot only (sensor_name) so lifting the swing foot is no
-    # longer punished — the old ungated -5.0 was minimised by keeping both blades
-    # flat on the ground (the swizzle) and actively fought the stride. Weight also
-    # softened -5.0 -> -2.0 to leave room for a slightly angled push.
     cfg.rewards["feet_flat"] = RewardTermCfg(func=microduck_mdp.feet_flat_penalty, weight=-2.0, params={"asset_cfg": SceneEntityCfg("robot", site_names=("left_foot", "right_foot")), "sensor_name": "feet_ground_contact"})
     cfg.rewards["neck_action_rate_l2"] = RewardTermCfg(func=microduck_mdp.neck_action_rate_l2, weight=-0.5)
     cfg.rewards["neck_joint_pos_l2"] = RewardTermCfg(func=microduck_mdp.neck_joint_pos_l2, weight=-0.5)
@@ -145,14 +104,6 @@ def make_microduck_velocity_rollers_env_cfg(play: bool = False) -> ManagerBasedR
     # so the joint keeps its full reachable range (a qpos penalty stole that range
     # and broke the gait) while the wild over-drive is discouraged.
     cfg.rewards["action_over_limit"] = RewardTermCfg(func=microduck_mdp.action_over_limit_penalty, weight=-0.5, params={"action_name": "joint_pos", "overshoot": 0.3})
-    # Pull hip_roll back toward neutral so the stance stops resting splayed on the
-    # hip_roll limits. L1 = constant gradient: it gently closes the legs AT REST,
-    # but the strong stride rewards (wheel_speed, single_support, air_time) easily
-    # overpower it during an active push → closes the posture WITHOUT preventing
-    # the lateral push stroke. Tune: raise if still splayed, lower if it flattens
-    # the stride. (Physics caveat: if the soft hip_roll servo can't hold a narrow
-    # stance under body weight, the policy will bend knees / lower CoM to unload
-    # it — or, if no stable narrow stance exists, it stays partly splayed.)
     cfg.rewards["hip_roll_neutral"] = RewardTermCfg(
         func=microduck_mdp.joint_deviation_l1,
         weight=-2.0,  # -1.0 -> -2.0: stronger centring pull. Sim already keeps hip_roll
@@ -161,33 +112,14 @@ def make_microduck_velocity_rollers_env_cfg(play: bool = False) -> ManagerBasedR
         # flattens the push.
         params={"asset_cfg": SceneEntityCfg("robot", joint_names=(r".*hip_roll.*",))},
     )
-    # Sole positive task reward — robot must spin wheels to get anything
     # vel_scale 0.5 -> 0.3: the tanh target speed. Measured on a trained ckpt, the
     # policy only reaches ~0.33 m/s at max push, so a 0.5 target sat on the
     # un-saturated tanh slope and kept pushing it to go faster than it can (over-
     # reach -> launch instability). 0.3 saturates near the achievable speed, so it
     # is 'content' there instead of over-driving.
     cfg.rewards["wheel_speed"] = RewardTermCfg(func=microduck_mdp.wheel_speed_reward, weight=10.0, params={"command_name": "twist", "vel_scale": 0.3})
-    # Brake: reward stopping when cmd_x < 0. Silent at cmd_x >= 0 (coast/push).
     cfg.rewards["braking"] = RewardTermCfg(func=microduck_mdp.braking_reward, weight=1.0, params={"command_name": "twist", "vel_std": 0.3})
-    # Air time during push: pay the recovery-foot lift, but ONLY when the body is
-    # actually moving forward (vel_gate_ref) — otherwise a fast in-place flutter
-    # farmed this. threshold_min raised 0.15 → 0.25 to forbid ultra-short swings
-    # (caps the frantic kick cadence); glide below rewards the slow phase.
-    # air_time rewards each swing → drives swing FREQUENCY; glide rewards staying
-    # on one blade → drives commitment. Balance tilted toward glide (3.0) over
-    # air_time (2.0) because the cadence was still too fast. air_time kept high
-    # enough (2.0) that lifting the foot stays worthwhile.
-    # Calm gait: the aggressive [0.40, 1.00] window forced big long swings ->
-    # violent kicks that tipped the real robot. Back to a gentle [0.15, 0.45]
-    # (small swings allowed, none forced long) and weight 2.0 -> 1.5 so swinging
-    # is less incentivised (lower cadence). glide (below) rewards the coast, so it
-    # pushes only occasionally.
     cfg.rewards["skating_air_time"] = RewardTermCfg(func=microduck_mdp.skating_air_time_reward, weight=1.5, params={"sensor_name": "feet_ground_contact", "command_name": "twist", "threshold_min": 0.15, "threshold_max": 0.45, "vel_gate_ref": 0.2})
-    # Glide phase (single-support REQUIRED, unlike the earlier broken attempt):
-    # reward coasting on one blade with quiet legs so the policy commits to each
-    # stroke instead of kicking frantically. Weight raised 1.5 → 3.0 to actually
-    # out-weigh the swing-frequency pull of air_time.
     cfg.rewards["glide"] = RewardTermCfg(func=microduck_mdp.glide_reward, weight=4.0, params={"sensor_name": "feet_ground_contact", "command_name": "twist", "vel_ref": 0.2})
     # NOTE: a recover_pose reward (reward default leg pose + quiet + coasting during
     # the pause) was tried to get "stroke -> recover-to-neutral -> stroke", but
@@ -195,21 +127,13 @@ def make_microduck_velocity_rollers_env_cfg(play: bool = False) -> ManagerBasedR
     # penalty re-opened the symmetric swizzle -> reverted. A proper retry must be
     # PHASE-GATED (reward the neutral only briefly right after a stroke, not
     # continuously) and keep the double-support penalty.
-    # Single-support stride vs double-support swizzle. Rewards exactly-one-blade-
-    # down and penalises both-down while pushing — the core anti-swizzle signal.
-    # Gated on forward speed too, so stepping that doesn't propel earns nothing.
     cfg.rewards["single_support"] = RewardTermCfg(func=microduck_mdp.single_support_reward, weight=3.0, params={"sensor_name": "feet_ground_contact", "command_name": "twist", "vel_gate_ref": 0.2})
-    # Balance left/right leg usage. With symmetry augmentation OFF nothing stops a
-    # lopsided stride (pushing mostly with one leg) that veers and destabilises,
-    # esp. at launch. Penalises the cumulative swing-time imbalance |L-R|/(L+R);
-    # the instantaneous one-foot-swinging asymmetry of a real stride is fine.
     cfg.rewards["gait_symmetry"] = RewardTermCfg(func=microduck_mdp.gait_symmetry_penalty, weight=-1.0, params={"sensor_name": "feet_ground_contact"})
     # NOTE: a contact_frequency penalty was tried here to slow the cadence, but it
     # penalises contact CHANGES — minimised by never lifting a foot (the swizzle),
     # so it pushes toward exactly the gait we fought to leave. Reverted; the
     # widened air-time window above is the safe cadence-slower (it forbids short
     # swings without rewarding not-stepping).
-    # Encourage slight forward lean when pushing to counteract backward torque.
     cfg.rewards["forward_lean"] = RewardTermCfg(func=microduck_mdp.forward_lean_reward, weight=1.5, params={"command_name": "twist", "target_pitch": 0.262, "std": 0.1})
     # Heading command DISABLED (straight-line focus), but we hold the heading so it
     # doesn't drift: heading_hold rewards the yaw ANGLE staying near the spawn
@@ -218,7 +142,6 @@ def make_microduck_velocity_rollers_env_cfg(play: bool = False) -> ManagerBasedR
     # heading_tracking (turning) once the stride is solid.
     cfg.rewards["heading_hold"] = RewardTermCfg(func=microduck_mdp.heading_hold_reward, weight=1.0, params={"std": 0.4, "asset_cfg": SceneEntityCfg("robot")})
 
-    # TERMINATIONS
     cfg.terminations["nan_state"] = TerminationTermCfg(func=microduck_mdp.robot_state_is_nan, time_out=False)
 
     cfg.events["reset_action_history"] = EventTermCfg(func=microduck_mdp.reset_action_history, mode="reset")
@@ -229,10 +152,7 @@ def make_microduck_velocity_rollers_env_cfg(play: bool = False) -> ManagerBasedR
 
     task_dr.apply_dr(cfg, DR, HEAD_BODY_NAMES, play=play)
 
-    # OBSERVATIONS (unified 61D layout)
     del cfg.observations["actor"].terms["base_lin_vel"]
-    # 1.3.0 base template adds sensor-based foot_height + height_scan; the roller
-    # env has no terrain-height sensor.
     del cfg.observations["critic"].terms["foot_height"]
     del cfg.observations["actor"].terms["height_scan"]
     del cfg.observations["critic"].terms["height_scan"]
@@ -241,21 +161,17 @@ def make_microduck_velocity_rollers_env_cfg(play: bool = False) -> ManagerBasedR
 
     microduck_mdp.wire_sim2real_obs(cfg, imu_delay_max_lag=1, imu_misalignment_deg=DR.imu_orientation_angle_deg if DR.imu_orientation else None, encoder_bias_range=DR.encoder_bias_range if DR.encoder_bias else None, sanitize_critic_sensors=False)
 
-    # Privileged wheel speeds for the critic (4 wheels in the new model).
     wheel_cfg = SceneEntityCfg("robot", joint_names=(r"^passive_.*wheel",))
     cfg.observations["critic"].terms["wheel_vel"] = ObservationTermCfg(func=mdp.joint_vel_rel, scale=1.0, params={"asset_cfg": wheel_cfg})
 
-    # Command obs parity with the 61D family layout: head/body slots zero-padded
-    # (the roller task drives heading through the twist slot instead).
     for group in ("actor", "critic"):
         cfg.observations[group].terms["head_command"] = ObservationTermCfg(func=microduck_mdp.zero_command_padding, params={"dim": 4})
         cfg.observations[group].terms["body_command"] = ObservationTermCfg(func=microduck_mdp.zero_command_padding, params={"dim": 6})
 
-    # COMMANDS
     command: UniformVelocityCommandCfg = cfg.commands["twist"]
     command.rel_standing_envs = 0.0
     command.rel_heading_envs = 0.0
-    command.heading_command = False  # RelativeHeadingVelocityCommand handles heading internally
+    command.heading_command = False
     command.ranges.heading = None  # must be None when heading_command=False
     # cmd_x semantics: 0=coast, >0=push to accelerate, <0=brake to stop
     command.ranges.lin_vel_x = (-0.5, 0.6)
@@ -269,15 +185,9 @@ def make_microduck_velocity_rollers_env_cfg(play: bool = False) -> ManagerBasedR
     cfg.scene.terrain.terrain_type = "plane"
     cfg.scene.terrain.terrain_generator = None
 
-    # CURRICULUM
     del cfg.curriculum["terrain_levels"]
     del cfg.curriculum["command_vel"]
 
-    # action_rate penalty raised (-0.5/-0.8/-1.0 -> -1.0/-1.5/-2.0) for a CALMER
-    # gait: this is the main "less movement" lever — it penalises fast/large action
-    # changes, so motions become smaller, smoother AND less frequent (rapid
-    # alternation = big action change = penalised). Dial back if it gets sluggish
-    # / can't push enough to move.
     cfg.curriculum["action_rate_weight"] = CurriculumTermCfg(func=microduck_mdp.reward_weight, params={"reward_name": "action_rate_l2", "weight_stages": [{"step": 0, "weight": -1.0}, {"step": 250 * 24, "weight": -1.5}, {"step": 500 * 24, "weight": -2.0}]})
 
     if DR.wheel_friction:
@@ -287,9 +197,6 @@ def make_microduck_velocity_rollers_env_cfg(play: bool = False) -> ManagerBasedR
         # a heading-farming local optimum. Keep the wheels free until skating is
         # robust, then add gentle, realistic drag.
         cfg.curriculum["wheel_friction"] = CurriculumTermCfg(func=microduck_mdp.wheel_friction_curriculum, params={"event_name": "randomize_wheel_friction", "ranges_stages": [{"step": 0 * 24, "ranges": (0.0000, 0.0000)}, {"step": 2000 * 24, "ranges": (0.0005, 0.0005)}, {"step": 3500 * 24, "ranges": (0.0010, 0.0010)}, {"step": 5000 * 24, "ranges": (0.0015, 0.0015)}]})
-
-    # (heading_tracking_weight curriculum removed — heading is disabled while we
-    # focus on straight-line skating. Re-add together with the reward above.)
 
     # CoM randomization curricula — velocity's ramp, capped lower for the
     # balance-sensitive skating task (audit lesson: ±30 mm forced a nervous
