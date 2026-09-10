@@ -94,7 +94,6 @@ def make_microduck_velocity_swizzle_env_cfg(play: bool = False) -> ManagerBasedR
             cfg.rewards["pose"].params[std_key] = {k: v for k, v in std_dict.items() if "neck" not in k and "head" not in k and "passive" not in k}
     cfg.rewards["pose"].params["asset_cfg"] = SceneEntityCfg("robot", joint_names=(r"^(?!passive_|.*neck.*|.*head.*).*",))
 
-    # Head control is added only on top of an already-stable swizzle.
     cfg.curriculum["head_pose_tracking_weight"] = CurriculumTermCfg(
         func=microduck_mdp.reward_weight,
         params={
@@ -107,7 +106,6 @@ def make_microduck_velocity_swizzle_env_cfg(play: bool = False) -> ManagerBasedR
             ],
         },
     )
-    # Widens over the same window as the weight ramp above.
     cfg.curriculum["head_pose_range"] = CurriculumTermCfg(
         func=microduck_mdp.pose_command_range_curriculum,
         params={

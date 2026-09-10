@@ -18,13 +18,10 @@ def ramp_angle_by_difficulty(difficulty: float, deg_min: float = RAMP_DEG_MIN, d
 
 @dataclass(kw_only=True)
 class FlatRampTerrainCfg(SubTerrainCfg):
-    # Three boxes along +x: starting flat (surface at z=0), descending ramp,
-    # exit flat at the ramp's bottom so the robot lands on solid ground.
-
     flat_length: float = 2.0
     ramp_length_range: tuple = (3.0, 8.0)  # horizontal, drawn per tile at generation
     runout_length: float = 4.0
-    spawn_on_ramp: float = 0.3  # gravity => rolling
+    spawn_on_ramp: float = 0.3
     deg_min: float = RAMP_DEG_MIN
     deg_max: float = RAMP_DEG_MAX
     thickness: float = 0.5
