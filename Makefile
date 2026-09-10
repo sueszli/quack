@@ -56,4 +56,4 @@ export:
 
 .PHONY: infer
 infer:
-	uv run infer --walking output.onnx --new-cmd-obs $(ARGS)
+	uv run infer --walking weights/output.onnx --new-cmd-obs $(ARGS)
