@@ -1,36 +1,7 @@
-# Microduck *stand* task (v1.5) — specialized: sitting pose → standing.
-#
-# Episodic policy that gently rises from the sitting keyframe to the standing
-# keyframe. Companion to the sit env — together they form a clean sit↔stand
-# pair, each policy doing one direction.
-#
-# Reset:  sitting keyframe (trunk z ≈ 0.07, knees/ankles bent, head at HOME).
-# Target: standing keyframe (trunk z ≈ 0.12, HOME joints).
-# Reward design (mirror of sit env): a single fixed target is rewarded from
-# t=0 to end of episode; gentleness is enforced via |a_z| only; smoothness is
-# enforced by the usual sim2real regularisers. No trajectory waypoints, no
-# episode-progress gating — the policy is free to discover its own rise path.
-#
-# Body control (reintroduced 2026-07-29): once standing, the policy tracks a
-# commanded trunk delta [z, roll, pitch] from the nominal stand (the real
-# body_pose command in the previously zero-padded 6D obs slot). Kicks in at
-# iter 2500 via the body-control curricula at the bottom of this file, after
-# the ground_state_mix recovery curriculum has finished ramping.
-
 import math
 
-# Symmetry
 ENABLE_SYMMETRY = False
 
-# Domain randomisation (matched to the velocity env for sim2real parity)
-
-# Ranges (matched to the velocity env)
-# Match velocity's ±0.3 (velocity was itself softened from ±0.5 in the 2026-07
-# audit). The push curriculum below still ramps 0 → ±0.08 → this final value so
-# the sit-rise bootstrap isn't shoved around from step 0 (velocity pushes at
-# full strength from step 0, but it starts standing, not seated/prone).
-
-# Episode length: long enough for a gentle rise + brief stabilisation.
 EPISODE_LENGTH_S = 6.0
 
 # Sitting source pose (asset.data.joint_pos index → angle in rad)
@@ -38,12 +9,6 @@ EPISODE_LENGTH_S = 6.0
 # SITTING_TARGET_OVERRIDES (task_sitstand.py) — the swept stable
 # equilibrium pose (knee ±1.35 ≈ 77°, hip_pitch ∓0.4079 = slight fwd lean,
 # ankles 0). Keep the two in sync: this reset IS the sit→stand hand-off.
-# Neck/head intentionally omitted → reset stays at HOME so the standup policy
-# starts from exactly where the sit policy converges.
-# Articulation joint indices under mjlab 1.3.0 + canonical BAM. The passive jaw
-# joints are NO LONGER part of the articulation (excluded from qpos), so the
-# layout is the clean 14-joint order: 0-4 left leg, 5-8 neck/head, 9-13 right leg.
-# (Previously passive_1/passive_2 sat at 9,10 and shifted the right leg to 11-15.)
 SITTING_JOINT_OVERRIDES = {
     1: 0.0,  # left  hip_roll   (HOME -0.0873)
     2: -0.4079,  # left  hip_pitch  (HOME -0.4579; +0.05 = slight fwd lean)
@@ -58,7 +23,6 @@ SITTING_JOINT_OVERRIDES = {
 _LEG_JOINTS = [0, 1, 2, 3, 4, 9, 10, 11, 12, 13]
 _NECK_JOINTS = [5, 6, 7, 8]
 
-# Trunk height targets (m).
 # SIT_Z matches the sit env's measured seated equilibrium (trunk z at rest in
 # the swept stable pose above). Was 0.07 (old robot); keep in sync with
 # task_sitstand.py.
@@ -70,15 +34,7 @@ SIT_Z = 0.060
 # via the velocity policy holding the robot still at zero command: 115 mm.
 STAND_Z = 0.115
 
-# Body pose command (reintroduced 2026-07-29)
-# Master toggle. OFF restores the previous env exactly: no body_pose command,
-# zero-padded body_command obs slot (obs stays 61D either way), no tracking
-# reward, no body-control curricula (including the conflict-relax stages on
-# height_stand_sharp / upright_sharp / standing_composite).
 ENABLE_BODY_CONTROL = True
-# 6D command slot [x, y, z, roll, pitch, yaw] for obs parity with velocity/
-# velstand, but only z/roll/pitch are tracked (axis_weights below) — the same
-# 3 axes as the original standup body control and the runtime interface.
 # x/y/yaw stay at a tiny "alive" range forever: the policy learns to ignore
 # them (they're reward-uncorrelated noise) instead of leaving dead weights.
 # z range is ASYMMETRIC: STAND_Z is the natural equilibrium at HOME, so there
@@ -115,15 +71,12 @@ ENCODER_BIAS_RANGE = DR.encoder_bias_range
 
 
 def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> ManagerBasedRlEnvCfg:
-    # Create Microduck stand environment configuration (sit-keyframe start).
-
     feet_ground_cfg = ContactSensorCfg(name="feet_ground_contact", primary=ContactMatch(mode="geom", pattern=r"^(left_foot_collision|right_foot_collision)$", entity="robot"), secondary=ContactMatch(mode="body", pattern="terrain"), fields=("found", "force"), reduce="netforce", num_slots=1, track_air_time=True)
 
     self_collision_cfg = ContactSensorCfg(name="self_collision", primary=ContactMatch(mode="subtree", pattern="trunk_base", entity="robot"), secondary=ContactMatch(mode="subtree", pattern="trunk_base", entity="robot"), fields=("found",), reduce="none", num_slots=1)
 
     foot_frictions_geom_names = ("left_foot_collision", "right_foot_collision")
 
-    # Base config
     cfg = make_velocity_env_cfg()
 
     cfg.scene.entities = {"robot": MICRODUCK_STANDUP_ROBOT_CFG}
@@ -132,26 +85,14 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
 
     cfg.episode_length_s = EPISODE_LENGTH_S
 
-    # Actions
     joint_pos_action = cfg.actions["joint_pos"]
     assert isinstance(joint_pos_action, JointPositionActionCfg)
     joint_pos_action.scale = 1.0
 
-    # Rewards: drop walking-specific terms
     for name in ["track_linear_velocity", "track_angular_velocity", "air_time", "foot_clearance", "foot_swing_height", "foot_slip", "pose"]:
         if name in cfg.rewards:
             del cfg.rewards[name]
 
-    # Rewards: minimum-viable set for an organic standup policy
-    # Single fixed target (STAND = HOME pose + STAND_Z), active from t=0. No
-    # trajectory, no waypoints, no episode-progress gating. The policy is free
-    # to discover any rise path that satisfies:
-    #   (1) end-state matches the HOME pose + STAND_Z
-    #   (2) rise is gentle (low |a_z| throughout)
-    #   (3) trunk stays upright throughout (failure mode: tip backward while
-    #       extending legs; no "low z is safe" regime as in sit)
-    #   (4) joint/action motion stays smooth (sim2real regularisers)
-    #
     # 2026-07 TRANSFER FIX (violent/shaky on the real robot): ALL task weights
     # below divided by 4 (8→2, 30→7.5, 15→3.75, …) so the total task mass
     # (~12) matches velocity's (~11) and the shared sim2real regularisers act
@@ -164,7 +105,6 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
     # advantages, so the global scale itself doesn't matter; only the
     # task↔regulariser ratio does.
 
-    # Pose target — legs+hips+knees+ankles. target_overrides=None → HOME.
     cfg.rewards["pose_stand_legs"] = RewardTermCfg(
         func=microduck_mdp.pose_target_match,
         weight=2.0,
@@ -175,11 +115,6 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
         },
     )
 
-    # Head pose tracking (commandable head control, like the velocity env).
-    # Replaces the old pose_stand_neck reward (which pinned the neck/head to HOME)
-    # — the neck/head are now steered by the head_pose command instead. Removed
-    # from pose_stand_l1 / standing_composite below for the same reason, so no
-    # reward fights head_pose_tracking's gradient.
     cfg.rewards["head_pose_tracking"] = RewardTermCfg(func=microduck_mdp.head_pose_tracking, weight=0.75, params={"command_name": "head_pose", "std": 0.5})
 
     # Head DC-droop penalty (velocity's fix, standup-adapted). L1 on a 1 s EMA
@@ -198,11 +133,6 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
         params={"command_name": "head_pose", "tau_s": 1.0, "gate_height_low": 0.09, "gate_height_high": 0.11, "gate_tilt_full_deg": 20.0, "gate_tilt_zero_deg": 45.0},
     )
 
-    # L1 bootstrap — constant gradient even when far from HOME.
-    # Bumped 2 → 5: at convergence the policy parks ~0.18 rad off-HOME (mostly
-    # bent knees) costing only -0.35/step at weight 2 — cheap enough to ignore.
-    # At weight 5 that error costs -0.9/step, forcing the policy to actually
-    # close the gap on the remaining joints.
     cfg.rewards["pose_stand_l1"] = RewardTermCfg(
         func=microduck_mdp.pose_l1_penalty,
         weight=1.25,
@@ -213,8 +143,6 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
         },
     )
 
-    # Trunk height target — two-layer Gaussian to get both bootstrap reach
-    # AND a sharp peak at STAND_Z.
     #  - ``height_stand``: wide std (0.04), for the bootstrap pull from sit.
     #  - ``height_stand_sharp``: narrow std (0.015), creates a strong gradient
     #    in the final cm. Earlier runs converged at z ≈ 0.109 because the
@@ -223,18 +151,8 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
     #    same range, ~3× the marginal pull.
     cfg.rewards["height_stand"] = RewardTermCfg(func=microduck_mdp.height_target_gaussian, weight=1.0, params={"std": 0.04, "target_height": STAND_Z, "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))})
     cfg.rewards["height_stand_sharp"] = RewardTermCfg(func=microduck_mdp.height_target_gaussian, weight=1.0, params={"std": 0.015, "target_height": STAND_Z, "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))})
-    # L1 bumped 10 → 30: previous run plateaued sitting still because the
-    # static-sit basin (-0.5 reward from L1 + everything else positive) was
-    # net positive. At weight 30, sitting still costs -1.5/step — net cost
-    # of "stay sitting" forces exploration.
     cfg.rewards["height_stand_l1"] = RewardTermCfg(func=microduck_mdp.height_l1_penalty, weight=7.5, params={"target_height": STAND_Z, "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))})
 
-    # Reward upward CoM velocity below STAND_Z — pays for the *motion* of
-    # rising, not just for the destination. Critical bootstrap: with only
-    # destination rewards, "stay sitting upright collecting most-of-pose +
-    # upright" was the dominant local optimum. Rewarding vz > 0 directly
-    # makes any rise attempt immediately positive. Gates off above
-    # max_height so the policy can't farm it by bobbing.
     # max_height set just above STAND_Z (0.12 → 0.125) so the reward stays
     # active through the final cm of rise. Earlier 0.11 caused the policy to
     # park at ~0.108 (gate-off altitude) and never finish the climb.
@@ -249,9 +167,6 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
     # smoothness_polish comments).
     cfg.rewards["com_upward_velocity"] = RewardTermCfg(func=microduck_mdp.com_upward_velocity, weight=0.75, params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)), "max_height": 0.125})
 
-    # Gentle rise — penalty on |a_z|. Compatible with com_upward_velocity:
-    # constant positive vz collects upward-velocity reward AND has a_z = 0,
-    # so the two pressures together select for smooth constant-velocity rise.
     # NOTE this term is GLOBAL (not phase-gated): prone flips pay it in full
     # (impacts + push-off are |a_z| spikes). The 2026-07-24 attempt to double
     # it to -0.01 contributed to the face-up freeze; -0.005 is the ceiling
@@ -280,7 +195,6 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
     # fine-tunes their execution instead of blocking their discovery.
     cfg.rewards["arrival_damping"] = RewardTermCfg(func=microduck_mdp.body_ang_vel_at_height, weight=0.0, params={"height_low": 0.09, "height_high": 0.11, "tilt_full_deg": 20.0, "tilt_zero_deg": 45.0, "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))})
 
-    # Upright — two-layer like the height reward.
     #  - ``upright_linear``: cos(tilt). Strong gradient at high tilt (e.g.,
     #    while inverted at the start of a recovery), weak near vertical.
     #    Provides bootstrap pull from any orientation.
@@ -298,7 +212,6 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
     # ~0.1 = visible gradient that pulls toward vertical.
     cfg.rewards["upright_sharp"] = RewardTermCfg(func=microduck_mdp.upright_gaussian_at_height, weight=1.5, params={"std": 0.3, "height_low": SIT_Z, "height_high": STAND_Z, "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))})
 
-    # Smooth multiplicative goal-state score (broad stds).
     # The previous tight stds (height=0.015, upright=0.15, pose=0.20) had
     # the composite at ~5e-5 at the lean basin — invisible to the policy,
     # zero gradient. Broadening so the lean basin scores ~0.2 (visible
@@ -310,8 +223,8 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
             "target_height": STAND_Z,
             "height_std": 0.04,  # 4cm — broad, covers the climb
             "upright_std": 0.40,  # ≈ 23° — lean basin scores ~0.3
-            "pose_std": 0.40,  # joint-RMS, broad enough for partial pose
-            "joint_indices": _LEG_JOINTS,  # neck/head steered by head_pose_tracking
+            "pose_std": 0.40,
+            "joint_indices": _LEG_JOINTS,
             "target_overrides": None,
             "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
         },
@@ -360,25 +273,17 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
 
     cfg.rewards["body_ang_vel"].params["asset_cfg"].body_names = ("trunk_base",)
     cfg.rewards["body_ang_vel"].weight = -0.05  # motion-blocker: kept LIGHT (velocity value)
-    cfg.rewards["angular_momentum"].weight = -0.02  # velocity value
-    cfg.rewards.pop("soft_landing", None)  # velocity removes it
+    cfg.rewards["angular_momentum"].weight = -0.02
+    cfg.rewards.pop("soft_landing", None)
 
     cfg.rewards["self_collisions"] = RewardTermCfg(func=mdp.self_collision_cost, weight=-1.0, params={"sensor_name": self_collision_cfg.name})
 
-    # Drop only the base "upright" Gaussian — standup uses its own
-    # upright_linear/upright_sharp instead. (angular_momentum kept above to match
-    # velocity; soft_landing/hip_yaw_roll_deviation dropped to match velocity.)
     if "upright" in cfg.rewards:
         del cfg.rewards["upright"]
 
-    # Observations (identical layout to walking / sit policies)
     del cfg.observations["actor"].terms["base_lin_vel"]
 
     cfg.observations["critic"].terms["base_lin_vel"] = ObservationTermCfg(func=mdp.base_lin_vel, scale=1.0)
-    # mjlab 1.3.0 base template adds sensor-based foot_height + height_scan obs.
-    # Standup has no terrain-height sensor (and drops the walking foot rewards),
-    # so remove these terms. foot_air_time/foot_contact(_forces) use the
-    # feet_ground_contact sensor, which standup does define, so they stay.
     del cfg.observations["critic"].terms["foot_height"]
     del cfg.observations["actor"].terms["height_scan"]
     del cfg.observations["critic"].terms["height_scan"]
@@ -393,10 +298,6 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
 
     microduck_mdp.wire_sim2real_obs(cfg, imu_delay_max_lag=1, imu_misalignment_deg=DR.imu_orientation_angle_deg if DR.imu_orientation else None, encoder_bias_range=DR.encoder_bias_range if DR.encoder_bias else None)
 
-    # Head pose command (commandable head control, like the velocity env)
-    # 4D deltas-from-HOME on neck/head joints: [neck_pitch, head_pitch, head_yaw,
-    # head_roll]. Tracked by head_pose_tracking below; ranges widened by the
-    # head_pose_range curriculum. Same per-joint caps as the velocity env.
     cfg.commands["head_pose"] = microduck_mdp.UniformPoseCommandCfg(
         resampling_time_range=HEAD_POSE_CMD_RESAMPLE_S,
         ranges=(
@@ -407,11 +308,6 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
         ),
     )
 
-    # Body pose command (6D delta from nominal standing)
-    # [x, y, z, roll, pitch, yaw]. Only z/roll/pitch are tracked (see
-    # body_pose_tracking below); x/y/yaw are permanent alive-range noise.
-    # Ranges start tiny; the body_pose_range curriculum widens z/roll/pitch
-    # once the recovery skills exist (ground_state_mix final at 2500).
     if ENABLE_BODY_CONTROL:
         cfg.commands["body_pose"] = microduck_mdp.UniformPoseCommandCfg(
             resampling_time_range=BODY_POSE_CMD_RESAMPLE_S,
@@ -426,9 +322,6 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
             ),
         )
 
-    # Command obs slots. head_command is the real head_pose command; the
-    # body_command slot carries the real body_pose command when body control is
-    # enabled, and zero padding otherwise (obs shape identical either way).
     # Layout parity with velocity/velstand: [twist(3), head_pose(4), body_pose(6)].
     for group in ("actor", "critic"):
         cfg.observations[group].terms["head_command"] = ObservationTermCfg(func=mdp.generated_commands, params={"command_name": "head_pose"})
@@ -450,7 +343,6 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
     command.ranges.ang_vel_z = (-0.05, 0.05)
     cfg.commands["twist"] = microduck_mdp.VelocityCommandCommandOnlyCfg(**vars(command))
 
-    # Terminations
     # Robot starts seated — tilt-based fall termination doesn't apply here.
     if "fell_over" in cfg.terminations:
         del cfg.terminations["fell_over"]
@@ -458,7 +350,7 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
 
     cfg.events["reset_action_history"] = EventTermCfg(func=microduck_mdp.reset_action_history, mode="reset")
     cfg.events["foot_friction"].params["asset_cfg"].geom_names = foot_frictions_geom_names
-    cfg.events["foot_friction"].params["ranges"] = (0.7, 1.3)  # match velocity
+    cfg.events["foot_friction"].params["ranges"] = (0.7, 1.3)
 
     # Start in the sitting keyframe with noise on joints + trunk tilt. Real
     # deployment hand-off from the sit policy won't reproduce the SIT
@@ -469,16 +361,13 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
         func=microduck_mdp.set_random_ground_state,
         mode="reset",
         params={
-            # Initialize from any pose, 25% each: front (face-down), back
-            # (face-up), sitting keyframe, and already-standing (so the policy
-            # also learns to *hold* a stand, not only to rise).
             # Initial mix = curriculum stage 0 (easy); the ground_state_mix
             # curriculum ramps these easy→hard over training. Face-up (back) starts
             # at 0 and is introduced late (hardest recovery).
             "face_down_prob": 0.20,  # belly to floor (+90° pitch)
             "face_up_prob": 0.00,  # back to floor (-90° pitch) — introduced late
-            "sitting_prob": 0.40,  # sit keyframe (deployment hand-off)
-            "standing_prob": 0.40,  # already upright at standing height
+            "sitting_prob": 0.40,
+            "standing_prob": 0.40,
             # Prone reset height: trunk rests at ~0.044 m face-down (measured), so
             # spawn just above the ground rather than the 0.20–0.25 default (which
             # would free-fall ~15 cm before landing).
@@ -510,7 +399,6 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
     # (matching velocity) — the old event-based randomize_imu_orientation wrote
     # site_quat, which under mjlab 1.3.0 is neither per-env nor read by the obs.
 
-    # Terrain
     if not rough:
         cfg.scene.terrain.terrain_type = "plane"
         cfg.scene.terrain.terrain_generator = None
@@ -522,7 +410,6 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
             cfg.scene.terrain.terrain_generator.num_cols = 5
             cfg.scene.terrain.terrain_generator.num_rows = 5
 
-    # Curriculum
     if not rough:
         del cfg.curriculum["terrain_levels"]
     del cfg.curriculum["command_vel"]
@@ -552,11 +439,6 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
     # Head pose command range curriculum — same per-joint widening as the velocity
     # env (5% → 100% of each joint's reachable delta from HOME over ~2000 iters).
     cfg.curriculum["head_pose_range"] = CurriculumTermCfg(func=microduck_mdp.pose_command_range_curriculum, params={"command_name": "head_pose", "range_stages": [{"step": 0, "ranges": ((-0.05, 0.05), (-0.05, 0.05), (-0.07, 0.07), (-0.015, 0.015))}, {"step": 500 * 24, "ranges": ((-0.17, 0.17), (-0.17, 0.17), (-0.21, 0.21), (-0.047, 0.047))}, {"step": 1000 * 24, "ranges": ((-0.39, 0.39), (-0.39, 0.39), (-0.49, 0.49), (-0.11, 0.11))}, {"step": 1500 * 24, "ranges": ((-0.72, 0.72), (-0.72, 0.72), (-0.91, 0.91), (-0.20, 0.20))}, {"step": 2000 * 24, "ranges": ((-1.10, 1.10), (-1.10, 1.10), (-1.40, 1.40), (-0.31, 0.31))}]})
-
-    # NOTE: the earlier head_pose_std / head_pose_weight curricula (band-aids for
-    # the head-droop) were removed — the droop was a backward-CoM balance crutch,
-    # fixed at the source by the STAND2 forward-shifted standing pose. head_pose
-    # tracking stays at its baseline (weight 3.0, std 0.5) + head_pose_range.
 
     # CoM-randomization range curricula — match velocity (ramp 0.003 → 0.015 trunk,
     # 0.003 → 0.01 head over the first ~1500 / ~1000 iters). Trunk capped at
@@ -598,7 +480,6 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
     cfg.curriculum["head_pose_bias_weight"] = CurriculumTermCfg(func=microduck_mdp.reward_weight, params={"reward_name": "head_pose_bias", "weight_stages": [{"step": 0, "weight": 0.0}, {"step": 3000 * 24, "weight": 0.5}, {"step": 4000 * 24, "weight": 1.5}]})
     cfg.curriculum["torque_rate_weight"] = CurriculumTermCfg(func=microduck_mdp.reward_weight, params={"reward_name": "joint_torque_rate_l2", "weight_stages": [{"step": 0, "weight": 0.0}, {"step": 3000 * 24, "weight": -1e-3}]})
 
-    # Body-control curricula
     # Everything below is body-control only — NOTE the early return; add any
     # unrelated cfg above this line.
     if not ENABLE_BODY_CONTROL:
@@ -613,9 +494,6 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
     # the old design's weight 5 loses — the phase-2 lesson.)
     cfg.curriculum["body_pose_tracking_weight"] = CurriculumTermCfg(func=microduck_mdp.reward_weight, params={"reward_name": "body_pose_tracking", "weight_stages": [{"step": 0, "weight": 0.0}, {"step": 2500 * 24, "weight": 1.5}, {"step": 3000 * 24, "weight": 3.0}, {"step": 4000 * 24, "weight": 4.0}]})
 
-    # Command range widening, synced to the weight ramp. x/y/yaw stay at their
-    # alive ranges (untracked); only z/roll/pitch widen. z asymmetric — see the
-    # BODY_CMD constants block.
     _alive_xy = (-BODY_CMD_ALIVE_XY, BODY_CMD_ALIVE_XY)
     _alive_ang = (-BODY_CMD_ALIVE_ANGLE, BODY_CMD_ALIVE_ANGLE)
     cfg.curriculum["body_pose_range"] = CurriculumTermCfg(
@@ -648,8 +526,6 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
 
     return cfg
 
-
-# RL runner config
 
 MicroduckStandUpRlCfg = RslRlOnPolicyRunnerCfg(
     actor=RslRlModelCfg(
