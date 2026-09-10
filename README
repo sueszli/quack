@@ -5,16 +5,10 @@
 \__, /\__,_/\__,_/\___/_/|_|
   /_/
 
-teach a small robot duck to move!
+A simplified fork of: https://github.com/pollen-robotics/microduck_rl
 
-Microduck is a two-legged robot, about 800 g and 25 cm tall. This repo lets you simulate it in MuJoCo and learn RL policies for it.
-
+This repo lets you simulate the Microduck robot in MuJoCo and learn RL policies for it.
 It can learn to walk, get up after a fall, kick a ball and roller skate.
-
-This is a simplified fork of Pollen Robotics' original training code. They built the robot and did the original research:
-
-    https://github.com/pollen-robotics/microduck_rl
-    https://github.com/pollen-robotics/microduck
 
 You'll need a graphics card that supports CUDA, plus uv and make.
 
