@@ -43,29 +43,8 @@ assert KICK_FOOT in ("right", "left")
 ENABLE_SYMMETRY = False
 
 # ── Domain randomisation (matched to velocity / standup) ─────────────────────
-ENABLE_COM_RANDOMIZATION = True
-ENABLE_HEAD_COM_RANDOMIZATION = True
-ENABLE_KP_RANDOMIZATION = False
-ENABLE_KD_RANDOMIZATION = False
-ENABLE_MASS_INERTIA_RANDOMIZATION = True
-ENABLE_JOINT_FRICTION_RANDOMIZATION = True
-ENABLE_ARMATURE_RANDOMIZATION = True
-ENABLE_VELOCITY_PUSHES = True
-ENABLE_IMU_ORIENTATION_RANDOMIZATION = True
-ENABLE_ENCODER_BIAS = True
 
 # ── Ranges (matched to velocity / standup) ───────────────────────────────────
-COM_RANDOMIZATION_RANGE = 0.003  # ramped to 0.015 via curriculum
-HEAD_COM_RANDOMIZATION_RANGE = 0.003  # ramped to 0.01 via curriculum
-MASS_INERTIA_RANDOMIZATION_RANGE = (0.95, 1.05)
-ARMATURE_RANDOMIZATION_RANGE = (0.9, 1.1)
-JOINT_FRICTION_RANDOMIZATION_RANGE = (0.9, 1.1)
-ENCODER_BIAS_RANGE = (-0.015, 0.015)
-KP_RANDOMIZATION_RANGE = (0.85, 1.15)  # unused (kp DR off)
-KD_RANDOMIZATION_RANGE = (0.9, 1.1)  # unused (kd DR off)
-VELOCITY_PUSH_INTERVAL_S = (3.0, 6.0)
-VELOCITY_PUSH_RANGE = (-0.3, 0.3)  # ramped in via push curriculum
-IMU_ORIENTATION_RANDOMIZATION_ANGLE = 6.0
 
 # ── Task constants ────────────────────────────────────────────────────────────
 # Long enough for kick + several seconds of ball-rolling reward + settle-back.
@@ -99,7 +78,6 @@ _LEG_JOINTS = [0, 1, 2, 3, 4, 9, 10, 11, 12, 13]
 _NECK_JOINTS = [5, 6, 7, 8]
 
 from mjlab.envs import ManagerBasedRlEnvCfg
-from mjlab.envs.mdp import dr
 from mjlab.envs.mdp.actions import JointPositionActionCfg
 from mjlab.managers import CurriculumTermCfg, EventTermCfg, ObservationTermCfg, RewardTermCfg, TerminationTermCfg
 from mjlab.managers.scene_entity_config import SceneEntityCfg
@@ -108,10 +86,14 @@ from mjlab.sensor import ContactMatch, ContactSensorCfg
 from mjlab.tasks.velocity import mdp
 from mjlab.tasks.velocity.velocity_env_cfg import make_velocity_env_cfg
 
+from . import task_dr
 from . import task_mdp as microduck_mdp
 from .robot import MICRODUCK_BALL_CFG, MICRODUCK_STANDUP_ROBOT_CFG
 from .task_symmetry import SYMMETRY_CFG, PpoWithSymmetryCfg
 from .task_velocity import HEAD_BODY_NAMES, LOCAL_CHECKPOINTS_ONLY
+
+DR = task_dr.DEFAULT_DR
+ENCODER_BIAS_RANGE = DR.encoder_bias_range
 
 
 def make_microduck_ball_kick_env_cfg(play: bool = False, kick_foot: str | None = None) -> ManagerBasedRlEnvCfg:
@@ -235,7 +217,7 @@ def make_microduck_ball_kick_env_cfg(play: bool = False, kick_foot: str | None =
     del cfg.observations["actor"].terms["height_scan"]
     del cfg.observations["critic"].terms["height_scan"]
 
-    microduck_mdp.wire_sim2real_obs(cfg, imu_delay_max_lag=1, imu_misalignment_deg=IMU_ORIENTATION_RANDOMIZATION_ANGLE if ENABLE_IMU_ORIENTATION_RANDOMIZATION else None, encoder_bias_range=ENCODER_BIAS_RANGE if ENABLE_ENCODER_BIAS else None, sanitize_critic_sensors=False)
+    microduck_mdp.wire_sim2real_obs(cfg, imu_delay_max_lag=1, imu_misalignment_deg=DR.imu_orientation_angle_deg if DR.imu_orientation else None, encoder_bias_range=DR.encoder_bias_range if DR.encoder_bias else None, sanitize_critic_sensors=False)
 
     # Command obs slots — unified layout parity: [twist(3), head(4), body(6)],
     # head/body zero-padded (no head/body pose control in this task).
@@ -265,9 +247,6 @@ def make_microduck_ball_kick_env_cfg(play: bool = False, kick_foot: str | None =
     # ── Terminations ──────────────────────────────────────────────────────────
     # fell_over KEPT (robot starts standing and must stay up through the kick).
     cfg.terminations["nan_state"] = TerminationTermCfg(func=microduck_mdp.robot_state_is_nan, time_out=False)
-
-    # ── Events ────────────────────────────────────────────────────────────────
-    cfg.events["expand_bam_friction_fields"] = EventTermCfg(func=microduck_mdp.expand_bam_friction_fields, mode="startup")
 
     cfg.events["reset_action_history"] = EventTermCfg(func=microduck_mdp.reset_action_history, mode="reset")
     cfg.events["foot_friction"].params["asset_cfg"].geom_names = foot_frictions_geom_names
@@ -299,30 +278,7 @@ def make_microduck_ball_kick_env_cfg(play: bool = False, kick_foot: str | None =
     ball_offset_y = -BALL_OFFSET_ABS_Y if kick_foot == "right" else BALL_OFFSET_ABS_Y
     cfg.events["reset_ball"] = EventTermCfg(func=microduck_mdp.reset_ball_in_front_of_foot, mode="reset", params={"offset": (BALL_OFFSET_X, ball_offset_y), "noise_xy": BALL_POS_NOISE_XY, "ball_radius": BALL_RADIUS, "asset_name": "ball"})
 
-    if ENABLE_VELOCITY_PUSHES:
-        interval = (0.5, 1.0) if play else VELOCITY_PUSH_INTERVAL_S
-        cfg.events["push_robot"] = EventTermCfg(func=mdp.push_by_setting_velocity, mode="interval", interval_range_s=interval, params={"velocity_range": {"x": VELOCITY_PUSH_RANGE, "y": VELOCITY_PUSH_RANGE}, "asset_cfg": SceneEntityCfg("robot")})
-
-    if ENABLE_COM_RANDOMIZATION:
-        cfg.events["randomize_com"] = EventTermCfg(func=dr.body_ipos, mode="reset", params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)), "operation": "add", "ranges": (-COM_RANDOMIZATION_RANGE, COM_RANDOMIZATION_RANGE)})
-
-    if ENABLE_HEAD_COM_RANDOMIZATION:
-        cfg.events["randomize_head_com"] = EventTermCfg(func=dr.body_ipos, mode="reset", params={"asset_cfg": SceneEntityCfg("robot", body_names=HEAD_BODY_NAMES), "operation": "add", "ranges": (-HEAD_COM_RANDOMIZATION_RANGE, HEAD_COM_RANDOMIZATION_RANGE)})
-
-    if ENABLE_ARMATURE_RANDOMIZATION:
-        cfg.events["randomize_armature"] = EventTermCfg(func=dr.joint_armature, mode="reset", params={"asset_cfg": SceneEntityCfg("robot", joint_names=(r".*",)), "operation": "scale", "ranges": ARMATURE_RANDOMIZATION_RANGE})
-
-    if ENABLE_KP_RANDOMIZATION or ENABLE_KD_RANDOMIZATION:
-        kp_range = KP_RANDOMIZATION_RANGE if ENABLE_KP_RANDOMIZATION else (1.0, 1.0)
-        kd_range = KD_RANDOMIZATION_RANGE if ENABLE_KD_RANDOMIZATION else (1.0, 1.0)
-        cfg.events["randomize_motor_gains"] = EventTermCfg(func=microduck_mdp.randomize_delayed_actuator_gains, mode="reset", params={"asset_cfg": SceneEntityCfg("robot"), "operation": "scale", "kp_range": kp_range, "kd_range": kd_range})
-
-    if ENABLE_MASS_INERTIA_RANDOMIZATION:
-        _mi_lo, _mi_hi = MASS_INERTIA_RANDOMIZATION_RANGE
-        cfg.events["randomize_mass_inertia"] = EventTermCfg(func=dr.pseudo_inertia, mode="startup", params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)), "alpha_range": (math.log(_mi_lo) / 2.0, math.log(_mi_hi) / 2.0)})
-
-    if ENABLE_JOINT_FRICTION_RANDOMIZATION:
-        cfg.events["randomize_joint_friction"] = EventTermCfg(func=microduck_mdp.randomize_bam_friction, mode="reset", params={"asset_cfg": SceneEntityCfg("robot"), "scale_range": JOINT_FRICTION_RANDOMIZATION_RANGE})
+    task_dr.apply_dr(cfg, DR, HEAD_BODY_NAMES, play=play)
 
     # ── Terrain: flat only (a ball on rough terrain is a different task) ──────
     cfg.scene.terrain.terrain_type = "plane"
@@ -338,17 +294,17 @@ def make_microduck_ball_kick_env_cfg(play: bool = False, kick_foot: str | None =
     # (motion-blocker vs dynamic-task tradeoff, see standup regularization notes).
     cfg.curriculum["action_rate_weight"] = CurriculumTermCfg(func=microduck_mdp.reward_weight, params={"reward_name": "action_rate_l2", "weight_stages": [{"step": 0, "weight": -0.1}, {"step": 500 * 24, "weight": -0.2}, {"step": 750 * 24, "weight": -0.4}, {"step": 1000 * 24, "weight": -0.6}, {"step": 1250 * 24, "weight": -0.8}, {"step": 1500 * 24, "weight": -1.0}]})
 
-    if ENABLE_COM_RANDOMIZATION:
+    if DR.com:
         cfg.curriculum["com_range"] = CurriculumTermCfg(func=microduck_mdp.com_range_curriculum, params={"event_name": "randomize_com", "range_stages": [{"step": 0, "range": 0.003}, {"step": 500 * 24, "range": 0.005}, {"step": 1000 * 24, "range": 0.01}, {"step": 1500 * 24, "range": 0.015}]})
 
-    if ENABLE_HEAD_COM_RANDOMIZATION:
+    if DR.head_com:
         cfg.curriculum["head_com_range"] = CurriculumTermCfg(func=microduck_mdp.com_range_curriculum, params={"event_name": "randomize_head_com", "range_stages": [{"step": 0, "range": 0.003}, {"step": 500 * 24, "range": 0.005}, {"step": 1000 * 24, "range": 0.01}]})
 
-    if ENABLE_VELOCITY_PUSHES:
+    if DR.pushes:
         # Ramp pushes in AFTER the kick skill starts forming: a full-strength
         # shove during the one-legged strike phase at iter 0 would tax the
         # discovery of the swing itself (same timing lesson as standup).
-        cfg.curriculum["push_magnitude"] = CurriculumTermCfg(func=microduck_mdp.push_curriculum, params={"event_name": "push_robot", "push_stages": [{"step": 0, "velocity_range": {"x": (0.0, 0.0), "y": (0.0, 0.0)}}, {"step": 500 * 24, "velocity_range": {"x": (-0.08, 0.08), "y": (-0.08, 0.08)}}, {"step": 1000 * 24, "velocity_range": {"x": VELOCITY_PUSH_RANGE, "y": VELOCITY_PUSH_RANGE}}]})
+        cfg.curriculum["push_magnitude"] = CurriculumTermCfg(func=microduck_mdp.push_curriculum, params={"event_name": "push_robot", "push_stages": [{"step": 0, "velocity_range": {"x": (0.0, 0.0), "y": (0.0, 0.0)}}, {"step": 500 * 24, "velocity_range": {"x": (-0.08, 0.08), "y": (-0.08, 0.08)}}, {"step": 1000 * 24, "velocity_range": {"x": DR.push_range, "y": DR.push_range}}]})
 
     return cfg
 

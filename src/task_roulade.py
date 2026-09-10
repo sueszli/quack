@@ -44,27 +44,8 @@ import math
 ENABLE_SYMMETRY = True
 
 # ── Domain randomisation (matched to standup/velocity for sim2real parity) ───
-ENABLE_COM_RANDOMIZATION = True
-ENABLE_HEAD_COM_RANDOMIZATION = True
-ENABLE_KP_RANDOMIZATION = False  # match velocity (OFF)
-ENABLE_KD_RANDOMIZATION = False  # match velocity (OFF)
-ENABLE_MASS_INERTIA_RANDOMIZATION = True
-ENABLE_JOINT_FRICTION_RANDOMIZATION = True
-ENABLE_ARMATURE_RANDOMIZATION = True
-ENABLE_VELOCITY_PUSHES = False  # a push mid-roll is incoherent
-ENABLE_IMU_ORIENTATION_RANDOMIZATION = True
-ENABLE_ENCODER_BIAS = True
 
 # ── Ranges (matched to the standup env) ───────────────────────────────────────
-COM_RANDOMIZATION_RANGE = 0.003  # ramped to 0.015 via curriculum
-HEAD_COM_RANDOMIZATION_RANGE = 0.003  # ramped to 0.01 via curriculum
-MASS_INERTIA_RANDOMIZATION_RANGE = (0.95, 1.05)
-ARMATURE_RANDOMIZATION_RANGE = (0.9, 1.1)
-JOINT_FRICTION_RANDOMIZATION_RANGE = (0.9, 1.1)
-ENCODER_BIAS_RANGE = (-0.015, 0.015)
-KP_RANDOMIZATION_RANGE = (0.85, 1.15)  # unused (kp DR off)
-KD_RANDOMIZATION_RANGE = (0.9, 1.1)  # unused (kd DR off)
-IMU_ORIENTATION_RANDOMIZATION_ANGLE = 6.0
 
 # Episode: a CONTROLLED roll takes ~2 s + rise ~1.5 s + settle. Run-3: 4 → 5 s
 # (4 s left no room for the rise after a paced roll).
@@ -116,8 +97,9 @@ RISE_GATE_HI = math.radians(260.0)
 _LEG_JOINTS = [0, 1, 2, 3, 4, 9, 10, 11, 12, 13]
 _NECK_JOINTS = [5, 6, 7, 8]
 
+import dataclasses
+
 from mjlab.envs import ManagerBasedRlEnvCfg
-from mjlab.envs.mdp import dr
 from mjlab.envs.mdp.actions import JointPositionActionCfg
 from mjlab.managers import CurriculumTermCfg, EventTermCfg, ObservationTermCfg, RewardTermCfg, TerminationTermCfg
 from mjlab.managers.scene_entity_config import SceneEntityCfg
@@ -126,10 +108,14 @@ from mjlab.sensor import ContactMatch, ContactSensorCfg
 from mjlab.tasks.velocity import mdp
 from mjlab.tasks.velocity.velocity_env_cfg import make_velocity_env_cfg
 
+from . import task_dr
 from . import task_mdp as microduck_mdp
 from .robot import MICRODUCK_STANDUP_ROBOT_CFG
 from .task_symmetry import SYMMETRY_CFG, PpoWithSymmetryCfg
 from .task_velocity import HEAD_BODY_NAMES, LOCAL_CHECKPOINTS_ONLY
+
+DR = dataclasses.replace(task_dr.DEFAULT_DR, pushes=False)
+ENCODER_BIAS_RANGE = DR.encoder_bias_range
 
 
 def make_microduck_roulade_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
@@ -279,7 +265,7 @@ def make_microduck_roulade_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     del cfg.observations["actor"].terms["height_scan"]
     del cfg.observations["critic"].terms["height_scan"]
 
-    microduck_mdp.wire_sim2real_obs(cfg, imu_delay_max_lag=1, imu_misalignment_deg=IMU_ORIENTATION_RANDOMIZATION_ANGLE if ENABLE_IMU_ORIENTATION_RANDOMIZATION else None, encoder_bias_range=ENCODER_BIAS_RANGE if ENABLE_ENCODER_BIAS else None, sanitize_critic_sensors=False)
+    microduck_mdp.wire_sim2real_obs(cfg, imu_delay_max_lag=1, imu_misalignment_deg=DR.imu_orientation_angle_deg if DR.imu_orientation else None, encoder_bias_range=DR.encoder_bias_range if DR.encoder_bias else None, sanitize_critic_sensors=False)
 
     # Command obs slots: zero padding for BOTH head (4) and body (6) — the head
     # is part of the task (it's the pivot), so no head_pose command here, but
@@ -308,8 +294,6 @@ def make_microduck_roulade_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
         del cfg.terminations["fell_over"]
     cfg.terminations["nan_state"] = TerminationTermCfg(func=microduck_mdp.robot_state_is_nan, time_out=False)
 
-    # ── Events ────────────────────────────────────────────────────────────────
-    cfg.events["expand_bam_friction_fields"] = EventTermCfg(func=microduck_mdp.expand_bam_friction_fields, mode="startup")
     cfg.events["reset_action_history"] = EventTermCfg(func=microduck_mdp.reset_action_history, mode="reset")
     cfg.events["foot_friction"].params["asset_cfg"].geom_names = foot_frictions_geom_names
     cfg.events["foot_friction"].params["ranges"] = (0.7, 1.3)
@@ -322,26 +306,7 @@ def make_microduck_roulade_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     if "push_robot" in cfg.events:
         del cfg.events["push_robot"]
 
-    if ENABLE_COM_RANDOMIZATION:
-        cfg.events["randomize_com"] = EventTermCfg(func=dr.body_ipos, mode="reset", params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)), "operation": "add", "ranges": (-COM_RANDOMIZATION_RANGE, COM_RANDOMIZATION_RANGE)})
-
-    if ENABLE_HEAD_COM_RANDOMIZATION:
-        cfg.events["randomize_head_com"] = EventTermCfg(func=dr.body_ipos, mode="reset", params={"asset_cfg": SceneEntityCfg("robot", body_names=HEAD_BODY_NAMES), "operation": "add", "ranges": (-HEAD_COM_RANDOMIZATION_RANGE, HEAD_COM_RANDOMIZATION_RANGE)})
-
-    if ENABLE_ARMATURE_RANDOMIZATION:
-        cfg.events["randomize_armature"] = EventTermCfg(func=dr.joint_armature, mode="reset", params={"asset_cfg": SceneEntityCfg("robot", joint_names=(r".*",)), "operation": "scale", "ranges": ARMATURE_RANDOMIZATION_RANGE})
-
-    if ENABLE_KP_RANDOMIZATION or ENABLE_KD_RANDOMIZATION:
-        kp_range = KP_RANDOMIZATION_RANGE if ENABLE_KP_RANDOMIZATION else (1.0, 1.0)
-        kd_range = KD_RANDOMIZATION_RANGE if ENABLE_KD_RANDOMIZATION else (1.0, 1.0)
-        cfg.events["randomize_motor_gains"] = EventTermCfg(func=microduck_mdp.randomize_delayed_actuator_gains, mode="reset", params={"asset_cfg": SceneEntityCfg("robot"), "operation": "scale", "kp_range": kp_range, "kd_range": kd_range})
-
-    if ENABLE_MASS_INERTIA_RANDOMIZATION:
-        _mi_lo, _mi_hi = MASS_INERTIA_RANDOMIZATION_RANGE
-        cfg.events["randomize_mass_inertia"] = EventTermCfg(func=dr.pseudo_inertia, mode="startup", params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)), "alpha_range": (math.log(_mi_lo) / 2.0, math.log(_mi_hi) / 2.0)})
-
-    if ENABLE_JOINT_FRICTION_RANDOMIZATION:
-        cfg.events["randomize_joint_friction"] = EventTermCfg(func=microduck_mdp.randomize_bam_friction, mode="reset", params={"asset_cfg": SceneEntityCfg("robot"), "scale_range": JOINT_FRICTION_RANDOMIZATION_RANGE})
+    task_dr.apply_dr(cfg, DR, HEAD_BODY_NAMES, play=play)
 
     # ── Terrain ───────────────────────────────────────────────────────────────
     cfg.scene.terrain.terrain_type = "plane"
@@ -362,10 +327,10 @@ def make_microduck_roulade_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     # family as the 2026-07-28 standup regression).
     cfg.curriculum["roulade_spawn_mix"] = CurriculumTermCfg(func=microduck_mdp.event_param_curriculum, params={"event_name": "set_roulade_state", "param_stages": [{"step": 0, "params": {"standing_prob": 0.50, "midroll_prob": 0.50}}, {"step": 3000 * 24, "params": {"standing_prob": 0.65, "midroll_prob": 0.35}}, {"step": 6000 * 24, "params": {"standing_prob": 0.80, "midroll_prob": 0.20}}]})
 
-    if ENABLE_COM_RANDOMIZATION:
+    if DR.com:
         cfg.curriculum["com_range"] = CurriculumTermCfg(func=microduck_mdp.com_range_curriculum, params={"event_name": "randomize_com", "range_stages": [{"step": 0, "range": 0.003}, {"step": 500 * 24, "range": 0.005}, {"step": 1000 * 24, "range": 0.01}, {"step": 1500 * 24, "range": 0.015}]})
 
-    if ENABLE_HEAD_COM_RANDOMIZATION:
+    if DR.head_com:
         cfg.curriculum["head_com_range"] = CurriculumTermCfg(func=microduck_mdp.com_range_curriculum, params={"event_name": "randomize_head_com", "range_stages": [{"step": 0, "range": 0.003}, {"step": 500 * 24, "range": 0.005}, {"step": 1000 * 24, "range": 0.01}]})
 
     # action_rate ramp — run-4: ceiling softened -0.6 → -0.4 and the -0.4
