@@ -1,5 +1,3 @@
-# The policy manifest (schema 2) and the checks a published policy has to pass.
-#
 # One vocabulary for two shapes — a single-policy repo (fields at the top level) and the official
 # set (the same fields per entry under ``policies``). This module writes the first; the daemon
 # (`pollen-robotics/microduck`, ``updater/src/policy.rs`` and ``robotd-params``) reads both. The
@@ -37,7 +35,6 @@ SLOTS: tuple[str, ...] = ("walk", "stand", "sitstand", "ground_pick", "kick_left
 
 
 def git_provenance(repo_root: Path | None = None) -> dict[str, Any]:
-    # `commit`, `branch`, `dirty` of the checkout the export ran from, or `{}` outside git.
     root = str(repo_root or Path(__file__).resolve().parents[1])
 
     def git(*args: str) -> str | None:
@@ -56,8 +53,6 @@ def git_provenance(repo_root: Path | None = None) -> dict[str, Any]:
 
 
 def build_manifest(*, name: str, kind: str, description: str, duration_s: float | None = None, chain: bool = False, unwind_s: float | None = None, idle: tuple[float, float, float] = ZERO_TWIST, action_scale: float | None = None, entry_pose: str = "standing", slot: str | None = None, command_help: dict[str, Any] | None = None, training: dict[str, Any] | None = None, eval: dict[str, Any] | None = None) -> dict[str, Any]:
-    # A single-policy manifest the daemon loads without surprises.
-    #
     # Only the constant-command family is publishable from here — a skill's network is fed a fixed
     # twist. Phase and posture-flag encodings are the official set's own arms and are not something
     # a community policy can be.
@@ -102,8 +97,6 @@ def build_manifest(*, name: str, kind: str, description: str, duration_s: float 
 
 
 def validate_manifest(manifest: dict[str, Any]) -> None:
-    # Refuse what the daemon would refuse, plus the mistakes it would load and run wrongly.
-    #
     # Accepts both shapes and any schema version, because absence is not evidence — a repo is under
     # no obligation to carry any field. Only a claim that is present and wrong fails.
     if "policies" in manifest:
@@ -130,9 +123,6 @@ def validate_manifest(manifest: dict[str, Any]) -> None:
     assert idle is None or len(idle) == 3, f"command.idle: 3-vector twist, got len {len(idle)}"
 
 
-# The ONNX file: the shape gate the daemon applies at load, applied before the upload.
-
-
 @dataclass(frozen=True)
 class OnnxShape:
     input_name: str
@@ -142,7 +132,6 @@ class OnnxShape:
 
 
 def inspect_onnx(path: Path) -> OnnxShape:
-    # The graph's single input and output widths, as the daemon checks them at load.
     import onnx
 
     model = onnx.load(str(path), load_external_data=False)
@@ -169,9 +158,6 @@ def is_untrained_onnx(path: Path) -> bool:
 
 
 def check_onnx(path: Path) -> OnnxShape:
-    # Refuse a file the daemon would refuse at load: wrong widths, or one that is not 61 -> 14.
-    #
-    # Also refuses an `--agent untrained` fixture, which passes every other check by construction.
     assert path.exists(), f"{path}: no such file"
     assert not is_untrained_onnx(path), f"{path.name}: untrained export (random-init weights), not a policy"
     shape = inspect_onnx(path)
@@ -181,8 +167,6 @@ def check_onnx(path: Path) -> OnnxShape:
 
 
 def smoke_run_onnx(path: Path, steps: int = 50, seed: int = 0) -> None:
-    # Run the network on plausible inputs and refuse a NaN/inf or a saturated output.
-    #
     # Not a physics rehearsal — `infer.py` is that — but it catches a broken export
     # (an un-baked normalizer producing NaNs on raw observations, a graph that will not execute)
     # before anything is uploaded.
@@ -206,14 +190,7 @@ def smoke_run_onnx(path: Path, steps: int = 50, seed: int = 0) -> None:
     assert spread > 0.0, f"{path.name}: output never changes over {steps} steps"
 
 
-# What else goes in the repo.
-
-
 def install_commands(manifest: dict[str, Any], repo_id: str) -> str:
-    # The `robotctl` lines that put this policy on a robot — one story per shape.
-    #
-    # Episodic: a skill, length from the manifest. Perpetual with `unwind_s`: a held pose the owner
-    # runs as a skill with `--hold`. Perpetual without: a gait, loaded into a slot.
     name = manifest["name"]
     if manifest["kind"] == "episodic":
         return f"sudo robotctl policy add {name} {repo_id}\nrobotctl robot do {name}"
@@ -224,7 +201,6 @@ def install_commands(manifest: dict[str, Any], repo_id: str) -> str:
 
 
 def render_readme(manifest: dict[str, Any], repo_id: str) -> str:
-    # A model card that says how to run the policy on a robot, generated so it cannot go stale.
     kind = manifest["kind"]
     name = manifest["name"]
     description = manifest.get("description", "")
