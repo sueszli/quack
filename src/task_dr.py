@@ -13,7 +13,6 @@ from . import task_mdp as microduck_mdp
 ARMATURE_ALL_JOINTS = (r".*",)
 ARMATURE_SERVO_JOINTS = (r"^(?!passive_).*",)
 WHEEL_JOINTS = (r"^passive_.*wheel",)
-WHEEL_JOINTS_ALL_PASSIVE = (r"^passive_.*",)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -44,7 +43,6 @@ class MicroduckDrCfg:
 
     wheel_friction: bool = False
     wheel_friction_range: tuple[float, float] = (0.0, 0.0)
-    wheel_friction_joints: tuple[str, ...] = WHEEL_JOINTS
 
     pushes: bool = True
     push_interval_s: tuple[float, float] = (3.0, 6.0)
@@ -67,9 +65,8 @@ DEFAULT_DR = MicroduckDrCfg()
 ROLLER_DR = dataclasses.replace(DEFAULT_DR, armature_joints=ARMATURE_SERVO_JOINTS, wheel_friction=True, push_range=(-0.2, 0.2))
 
 
-def apply_dr(cfg, dr_cfg: MicroduckDrCfg, head_body_names, play: bool = False, bam_friction_fields: bool = True) -> None:
-    if bam_friction_fields:
-        cfg.events["expand_bam_friction_fields"] = EventTermCfg(func=microduck_mdp.expand_bam_friction_fields, mode="startup")
+def apply_dr(cfg, dr_cfg: MicroduckDrCfg, head_body_names, play: bool = False) -> None:
+    cfg.events["expand_bam_friction_fields"] = EventTermCfg(func=microduck_mdp.expand_bam_friction_fields, mode="startup")
 
     if dr_cfg.pushes:
         interval = dr_cfg.push_play_interval_s if (play and dr_cfg.push_play_interval_s is not None) else dr_cfg.push_interval_s
@@ -100,7 +97,7 @@ def apply_dr(cfg, dr_cfg: MicroduckDrCfg, head_body_names, play: bool = False, b
         cfg.events["randomize_armature"] = EventTermCfg(func=dr.joint_armature, mode="reset", params={"asset_cfg": SceneEntityCfg("robot", joint_names=dr_cfg.armature_joints), "operation": "scale", "ranges": dr_cfg.armature_range})
 
     if dr_cfg.wheel_friction:
-        cfg.events["randomize_wheel_friction"] = EventTermCfg(func=dr.dof_frictionloss, mode="reset", params={"asset_cfg": SceneEntityCfg("robot", joint_names=dr_cfg.wheel_friction_joints), "operation": "abs", "ranges": dr_cfg.wheel_friction_range})
+        cfg.events["randomize_wheel_friction"] = EventTermCfg(func=dr.dof_frictionloss, mode="reset", params={"asset_cfg": SceneEntityCfg("robot", joint_names=WHEEL_JOINTS), "operation": "abs", "ranges": dr_cfg.wheel_friction_range})
 
     if dr_cfg.base_orientation:
         cfg.events["randomize_base_orientation"] = EventTermCfg(func=microduck_mdp.randomize_base_orientation, mode="reset", params={"asset_cfg": SceneEntityCfg("robot"), "max_pitch_deg": dr_cfg.base_orientation_max_pitch_deg, "max_roll_deg": dr_cfg.base_orientation_max_roll_deg})
