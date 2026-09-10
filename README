@@ -7,7 +7,9 @@
 
 teach a small robot duck to move!
 
-Microduck is a two-legged robot, about 800 g and 25 cm tall. This repo lets you teach it through trial and error in a physics simulator, then run what it learns on the real robot. It can learn to walk, get up after a fall, kick a ball and roller skate.
+Microduck is a two-legged robot, about 800 g and 25 cm tall. This repo lets you simulate it in MuJoCo and learn RL policies for it.
+
+It can learn to walk, get up after a fall, kick a ball and roller skate.
 
 This is a simplified fork of Pollen Robotics' original training code. They built the robot and did the original research:
 
