@@ -18,7 +18,7 @@
 # Phase is randomised per env on episode reset to de-correlate environments and
 # avoid synchronised oscillations.  PERIOD = 4 s (2 s down + 2 s up).
 #
-# ── mjlab 1.3.0 + canonical BAM ────────────────────────────────────────────────
+# mjlab 1.3.0 + canonical BAM
 # Migrated to match the velocity env's sim2real machinery: fixed (non-accumulating)
 # CoM / head-CoM / mass-inertia / friction / armature DR, obs-level IMU misalignment,
 # encoder-bias, obs normalization. The task-specific REGULARIZATION is deliberately
@@ -32,9 +32,9 @@
 # until SYMMETRY_CFG gets rewritten for the new obs structure.
 ENABLE_SYMMETRY = False
 
-# ── Domain randomisation toggles (matched to the velocity env) ────────────────
+# Domain randomisation toggles (matched to the velocity env)
 
-# ── Ranges (matched to the velocity env) ──────────────────────────────────────
+# Ranges (matched to the velocity env)
 
 import dataclasses
 
@@ -57,7 +57,7 @@ from .task_velocity import HEAD_BODY_NAMES, LOCAL_CHECKPOINTS_ONLY, MICRODUCK_RO
 DR = dataclasses.replace(task_dr.DEFAULT_DR, push_range=(-0.15, 0.15), push_play_interval_s=(2.0, 4.0))
 ENCODER_BIAS_RANGE = DR.encoder_bias_range
 
-# ── SEGMENTED phase profile (independent durations) ───────────────────────────
+# SEGMENTED phase profile (independent durations)
 # Instead of the sinusoidal weighting (which couples descent/hold/rise),
 # the rewards are gated by a 4-segment profile: SLOW descent and rise,
 # SHORT low hold, long standing rest.
@@ -89,20 +89,20 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
 
     foot_frictions_geom_names = ("left_foot_collision", "right_foot_collision")
 
-    # ── Base config ───────────────────────────────────────────────────────────
+    # Base config
     cfg = make_velocity_env_cfg()
 
     cfg.scene.entities = {"robot": MICRODUCK_GROUND_PICK_ROBOT_CFG}
     cfg.scene.sensors = (feet_ground_cfg, self_collision_cfg, head_impact_cfg)
     cfg.viewer.body_name = "trunk_base"
 
-    # ── Actions ───────────────────────────────────────────────────────────────
+    # Actions
     joint_pos_action = cfg.actions["joint_pos"]
     assert isinstance(joint_pos_action, JointPositionActionCfg)
     joint_pos_action.scale = 1.0
     # No NeckOffsetJointPositionAction — head joints are part of the task motion
 
-    # ── Rewards: remove walking-specific terms ────────────────────────────────
+    # Rewards: remove walking-specific terms
     for name in [
         "track_linear_velocity",
         "track_angular_velocity",
@@ -115,7 +115,7 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
         if name in cfg.rewards:
             del cfg.rewards[name]
 
-    # ── Rewards: main ground pick objectives ──────────────────────────────────
+    # Rewards: main ground pick objectives
 
     # Approach phase: reward mouth tip getting AS CLOSE AS POSSIBLE to the ground.
     # target_height=0 pulls the mouth towards the ground; std=0.10 gives gradient from
@@ -219,7 +219,7 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     # as possible without touching".
     cfg.rewards["head_impact_penalty"] = RewardTermCfg(func=microduck_mdp.body_impact_cost, weight=-2.0, params={"sensor_name": head_impact_cfg.name, "threshold": 1.0})
 
-    # ── Observations (identical 61D layout to walking policy) ──────────────────
+    # Observations (identical 61D layout to walking policy)
     del cfg.observations["actor"].terms["base_lin_vel"]
 
     cfg.observations["critic"].terms["base_lin_vel"] = ObservationTermCfg(func=mdp.base_lin_vel, scale=1.0)
@@ -232,7 +232,7 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
 
     microduck_mdp.wire_sim2real_obs(cfg, imu_delay_max_lag=3, imu_misalignment_deg=DR.imu_orientation_angle_deg if DR.imu_orientation else None, encoder_bias_range=DR.encoder_bias_range if DR.encoder_bias else None, sanitize_critic_sensors=False)
 
-    # ── Pad command vector to the unified 13D layout ──────────────────────────
+    # Pad command vector to the unified 13D layout
     # Ground-pick doesn't use head/body pose commands (the head is driven by the
     # task's phase motion), but all microduck policies share the same 61D obs
     # shape so the runtime can feed a single command buffer. The 10 trailing
@@ -241,7 +241,7 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
         cfg.observations[group].terms["head_command"] = ObservationTermCfg(func=microduck_mdp.zero_command_padding, params={"dim": 4})
         cfg.observations[group].terms["body_command"] = ObservationTermCfg(func=microduck_mdp.zero_command_padding, params={"dim": 6})
 
-    # ── Command: cyclic phase encoding ────────────────────────────────────────
+    # Command: cyclic phase encoding
     command: UniformVelocityCommandCfg = cfg.commands["twist"]
     command.rel_standing_envs = 0.0
     command.rel_heading_envs = 0.0
@@ -250,7 +250,7 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     # (slow -> no loss of balance), low hold ~0.6 s (short), rest ~2.4 s.
     cfg.commands["twist"] = microduck_mdp.GroundPickPhaseCommandCfg(**{**vars(command), "class_type": microduck_mdp.GroundPickPhaseCommand, "period": GP_PERIOD})
 
-    # ── Terminations ──────────────────────────────────────────────────────────
+    # Terminations
     # Terminate on NaN physics (extreme contact impulses) before it corrupts obs.
     cfg.terminations["nan_state"] = TerminationTermCfg(func=microduck_mdp.robot_state_is_nan, time_out=False)
 
@@ -269,7 +269,7 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     # (matching velocity) — the old event-based randomize_imu_orientation wrote
     # site_quat, a no-op under mjlab 1.3.0.
 
-    # ── Terrain ───────────────────────────────────────────────────────────────
+    # Terrain
     if not rough:
         cfg.scene.terrain.terrain_type = "plane"
         cfg.scene.terrain.terrain_generator = None
@@ -281,7 +281,7 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
             cfg.scene.terrain.terrain_generator.num_cols = 5
             cfg.scene.terrain.terrain_generator.num_rows = 5
 
-    # ── Curriculum ────────────────────────────────────────────────────────────
+    # Curriculum
     # Remove base curriculum terms not applicable here
     if not rough:
         del cfg.curriculum["terrain_levels"]
@@ -302,7 +302,7 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     return cfg
 
 
-# ── RL runner config ──────────────────────────────────────────────────────────
+# RL runner config
 
 MicroduckGroundPickRlCfg = RslRlOnPolicyRunnerCfg(
     actor=RslRlModelCfg(

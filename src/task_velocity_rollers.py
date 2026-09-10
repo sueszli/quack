@@ -30,9 +30,9 @@
 # layout and breaks on the 61D obs (same situation as all other v1.5+ envs).
 ENABLE_SYMMETRY = False
 
-# ── Domain randomisation toggles (matched to the velocity env) ────────────────
+# Domain randomisation toggles (matched to the velocity env)
 
-# ── Ranges (matched to the velocity env unless roller-specific) ───────────────
+# Ranges (matched to the velocity env unless roller-specific)
 
 from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.envs.mdp.actions import JointPositionActionCfg
@@ -107,7 +107,7 @@ def make_microduck_velocity_rollers_env_cfg(play: bool = False) -> ManagerBasedR
     # policy-side instead (action_over_limit reward below), baked into the network
     # so it transfers with the ONNX.
 
-    # === REWARDS ===
+    # REWARDS
     keep = {"pose", "upright", "body_ang_vel", "angular_momentum", "action_rate_l2"}
     for name in list(cfg.rewards.keys()):
         if name not in keep:
@@ -218,7 +218,7 @@ def make_microduck_velocity_rollers_env_cfg(play: bool = False) -> ManagerBasedR
     # heading_tracking (turning) once the stride is solid.
     cfg.rewards["heading_hold"] = RewardTermCfg(func=microduck_mdp.heading_hold_reward, weight=1.0, params={"std": 0.4, "asset_cfg": SceneEntityCfg("robot")})
 
-    # === TERMINATIONS ===
+    # TERMINATIONS
     cfg.terminations["nan_state"] = TerminationTermCfg(func=microduck_mdp.robot_state_is_nan, time_out=False)
 
     cfg.events["reset_action_history"] = EventTermCfg(func=microduck_mdp.reset_action_history, mode="reset")
@@ -229,7 +229,7 @@ def make_microduck_velocity_rollers_env_cfg(play: bool = False) -> ManagerBasedR
 
     task_dr.apply_dr(cfg, DR, HEAD_BODY_NAMES, play=play)
 
-    # === OBSERVATIONS (unified 61D layout) ===
+    # OBSERVATIONS (unified 61D layout)
     del cfg.observations["actor"].terms["base_lin_vel"]
     # 1.3.0 base template adds sensor-based foot_height + height_scan; the roller
     # env has no terrain-height sensor.
@@ -251,7 +251,7 @@ def make_microduck_velocity_rollers_env_cfg(play: bool = False) -> ManagerBasedR
         cfg.observations[group].terms["head_command"] = ObservationTermCfg(func=microduck_mdp.zero_command_padding, params={"dim": 4})
         cfg.observations[group].terms["body_command"] = ObservationTermCfg(func=microduck_mdp.zero_command_padding, params={"dim": 6})
 
-    # === COMMANDS ===
+    # COMMANDS
     command: UniformVelocityCommandCfg = cfg.commands["twist"]
     command.rel_standing_envs = 0.0
     command.rel_heading_envs = 0.0
@@ -269,7 +269,7 @@ def make_microduck_velocity_rollers_env_cfg(play: bool = False) -> ManagerBasedR
     cfg.scene.terrain.terrain_type = "plane"
     cfg.scene.terrain.terrain_generator = None
 
-    # === CURRICULUM ===
+    # CURRICULUM
     del cfg.curriculum["terrain_levels"]
     del cfg.curriculum["command_vel"]
 

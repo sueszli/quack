@@ -70,7 +70,7 @@ def make_microduck_spin_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     assert isinstance(joint_pos_action, JointPositionActionCfg)
     joint_pos_action.scale = 1.0
 
-    # === REWARDS ===
+    # REWARDS
     # ⚠️ angular_momentum is NOT kept: it penalizes the 3D norm of the angular
     # momentum, so it would directly fight the spin. body_ang_vel, on the other hand,
     # only penalizes x/y ("Don't penalize z-angular velocity" in mjlab) →
@@ -112,10 +112,10 @@ def make_microduck_spin_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     cfg.rewards["neck_joint_pos_l2"] = RewardTermCfg(func=microduck_mdp.neck_joint_pos_l2, weight=-0.2, params={"pattern": NECK_PATTERN_NO_YAW})
     cfg.rewards["joint_torques_l2"] = RewardTermCfg(func=microduck_mdp.joint_torques_l2, weight=-1e-3)
 
-    # === TERMINATIONS ===
+    # TERMINATIONS
     cfg.terminations["nan_state"] = TerminationTermCfg(func=microduck_mdp.robot_state_is_nan, time_out=False)
 
-    # === EVENTS ===
+    # EVENTS
     cfg.events["reset_action_history"] = EventTermCfg(func=microduck_mdp.reset_action_history, mode="reset")
     del cfg.events["foot_friction"]
 
@@ -128,7 +128,7 @@ def make_microduck_spin_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
 
     task_dr.apply_dr(cfg, DR, HEAD_BODY_NAMES, play=play)
 
-    # === OBSERVATIONS (unified 61D layout) ===
+    # OBSERVATIONS (unified 61D layout)
     del cfg.observations["actor"].terms["base_lin_vel"]
     del cfg.observations["critic"].terms["foot_height"]
     del cfg.observations["actor"].terms["height_scan"]
@@ -144,7 +144,7 @@ def make_microduck_spin_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
         cfg.observations[group].terms["head_command"] = ObservationTermCfg(func=microduck_mdp.zero_command_padding, params={"dim": 4})
         cfg.observations[group].terms["body_command"] = ObservationTermCfg(func=microduck_mdp.zero_command_padding, params={"dim": 6})
 
-    # === COMMAND: phase (like ground_pick / roller_crouch) ===
+    # COMMAND: phase (like ground_pick / roller_crouch)
     command: UniformVelocityCommandCfg = cfg.commands["twist"]
     command.rel_standing_envs = 0.0
     command.rel_heading_envs = 0.0
@@ -156,7 +156,7 @@ def make_microduck_spin_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     cfg.scene.terrain.terrain_type = "plane"
     cfg.scene.terrain.terrain_generator = None
 
-    # === CURRICULUM ===
+    # CURRICULUM
     del cfg.curriculum["terrain_levels"]
     del cfg.curriculum["command_vel"]
     cfg.curriculum["action_rate_weight"] = CurriculumTermCfg(func=microduck_mdp.reward_weight, params={"reward_name": "action_rate_l2", "weight_stages": [{"step": 0, "weight": -0.5}, {"step": 250 * 24, "weight": -0.8}, {"step": 500 * 24, "weight": -1.0}]})
