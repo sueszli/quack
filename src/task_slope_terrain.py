@@ -1,9 +1,3 @@
-# Custom "flat + descending ramp" terrain for the roller_slope task.
-#
-# The robot spawns on a flat zone, receives an impulse towards +x, rolls
-# to the ramp and lets itself glide down. The ramp angle is interpolated by
-# the difficulty (curriculum) over [RAMP_DEG_MIN, RAMP_DEG_MAX] degrees.
-
 from __future__ import annotations
 
 import math
@@ -18,30 +12,22 @@ RAMP_DEG_MAX = 20.0
 
 
 def ramp_angle_by_difficulty(difficulty: float, deg_min: float = RAMP_DEG_MIN, deg_max: float = RAMP_DEG_MAX) -> float:
-    # Ramp angle (radians) linearly interpolated by the difficulty [0,1].
     d = float(np.clip(difficulty, 0.0, 1.0))
     return math.radians(deg_min + d * (deg_max - deg_min))
 
 
 @dataclass(kw_only=True)
 class FlatRampTerrainCfg(SubTerrainCfg):
-    # Starting flat → descending ramp → exit flat.
-    #
-    # Three boxes aligned along +x:
-    #   1. starting flat (surface at z=0) where the robot spawns;
-    #   2. descending ramp, angle interpolated by the difficulty, HORIZONTAL
-    #      length drawn at random from ``ramp_length_range`` (one value per
-    #      tile, fixed at generation);
-    #   3. exit flat at the level of the bottom of the ramp, so the robot
-    #      lands on something solid instead of the void.
+    # Three boxes along +x: starting flat (surface at z=0), descending ramp,
+    # exit flat at the ramp's bottom so the robot lands on solid ground.
 
-    flat_length: float = 2.0  # starting flat (m)
-    ramp_length_range: tuple = (3.0, 8.0)  # horizontal ramp length (m), drawn at random
-    runout_length: float = 4.0  # exit flat at the bottom (m)
-    spawn_on_ramp: float = 0.3  # spawn this many m ON the ramp (gravity => rolling)
+    flat_length: float = 2.0
+    ramp_length_range: tuple = (3.0, 8.0)  # horizontal, drawn per tile at generation
+    runout_length: float = 4.0
+    spawn_on_ramp: float = 0.3  # gravity => rolling
     deg_min: float = RAMP_DEG_MIN
     deg_max: float = RAMP_DEG_MAX
-    thickness: float = 0.5  # box thickness (m)
+    thickness: float = 0.5
 
     def function(self, difficulty: float, spec: mujoco.MjSpec, rng) -> TerrainOutput:
         total_max = self.flat_length + self.ramp_length_range[1] + self.runout_length
@@ -50,32 +36,24 @@ class FlatRampTerrainCfg(SubTerrainCfg):
         angle = ramp_angle_by_difficulty(difficulty, self.deg_min, self.deg_max)
         width = self.size[1]
         t = self.thickness
-        # Ramp length drawn at random (deterministic for a given rng).
         ramp_length = float(rng.uniform(self.ramp_length_range[0], self.ramp_length_range[1]))
-        drop = ramp_length * math.tan(angle)  # elevation drop (m), positive
+        drop = ramp_length * math.tan(angle)
 
-        # 1) Starting flat: surface at z=0, x in [0, flat_length].
         flat = body.add_geom(type=mujoco.mjtGeom.mjGEOM_BOX, size=(self.flat_length / 2.0, width / 2.0, t / 2.0), pos=(self.flat_length / 2.0, 0.0, -t / 2.0))
 
-        # 2) Ramp: box rotated by +angle about +y (the +x edge goes down).
-        # Offset -(t/2)·sin(angle) in x: without it, the TOP edge of the inclined
-        # surface lands at x=flat_length+(t/2)sin(a) -> small gap between the
-        # flat platform (ends at flat_length) and the ramp. With it, the top of the
-        # ramp touches the platform edge exactly (clean join), and the bottom
-        # touches the exit flat exactly.
+        # The -(t/2)·sin(angle) x-offset closes the gap that would otherwise open
+        # between the platform edge and the top of the inclined surface.
         surf_len = ramp_length / math.cos(angle)
         ramp_cx = self.flat_length + ramp_length / 2.0 - (t / 2.0) * math.sin(angle)
         ramp_cz = -(drop / 2.0) - (t / 2.0) * math.cos(angle)
         half = angle / 2.0
         ramp = body.add_geom(type=mujoco.mjtGeom.mjGEOM_BOX, size=(surf_len / 2.0, width / 2.0, t / 2.0), pos=(ramp_cx, 0.0, ramp_cz), quat=(math.cos(half), 0.0, math.sin(half), 0.0))
 
-        # 3) Exit flat: surface at the level of the bottom of the ramp (z = -drop).
         runout_cx = self.flat_length + ramp_length + self.runout_length / 2.0
         runout = body.add_geom(type=mujoco.mjtGeom.mjGEOM_BOX, size=(self.runout_length / 2.0, width / 2.0, t / 2.0), pos=(runout_cx, 0.0, -drop - t / 2.0))
 
-        # Spawn slightly ON the ramp: gravity makes the wheels roll right
-        # away (momentum AT THE WHEELS, no base push that would slip), and the
-        # robot is already on the slope. z on the inclined surface at that distance.
+        # Spawning on the ramp starts the wheels rolling under gravity; a base push
+        # instead would skid.
         spawn_x = self.flat_length + self.spawn_on_ramp
         spawn_z = -self.spawn_on_ramp * math.tan(angle)
         origin = np.array([spawn_x, 0.0, spawn_z])
