@@ -1,19 +1,6 @@
-# `uv run publish` — put a policy on the Hub in the shape the microduck daemon loads.
-#
-#     # From a local checkpoint (exports with the normalizer baked in — the only safe path from a checkpoint)
-#     uv run publish --task Mjlab-PoliteBow-Flat-MicroDuck --checkpoint 3000 \
-#         --repo <user>/microduck-polite-bow --kind episodic --duration-s 4.0
-#
-#     # From an ONNX file you already exported
-#     uv run publish --onnx out.onnx --repo <user>/microduck-flamingo --kind perpetual --unwind-s 1.5
-#
-#     # A gait for a slot (no hold, no unwind: it runs until told otherwise)
-#     uv run publish --onnx walk.onnx --repo <user>/microduck-my-walk --kind perpetual --slot walk
-#
-# Either way the repo gets `policy.onnx`, a schema-2 `manifest.json` and a README, the file is
-# checked for the 61 -> 14 shape and smoke-run before anything is uploaded, and an existing
-# `policy.onnx` is not overwritten without `--force`. `--dry-run` writes the repo contents to a
-# local directory and stops.
+# Uploads policy.onnx + a schema-2 manifest.json + README in the shape the microduck daemon loads.
+# The ONNX is checked for the 61 -> 14 shape and smoke-run before anything is uploaded, and an
+# existing policy.onnx is never overwritten without --force.
 
 from __future__ import annotations
 
@@ -32,13 +19,11 @@ from .utils import data_path
 
 @dataclass(frozen=True)
 class PublishConfig:
-    # -- where it goes
     repo: str
     """Hub repo id, `<user-or-org>/microduck-<name>`. Created (private) if it does not exist."""
     kind: Literal["episodic", "perpetual"]
     """episodic: runs `duration_s` and comes back on its own. perpetual: holds until told."""
 
-    # -- where the weights come from: exactly one of (--task + checkpoint) or --onnx
     task: str | None = None
     """Task id to export from, e.g. Mjlab-PoliteBow-Flat-MicroDuck. Needs a checkpoint."""
     checkpoint: int | None = None
@@ -48,7 +33,6 @@ class PublishConfig:
     onnx: str | None = None
     """An already-exported ONNX. Validated, not re-exported."""
 
-    # -- what the manifest says
     name: str | None = None
     """What a client asks for (`robotctl robot do <name>`). Default: the repo's stem minus `microduck-`."""
     description: str | None = None
@@ -70,7 +54,6 @@ class PublishConfig:
     twist_help: str | None = None
     """Prose for `command.twist` when the slots mean something (flamingo: '[flag, side, 0]')."""
 
-    # -- how
     private: bool = True
     """Create the repo private (--no-private for public). Existing repos keep their visibility."""
     force: bool = False
@@ -91,7 +74,6 @@ def _fail(msg: str) -> NoReturn:
 
 
 def _resolve_weights(cfg: PublishConfig, workdir: Path) -> tuple[Path, dict]:
-    # The ONNX to publish and the provenance it carries. Exports when given a checkpoint.
     from_checkpoint = cfg.task is not None or cfg.checkpoint_file is not None
     if (cfg.onnx is None) == (not from_checkpoint):
         _fail("give exactly one source: --onnx <file>, or --task <id> with --checkpoint/--checkpoint-file")
@@ -107,8 +89,8 @@ def _resolve_weights(cfg: PublishConfig, workdir: Path) -> tuple[Path, dict]:
     if cfg.task is None:
         _fail("--checkpoint-file needs --task <id> to build the env it was trained in")
 
-    # Heavy imports only on this path: the ONNX path must work without a GPU or mjlab's registry.
-    import mjlab.tasks  # noqa: F401  (populates the registry)
+    # Heavy imports only on this path: the --onnx path must work without a GPU or mjlab's registry.
+    import mjlab.tasks  # noqa: F401
 
     from .export import ExportConfig, run_export
 
