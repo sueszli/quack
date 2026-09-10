@@ -25,7 +25,6 @@
 # kept HEAVIER than velocity's (slow careful reaching wants more damping than
 # walking) — see the regularisation block.
 
-import math
 
 # Symmetry — disabled for v1.5: SYMMETRY_CFG's _OBS_PERM is hardcoded for the
 # old 51D obs layout and breaks on the new 61D obs (which includes the
@@ -34,34 +33,12 @@ import math
 ENABLE_SYMMETRY = False
 
 # ── Domain randomisation toggles (matched to the velocity env) ────────────────
-ENABLE_COM_RANDOMIZATION = True
-ENABLE_HEAD_COM_RANDOMIZATION = True
-ENABLE_KP_RANDOMIZATION = False  # off, like velocity
-ENABLE_KD_RANDOMIZATION = False
-ENABLE_MASS_INERTIA_RANDOMIZATION = True
-ENABLE_JOINT_FRICTION_RANDOMIZATION = True  # scales BAM friction budget per-env
-ENABLE_JOINT_DAMPING_RANDOMIZATION = False
-ENABLE_ARMATURE_RANDOMIZATION = True  # reflected rotor inertia (affects BAM)
-ENABLE_VELOCITY_PUSHES = True
-ENABLE_IMU_ORIENTATION_RANDOMIZATION = True  # applied at obs level (per-env rotation)
-ENABLE_ENCODER_BIAS = True  # actor obs sees joint_pos + per-env bias
-ENABLE_BASE_ORIENTATION_RANDOMIZATION = False
 
 # ── Ranges (matched to the velocity env) ──────────────────────────────────────
-COM_RANDOMIZATION_RANGE = 0.003  # ±3mm initial, ramped via curriculum
-HEAD_COM_RANDOMIZATION_RANGE = 0.003  # ±3mm initial, ramped via curriculum
-MASS_INERTIA_RANDOMIZATION_RANGE = (0.95, 1.05)
-KP_RANDOMIZATION_RANGE = (0.85, 1.15)
-KD_RANDOMIZATION_RANGE = (0.9, 1.1)
-JOINT_FRICTION_RANDOMIZATION_RANGE = (0.9, 1.1)
-ARMATURE_RANDOMIZATION_RANGE = (0.9, 1.1)
-VELOCITY_PUSH_INTERVAL_S = (3.0, 6.0)
-VELOCITY_PUSH_RANGE = (-0.15, 0.15)  # quasi-static gesture -> gentle pushes (±0.3 made it fall even when upright)
-IMU_ORIENTATION_RANDOMIZATION_ANGLE = 6.0  # match velocity (was 1.0)
-ENCODER_BIAS_RANGE = (-0.015, 0.015)
+
+import dataclasses
 
 from mjlab.envs import ManagerBasedRlEnvCfg
-from mjlab.envs.mdp import dr
 from mjlab.envs.mdp.actions import JointPositionActionCfg
 from mjlab.managers import CurriculumTermCfg, EventTermCfg, ObservationTermCfg, RewardTermCfg, TerminationTermCfg
 from mjlab.managers.scene_entity_config import SceneEntityCfg
@@ -71,10 +48,14 @@ from mjlab.tasks.velocity import mdp
 from mjlab.tasks.velocity.mdp import UniformVelocityCommandCfg
 from mjlab.tasks.velocity.velocity_env_cfg import make_velocity_env_cfg
 
+from . import task_dr
 from . import task_mdp as microduck_mdp
 from .robot import MICRODUCK_GROUND_PICK_ROBOT_CFG
 from .task_symmetry import SYMMETRY_CFG, PpoWithSymmetryCfg
 from .task_velocity import HEAD_BODY_NAMES, LOCAL_CHECKPOINTS_ONLY, MICRODUCK_ROUGH_TERRAINS_CFG
+
+DR = dataclasses.replace(task_dr.DEFAULT_DR, push_range=(-0.15, 0.15), push_play_interval_s=(2.0, 4.0))
+ENCODER_BIAS_RANGE = DR.encoder_bias_range
 
 # ── SEGMENTED phase profile (independent durations) ───────────────────────────
 # Instead of the sinusoidal weighting (which couples descent/hold/rise),
@@ -249,7 +230,7 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     del cfg.observations["actor"].terms["height_scan"]
     del cfg.observations["critic"].terms["height_scan"]
 
-    microduck_mdp.wire_sim2real_obs(cfg, imu_delay_max_lag=3, imu_misalignment_deg=IMU_ORIENTATION_RANDOMIZATION_ANGLE if ENABLE_IMU_ORIENTATION_RANDOMIZATION else None, encoder_bias_range=ENCODER_BIAS_RANGE if ENABLE_ENCODER_BIAS else None, sanitize_critic_sensors=False)
+    microduck_mdp.wire_sim2real_obs(cfg, imu_delay_max_lag=3, imu_misalignment_deg=DR.imu_orientation_angle_deg if DR.imu_orientation else None, encoder_bias_range=DR.encoder_bias_range if DR.encoder_bias else None, sanitize_critic_sensors=False)
 
     # ── Pad command vector to the unified 13D layout ──────────────────────────
     # Ground-pick doesn't use head/body pose commands (the head is driven by the
@@ -273,11 +254,6 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     # Terminate on NaN physics (extreme contact impulses) before it corrupts obs.
     cfg.terminations["nan_state"] = TerminationTermCfg(func=microduck_mdp.robot_state_is_nan, time_out=False)
 
-    # ── Events ────────────────────────────────────────────────────────────────
-    # BAM (mjlab_frictionloss branch) writes per-env dof_frictionloss/dof_damping
-    # every step; this no-op event registers those fields for per-world expansion.
-    cfg.events["expand_bam_friction_fields"] = EventTermCfg(func=microduck_mdp.expand_bam_friction_fields, mode="startup")
-
     cfg.events["reset_action_history"] = EventTermCfg(func=microduck_mdp.reset_action_history, mode="reset")
 
     # Random weight "in the mouth": drawn per episode (10-40 g), applied when
@@ -287,45 +263,7 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     cfg.events["foot_friction"].params["ranges"] = (0.7, 1.3)  # match velocity
     cfg.events["reset_base"].params["pose_range"]["z"] = (0.12, 0.13)
 
-    if ENABLE_VELOCITY_PUSHES:
-        # Play: spaced-out interval (2-4 s) to judge the gesture on realistic
-        # behavior, not under a barrage (0.5-1 s was an aggressive stress test that
-        # made it "fall even when upright").
-        interval = (2.0, 4.0) if play else VELOCITY_PUSH_INTERVAL_S
-        cfg.events["push_robot"] = EventTermCfg(func=mdp.push_by_setting_velocity, mode="interval", interval_range_s=interval, params={"velocity_range": {"x": VELOCITY_PUSH_RANGE, "y": VELOCITY_PUSH_RANGE}, "asset_cfg": SceneEntityCfg("robot")})
-
-    if ENABLE_COM_RANDOMIZATION:
-        # mjlab 1.3.0: stock dr.body_ipos (operation="add") reads the compile-time
-        # default each reset → non-accumulating natively. Replaces the old
-        # mdp.randomize_field/body_ipos path (a no-op under 1.3.0).
-        cfg.events["randomize_com"] = EventTermCfg(func=dr.body_ipos, mode="reset", params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)), "operation": "add", "ranges": (-COM_RANDOMIZATION_RANGE, COM_RANDOMIZATION_RANGE)})
-
-    if ENABLE_HEAD_COM_RANDOMIZATION:
-        # Match velocity: randomize the CoM of the head-assembly bodies.
-        cfg.events["randomize_head_com"] = EventTermCfg(func=dr.body_ipos, mode="reset", params={"asset_cfg": SceneEntityCfg("robot", body_names=HEAD_BODY_NAMES), "operation": "add", "ranges": (-HEAD_COM_RANDOMIZATION_RANGE, HEAD_COM_RANDOMIZATION_RANGE)})
-
-    if ENABLE_KP_RANDOMIZATION or ENABLE_KD_RANDOMIZATION:
-        # Dormant (KP/KD off, like velocity). NOTE: randomize_delayed_actuator_gains
-        # predates canonical BAM; only enable after porting it to BamActuator.set_gains.
-        kp_range = KP_RANDOMIZATION_RANGE if ENABLE_KP_RANDOMIZATION else (1.0, 1.0)
-        kd_range = KD_RANDOMIZATION_RANGE if ENABLE_KD_RANDOMIZATION else (1.0, 1.0)
-        cfg.events["randomize_motor_gains"] = EventTermCfg(func=microduck_mdp.randomize_delayed_actuator_gains, mode="reset", params={"asset_cfg": SceneEntityCfg("robot"), "operation": "scale", "kp_range": kp_range, "kd_range": kd_range})
-
-    if ENABLE_MASS_INERTIA_RANDOMIZATION:
-        # Match velocity: physics-consistent mass+inertia via pseudo_inertia
-        # (alpha scales both by e^(2α), CoM untouched). Startup mode. The old
-        # custom randomize_mass_and_inertia was a no-op under mjlab 1.3.0.
-        _mi_lo, _mi_hi = MASS_INERTIA_RANDOMIZATION_RANGE
-        cfg.events["randomize_mass_inertia"] = EventTermCfg(func=dr.pseudo_inertia, mode="startup", params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)), "alpha_range": (math.log(_mi_lo) / 2.0, math.log(_mi_hi) / 2.0)})
-
-    if ENABLE_JOINT_FRICTION_RANDOMIZATION:
-        # Match velocity: scale BAM's friction budget per-env via the
-        # FrictionDRBamActuator hook (dof_frictionloss is zeroed under BAM).
-        cfg.events["randomize_joint_friction"] = EventTermCfg(func=microduck_mdp.randomize_bam_friction, mode="reset", params={"asset_cfg": SceneEntityCfg("robot"), "scale_range": JOINT_FRICTION_RANDOMIZATION_RANGE})
-
-    if ENABLE_ARMATURE_RANDOMIZATION:
-        # Match velocity: reflected rotor inertia (non-accumulating, affects BAM).
-        cfg.events["randomize_armature"] = EventTermCfg(func=dr.joint_armature, mode="reset", params={"asset_cfg": SceneEntityCfg("robot", joint_names=(r".*",)), "operation": "scale", "ranges": ARMATURE_RANDOMIZATION_RANGE})
+    task_dr.apply_dr(cfg, DR, HEAD_BODY_NAMES, play=play)
 
     # NOTE: IMU mounting-misalignment is applied at the OBSERVATION level above
     # (matching velocity) — the old event-based randomize_imu_orientation wrote
@@ -355,10 +293,10 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
 
     # CoM-randomization range curricula — match velocity (ramp 0.003 → 0.02 trunk,
     # 0.003 → 0.01 head).
-    if ENABLE_COM_RANDOMIZATION:
+    if DR.com:
         cfg.curriculum["com_range"] = CurriculumTermCfg(func=microduck_mdp.com_range_curriculum, params={"event_name": "randomize_com", "range_stages": [{"step": 0, "range": 0.003}, {"step": 500 * 24, "range": 0.005}, {"step": 1000 * 24, "range": 0.01}, {"step": 1500 * 24, "range": 0.015}, {"step": 2000 * 24, "range": 0.02}]})
 
-    if ENABLE_HEAD_COM_RANDOMIZATION:
+    if DR.head_com:
         cfg.curriculum["head_com_range"] = CurriculumTermCfg(func=microduck_mdp.com_range_curriculum, params={"event_name": "randomize_head_com", "range_stages": [{"step": 0, "range": 0.003}, {"step": 500 * 24, "range": 0.005}, {"step": 1000 * 24, "range": 0.01}]})
 
     return cfg
