@@ -92,13 +92,17 @@ Never launch a long run without one.
   is punished for correcting what it sees.
 - `-Backlash-` task variants must mirror their base task's robot model
   (walk / groundcontact / rollers) so backlash A/B comparisons are unconfounded.
+- **The codebase is comment-light.** Comment only what the code cannot state:
+  units, hardware/physics facts, why a magic constant has that value, sim2real
+  footguns. No docstrings or comments that restate what the code does — deleting
+  such a line is always an improvement.
 
 ## Building a new env — the workflow
 
 1. **Pick the closest template** and build on it, don't start from scratch:
    locomotion → the velocity recipe; episodic trick ending in a pose →
    standup; commanded two-state → sitstand; dynamic maneuver → roulade
-   (read its cfg docstring — it encodes a 5-run lesson arc). Building on
+   (read its cfg — it encodes a 5-run lesson arc). Building on
    `make_microduck_velocity*_env_cfg` keeps DR / obs / noise / delays in sync
    for free; if you build standalone from mjlab's base template, you must port
    the whole DR + obs-noise + NaN-guard stack yourself (grep for what velocity
