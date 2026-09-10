@@ -1,11 +1,5 @@
 .DEFAULT_GOAL := help
 
-# Task targets hardcode Mjlab-Velocity-Flat-MicroDuck (`make envs` lists the
-# rest; for those call `uv run train|play|export <TASK>` directly).
-# ARGS=... appends flags to the underlying command, e.g.
-#   make train ARGS="--agent.resume True --agent.load-checkpoint model_3000.pt"
-#   make play CKPT=... ARGS="--viewer viser"   # browser viewer on :8080
-
 .PHONY: help
 help: ## show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
