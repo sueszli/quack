@@ -1,22 +1,4 @@
-# Microduck roller crouch-glide task.
-#
-# One-shot gesture triggered by button A via the runtime's --ground-pick slot:
-# the robot crouches and glides on its momentum (~1 s plateau), then stands back up
-# and hands control back to the roller policy.
-#
-# Hybrid:
-#   - physics / roller robot  ← task_velocity_rollers.py
-#   - one-shot phase machinery ← task_ground_pick.py
-#     (GroundPickPhaseCommand command: [cos(2πφ), sin(2πφ), 0], period 4 s)
-#
-# "Trapezoid" height target (up→down→1 s plateau→up) via
-# crouch_glide_height_by_phase. Unified 61D obs → interchangeable at runtime.
-
-
 ENABLE_SYMMETRY = False
-
-# DR — taken from the roller env
-
 
 ENTRY_VELOCITY_X = (0.2, 0.5)  # m/s: the robot arrives rolling
 
@@ -31,12 +13,6 @@ DESCENT_END = 0.10
 HOLD_END = 0.50
 RISE_END = 0.60
 
-# Target CROUCHED pose (rad, by joint NAME) — composed in
-# a since-removed pose-editor script. The reward interpolates STANDING(HOME) <-> this pose
-# according to the phase. Resolution by name -> robust to interleaved wheels.
-# STANDING pose (start/end of the trick). Default = sim HOME (convention validated
-# equal to the robot reading). Replace these values with a read_pose.py reading
-# of the standing robot if you want a different standing stance.
 # ⚠️ at deployment, at the end of the trick the runtime hands control back to the roller policy
 # which restarts from HOME — keep STAND_POSE close to HOME for a clean return.
 STAND_POSE = {
@@ -98,8 +74,6 @@ ENCODER_BIAS_RANGE = DR.encoder_bias_range
 
 
 def make_microduck_roller_crouch_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
-    # Crouch-glide env on rollers, driven by the phase of the ground-pick slot.
-
     feet_ground_cfg = ContactSensorCfg(name="feet_ground_contact", primary=ContactMatch(mode="subtree", pattern=r"^(ankle_l_v1|ankle_r_v1)$", entity="robot"), secondary=ContactMatch(mode="body", pattern="terrain"), fields=("found", "force"), reduce="netforce", num_slots=1, track_air_time=True)
     self_collision_cfg = ContactSensorCfg(name="self_collision", primary=ContactMatch(mode="subtree", pattern="trunk_base", entity="robot"), secondary=ContactMatch(mode="subtree", pattern="trunk_base", entity="robot"), fields=("found",), reduce="none", num_slots=1)
 
@@ -112,7 +86,6 @@ def make_microduck_roller_crouch_env_cfg(play: bool = False) -> ManagerBasedRlEn
     assert isinstance(joint_pos_action, JointPositionActionCfg)
     joint_pos_action.scale = 1.0
 
-    # REWARDS
     keep = {"upright", "body_ang_vel", "angular_momentum", "action_rate_l2"}
     for name in list(cfg.rewards.keys()):
         if name not in keep:
@@ -125,30 +98,20 @@ def make_microduck_roller_crouch_env_cfg(play: bool = False) -> ManagerBasedRlEn
     cfg.rewards["angular_momentum"].weight = -0.02
     cfg.rewards["action_rate_l2"].weight = -1.0
 
-    # Main reward: POSE interpolated by the phase (STANDING <-> CROUCHED).
-    # Directive: tells the robot the exact joint configuration at every
-    # instant. "Standing up" (phase->1, target = HOME) is rewarded EXACTLY
-    # like "crouching" (plateau, target = CROUCH_POSE) — symmetric.
     _pose_params = {"command_name": "twist", "crouch_pose": CROUCH_POSE, "stand_pose": STAND_POSE, "descent_end": DESCENT_END, "hold_end": HOLD_END, "rise_end": RISE_END}
     cfg.rewards["crouch_glide_pose"] = RewardTermCfg(func=microduck_mdp.crouch_glide_pose_by_phase, weight=6.0, params={**_pose_params, "std": CROUCH_POSE_STD})
-    # L1 bootstrap: constant gradient towards the target even when the Gaussian
-    # saturates far from the pose.
     cfg.rewards["crouch_glide_pose_l1"] = RewardTermCfg(func=microduck_mdp.crouch_glide_pose_l1, weight=2.0, params=_pose_params)
-    # Keep the momentum (do not brake) — independent of the command.
     cfg.rewards["forward_speed"] = RewardTermCfg(func=microduck_mdp.forward_speed_reward, weight=1.0, params={"vel_ref": 0.2})
     # Slight forward lean during the crouch -> counters the backward tipping observed
     # on the real robot during the fast descent. Gated by the blend (crouch only).
     cfg.rewards["crouch_forward_lean"] = RewardTermCfg(func=microduck_mdp.crouch_forward_lean, weight=1.0, params={"command_name": "twist", "target_pitch": CROUCH_LEAN_PITCH, "std": 0.1, "descent_end": DESCENT_END, "hold_end": HOLD_END, "rise_end": RISE_END})
-    # Glide stability
     cfg.rewards["feet_flat"] = RewardTermCfg(func=microduck_mdp.feet_flat_penalty, weight=-2.0, params={"asset_cfg": SceneEntityCfg("robot", site_names=("left_foot", "right_foot")), "sensor_name": "feet_ground_contact"})
     cfg.rewards["self_collisions"] = RewardTermCfg(func=mdp.self_collision_cost, weight=-1.0, params={"sensor_name": "self_collision"})
     cfg.rewards["neck_action_rate_l2"] = RewardTermCfg(func=microduck_mdp.neck_action_rate_l2, weight=-0.5)
     cfg.rewards["joint_torques_l2"] = RewardTermCfg(func=microduck_mdp.joint_torques_l2, weight=-1e-3)
 
-    # TERMINATIONS
     cfg.terminations["nan_state"] = TerminationTermCfg(func=microduck_mdp.robot_state_is_nan, time_out=False)
 
-    # EVENTS
     cfg.events["reset_action_history"] = EventTermCfg(func=microduck_mdp.reset_action_history, mode="reset")
     del cfg.events["foot_friction"]
 
@@ -157,7 +120,6 @@ def make_microduck_roller_crouch_env_cfg(play: bool = False) -> ManagerBasedRlEn
 
     task_dr.apply_dr(cfg, DR, HEAD_BODY_NAMES, play=play)
 
-    # OBSERVATIONS (unified 61D layout)
     del cfg.observations["actor"].terms["base_lin_vel"]
     del cfg.observations["critic"].terms["foot_height"]
     del cfg.observations["actor"].terms["height_scan"]
@@ -173,7 +135,6 @@ def make_microduck_roller_crouch_env_cfg(play: bool = False) -> ManagerBasedRlEn
         cfg.observations[group].terms["head_command"] = ObservationTermCfg(func=microduck_mdp.zero_command_padding, params={"dim": 4})
         cfg.observations[group].terms["body_command"] = ObservationTermCfg(func=microduck_mdp.zero_command_padding, params={"dim": 6})
 
-    # COMMAND: phase (like ground_pick)
     command: UniformVelocityCommandCfg = cfg.commands["twist"]
     command.rel_standing_envs = 0.0
     command.rel_heading_envs = 0.0
@@ -185,7 +146,6 @@ def make_microduck_roller_crouch_env_cfg(play: bool = False) -> ManagerBasedRlEn
     cfg.scene.terrain.terrain_type = "plane"
     cfg.scene.terrain.terrain_generator = None
 
-    # CURRICULUM
     del cfg.curriculum["terrain_levels"]
     del cfg.curriculum["command_vel"]
     cfg.curriculum["action_rate_weight"] = CurriculumTermCfg(func=microduck_mdp.reward_weight, params={"reward_name": "action_rate_l2", "weight_stages": [{"step": 0, "weight": -0.5}, {"step": 250 * 24, "weight": -0.8}, {"step": 500 * 24, "weight": -1.0}]})
