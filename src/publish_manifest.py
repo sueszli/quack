@@ -130,7 +130,6 @@ def validate_manifest(manifest: dict[str, Any]) -> None:
     assert idle is None or len(idle) == 3, f"command.idle: 3-vector twist, got len {len(idle)}"
 
 
-# ---------------------------------------------------------------------------------------------
 # The ONNX file: the shape gate the daemon applies at load, applied before the upload.
 
 
@@ -207,7 +206,6 @@ def smoke_run_onnx(path: Path, steps: int = 50, seed: int = 0) -> None:
     assert spread > 0.0, f"{path.name}: output never changes over {steps} steps"
 
 
-# ---------------------------------------------------------------------------------------------
 # What else goes in the repo.
 
 

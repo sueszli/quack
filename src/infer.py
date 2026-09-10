@@ -554,7 +554,7 @@ class PolicyInference:
         else:
             print(f"Body cmd: z={self.body_cmd[0] * 1000:.1f}mm  pitch={math.degrees(self.body_cmd[1]):.1f}°  roll={math.degrees(self.body_cmd[2]):.1f}°")
 
-    # --- body command bumpers (index differs between legacy 3D and new 6D) ---
+    # body command bumpers (index differs between legacy 3D and new 6D)
     def _body_idx(self, axis: str) -> int:
         # Map an axis name to the body_cmd index, depending on the active mode.
         if self.new_cmd_obs:

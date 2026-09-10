@@ -32,7 +32,7 @@
 
 import math
 
-# ── Kicking foot: "right" or "left" ───────────────────────────────────────────
+# Kicking foot: "right" or "left"
 # Flips the ball spawn side and the support-foot (anti-hop) sensor. Everything
 # else is left/right symmetric (HOME pose has mirrored signs). Train the two
 # policies as separate runs — the experiment/run name follows this flag.
@@ -42,11 +42,11 @@ assert KICK_FOOT in ("right", "left")
 # Symmetry — must stay OFF: the kick task is inherently one-footed.
 ENABLE_SYMMETRY = False
 
-# ── Domain randomisation (matched to velocity / standup) ─────────────────────
+# Domain randomisation (matched to velocity / standup)
 
-# ── Ranges (matched to velocity / standup) ───────────────────────────────────
+# Ranges (matched to velocity / standup)
 
-# ── Task constants ────────────────────────────────────────────────────────────
+# Task constants
 # Long enough for kick + several seconds of ball-rolling reward + settle-back.
 EPISODE_LENGTH_S = 5.0
 
@@ -114,7 +114,7 @@ def make_microduck_ball_kick_env_cfg(play: bool = False, kick_foot: str | None =
 
     foot_frictions_geom_names = ("left_foot_collision", "right_foot_collision")
 
-    # ── Base config ───────────────────────────────────────────────────────────
+    # Base config
     cfg = make_velocity_env_cfg()
 
     # Full-collision robot (same spec as standup/ground-pick): the ball must be
@@ -131,12 +131,12 @@ def make_microduck_ball_kick_env_cfg(play: bool = False, kick_foot: str | None =
     # on top of the full-collision robot's budget).
     cfg.sim.nconmax = 50
 
-    # ── Actions ───────────────────────────────────────────────────────────────
+    # Actions
     joint_pos_action = cfg.actions["joint_pos"]
     assert isinstance(joint_pos_action, JointPositionActionCfg)
     joint_pos_action.scale = 1.0
 
-    # ── Rewards: drop walking-specific terms ──────────────────────────────────
+    # Rewards: drop walking-specific terms
     for name in [
         "track_linear_velocity",
         "track_angular_velocity",
@@ -150,7 +150,7 @@ def make_microduck_ball_kick_env_cfg(play: bool = False, kick_foot: str | None =
         if name in cfg.rewards:
             del cfg.rewards[name]
 
-    # ── Rewards: kick objective — TARGET speed, not max speed ────────────────
+    # Rewards: kick objective — TARGET speed, not max speed
     # Two-sided landscape peaking at BALL_TARGET_SPEED (0.25 m/s — a gentle tap):
     #   • ball_forward_velocity, linear and CAPPED at the target: dense
     #     bootstrap gradient from the first touch. Weight 12.0 = 3.0/target so
@@ -174,7 +174,7 @@ def make_microduck_ball_kick_env_cfg(play: bool = False, kick_foot: str | None =
     # exploits (any gait loses this reward half the time).
     cfg.rewards["support_foot_grounded"] = RewardTermCfg(func=microduck_mdp.single_foot_grounded_reward, weight=2.0, params={"sensor_name": support_foot_ground_cfg.name})
 
-    # ── Rewards: stand cleanly before/after the kick ──────────────────────────
+    # Rewards: stand cleanly before/after the kick
     # Legs at HOME. std=0.5 is deliberately loose: the kick itself is a big
     # transient leg deviation and must stay affordable.
     cfg.rewards["pose_stand_legs"] = RewardTermCfg(
@@ -199,7 +199,7 @@ def make_microduck_ball_kick_env_cfg(play: bool = False, kick_foot: str | None =
     # Trunk at standing height — discourages crouching/squatting as a kick prep.
     cfg.rewards["height_stand"] = RewardTermCfg(func=microduck_mdp.height_target_gaussian, weight=1.0, params={"std": 0.04, "target_height": STAND_Z, "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))})
 
-    # ── Sim2real regularisers — velocity parity (see standup env rationale) ──
+    # Sim2real regularisers — velocity parity (see standup env rationale)
     cfg.rewards["action_rate_l2"].weight = -0.1  # stage-0; curriculum ramps to -1.0
     cfg.rewards["body_ang_vel"].params["asset_cfg"].body_names = ("trunk_base",)
     cfg.rewards["body_ang_vel"].weight = -0.05
@@ -207,7 +207,7 @@ def make_microduck_ball_kick_env_cfg(play: bool = False, kick_foot: str | None =
 
     cfg.rewards["self_collisions"] = RewardTermCfg(func=mdp.self_collision_cost, weight=-1.0, params={"sensor_name": self_collision_cfg.name})
 
-    # ── Observations (unified 61D actor layout, ball-blind) ───────────────────
+    # Observations (unified 61D actor layout, ball-blind)
     del cfg.observations["actor"].terms["base_lin_vel"]
 
     cfg.observations["critic"].terms["base_lin_vel"] = ObservationTermCfg(func=mdp.base_lin_vel, scale=1.0)
@@ -231,7 +231,7 @@ def make_microduck_ball_kick_env_cfg(play: bool = False, kick_foot: str | None =
     cfg.observations["critic"].terms["ball_position"] = ObservationTermCfg(func=microduck_mdp.ball_pos_in_base, params={"asset_name": "ball"})
     cfg.observations["critic"].terms["ball_velocity"] = ObservationTermCfg(func=microduck_mdp.ball_vel_in_base, params={"asset_name": "ball"})
 
-    # ── Command: tiny noise around zero (obs-shape parity only) ───────────────
+    # Command: tiny noise around zero (obs-shape parity only)
     command = cfg.commands["twist"]
     command.rel_standing_envs = 0.0
     command.rel_heading_envs = 0.0
@@ -244,7 +244,7 @@ def make_microduck_ball_kick_env_cfg(play: bool = False, kick_foot: str | None =
     command.ranges.ang_vel_z = (-0.05, 0.05)
     cfg.commands["twist"] = microduck_mdp.VelocityCommandCommandOnlyCfg(**vars(command))
 
-    # ── Terminations ──────────────────────────────────────────────────────────
+    # Terminations
     # fell_over KEPT (robot starts standing and must stay up through the kick).
     cfg.terminations["nan_state"] = TerminationTermCfg(func=microduck_mdp.robot_state_is_nan, time_out=False)
 
@@ -280,11 +280,11 @@ def make_microduck_ball_kick_env_cfg(play: bool = False, kick_foot: str | None =
 
     task_dr.apply_dr(cfg, DR, HEAD_BODY_NAMES, play=play)
 
-    # ── Terrain: flat only (a ball on rough terrain is a different task) ──────
+    # Terrain: flat only (a ball on rough terrain is a different task)
     cfg.scene.terrain.terrain_type = "plane"
     cfg.scene.terrain.terrain_generator = None
 
-    # ── Curriculum ────────────────────────────────────────────────────────────
+    # Curriculum
     del cfg.curriculum["terrain_levels"]
     del cfg.curriculum["command_vel"]
 
@@ -309,7 +309,7 @@ def make_microduck_ball_kick_env_cfg(play: bool = False, kick_foot: str | None =
     return cfg
 
 
-# ── RL runner config ──────────────────────────────────────────────────────────
+# RL runner config
 
 MicroduckBallKickRlCfg = RslRlOnPolicyRunnerCfg(
     actor=RslRlModelCfg(
