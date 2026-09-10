@@ -7,7 +7,7 @@
 
 debloated microduck RL framework
 
-quack: RL training environments for Microduck, a ~800 g, 25 cm bipedal robot with 14 Dynamixel XL330 servos. Built on mjlab (MuJoCo Warp) + PPO (rsl_rl). Policies train at 50 Hz and export to ONNX for the robot runtime (robotd/robotctl, a separate repo). Servos are simulated with the BAM XL330 voltage/friction model; at this scale actuator fidelity is most of the sim2real gap.
+RL training environments for Microduck, a ~800 g, 25 cm bipedal robot with 14 Dynamixel XL330 servos. Built on mjlab (MuJoCo Warp) + PPO (rsl_rl). Policies train at 50 Hz and export to ONNX for the robot runtime (robotd/robotctl, a separate repo). Servos are simulated with the BAM XL330 voltage/friction model; at this scale actuator fidelity is most of the sim2real gap.
 
 SETUP
 
