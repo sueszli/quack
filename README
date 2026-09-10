@@ -5,29 +5,23 @@
 \__, /\__,_/\__,_/\___/_/|_|
   /_/
 
-debloated microduck RL framework
+teach a small robot duck to move
 
-Microduck: ~800 g, 25 cm bipedal robot, 14 Dynamixel XL330 servos. Train
-locomotion and tricks in mjlab (MuJoCo Warp) with PPO (rsl_rl), export ONNX,
-deploy with the runtime in the microduck repo.
+Microduck is a two-legged robot, about 800 g and 25 cm tall. This repo lets
+you teach it through trial and error in a physics simulator, then run what it
+learns on the real robot. It can learn to walk, get up after a fall, kick a
+ball and roller skate.
 
-Credit: the robot, the physics and the RL recipes are Pollen Robotics' work --
-https://github.com/pollen-robotics/microduck_rl (upstream, Apache-2.0) and
-https://github.com/pollen-robotics/microduck (the robot). This fork keeps the
-science and drops the scaffolding: no Hugging Face or wandb in the training
-path, English-only comments, a flat src/ namespace package with one
-task_<name>.py per env, dead code and stale docs removed. Track upstream for
-the authoritative version; come here to read the whole thing in an afternoon.
+This is a simplified fork of Pollen Robotics' original training code. They
+built the robot and did the original research:
 
-START HERE
+    https://github.com/pollen-robotics/microduck_rl
+    https://github.com/pollen-robotics/microduck
 
-Needs a CUDA GPU, uv and make.
+You'll need a graphics card that supports CUDA, plus uv and make.
 
-    make sync      # install the venv
-    make help      # every target, from the smoke test to the ONNX export
-    make envs      # every registered task
+    make sync    # install
+    make help    # list every target
 
-Then point your coding agent at CLAUDE.md and ask. It documents the tasks, the
-env-building workflow, the sim2real invariants and the reward-design rules
-that were each learned the hard way -- everything the code does not say out
-loud. The rest of this repo is small enough to read.
+Work with a coding agent. Have it read CLAUDE.md for the tasks, workflow and
+rules learned the hard way, then ask it your questions.
