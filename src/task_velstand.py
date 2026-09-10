@@ -1,7 +1,3 @@
-# Walking + fall recovery in one policy: the velocity recipe verbatim, plus a
-# recovery reward layer gated on actually being fallen, on the all-collision standup
-# robot (the body can physically lie down).
-#
 # Curriculum phases: clean walking first (fell_over active), then falls become
 # recovery opportunities (fell_over disabled, fallen_too_long recycles failures),
 # then prone/crouch inits ramp in. Prone is capped at 45% so the walking data share
@@ -20,7 +16,6 @@ from .robot import MICRODUCK_STANDUP_ROBOT_CFG
 from .task_symmetry import PpoWithSymmetryCfg
 from .task_velocity import LOCAL_CHECKPOINTS_ONLY, make_microduck_velocity_env_cfg
 
-# PPO iterations; the env step counter scales by num_steps_per_env.
 FELL_OVER_DISABLE_ITER = 500
 NUM_STEPS_PER_ENV = 24
 
@@ -158,7 +153,6 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
 
     cfg.terminations["fallen_too_long"] = TerminationTermCfg(func=microduck_mdp.fallen_too_long, time_out=False, params={"gate_z_below": TERM_GATE_Z, "gate_tilt_above_deg": TERM_GATE_TILT_DEG, "max_duration_s": FALLEN_TIMEOUT_S})
 
-    # Falls become recovery training instead of episode ends.
     if not play:
         cfg.curriculum["fell_over_disable"] = CurriculumTermCfg(func=microduck_mdp.termination_param_curriculum, params={"term_name": "fell_over", "param_stages": [{"step": 0, "params": {"limit_angle": math.radians(70.0)}}, {"step": FELL_OVER_DISABLE_ITER * NUM_STEPS_PER_ENV, "params": {"limit_angle": math.pi}}]})
 

@@ -61,7 +61,6 @@ def _get_tensors(device: torch.device) -> tuple[torch.Tensor, torch.Tensor, torc
 
 
 def microduck_vel_symmetry(env, obs: TensorDict | None, actions: torch.Tensor | None) -> tuple[TensorDict | None, torch.Tensor | None]:
-    # rsl_rl symmetry_cfg interface: returns [original; mirrored] along the batch axis.
     aug_obs: TensorDict | None = None
     aug_actions: torch.Tensor | None = None
 
