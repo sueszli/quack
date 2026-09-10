@@ -1,43 +1,14 @@
 # A microduck body in MuJoCo, served to the real `robotd` over TCP.
 #
-#     uv run duck-body                      # one duck, a viewer
-#     uv run duck-body --ducks 4            # four, sharing one world and one window
-#     uv run duck-body --port 7801
-#     uv run duck-body --headless           # no window, for tests and for many ducks
-#
-# Then, on the daemon side:
-#
-#     robotd --sim 127.0.0.1:7801
-#
-# One duck per TCP port, from `--port` upwards, and one `mj_step` for all of them — so ducks share
-# a floor and can bump into each other, which is the difference between a room with four robots in
-# it and four robots on the same screen.
-#
-# Everything above `duck_control::io::RobotIo` is the code that runs on a real robot — the 50 Hz loop,
-# the ONNX policies, safety, fall detection, odometry, kinematics, every IPC call. This process is the
-# only part that knows there is no robot.
-#
-# **Why this repo.** It already owns the scenes, the BAM actuator models fitted to the real XL330s and
-# mjlab; serving a body to a daemon is the mirror of the sim2real it does today. The daemon-side half
-# lives in `microduck` because it implements an in-repo trait against an in-repo protocol.
-#
-# ## The protocol
-#
 # Newline-delimited JSON over TCP, one request and one answer per line, `protocol` checked in the
 # handshake — the two halves live in two repositories, so "your simulator is old" and "your daemon is
 # old" must not be the same symptom. `duck_control::sim` is the other end and carries the reasoning
 # for TCP-not-a-unix-socket and JSON-not-a-packed-struct.
 #
-# ## Two mappings this side owns, on purpose
-#
 # **Fifteen joints out here, fourteen in the model.** The daemon indexes joints as `JOINT_NAMES`,
 # which includes `mouth` at index 9; no alpha policy drives it and the walking model does not have it.
 # The daemon must not learn that, so this inserts and drops it. Where the knowledge about a model's
 # own shape lives is the whole reason the protocol carries the robot's units rather than MuJoCo's.
-#
-# **Gravity, not just orientation.** The policy observes projected gravity in the trunk frame. MuJoCo
-# gives an orientation quaternion, so this does the rotation — the same arithmetic the IMU's SFLP
-# filter does on the robot, on the other side of the same wire.
 
 from __future__ import annotations
 
@@ -84,7 +55,6 @@ SCENES = MJCF_DIR
 # against, whose actuator default classes carry `contype="0" conaffinity="0"`, so the robot collides
 # with nothing and sinks through a floor the scene really does contain.
 DEFAULT_SCENE = SCENES / "scene.xml"
-# The robot with no floor and no scenery — what extra ducks are attached from.
 ROBOT_ONLY = SCENES / "robot_allcollisions.xml"
 
 # Far enough apart not to touch at rest, close enough to be in one screenful.
@@ -97,17 +67,10 @@ NOMINAL_TEMP_C = 32.0
 
 
 def duck_prefix(index: int) -> str:
-    # `""` for the first duck — it is the scene's own — and `d1_`, `d2_` … for attached ones.
     return "" if index == 0 else f"d{index}_"
 
 
 def build_world(scene: Path, count: int) -> mujoco.MjModel:
-    # One model holding `count` ducks, so they share a floor and can bump into each other.
-    #
-    # The scene already contains one duck; the rest are attached to it under a name prefix, which is
-    # what `MjSpec` is for. Sharing a world rather than running N simulators is the whole point: two
-    # ducks in separate physics can be beside each other on a screen and never touch, and "beside each
-    # other" is what every social behaviour is about.
     if count == 1:
         return mujoco.MjModel.from_xml_path(str(scene))
 
@@ -122,11 +85,6 @@ def build_world(scene: Path, count: int) -> mujoco.MjModel:
 
 
 def pose_table(scene: Path, keyframe: str) -> tuple[dict[str, float] | None, float]:
-    # A named pose from the scene's keyframes, as joint name → angle.
-    #
-    # Read from a single-duck model and applied by name, because attaching a robot does not bring the
-    # scene's keyframes with it — and a pose is a fact about the robot, not about how many of them are
-    # in the room.
     if keyframe.upper() == "HOME":
         return None, HOME_TRUNK_Z
     model = mujoco.MjModel.from_xml_path(str(scene))
@@ -144,8 +102,6 @@ def pose_table(scene: Path, keyframe: str) -> tuple[dict[str, float] | None, flo
 
 
 def gravity_in_trunk(quat: np.ndarray) -> np.ndarray:
-    # World gravity in the trunk frame. Upright is `[0, 0, -1]`.
-    #
     # What the policy actually observes, and it is here rather than in the daemon because the daemon's
     # IMU delivers exactly this, already rotated, from the sensor's own filter.
     rotation = np.zeros(9)
@@ -154,8 +110,6 @@ def gravity_in_trunk(quat: np.ndarray) -> np.ndarray:
 
 
 class World:
-    # The physics, shared by every duck in it.
-    #
     # One `mj_step` advances all of them, which is what makes a shove real rather than decorative. The
     # lock is held only to copy numbers in or out, never across a step: a daemon asking for sensors
     # must not wait on the solver, for the same reason a real bus read does not wait on a servo.
@@ -168,8 +122,6 @@ class World:
         self.bodies: list[Body] = []
 
     def step(self, times: int = 1) -> None:
-        # Advance the world, taking the lock once for the whole batch.
-        #
         # **Batched because the lock is the bottleneck, not the solver.** Four daemons at 50 Hz make
         # 400 requests a second, each of which wants this lock, and Python hands the GIL around
         # between every one of them — so a physics loop taking and releasing it 200 times a second
@@ -178,17 +130,12 @@ class World:
         with self.lock:
             for _ in range(times):
                 mujoco.mj_step(self.model, self.data)
-                # A duck nobody has enabled yet is put back where it was. Physics is shared, so
-                # it cannot simply not be stepped — and a hand steadying one robot while another
-                # walks about is an ordinary thing for a room to contain.
                 for body in self.bodies:
                     if not body.released:
                         body.restore()
 
 
 class Body:
-    # One duck's view of the world: its joints, its actuators, its trunk.
-
     def __init__(self, world: World, index: int, limp: bool = False, kp: float = 200.0):
         self.world = world
         self.index = index
@@ -212,11 +159,7 @@ class Body:
 
         self.qpos_adr = np.array([model.jnt_qposadr[model.actuator_trnid[a, 0]] for a in self.actuators])
         self.qvel_adr = np.array([model.jnt_dofadr[model.actuator_trnid[a, 0]] for a in self.actuators])
-        # The depth sensor, on the model's own `tof` site — so a head that turns takes it along,
-        # which is what makes `robot.look` a way to scan a room.
         self.tof = Tof(model, ident(mujoco.mjtObj.mjOBJ_SITE, "tof"), seed=index)
-        # Built only when this duck is one of `--cameras`: a renderer costs 12 ms a frame, which is
-        # forty times what stepping four ducks' physics costs.
         self.camera: Camera | None = None
         self.trunk = int(model.jnt_qposadr[ident(mujoco.mjtObj.mjOBJ_JOINT, "trunk_base_freejoint")])
         self.trunk_dof = int(model.jnt_dofadr[ident(mujoco.mjtObj.mjOBJ_JOINT, "trunk_base_freejoint")])
@@ -233,8 +176,6 @@ class Body:
         self.torque_on = not limp
         self.kp = kp
         self.held = None
-
-    # placement
 
     def place(self, pose: dict[str, float] | None, trunk_z: float, offset_y: float) -> None:
         data = self.world.data
@@ -257,7 +198,6 @@ class Body:
         self.held = (data.qpos[self.trunk : self.trunk + 7].copy(), data.qpos[self.qpos_adr].copy())
 
     def restore(self) -> None:
-        # Put this duck back where it was, for the one that has not been enabled yet.
         if self.held is None:
             return
         trunk, joints = self.held
@@ -266,8 +206,6 @@ class Body:
         data.qpos[self.qpos_adr] = joints
         data.qvel[self.trunk_dof : self.trunk_dof + 6] = 0.0
         data.qvel[self.qvel_adr] = 0.0
-
-    # what the daemon sees
 
     def sensors(self) -> dict:
         data = self.world.data
@@ -301,9 +239,6 @@ class Body:
             # a vertical trunk has gravity [0, 0, -1] too — and because a simulator whose seconds are
             # not seconds ruins a policy silently.
             "trunk_z": trunk_z,
-            # Where this duck is in the room. No robot knows that either — it is here so a simulated
-            # radio can decide who is close enough to hear whom, which is the one thing a real BLE
-            # advertisement gets for free and a faked one has to be told.
             "trunk": trunk,
             "sim_time": sim_time,
             "imu": {"gyro": [float(v) for v in gyro], "gravity": [float(v) for v in gravity_in_trunk(quat)], "quat": [float(v) for v in quat]},
@@ -313,15 +248,11 @@ class Body:
         return {"volts": NOMINAL_VOLTS, "temps_c": [NOMINAL_TEMP_C] * len(JOINT_NAMES)}
 
     def depth(self) -> dict:
-        # One 8x8 depth frame, in the units `tofd` publishes.
-        #
         # Sixty-four ray casts, so this is the most expensive thing here — asked for at the sensor's
         # own 15 Hz rather than the control loop's 50, exactly as the hardware is.
         with self.world.lock:
             distance_mm, status = self.tof.frame(self.world.data)
         return {"rows": ROWS, "cols": COLS, "distance_mm": distance_mm, "status": status}
-
-    # what the daemon commands
 
     def set_targets(self, wire_targets: list[float]) -> None:
         assert len(wire_targets) == len(JOINT_NAMES), f"want {len(JOINT_NAMES)} targets, got {len(wire_targets)}"
@@ -344,8 +275,6 @@ class Body:
             self._apply_torque()
 
     def _apply_torque(self) -> None:
-        # Torque off means limp, not frozen.
-        #
         # Refusing to command a fallen robot only freezes it in the pose it fell in — which is why
         # `RobotIo::set_gain` exists at all. Zero gain is the simulated equivalent of cutting power.
         # The daemon's kp is a Dynamixel register value whose 200 is what BAM fitted the model's own
@@ -357,8 +286,6 @@ class Body:
 
 
 class Handler(socketserver.StreamRequestHandler):
-    # One duck's daemon. One connection at a time, which is the real relationship too.
-
     def handle(self) -> None:
         self.connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         body: Body = self.server.body
@@ -402,8 +329,6 @@ class Server(socketserver.ThreadingTCPServer):
 
 
 def run(world: World, headless: bool) -> None:
-    # Step in real time.
-    #
     # **Real time, not as fast as possible.** The daemon's loop is wall-clock and its health gate
     # fails below 45 of 50 Hz, so a simulator running at its own pace does not merely look wrong — it
     # makes every duck report unhealthy and the updater start rolling releases back.
@@ -412,8 +337,6 @@ def run(world: World, headless: bool) -> None:
         try:
             import mujoco.viewer
 
-            # No side panels: this window is for watching ducks, and everything the panels would
-            # drive belongs to the daemons.
             viewer = mujoco.viewer.launch_passive(world.model, world.data, show_left_ui=False, show_right_ui=False)
         except Exception as error:
             print(f"== no viewer ({error}); running headless", flush=True)
@@ -427,7 +350,6 @@ def run(world: World, headless: bool) -> None:
     # the scene on this thread, and with several ducks in it that is the difference between keeping
     # real time and not.
     passes_per_frame = max(1, round((1.0 / 30.0) / period))
-    # The cameras, at their own rate — slower than the viewer and far slower than physics.
     eyes = [b for b in world.bodies if b.camera is not None]
     passes_per_eye = max(1, round((1.0 / CAMERA_FPS) / period))
     step = 0
