@@ -42,25 +42,7 @@ Needs a CUDA GPU, uv, make.
 
     git clone https://github.com/sueszli/quack && cd quack
     make sync
-    make tests
-
-WORKFLOW
-
-    make envs      list tasks
-    make smoke     64 envs, 5 iters -- run before every long run
-    make train     4096 envs, 6000 iters, ~1-2 h for a usable gait
-    make play CKPT=logs/rsl_rl/velocity/<run>/model_3000.pt
-    make export CKPT=3000    -> weights/output.onnx, obs normalizer baked in
-    make infer     CPU MuJoCo deployment rehearsal
-
-- resume: make train ARGS="--agent.resume True
-  --agent.load-checkpoint model_3000.pt"
-- headless GPU viewer: make play ... ARGS="--viewer viser" (browser on :8080)
-- make targets hardcode Mjlab-Velocity-Flat-MicroDuck; for other tasks:
-
-    uv run train  <TASK> --env.scene.num-envs 4096 --agent.max_iterations 6000
-    uv run play   <TASK> --checkpoint-file logs/rsl_rl/<exp>/<run>/model_N.pt
-    uv run export <TASK> --checkpoint N
+    make help    # every target, from smoke test to ONNX export
 
 - checkpoints: logs/rsl_rl/<exp>/<run>/, <exp> = the cfg's experiment_name.
   --checkpoint N uses the newest run, --checkpoint-file <path> any run.
