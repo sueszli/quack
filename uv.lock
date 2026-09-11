@@ -822,6 +822,7 @@ source = { editable = "." }
 dependencies = [
     { name = "better-actuator-models" },
     { name = "huggingface-hub" },
+    { name = "matplotlib" },
     { name = "mjlab" },
     { name = "onnxruntime" },
     { name = "scipy" },
@@ -834,6 +835,7 @@ dependencies = [
 requires-dist = [
     { name = "better-actuator-models", git = "https://github.com/Rhoban/bam.git?branch=mjlab_frictionloss" },
     { name = "huggingface-hub", specifier = ">=0.27.0" },
+    { name = "matplotlib", specifier = ">=3.9" },
     { name = "mjlab", specifier = "==1.3.0" },
     { name = "onnxruntime", specifier = ">=1.24.4" },
     { name = "scipy", specifier = ">=1.16" },
