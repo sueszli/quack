@@ -66,7 +66,8 @@ def _set_pose(env, z, pitch_deg):
 
 
 def _run(env, steps, **kw):
-    out = None
+    assert steps >= 1
+    out = torch.zeros(env.num_envs)
     for _ in range(steps):
         out = microduck_mdp.head_pose_bias_penalty(env, tau_s=1.0, **kw)
     return out

@@ -1,5 +1,6 @@
 from src import task_mdp as microduck_mdp
 from src.task_spin import MicroduckSpinRlCfg, make_microduck_spin_env_cfg
+from src.task_symmetry import PpoWithSymmetryCfg
 
 
 def test_cfg_uses_phase_command_with_runtime_default_period():
@@ -46,7 +47,9 @@ def test_entry_velocity_allows_standstill_and_slow_roll():
 
 
 def test_symmetry_augmentation_is_disabled():
-    assert MicroduckSpinRlCfg.algorithm.symmetry_cfg is None
+    algorithm = MicroduckSpinRlCfg.algorithm
+    assert isinstance(algorithm, PpoWithSymmetryCfg)
+    assert algorithm.symmetry_cfg is None
 
 
 def test_leg_antisymmetry_shaping_decays():

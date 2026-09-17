@@ -78,9 +78,8 @@ def test_body_pose_tracking_6d_maps_each_angle_to_its_command_slot(axis, index):
     swapped = torch.zeros(1, 6)
     swapped[0, 3 + (index - 3 + 1) % 3] = angle
 
-    kwargs = {"nominal_height": 0.0, "xy_std": 1.0, "z_std": 1.0, "angle_std": math.radians(2)}
-    reward_matched = microduck_mdp.body_pose_tracking_6d(_Env(quat, matched), **kwargs)
-    reward_swapped = microduck_mdp.body_pose_tracking_6d(_Env(quat, swapped), **kwargs)
+    reward_matched = microduck_mdp.body_pose_tracking_6d(_Env(quat, matched), nominal_height=0.0, xy_std=1.0, z_std=1.0, angle_std=math.radians(2))
+    reward_swapped = microduck_mdp.body_pose_tracking_6d(_Env(quat, swapped), nominal_height=0.0, xy_std=1.0, z_std=1.0, angle_std=math.radians(2))
 
     assert reward_matched.item() == pytest.approx(1.0, abs=1e-4)
     assert reward_swapped.item() < 0.9

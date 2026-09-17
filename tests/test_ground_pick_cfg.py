@@ -1,5 +1,5 @@
 from src.task_ground_pick import make_microduck_ground_pick_env_cfg
-from src.task_mdp import GroundPickPhaseCommand
+from src.task_mdp import GroundPickPhaseCommand, GroundPickPhaseCommandCfg
 
 
 def test_ground_pick_cfg_task_space_rewards():
@@ -34,6 +34,7 @@ def test_ground_pick_mouth_payload_wired():
 def test_ground_pick_cfg_command_is_phase():
     cfg = make_microduck_ground_pick_env_cfg()
     cmd = cfg.commands["twist"]
+    assert isinstance(cmd, GroundPickPhaseCommandCfg)
     assert cmd.class_type is GroundPickPhaseCommand
 
 
