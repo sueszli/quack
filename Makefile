@@ -63,3 +63,7 @@ export: ## checkpoint -> weights/output.onnx, obs normalizer baked in; CKPT=3000
 .PHONY: infer
 infer: ## CPU MuJoCo deployment rehearsal of weights/output.onnx
 	uv run infer --walking weights/output.onnx --new-cmd-obs $(ARGS)
+
+.PHONY: types
+types: ## type check over source code
+	uvx pyright
