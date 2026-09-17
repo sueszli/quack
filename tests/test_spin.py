@@ -1,4 +1,5 @@
 import math
+from typing import Any
 
 import torch
 
@@ -104,11 +105,16 @@ class _FakeSensor:
         self.data = _FakeSensorData(current_contact_time)
 
 
-class _FakeEnv:
+class _FakeEnvImpl:
     def __init__(self, entity, cmd=None, sensors=None):
         self.scene = {"robot": entity, **(sensors or {})}
         self.command_manager = _FakeCommandManager(cmd)
         self.device = "cpu"
+
+
+# the mdp functions under test only read a couple of env attributes; a real
+# ManagerBasedRlEnv needs a compiled model, so the stand-in is typed loosely
+_FakeEnv: Any = _FakeEnvImpl
 
 
 def _phase_cmd(phases):

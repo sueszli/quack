@@ -1,3 +1,5 @@
+from typing import Any
+
 import torch
 
 from src import task_mdp as microduck_mdp
@@ -38,12 +40,17 @@ class _Asset:
         self.data = data
 
 
-class _Env:
+class _EnvImpl:
     def __init__(self, n, force):
         self.num_envs = n
         self.device = "cpu"
         asset = _Asset(_AssetData(n))
         self.scene = _Scene({"feet": _Sensor(_SensorData(force=force))}, asset)
+
+
+# the mdp functions under test only read a couple of env attributes; a real
+# ManagerBasedRlEnv needs a compiled model, so the stand-in is typed loosely
+_Env: Any = _EnvImpl
 
 
 def _force(n, bad_env=None, value=float("nan")):

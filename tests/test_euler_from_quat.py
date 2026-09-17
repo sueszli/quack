@@ -1,4 +1,5 @@
 import math
+from typing import Any
 
 import pytest
 import torch
@@ -43,10 +44,15 @@ class _Scene:
         return self._asset
 
 
-class _Env:
+class _EnvImpl:
     def __init__(self, quat, cmd):
         self.scene = _Scene(_Data(quat))
         self.command_manager = type("C", (), {"get_command": lambda _s, _n: cmd})()
+
+
+# the mdp functions under test only read a couple of env attributes; a real
+# ManagerBasedRlEnv needs a compiled model, so the stand-in is typed loosely
+_Env: Any = _EnvImpl
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])

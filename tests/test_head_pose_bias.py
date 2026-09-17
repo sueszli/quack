@@ -1,4 +1,5 @@
 import math
+from typing import Any
 
 import torch
 
@@ -36,7 +37,7 @@ class _Cmd:
         return self.cmd
 
 
-class _Env:
+class _EnvImpl:
     def __init__(self, n):
         self.num_envs = n
         self.device = "cpu"
@@ -47,6 +48,11 @@ class _Env:
         self._head_pose_neck_ids = torch.tensor([0, 1, 2, 3])
         self._head_pose_bl_ids = torch.tensor([0, 0, 0, 0])
         self._head_pose_bl_mask = torch.zeros(4)
+
+
+# the mdp functions under test only read a couple of env attributes; a real
+# ManagerBasedRlEnv needs a compiled model, so the stand-in is typed loosely
+_Env: Any = _EnvImpl
 
 
 GATE = {"gate_height_low": 0.09, "gate_height_high": 0.11, "gate_tilt_full_deg": 20.0, "gate_tilt_zero_deg": 45.0}

@@ -1,4 +1,5 @@
 import re
+from typing import Any
 
 import torch
 
@@ -22,7 +23,7 @@ class _Asset:
         return ids, None
 
 
-class _Env:
+class _EnvImpl:
     def __init__(self, omegas):
         self._a = _Asset(_Data(omegas))
 
@@ -32,6 +33,11 @@ class _Env:
     @property
     def scene(self):
         return self
+
+
+# the mdp functions under test only read a couple of env attributes; a real
+# ManagerBasedRlEnv needs a compiled model, so the stand-in is typed loosely
+_Env: Any = _EnvImpl
 
 
 def test_rewards_forward_roll_below_cap():
