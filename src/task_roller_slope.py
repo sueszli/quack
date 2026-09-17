@@ -50,7 +50,7 @@ VOID_FLOOR = -_MAX_DROP - 0.5
 def make_microduck_roller_slope_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     cfg = make_microduck_velocity_rollers_env_cfg(play=play)
 
-    cfg.scene.terrain = TerrainEntityCfg(
+    terrain = TerrainEntityCfg(
         terrain_type="generator",
         terrain_generator=TerrainGeneratorCfg(
             size=TILE_SIZE,
@@ -62,13 +62,15 @@ def make_microduck_roller_slope_env_cfg(play: bool = False) -> ManagerBasedRlEnv
         ),
         max_init_terrain_level=0,  # curriculum: start on the gentlest ramp
     )
+    cfg.scene.terrain = terrain
 
     if play:
         play_difficulty = _resolve_play_difficulty()
         if play_difficulty is not None:
-            cfg.scene.terrain.terrain_generator.difficulty_range = (play_difficulty, play_difficulty)
+            assert terrain.terrain_generator is not None
+            terrain.terrain_generator.difficulty_range = (play_difficulty, play_difficulty)
         else:
-            cfg.scene.terrain.max_init_terrain_level = None
+            terrain.max_init_terrain_level = None
 
     command = cfg.commands["twist"]
     command.rel_standing_envs = 1.0

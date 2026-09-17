@@ -323,12 +323,14 @@ def make_microduck_velocity_env_cfg(play: bool = False, rough: bool = False) -> 
         params={"command_name": "head_pose", "tau_s": 1.0},
     )
 
+    terrain = cfg.scene.terrain
+    assert terrain is not None
     if not rough:
-        cfg.scene.terrain.terrain_type = "plane"
-        cfg.scene.terrain.terrain_generator = None
+        terrain.terrain_type = "plane"
+        terrain.terrain_generator = None
     else:
-        cfg.scene.terrain.terrain_type = "generator"
-        cfg.scene.terrain.terrain_generator = MICRODUCK_ROUGH_TERRAINS_CFG
+        terrain.terrain_type = "generator"
+        terrain.terrain_generator = MICRODUCK_ROUGH_TERRAINS_CFG
 
         cfg.scene.spec_fn = _soften_terrain_contacts
 
@@ -345,9 +347,9 @@ def make_microduck_velocity_env_cfg(play: bool = False, rough: bool = False) -> 
         cfg.sim.mujoco.ls_iterations = 50
 
         if play:
-            cfg.scene.terrain.terrain_generator.curriculum = False
-            cfg.scene.terrain.terrain_generator.num_cols = 5
-            cfg.scene.terrain.terrain_generator.num_rows = 5
+            terrain.terrain_generator.curriculum = False
+            terrain.terrain_generator.num_cols = 5
+            terrain.terrain_generator.num_rows = 5
 
     cfg.curriculum["action_rate_weight"] = CurriculumTermCfg(func=microduck_mdp.reward_weight, params={"reward_name": "action_rate_l2", "weight_stages": [{"step": 0, "weight": -0.1}, {"step": 500 * NUM_STEPS_PER_ENV, "weight": -0.2}, {"step": 750 * NUM_STEPS_PER_ENV, "weight": -0.4}, {"step": 1000 * NUM_STEPS_PER_ENV, "weight": -0.6}, {"step": 1250 * NUM_STEPS_PER_ENV, "weight": -0.8}, {"step": 1500 * NUM_STEPS_PER_ENV, "weight": -1.0}]})
 

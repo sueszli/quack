@@ -64,8 +64,10 @@ def test_obs_parity_with_roller_env():
 
 def test_terrain_is_plain_plane():
     cfg = make_microduck_roller_standup_env_cfg()
-    assert cfg.scene.terrain.terrain_type == "plane"
-    assert cfg.scene.terrain.terrain_generator is None
+    terrain = cfg.scene.terrain
+    assert terrain is not None
+    assert terrain.terrain_type == "plane"
+    assert terrain.terrain_generator is None
 
 
 def test_task_is_registered():

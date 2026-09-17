@@ -143,8 +143,10 @@ def make_microduck_roller_crouch_env_cfg(play: bool = False) -> ManagerBasedRlEn
     # cycle at phase 0). Avoids learning "stay low" from already-low starts.
     cfg.commands["twist"] = microduck_mdp.GroundPickPhaseCommandCfg(**{**vars(command), "class_type": microduck_mdp.GroundPickPhaseCommand, "period": CROUCH_PERIOD, "randomize_phase": False})
 
-    cfg.scene.terrain.terrain_type = "plane"
-    cfg.scene.terrain.terrain_generator = None
+    terrain = cfg.scene.terrain
+    assert terrain is not None
+    terrain.terrain_type = "plane"
+    terrain.terrain_generator = None
 
     del cfg.curriculum["terrain_levels"]
     del cfg.curriculum["command_vel"]

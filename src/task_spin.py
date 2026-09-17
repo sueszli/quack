@@ -118,8 +118,10 @@ def make_microduck_spin_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     # button at deployment. 20 s episode = 5 full cycles of the gesture.
     cfg.commands["twist"] = microduck_mdp.GroundPickPhaseCommandCfg(**{**vars(command), "class_type": microduck_mdp.GroundPickPhaseCommand, "period": SPIN_PERIOD, "randomize_phase": False})
 
-    cfg.scene.terrain.terrain_type = "plane"
-    cfg.scene.terrain.terrain_generator = None
+    terrain = cfg.scene.terrain
+    assert terrain is not None
+    terrain.terrain_type = "plane"
+    terrain.terrain_generator = None
 
     del cfg.curriculum["terrain_levels"]
     del cfg.curriculum["command_vel"]

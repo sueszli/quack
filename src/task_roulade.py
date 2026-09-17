@@ -249,8 +249,10 @@ def make_microduck_roulade_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
 
     task_dr.apply_dr(cfg, DR, HEAD_BODY_NAMES, play=play)
 
-    cfg.scene.terrain.terrain_type = "plane"
-    cfg.scene.terrain.terrain_generator = None
+    terrain = cfg.scene.terrain
+    assert terrain is not None
+    terrain.terrain_type = "plane"
+    terrain.terrain_generator = None
 
     if "terrain_levels" in cfg.curriculum:
         del cfg.curriculum["terrain_levels"]

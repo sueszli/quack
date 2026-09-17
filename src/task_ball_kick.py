@@ -204,8 +204,10 @@ def make_microduck_ball_kick_env_cfg(play: bool = False, kick_foot: str | None =
 
     task_dr.apply_dr(cfg, DR, HEAD_BODY_NAMES, play=play)
 
-    cfg.scene.terrain.terrain_type = "plane"
-    cfg.scene.terrain.terrain_generator = None
+    terrain = cfg.scene.terrain
+    assert terrain is not None
+    terrain.terrain_type = "plane"
+    terrain.terrain_generator = None
 
     del cfg.curriculum["terrain_levels"]
     del cfg.curriculum["command_vel"]
