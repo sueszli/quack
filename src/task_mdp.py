@@ -221,7 +221,7 @@ def _fallen_mask(env: ManagerBasedRlEnv, asset, gate_z_below: float, gate_tilt_a
     # below `gate_z_below` OR tilt beyond `gate_tilt_above_deg`. Used to gate the
     # recovery rewards so they only steer while actually fallen and contribute
     # exactly zero during clean walking (no walk tax / bounce farming).
-    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0)
+    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2], nan=0.0)
     quat = asset.data.root_link_quat_w
     # cos(tilt) = R22 = 1 - 2(qx² + qy²)
     cos_tilt = 1.0 - 2.0 * (quat[:, 1] ** 2 + quat[:, 2] ** 2)
@@ -277,7 +277,7 @@ def height_progress(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT
     # can farm it. Capped at ``ceiling`` (just below full-stand trunk z ≈ 0.117)
     # so hopping above stance height pays nothing extra.
     asset: Entity = env.scene[asset_cfg.name]
-    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0)
+    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2], nan=0.0)
     pot = torch.clamp(z, max=ceiling)
     if not hasattr(env, "_height_potential_prev"):
         env._height_potential_prev = pot.clone()
@@ -305,7 +305,7 @@ def fallen_state_penalty(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DE
     fallen = _fallen_mask(env, asset, 0.0, gate_tilt_above_deg).bool()
     if release_tilt_below_deg is None:
         return fallen.float()
-    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0)
+    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2], nan=0.0)
     quat = asset.data.root_link_quat_w
     cos_tilt = 1.0 - 2.0 * (quat[:, 1] ** 2 + quat[:, 2] ** 2)
     up = cos_tilt > math.cos(math.radians(release_tilt_below_deg))
@@ -322,7 +322,7 @@ def fallen_state_penalty(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DE
 
 def recovery_success(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, fallen_tilt_deg: float = 40.0, min_fallen_s: float = 0.5, up_tilt_deg: float = 25.0, up_z: float = 0.105) -> torch.Tensor:
     asset: Entity = env.scene[asset_cfg.name]
-    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0)
+    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2], nan=0.0)
     quat = asset.data.root_link_quat_w
     cos_tilt = 1.0 - 2.0 * (quat[:, 1] ** 2 + quat[:, 2] ** 2)
     fallen = cos_tilt < math.cos(math.radians(fallen_tilt_deg))
@@ -371,7 +371,7 @@ def upright_gaussian_at_height(env: ManagerBasedRlEnv, std: float, height_low: f
     qy = quat[:, 2]
     tilt_sq = 2.0 * (qx * qx + qy * qy)
     upright_g = torch.exp(-tilt_sq / (std * std))
-    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0)
+    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2], nan=0.0)
     t = torch.clamp((z - height_low) / max(height_high - height_low, 1e-6), 0.0, 1.0)
     smooth = t * t * (3.0 - 2.0 * t)
     return upright_g * smooth
@@ -396,7 +396,7 @@ def body_ang_vel_at_height(env: ManagerBasedRlEnv, height_low: float, height_hig
     asset = env.scene[asset_cfg.name]
     ang_vel = asset.data.body_link_ang_vel_w[:, asset_cfg.body_ids, :].squeeze(1)
     cost = torch.sum(torch.square(ang_vel[:, :2]), dim=1)
-    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0)
+    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2], nan=0.0)
     t = torch.clamp((z - height_low) / max(height_high - height_low, 1e-6), 0.0, 1.0)
     gate = t * t * (3.0 - 2.0 * t)
     if tilt_full_deg is not None:
@@ -411,7 +411,7 @@ def body_ang_vel_at_height(env: ManagerBasedRlEnv, height_low: float, height_hig
 def standing_composite_score(env: ManagerBasedRlEnv, target_height: float, height_std: float, upright_std: float, pose_std: float, joint_indices: list, target_overrides: dict | None = None, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
     asset = env.scene[asset_cfg.name]
 
-    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0)
+    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2], nan=0.0)
     height_score = torch.exp(-(((z - target_height) / height_std) ** 2))
 
     quat = asset.data.root_link_quat_w
@@ -441,7 +441,7 @@ def com_upward_velocity(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEF
     # upward motion still pays immediately.
     asset: Entity = env.scene[asset_cfg.name]
     # nan_to_num: MuJoCo can produce NaN on contact instability; treat as z=0
-    com_z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0)
+    com_z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2], nan=0.0)
     vz = torch.nan_to_num(asset.data.root_link_lin_vel_w[:, 2], nan=0.0)
     below_target = (com_z < max_height).float()
     reward = torch.clamp(vz, min=0.0, max=max_vz) * below_target
@@ -588,7 +588,7 @@ def com_height_target(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAU
     # env_origins[:, 2] is 0 for flat ground, so this is safe unconditionally.
     # nan_to_num: MuJoCo can produce NaN on contact instability; treat as z=0
     # so the penalty is finite (small, since 0 is near the target range).
-    com_height = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0)
+    com_height = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2], nan=0.0)
 
     below_min = com_height < target_height_min
     above_max = com_height > target_height_max
@@ -844,13 +844,13 @@ def pose_l1_penalty(env: ManagerBasedRlEnv, target_overrides: dict | None = None
 
 def height_target_gaussian(env: ManagerBasedRlEnv, target_height: float, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, std: float = 0.02) -> torch.Tensor:
     asset = env.scene[asset_cfg.name]
-    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0)
+    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2], nan=0.0)
     return torch.exp(-(((z - target_height) / std) ** 2))
 
 
 def height_l1_penalty(env: ManagerBasedRlEnv, target_height: float, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
     asset = env.scene[asset_cfg.name]
-    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0)
+    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2], nan=0.0)
     return -torch.abs(z - target_height)
 
 
@@ -889,7 +889,7 @@ def upright_while_tall(env: ManagerBasedRlEnv, height_low: float, height_high: f
     qx = quat[:, 1]
     qy = quat[:, 2]
     upright = 1.0 - 2.0 * (qx * qx + qy * qy)
-    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0)
+    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2], nan=0.0)
     t = torch.clamp((z - height_low) / max(height_high - height_low, 1e-6), 0.0, 1.0)
     smooth = t * t * (3.0 - 2.0 * t)
     return upright * smooth
@@ -2060,7 +2060,7 @@ def head_pose_bias_penalty(env: ManagerBasedRlEnv, command_name: str = "head_pos
     err = (measured - asset.data.default_joint_pos[:, neck_ids]) - cmd
 
     if gate_height_low is not None:
-        z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0)
+        z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2], nan=0.0)
         t = torch.clamp((z - gate_height_low) / max(gate_height_high - gate_height_low, 1e-6), 0.0, 1.0)
         gate = t * t * (3.0 - 2.0 * t)
         quat = asset.data.root_link_quat_w
@@ -2095,7 +2095,7 @@ def body_pose_tracking_6d(env: ManagerBasedRlEnv, command_name: str = "body_pose
     # Position relative to env spawn origin. nan_to_num because MuJoCo can
     # produce NaN on contact instability and we don't want to taint the reward.
     pos_w = asset.data.root_link_pos_w
-    origin = env.scene.terrain.env_origins
+    origin = env.scene.env_origins
     rel = torch.nan_to_num(pos_w - origin, nan=0.0)
     x_err = rel[:, 0] - dx
     y_err = rel[:, 1] - dy
@@ -2166,7 +2166,7 @@ def body_pose_tracking_locomotion(env: ManagerBasedRlEnv, command_name: str = "b
     y_body = -sin_y * dx_w + cos_y * dy_w
 
     # Z relative to spawn-origin terrain height (still in world).
-    origin = env.scene.terrain.env_origins
+    origin = env.scene.env_origins
     z_world = torch.nan_to_num(pos_w[:, 2] - origin[:, 2], nan=0.0)
 
     # Feet yaws → circular mean. NOTE: this depends on the site orientation
@@ -2312,7 +2312,7 @@ def reset_ball_in_front_of_foot(env: ManagerBasedRlEnv, env_ids: torch.Tensor, o
     pose = torch.zeros(n, 7, device=env.device)
     pose[:, 0] = root[:, 0] + cos_y * off[:, 0] - sin_y * off[:, 1]
     pose[:, 1] = root[:, 1] + sin_y * off[:, 0] + cos_y * off[:, 1]
-    pose[:, 2] = env.scene.terrain.env_origins[env_ids, 2] + ball_radius
+    pose[:, 2] = env.scene.env_origins[env_ids, 2] + ball_radius
     pose[:, 3] = 1.0
     ball.write_root_link_pose_to_sim(pose, env_ids)
     ball.write_root_link_velocity_to_sim(torch.zeros(n, 6, device=env.device), env_ids)
@@ -2646,7 +2646,7 @@ class SitStandCommand(UniformVelocityCommand):
         self.vel_command_b[env_ids, 0] = sit
 
     def _alpha_from_height(self) -> torch.Tensor:
-        z = torch.nan_to_num(self.robot.data.root_link_pos_w[:, 2] - self._env_ref.scene.terrain.env_origins[:, 2], nan=self._stand_z)
+        z = torch.nan_to_num(self.robot.data.root_link_pos_w[:, 2] - self._env_ref.scene.env_origins[:, 2], nan=self._stand_z)
         return torch.clamp((self._stand_z - z) / max(self._stand_z - self._sit_z, 1e-6), 0.0, 1.0)
 
     def compute(self, dt: float) -> None:
@@ -2707,7 +2707,7 @@ def _posture_height(env: ManagerBasedRlEnv, command_name: str, sit_z: float, sta
     blend = _posture_blend(env, command_name)
     target_z = stand_z + blend * (sit_z - stand_z)
     asset = env.scene["robot"]
-    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0)
+    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2], nan=0.0)
     return target_z, z
 
 
@@ -2826,7 +2826,7 @@ def posture_rise_bootstrap(env: ManagerBasedRlEnv, command_name: str, max_height
     # an explosive launch can't out-earn a gentle one).
     asset = env.scene[asset_cfg.name]
     sit = env.command_manager.get_command(command_name)[:, 0]
-    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0)
+    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2], nan=0.0)
     vz = torch.nan_to_num(asset.data.root_link_lin_vel_w[:, 2], nan=0.0)
     return torch.clamp(vz, min=0.0, max=max_vz) * (z < max_height).float() * (1.0 - sit)
 
@@ -3077,7 +3077,7 @@ def roulade_upright_after_roll(env: ManagerBasedRlEnv, gate_lo: float = math.rad
 def roulade_height_after_roll(env: ManagerBasedRlEnv, target_height: float, std: float = 0.04, gate_lo: float = math.radians(260.0), gate_hi: float = math.radians(330.0), asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
     asset: Entity = env.scene[asset_cfg.name]
     _update_roulade_accum(env, asset)
-    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0)
+    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2], nan=0.0)
     g = torch.exp(-(((z - target_height) / std) ** 2))
     return g * _roulade_completion_gate(env, gate_lo, gate_hi, require_head=True)
 
@@ -3088,7 +3088,7 @@ def roulade_landing_sharp(env: ManagerBasedRlEnv, target_height: float, height_s
     quat = asset.data.root_link_quat_w
     tilt_sq = 2.0 * (quat[:, 1].pow(2) + quat[:, 2].pow(2))
     upright_g = torch.exp(-tilt_sq / (upright_std * upright_std))
-    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0)
+    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2], nan=0.0)
     height_g = torch.exp(-(((z - target_height) / height_std) ** 2))
     gate = _roulade_completion_gate(env, gate_lo, gate_hi, require_head=True)
     return upright_g * height_g * gate
@@ -3097,7 +3097,7 @@ def roulade_landing_sharp(env: ManagerBasedRlEnv, target_height: float, height_s
 def roulade_stand_tax(env: ManagerBasedRlEnv, target_height: float, gate_lo: float = math.radians(260.0), gate_hi: float = math.radians(330.0), asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
     asset: Entity = env.scene[asset_cfg.name]
     _update_roulade_accum(env, asset)
-    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0)
+    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2], nan=0.0)
     shortfall = torch.clamp(target_height - z, min=0.0)
     return -shortfall * _roulade_completion_gate(env, gate_lo, gate_hi, require_head=True)
 
@@ -3105,7 +3105,7 @@ def roulade_stand_tax(env: ManagerBasedRlEnv, target_height: float, gate_lo: flo
 def roulade_rise_velocity(env: ManagerBasedRlEnv, max_height: float = 0.125, gate_lo: float = math.radians(180.0), gate_hi: float = math.radians(260.0), asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
     asset: Entity = env.scene[asset_cfg.name]
     _update_roulade_accum(env, asset)
-    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0)
+    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2], nan=0.0)
     vz = torch.nan_to_num(asset.data.root_link_lin_vel_w[:, 2], nan=0.0)
     reward = torch.clamp(vz, min=0.0) * (z < max_height).float()
     return reward * _roulade_completion_gate(env, gate_lo, gate_hi, require_head=True)

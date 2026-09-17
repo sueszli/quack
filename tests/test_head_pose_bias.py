@@ -19,15 +19,10 @@ class _Asset:
         self.data = data
 
 
-class _Terrain:
-    def __init__(self, n):
-        self.env_origins = torch.zeros(n, 3)
-
-
 class _Scene:
     def __init__(self, asset, n):
         self._asset = asset
-        self.terrain = _Terrain(n)
+        self.env_origins = torch.zeros(n, 3)
 
     def __getitem__(self, _):
         return self._asset

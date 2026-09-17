@@ -37,7 +37,7 @@ class _Data:
 class _Scene:
     def __init__(self, data):
         self._asset = type("A", (), {"data": data})()
-        self.terrain = type("T", (), {"env_origins": torch.zeros(len(data.root_link_quat_w), 3)})()
+        self.env_origins = torch.zeros(len(data.root_link_quat_w), 3)
 
     def __getitem__(self, _):
         return self._asset
