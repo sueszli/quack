@@ -13,6 +13,7 @@ import threading
 import time
 import tty
 from pathlib import Path
+from typing import Any
 
 import mujoco
 import mujoco.viewer
@@ -46,22 +47,27 @@ BAM_STIFF_SOLREF_FRICTION = (-5.0e4, -2.0e2)
 BAM_STIFF_SOLIMP_FRICTION = (0.99, 0.9999, 0.001, 0.5, 2.0)
 
 
-def load_bam_model(kp_fw: float, vin: float, max_current):
+# bam.Model grows kt/R/actuator at runtime (Actuator.initialize creates them),
+# and MujocoController's `actuator` accepts the list of names its docstring
+# documents but annotates as str, so both are Any here.
+def load_bam_model(kp_fw: float, vin: float, max_current) -> Any:
     from bam.model import load_model
 
-    bam_model = load_model(motor_name=BAM_MOTOR_NAME, model=BAM_MODEL)
+    bam_model: Any = load_model(motor_name=BAM_MOTOR_NAME, model=BAM_MODEL)
     bam_model.actuator.kp = kp_fw
     bam_model.actuator.vin = vin
     bam_model.actuator.max_current = max_current if (max_current and max_current > 0) else None
     return bam_model
 
 
-def load_mujoco_with_bam(xml_path: str, bam_model, timestep: float, vin_drop_gain, vin_min):
+def load_mujoco_with_bam(xml_path: str, bam_model: Any, timestep: float, vin_drop_gain, vin_min):
     # Mirrors bam.mjlab.BamActuator.edit_spec (what warp does at training time):
     # position actuators -> torque motors with the voltage-bounded forcerange,
     # joint damping/frictionloss zeroed (BAM rewrites them every step), stiff
     # friction constraint. Armature is set on the dofs by MujocoController.
     from bam.mujoco import MujocoController
+
+    controller_cls: Any = MujocoController  # its `actuator` arg takes the list of names its docstring documents
 
     kt = bam_model.kt.value
     R = bam_model.R.value
@@ -91,7 +97,7 @@ def load_mujoco_with_bam(xml_path: str, bam_model, timestep: float, vin_drop_gai
     model = spec.compile()
     model.opt.timestep = timestep
     data = mujoco.MjData(model)
-    bam_ctrl = MujocoController(bam_model, names, model, data, vin_drop_gain=vin_drop_gain, vin_min=vin_min)
+    bam_ctrl = controller_cls(bam_model, names, model, data, vin_drop_gain=vin_drop_gain, vin_min=vin_min)
     print(f"BAM {BAM_MODEL} actuators on {len(names)} joints: kt={kt:.4f} R={R:.4f} vin={bam_model.actuator.vin:.2f}V kp_fw={bam_model.actuator.kp:.0f} vin_drop_gain={vin_drop_gain} vin_min={vin_min} max_current={bam_model.actuator.max_current} forcerange=+/-{force_limit:.3f}Nm armature={bam_model.actuator.get_extra_inertia():.2e}")
     return model, data, bam_ctrl, names
 
@@ -310,6 +316,7 @@ class PolicyInference:
         else:
             # sitstand-only: start standing (posture flag 0).
             self.current_policy = "sit"
+            assert self.sit_session is not None
             self.ort_session = self.sit_session
 
         self.input_name = self.ort_session.get_inputs()[0].name
@@ -734,6 +741,7 @@ class PolicyInference:
             print("Head mode: OFF")
 
     def infer(self):
+        assert self.ort_session is not None
         obs = self.get_observations()
         obs_batch = obs.reshape(1, -1)
         action = self.ort_session.run([self.output_name], {self.input_name: obs_batch})[0]
@@ -743,6 +751,7 @@ class PolicyInference:
 
     def apply_action(self, action):
         if self.use_delay:
+            assert self.action_buffer is not None
             self.action_buffer[self.buffer_index] = action.copy()
             delayed_index = (self.buffer_index - self.current_lag) % len(self.action_buffer)
             delayed_action = self.action_buffer[delayed_index]
@@ -840,7 +849,7 @@ def main():
     else:
         xml_path = MICRODUCK_XML
     print(f"Loading MuJoCo model from: {xml_path}")
-    bam_ctrl = None
+    bam_ctrl: Any = None
     if not args.no_bam:
         # Same actuator the policies are trained against in warp (BAM M6 XL330,
         # voltage control + load-dependent friction budget), driven on CPU by
@@ -862,7 +871,8 @@ def main():
     if args.no_bam and args.current_limit and args.current_limit > 0:
         from bam.model import load_model
 
-        kt = load_model(motor_name="xl330", model="m6").kt.value
+        m6_model: Any = load_model(motor_name="xl330", model="m6")
+        kt: float = m6_model.kt.value
         torque_limit = kt * args.current_limit
         model.actuator_forcerange[:, 0] = -torque_limit
         model.actuator_forcerange[:, 1] = torque_limit
@@ -999,6 +1009,7 @@ def main():
             print(f"  BAM kp_fw set to {bam_ctrl.model.actuator.kp:.0f}")
             return
         for i in range(model.nu):
+            assert original_kp is not None
             kp = _STANDBY_KP if on else original_kp[i]
             model.actuator_gainprm[i, 0] = kp
             model.actuator_biasprm[i, 1] = -kp
