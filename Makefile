@@ -28,7 +28,7 @@ lint: ## lint src and tests
 
 .PHONY: tests
 tests: ## run the test suite (CPU, no GPU needed)
-	uv run --with pytest pytest -W ignore tests/
+	uv run pytest -W ignore tests/
 
 .PHONY: precommit
 precommit: ## sync + hook + fmt + lint + tests
