@@ -985,7 +985,7 @@ def _gp_phase(env: ManagerBasedRlEnv, command_name: str) -> torch.Tensor:
     return (torch.atan2(cmd[:, 1], cmd[:, 0]) / (2 * torch.pi)) % 1.0
 
 
-def mouth_ground_proximity_phased(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot", site_names=["mouth_tip"]), std: float = 0.10, target_height: float = 0.0, command_name: str = "twist", descent_end: float = 0.25, hold_end: float = 0.35, rise_end: float = 0.60) -> torch.Tensor:
+def mouth_ground_proximity_phased(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot", site_names=("mouth_tip",)), std: float = 0.10, target_height: float = 0.0, command_name: str = "twist", descent_end: float = 0.25, hold_end: float = 0.35, rise_end: float = 0.60) -> torch.Tensor:
     asset = env.scene[asset_cfg.name]
     mouth_z = asset.data.site_pos_w[:, asset_cfg.site_ids[0], 2]
     proximity = torch.exp(-(((mouth_z - target_height) / std) ** 2))
@@ -993,7 +993,7 @@ def mouth_ground_proximity_phased(env: ManagerBasedRlEnv, asset_cfg: SceneEntity
     return gate * proximity
 
 
-def mouth_perpendicular_phased(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot", site_names=["mouth_tip"]), command_name: str = "twist", descent_end: float = 0.25, hold_end: float = 0.35, rise_end: float = 0.60) -> torch.Tensor:
+def mouth_perpendicular_phased(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot", site_names=("mouth_tip",)), command_name: str = "twist", descent_end: float = 0.25, hold_end: float = 0.35, rise_end: float = 0.60) -> torch.Tensor:
     asset = env.scene[asset_cfg.name]
     q = asset.data.site_quat_w[:, asset_cfg.site_ids[0], :]
     w, qx, qy, qz = q[:, 0], q[:, 1], q[:, 2], q[:, 3]
@@ -1048,7 +1048,7 @@ def sample_mouth_payload(env: ManagerBasedRlEnv, env_ids: torch.Tensor, min_kg: 
     buf[env_ids] = torch.rand(len(env_ids), device=env.device) * (max_kg - min_kg) + min_kg
 
 
-def apply_mouth_payload_force(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot", body_names=["jaw_soft"], site_names=["mouth_tip"]), command_name: str = "twist", hold_end: float = 0.35, ramp: float = 0.05, gravity: float = 9.81) -> torch.Tensor:
+def apply_mouth_payload_force(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot", body_names=("jaw_soft",), site_names=("mouth_tip",)), command_name: str = "twist", hold_end: float = 0.35, ramp: float = 0.05, gravity: float = 9.81) -> torch.Tensor:
     # Emulates a point mass at the tip of the mouth while standing up: the force
     # m·g is applied at the body CoM + the torque (p_mouth - p_com) × F, which
     # is equivalent to applying it at mouth_tip (proper lever arm for the neck). Returns
