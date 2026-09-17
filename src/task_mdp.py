@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import torch
 from mjlab.entity import Entity
-from mjlab.envs.manager_based_rl_env import ManagerBasedRlEnv
+from mjlab.envs.manager_based_rl_env import ManagerBasedRlEnv as _MjlabManagerBasedRlEnv
 from mjlab.managers import CommandTermCfg
 from mjlab.managers.command_manager import CommandTerm
 from mjlab.managers.event_manager import requires_model_fields
@@ -93,7 +93,18 @@ except Exception:
 print("[mdp] Patch 4 active: ONNX export filters passive_* joints")
 
 if TYPE_CHECKING:
+    from typing import Any
+
     from mjlab.viewer.debug_visualizer import DebugVisualizer
+
+    class ManagerBasedRlEnv(_MjlabManagerBasedRlEnv):
+        # The mdp functions below keep their per-env scratch state (timers,
+        # latches, cached joint ids, previous actions) as attributes on the env
+        # object, which mjlab's env class does not declare.
+        def __getattr__(self, name: str) -> Any: ...
+        def __setattr__(self, name: str, value: Any) -> None: ...
+else:
+    ManagerBasedRlEnv = _MjlabManagerBasedRlEnv
 
 
 _DEFAULT_ASSET_CFG = SceneEntityCfg("robot")
