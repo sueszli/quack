@@ -71,7 +71,7 @@ def set_seed(seed: int = SEED, deterministic: bool = False) -> int:
     try:
         import warp as wp
 
-        wp.rand_init(seed)
+        wp.rand_init(wp.int32(seed))
     except Exception:
         pass
 

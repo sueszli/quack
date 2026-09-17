@@ -91,7 +91,7 @@ def apply_dr(cfg, dr_cfg: MicroduckDrCfg, head_body_names, play: bool = False) -
         cfg.events["randomize_joint_friction"] = EventTermCfg(func=microduck_mdp.randomize_bam_friction, mode="reset", params={"asset_cfg": SceneEntityCfg("robot"), "scale_range": dr_cfg.joint_friction_range})
 
     if dr_cfg.joint_damping:
-        cfg.events["randomize_joint_damping"] = EventTermCfg(func=microduck_mdp.randomize_dof_field_scaled, mode="reset", domain_randomization=True, params={"asset_cfg": SceneEntityCfg("robot", joint_names=(r".*",)), "field": "dof_damping", "scale_range": dr_cfg.joint_damping_range})
+        cfg.events["randomize_joint_damping"] = EventTermCfg(func=microduck_mdp.randomize_dof_field_scaled, mode="reset", params={"asset_cfg": SceneEntityCfg("robot", joint_names=(r".*",)), "field": "dof_damping", "scale_range": dr_cfg.joint_damping_range})
 
     if dr_cfg.armature:
         cfg.events["randomize_armature"] = EventTermCfg(func=dr.joint_armature, mode="reset", params={"asset_cfg": SceneEntityCfg("robot", joint_names=dr_cfg.armature_joints), "operation": "scale", "ranges": dr_cfg.armature_range})

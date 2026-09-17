@@ -92,8 +92,9 @@ def test_roller_dr_differs_from_default_in_exactly_three_fields():
 
 
 def test_dr_cfg_is_frozen():
+    field = "com"  # indirect so ruff does not rewrite setattr into an assignment the checker rejects
     with pytest.raises(dataclasses.FrozenInstanceError):
-        task_dr.DEFAULT_DR.com = False
+        setattr(task_dr.DEFAULT_DR, field, False)
 
 
 BAM_MODEL_FIELDS = ("dof_frictionloss", "dof_damping")

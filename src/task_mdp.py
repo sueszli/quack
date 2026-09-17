@@ -2273,7 +2273,8 @@ def pose_command_range_curriculum(env: ManagerBasedRlEnv, env_ids: torch.Tensor,
     return torch.tensor(max_abs)
 
 
-def randomize_dof_field_scaled(env: ManagerBasedRlEnv, env_ids: torch.Tensor, field: str, scale_range: tuple[float, float], asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
+@requires_model_fields("dof_frictionloss", "dof_damping")
+def randomize_dof_field_scaled(env: ManagerBasedRlEnv, env_ids: torch.Tensor, field: str, scale_range: tuple[float, float], asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> None:
     # Scale a per-dof model field (e.g. dof_frictionloss/dof_damping) per episode
     # WITHOUT accumulating: restore nominal, then apply a fresh scale.
     #
@@ -2305,7 +2306,6 @@ def randomize_dof_field_scaled(env: ManagerBasedRlEnv, env_ids: torch.Tensor, fi
     lo, hi = scale_range
     scales = torch.rand(num_envs, num_dofs, device=env.device) * (hi - lo) + lo
     mf[env_ids[:, None], dof_indices] *= scales
-    return torch.tensor(float(hi))
 
 
 def _ball_kick_dir(env: ManagerBasedRlEnv) -> torch.Tensor:
