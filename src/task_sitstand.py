@@ -245,7 +245,7 @@ def make_microduck_sitstand_env_cfg(play: bool = False, rough: bool = False) -> 
     # buffer. Internally the term slews a target blend over POSTURE_RAMP_S
     # that the posture rewards track (see the constant's comment); the OBS
     # stays the raw binary flag.
-    command = cfg.commands["twist"]
+    command = microduck_mdp.twist_command_cfg(cfg)
     command.rel_standing_envs = 0.0
     command.rel_heading_envs = 0.0
     command.heading_command = False

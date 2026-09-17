@@ -1,3 +1,4 @@
+from src import task_mdp as microduck_mdp
 from src.task_roller_slope import make_microduck_roller_slope_env_cfg
 from src.task_slope_terrain import FlatRampTerrainCfg
 
@@ -14,7 +15,7 @@ def test_terrain_is_flat_ramp_generator():
 
 def test_command_is_neutralised():
     cfg = make_microduck_roller_slope_env_cfg()
-    cmd = cfg.commands["twist"]
+    cmd = microduck_mdp.twist_command_cfg(cfg)
     assert cmd.rel_standing_envs == 1.0
     assert cmd.rel_heading_envs == 0.0
     assert cmd.ranges.lin_vel_x == (0.0, 0.0)

@@ -72,7 +72,7 @@ def make_microduck_roller_slope_env_cfg(play: bool = False) -> ManagerBasedRlEnv
         else:
             terrain.max_init_terrain_level = None
 
-    command = cfg.commands["twist"]
+    command = microduck_mdp.twist_command_cfg(cfg)
     command.rel_standing_envs = 1.0
     command.rel_heading_envs = 0.0
     command.ranges.lin_vel_x = (0.0, 0.0)

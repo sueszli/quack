@@ -101,6 +101,15 @@ _DEFAULT_ASSET_CFG = SceneEntityCfg("robot")
 _NECK_JOINT_PATTERNS = [r".*neck_pitch.*", r".*head_pitch.*", r".*head_yaw.*", r".*head_roll.*"]
 
 
+def twist_command_cfg(cfg) -> UniformVelocityCommandCfg:
+    # env cfgs declare commands as dict[str, CommandTermCfg], so the velocity
+    # fields (ranges, rel_standing_envs, ...) are invisible to a type checker
+    # until the term is narrowed back to its actual class.
+    command = cfg.commands["twist"]
+    assert isinstance(command, UniformVelocityCommandCfg)
+    return command
+
+
 def _command(env: "ManagerBasedRlEnv", name: str) -> torch.Tensor:
     # NullCommandManager.get_command returns None, so the declared type is
     # Optional; every caller here runs in an env that has the command.

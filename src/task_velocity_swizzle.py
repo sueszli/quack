@@ -29,12 +29,13 @@ def make_microduck_velocity_swizzle_env_cfg(play: bool = False) -> ManagerBasedR
     cfg.rewards["wheel_speed"].params["bidirectional"] = True
     if "braking" in cfg.rewards:
         del cfg.rewards["braking"]
-    cfg.commands["twist"].ranges.lin_vel_x = (-0.6, 0.6)
+    twist = microduck_mdp.twist_command_cfg(cfg)
+    twist.ranges.lin_vel_x = (-0.6, 0.6)
 
     # cmd[2] is a heading-error clip: ±0.5 rather than ±1.0 bounds the OBSERVED error
     # so turn correction is gentler (a ±1.0-trained policy turned violently enough to
     # need --max-angular-vel 0.3). Any heading is still reachable; the error saturates.
-    cfg.commands["twist"].ranges.ang_vel_z = (-0.5, 0.5)
+    twist.ranges.ang_vel_z = (-0.5, 0.5)
 
     cfg.rewards["heading_tracking"] = RewardTermCfg(
         func=microduck_mdp.heading_tracking_reward,

@@ -160,7 +160,7 @@ def make_microduck_ball_kick_env_cfg(play: bool = False, kick_foot: str | None =
     cfg.observations["critic"].terms["ball_velocity"] = ObservationTermCfg(func=microduck_mdp.ball_vel_in_base, params={"asset_name": "ball"})
 
     # Command: tiny noise around zero (obs-shape parity only)
-    command = cfg.commands["twist"]
+    command = microduck_mdp.twist_command_cfg(cfg)
     command.rel_standing_envs = 0.0
     command.rel_heading_envs = 0.0
     command.heading_command = False
