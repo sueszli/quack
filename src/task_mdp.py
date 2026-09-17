@@ -1,6 +1,7 @@
+import importlib
 import math
 from dataclasses import dataclass as _dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import torch
@@ -83,8 +84,8 @@ def _get_base_metadata_no_passive(env, run_path):
 
 _exporter_utils.get_base_metadata = _get_base_metadata_no_passive
 try:
-    from mjlab.tasks.velocity.rl import exporter as _vel_exporter
-
+    # mjlab <1.3 re-exported get_base_metadata from the velocity runner package
+    _vel_exporter: Any = importlib.import_module("mjlab.tasks.velocity.rl.exporter")
     if hasattr(_vel_exporter, "get_base_metadata"):
         _vel_exporter.get_base_metadata = _get_base_metadata_no_passive
 except Exception:
@@ -93,8 +94,6 @@ except Exception:
 print("[mdp] Patch 4 active: ONNX export filters passive_* joints")
 
 if TYPE_CHECKING:
-    from typing import Any
-
     from mjlab.viewer.debug_visualizer import DebugVisualizer
 
     class ManagerBasedRlEnv(_MjlabManagerBasedRlEnv):
@@ -119,6 +118,12 @@ def twist_command_cfg(cfg) -> UniformVelocityCommandCfg:
     command = cfg.commands["twist"]
     assert isinstance(command, UniformVelocityCommandCfg)
     return command
+
+
+def _first_id(ids: list[int] | slice) -> int:
+    # SceneEntityCfg id fields are slice(None) until the selector resolves them
+    assert isinstance(ids, list) and ids, "selector did not resolve to explicit ids"
+    return int(ids[0])
 
 
 def _command(env: "ManagerBasedRlEnv", name: str) -> torch.Tensor:
@@ -200,9 +205,9 @@ def reset_action_history(env: ManagerBasedRlEnv, env_ids: torch.Tensor, asset_cf
             env._prev_neck_actions_for_acc[env_ids] = 0.0
             env._prev_prev_neck_actions_for_acc[env_ids] = 0.0
 
-    if hasattr(asset.data, "_prev_joint_vel"):
-        joint_vel = asset.data.joint_vel[env_ids, :][:, asset_cfg.joint_ids]
-        asset.data._prev_joint_vel[env_ids] = joint_vel
+    prev_joint_vel = getattr(asset.data, "_prev_joint_vel", None)
+    if prev_joint_vel is not None:
+        prev_joint_vel[env_ids] = asset.data.joint_vel[env_ids, :][:, asset_cfg.joint_ids]
 
     if hasattr(env, "_contact_change_count"):
         env._contact_change_count[env_ids] = 0.0
@@ -987,7 +992,7 @@ def _gp_phase(env: ManagerBasedRlEnv, command_name: str) -> torch.Tensor:
 
 def mouth_ground_proximity_phased(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot", site_names=("mouth_tip",)), std: float = 0.10, target_height: float = 0.0, command_name: str = "twist", descent_end: float = 0.25, hold_end: float = 0.35, rise_end: float = 0.60) -> torch.Tensor:
     asset = env.scene[asset_cfg.name]
-    mouth_z = asset.data.site_pos_w[:, asset_cfg.site_ids[0], 2]
+    mouth_z = asset.data.site_pos_w[:, _first_id(asset_cfg.site_ids), 2]
     proximity = torch.exp(-(((mouth_z - target_height) / std) ** 2))
     gate = phase_pose_blend(_gp_phase(env, command_name), descent_end, hold_end, rise_end)
     return gate * proximity
@@ -995,7 +1000,7 @@ def mouth_ground_proximity_phased(env: ManagerBasedRlEnv, asset_cfg: SceneEntity
 
 def mouth_perpendicular_phased(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot", site_names=("mouth_tip",)), command_name: str = "twist", descent_end: float = 0.25, hold_end: float = 0.35, rise_end: float = 0.60) -> torch.Tensor:
     asset = env.scene[asset_cfg.name]
-    q = asset.data.site_quat_w[:, asset_cfg.site_ids[0], :]
+    q = asset.data.site_quat_w[:, _first_id(asset_cfg.site_ids), :]
     w, qx, qy, qz = q[:, 0], q[:, 1], q[:, 2], q[:, 3]
     x_axis_z = 2.0 * (qx * qz - w * qy)
     alignment = -x_axis_z  # 1 = mouth points straight down
@@ -1060,8 +1065,8 @@ def apply_mouth_payload_force(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg 
     gate = ((phase - hold_end) / ramp).clamp(0.0, 1.0)  # 0 before grab -> 1 after
     fz = -(gate * payload) * gravity  # (N,) vertical force (down)
 
-    bid = int(asset_cfg.body_ids[0])
-    sid = int(asset_cfg.site_ids[0])
+    bid = _first_id(asset_cfg.body_ids)
+    sid = _first_id(asset_cfg.site_ids)
     p_mouth = asset.data.site_pos_w[:, sid, :]
     p_com = asset.data.body_com_pos_w[:, bid, :]
     F = torch.zeros((env.num_envs, 3), device=env.device, dtype=p_mouth.dtype)
@@ -1621,7 +1626,7 @@ class VelocityCommandCommandOnlyCfg(UniformVelocityCommandCfg):
     # [0.4·max, max]) each resample. 0 = disabled (base uniform sampling only).
     rel_turn_in_place_envs: float = 0.0
 
-    def build(self, env: ManagerBasedRlEnv) -> "VelocityCommandCommandOnly":
+    def build(self, env: _MjlabManagerBasedRlEnv) -> "VelocityCommandCommandOnly":
         return VelocityCommandCommandOnly(self, env)
 
 
@@ -1633,7 +1638,7 @@ class RelativeHeadingVelocityCommand(VelocityCommandCommandOnly):
     # Set heading_command=False and rel_heading_envs=0.0 in the cfg (we handle
     # heading internally).  ang_vel_z range in cfg is used as the clip limit for cmd[2].
 
-    def __init__(self, cfg, env: ManagerBasedRlEnv):
+    def __init__(self, cfg, env: _MjlabManagerBasedRlEnv):
         super().__init__(cfg, env)
         self._target_heading_w = torch.zeros(self.num_envs, device=self.device)
         ang_rng = cfg.ranges.ang_vel_z
@@ -1661,7 +1666,7 @@ class RelativeHeadingVelocityCommand(VelocityCommandCommandOnly):
 
 
 class RelativeHeadingVelocityCommandCfg(UniformVelocityCommandCfg):
-    def build(self, env: ManagerBasedRlEnv) -> "RelativeHeadingVelocityCommand":
+    def build(self, env: _MjlabManagerBasedRlEnv) -> "RelativeHeadingVelocityCommand":
         return RelativeHeadingVelocityCommand(self, env)
 
 
@@ -1853,6 +1858,7 @@ def action_over_limit_penalty(env: ManagerBasedRlEnv, action_name: str = "joint_
     # ``overshoot`` gives the low-kp servo the headroom to reach near-limit targets
     # under load; only the wild over-drive past that is penalised.
     term = env.action_manager.get_term(action_name)
+    assert isinstance(term, _JointAction)
     target = term.raw_action * term.scale + term.offset
     jnt_ids = term.target_ids
     hard = env.scene["robot"].data.joint_pos_limits[:, jnt_ids]
@@ -1876,7 +1882,7 @@ def forward_lean_reward(env: ManagerBasedRlEnv, command_name: str, target_pitch:
 class GroundPickPhaseCommand(UniformVelocityCommand):
     PERIOD: float = 4.0  # default; cfg.period overrides
 
-    def __init__(self, cfg, env: ManagerBasedRlEnv):
+    def __init__(self, cfg, env: _MjlabManagerBasedRlEnv):
         super().__init__(cfg, env)
         self._gp_phase = torch.zeros(self.num_envs, device=self.device)
         self._period = float(getattr(cfg, "period", self.PERIOD))
@@ -1896,8 +1902,8 @@ class GroundPickPhaseCommand(UniformVelocityCommand):
         self.vel_command_b[:, 1] = torch.sin(2 * torch.pi * self._gp_phase)
         self.vel_command_b[:, 2] = 0.0
 
-    def reset(self, env_ids: torch.Tensor | None) -> dict:
-        if env_ids is not None and len(env_ids) > 0:
+    def reset(self, env_ids: torch.Tensor | slice | None = None) -> dict:
+        if isinstance(env_ids, torch.Tensor) and len(env_ids) > 0:
             if self._randomize_phase:
                 self._gp_phase[env_ids] = torch.rand(len(env_ids), device=self.device)
             else:
@@ -1923,7 +1929,7 @@ class GroundPickPhaseCommandCfg(UniformVelocityCommandCfg):
     period: float = 4.0  # cycle length in seconds; sitstand uses 8.0
     randomize_phase: bool = True  # False -> each episode starts at phase 0 (standing)
 
-    def build(self, env: ManagerBasedRlEnv) -> "GroundPickPhaseCommand":
+    def build(self, env: _MjlabManagerBasedRlEnv) -> "GroundPickPhaseCommand":
         return GroundPickPhaseCommand(self, env)
 
 
@@ -1942,7 +1948,7 @@ from dataclasses import dataclass
 class UniformPoseCommand(CommandTerm):
     cfg: "UniformPoseCommandCfg"
 
-    def __init__(self, cfg: "UniformPoseCommandCfg", env: ManagerBasedRlEnv):
+    def __init__(self, cfg: "UniformPoseCommandCfg", env: _MjlabManagerBasedRlEnv):
         super().__init__(cfg, env)
         self.dim = len(cfg.ranges)
         self._command = torch.zeros(self.num_envs, self.dim, device=self.device)
@@ -1979,7 +1985,7 @@ class UniformPoseCommandCfg(CommandTermCfg):
     ranges: tuple[tuple[float, float], ...] = ()
     zero_command_prob: float = 0.0
 
-    def build(self, env: ManagerBasedRlEnv) -> "UniformPoseCommand":
+    def build(self, env: _MjlabManagerBasedRlEnv) -> "UniformPoseCommand":
         return UniformPoseCommand(self, env)
 
 
@@ -2254,7 +2260,8 @@ def pose_command_range_curriculum(env: ManagerBasedRlEnv, env_ids: torch.Tensor,
 
     term = env.command_manager.get_term(command_name)
     assert term is not None, f"Command term '{command_name}' not found"
-    cfg = term.cfg  # type: ignore[assignment]
+    cfg = term.cfg
+    assert isinstance(cfg, UniformPoseCommandCfg)
 
     current = range_stages[0]["ranges"]
     for stage in range_stages:
@@ -2648,7 +2655,7 @@ class SitStandCommand(UniformVelocityCommand):
     # height, not the flag — a seated spawn must not be dragged upward by a
     # stand-initialised ramp (and vice versa).
 
-    def __init__(self, cfg, env: ManagerBasedRlEnv):
+    def __init__(self, cfg, env: _MjlabManagerBasedRlEnv):
         super().__init__(cfg, env)
         self._sit_prob = float(getattr(cfg, "sit_prob", 0.5))
         self._ramp_s = float(getattr(cfg, "ramp_s", 2.0))
@@ -2706,7 +2713,7 @@ class SitStandCommandCfg(UniformVelocityCommandCfg):
     sit_z: float = 0.060
     stand_z: float = 0.115
 
-    def build(self, env: ManagerBasedRlEnv) -> "SitStandCommand":
+    def build(self, env: _MjlabManagerBasedRlEnv) -> "SitStandCommand":
         return SitStandCommand(self, env)
 
 
