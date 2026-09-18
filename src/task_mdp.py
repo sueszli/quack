@@ -96,7 +96,7 @@ if TYPE_CHECKING:
     from mjlab.viewer.debug_visualizer import DebugVisualizer
 
     class ManagerBasedRlEnv(_MjlabManagerBasedRlEnv):
-        # silences typo detection on env attributes; mdp functions stash scratch state there
+        # silences typo detection on the scratch attributes mdp functions stash on the env
         def __getattr__(self, name: str) -> Any: ...
         def __setattr__(self, name: str, value: Any) -> None: ...
 else:
