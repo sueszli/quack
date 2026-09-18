@@ -50,8 +50,6 @@ class _EnvImpl:
         self.command_manager = type("C", (), {"get_command": lambda _s, _n: cmd})()
 
 
-# the mdp functions under test only read a couple of env attributes; a real
-# ManagerBasedRlEnv needs a compiled model, so the stand-in is typed loosely
 _Env: Any = _EnvImpl
 
 

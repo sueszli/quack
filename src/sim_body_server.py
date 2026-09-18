@@ -328,7 +328,6 @@ class Handler(socketserver.StreamRequestHandler):
 class Server(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
     daemon_threads = True
-    # the handler reads this off self.server
     body: Body
 
 

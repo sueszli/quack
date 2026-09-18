@@ -47,9 +47,6 @@ BAM_STIFF_SOLREF_FRICTION = (-5.0e4, -2.0e2)
 BAM_STIFF_SOLIMP_FRICTION = (0.99, 0.9999, 0.001, 0.5, 2.0)
 
 
-# bam.Model grows kt/R/actuator at runtime (Actuator.initialize creates them),
-# and MujocoController's `actuator` accepts the list of names its docstring
-# documents but annotates as str, so both are Any here.
 def load_bam_model(kp_fw: float, vin: float, max_current) -> Any:
     from bam.model import load_model
 
@@ -67,7 +64,7 @@ def load_mujoco_with_bam(xml_path: str, bam_model: Any, timestep: float, vin_dro
     # friction constraint. Armature is set on the dofs by MujocoController.
     from bam.mujoco import MujocoController
 
-    controller_cls: Any = MujocoController  # its `actuator` arg takes the list of names its docstring documents
+    controller_cls: Any = MujocoController
 
     kt = bam_model.kt.value
     R = bam_model.R.value

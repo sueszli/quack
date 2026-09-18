@@ -84,7 +84,6 @@ def _get_base_metadata_no_passive(env, run_path):
 
 _exporter_utils.get_base_metadata = _get_base_metadata_no_passive
 try:
-    # mjlab <1.3 re-exported get_base_metadata from the velocity runner package
     _vel_exporter: Any = importlib.import_module("mjlab.tasks.velocity.rl.exporter")
     if hasattr(_vel_exporter, "get_base_metadata"):
         _vel_exporter.get_base_metadata = _get_base_metadata_no_passive
@@ -97,9 +96,7 @@ if TYPE_CHECKING:
     from mjlab.viewer.debug_visualizer import DebugVisualizer
 
     class ManagerBasedRlEnv(_MjlabManagerBasedRlEnv):
-        # The mdp functions below keep their per-env scratch state (timers,
-        # latches, cached joint ids, previous actions) as attributes on the env
-        # object, which mjlab's env class does not declare.
+        # silences typo detection on env attributes; mdp functions stash scratch state there
         def __getattr__(self, name: str) -> Any: ...
         def __setattr__(self, name: str, value: Any) -> None: ...
 else:
@@ -112,23 +109,17 @@ _NECK_JOINT_PATTERNS = [r".*neck_pitch.*", r".*head_pitch.*", r".*head_yaw.*", r
 
 
 def twist_command_cfg(cfg) -> UniformVelocityCommandCfg:
-    # env cfgs declare commands as dict[str, CommandTermCfg], so the velocity
-    # fields (ranges, rel_standing_envs, ...) are invisible to a type checker
-    # until the term is narrowed back to its actual class.
     command = cfg.commands["twist"]
     assert isinstance(command, UniformVelocityCommandCfg)
     return command
 
 
 def _first_id(ids: list[int] | slice) -> int:
-    # SceneEntityCfg id fields are slice(None) until the selector resolves them
     assert isinstance(ids, list) and ids, "selector did not resolve to explicit ids"
     return int(ids[0])
 
 
 def _command(env: "ManagerBasedRlEnv", name: str) -> torch.Tensor:
-    # NullCommandManager.get_command returns None, so the declared type is
-    # Optional; every caller here runs in an env that has the command.
     cmd = env.command_manager.get_command(name)
     assert cmd is not None, f"command '{name}' is not registered on this env"
     return cmd

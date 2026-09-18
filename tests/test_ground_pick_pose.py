@@ -58,8 +58,6 @@ class _FakeEnvImpl:
         self.command_manager = _FakeCmdMgr(cmd)
 
 
-# the mdp functions under test only read a couple of env attributes; a real
-# ManagerBasedRlEnv needs a compiled model, so the stand-in is typed loosely
 _FakeEnv: Any = _FakeEnvImpl
 
 

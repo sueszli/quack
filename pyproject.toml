@@ -21,7 +21,6 @@ dependencies = [
 ]
 
 [dependency-groups]
-# installed by `uv sync` into .venv, which is also what pyright type-checks
 dev = ["pytest>=8"]
 
 [project.entry-points."mjlab.tasks"]

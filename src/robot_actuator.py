@@ -14,8 +14,6 @@ from mjlab.actuator.actuator import ActuatorCmd
 
 
 class FrictionDRBamActuator(BamActuator):
-    # both are created by BamActuator.initialize and are not part of its
-    # declared API; _compute_friction_budget is likewise private to bam
     kp_scale: torch.Tensor
     friction_scale: torch.Tensor
 

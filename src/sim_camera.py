@@ -109,6 +109,5 @@ class FrameHandler(socketserver.BaseRequestHandler):
 class FrameServer(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
     daemon_threads = True
-    # the handler reads these off self.server
     camera: Camera
     fps: int

@@ -22,7 +22,6 @@ def test_ramp_angle_clamps_out_of_range():
 
 
 def _geom(out, index):
-    # TerrainGeometry.geom is Optional (a tile may be a heightfield instead)
     geom = out.geometries[index].geom
     assert geom is not None
     return geom

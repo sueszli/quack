@@ -50,8 +50,6 @@ class _EnvImpl:
         self._head_pose_bl_mask = torch.zeros(4)
 
 
-# the mdp functions under test only read a couple of env attributes; a real
-# ManagerBasedRlEnv needs a compiled model, so the stand-in is typed loosely
 _Env: Any = _EnvImpl
 
 
