@@ -1,5 +1,5 @@
 # BAM zeroes dof_frictionloss in edit_spec and computes friction itself, so dr.dof_frictionloss is a
-# silent no-op; joint-friction DR must go through friction_scale here. randomize_bam_friction
+# silent no-op. Joint-friction DR must go through friction_scale here. randomize_bam_friction
 # restores 1.0 before sampling so the scale never accumulates across resets.
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ class FrictionDRBamActuator(BamActuator):
         self.default_friction_scale = self.friction_scale.clone()
 
     def _compute_friction_budget(self, motor_torque: torch.Tensor, external_torque: torch.Tensor, stribeck_coeff: torch.Tensor) -> torch.Tensor:
-        # Scales the velocity-INDEPENDENT budget only; the viscous term stays nominal.
+        # Scales the velocity-INDEPENDENT budget only. The viscous term stays nominal.
         base: torch.Tensor = cast(Any, super())._compute_friction_budget(motor_torque, external_torque, stribeck_coeff)
         fs = getattr(self, "friction_scale", None)
         return base if fs is None else base * fs

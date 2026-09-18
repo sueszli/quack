@@ -1,7 +1,7 @@
 # One vocabulary for two shapes — a single-policy repo (fields at the top level) and the official
-# set (the same fields per entry under ``policies``). This module writes the first; the daemon
+# set (the same fields per entry under ``policies``). This module writes the first. The daemon
 # (`pollen-robotics/microduck`, ``updater/src/policy.rs`` and ``robotd-params``) reads both. The
-# contract is `docs/policy-manifest.md` over there; the numbers below are what the daemon publishes
+# contract is `docs/policy-manifest.md` over there. The numbers below are what the daemon publishes
 # in ``duck_ipc_proto`` and refuses a policy for disagreeing with.
 #
 # Deliberately free of mjlab / torch imports so the tests run on a laptop in milliseconds and the
@@ -17,7 +17,7 @@ from typing import Any
 
 SCHEMA_VERSION = 2
 # `duck_ipc_proto`: the daemon refuses a policy whose manifest disagrees with these, and refuses
-# at load a network whose graph does. 61 = 48 proprioception + 13 command; 14 = the servos.
+# at load a network whose graph does. 61 = 48 proprioception + 13 command, 14 = the servos.
 MODEL_API = 1
 OBS_LEN = 61
 ACTION_LEN = 14
@@ -183,7 +183,7 @@ def smoke_run_onnx(path: Path, steps: int = 50, seed: int = 0) -> None:
         assert np.all(np.isfinite(out)), f"{path.name}: non-finite action"
         outputs.append(out)
         # Feed the action back into the last-action slots and jitter the rest, the way an
-        # observation evolves on the robot; enough to leave the zero point.
+        # observation evolves on the robot. Enough to leave the zero point.
         obs = rng.normal(0.0, 0.05, size=obs.shape).astype(np.float32)
         obs[0, -ACTION_LEN - 13 : -13] = np.clip(out[0], -1, 1)
     spread = float(np.std(np.stack(outputs)))

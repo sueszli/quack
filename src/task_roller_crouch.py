@@ -137,7 +137,7 @@ def make_microduck_roller_crouch_env_cfg(play: bool = False) -> ManagerBasedRlEn
     command = microduck_mdp.twist_command_cfg(cfg)
     command.rel_standing_envs = 0.0
     command.rel_heading_envs = 0.0
-    # period=CROUCH_PERIOD (slower descent); randomize_phase=False -> every
+    # period=CROUCH_PERIOD (slower descent), randomize_phase=False -> every
     # episode starts standing (phase 0), as at deployment (the button starts the
     # cycle at phase 0). Avoids learning "stay low" from already-low starts.
     cfg.commands["twist"] = microduck_mdp.GroundPickPhaseCommandCfg(**{**vars(command), "class_type": microduck_mdp.GroundPickPhaseCommand, "period": CROUCH_PERIOD, "randomize_phase": False})

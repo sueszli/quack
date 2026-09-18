@@ -19,7 +19,7 @@ USE_PROJECTED_GRAVITY = True
 # mechanism as the trunk CoM randomization above. The head-roll body is named
 # bottom_head_shell in the walk model and jaw_soft in the 2026-07 roller model,
 # hence the alternation. NOTE: bearing_roll is NOT a head body — in both models
-# it is the right-hip-yaw link (child of trunk_base); it has always been listed
+# it is the right-hip-yaw link (child of trunk_base). It has always been listed
 # here by mistake and is kept only to preserve existing DR behavior.
 HEAD_BODY_NAMES = ("neck", "neck_pitch", "yaw_roll_motion", "(bottom_head_shell|jaw_soft)", "bearing_roll")
 
@@ -242,7 +242,7 @@ def make_microduck_velocity_env_cfg(play: bool = False, rough: bool = False) -> 
     microduck_mdp.wire_sim2real_obs(cfg, gravity_term_name=gravity_term_name, imu_delay_max_lag=1, imu_misalignment_deg=DR.imu_orientation_angle_deg if DR.imu_orientation else None, misalign_gravity=USE_PROJECTED_GRAVITY, encoder_bias_range=DR.encoder_bias_range if DR.encoder_bias else None)
 
     # Commands — deepcopy to avoid shared-state corruption from other env cfgs
-    # (make_velocity_env_cfg() returns objects with shared mutable references;
+    # (make_velocity_env_cfg() returns objects with shared mutable references,
     # standup/ground_pick envs mutate commands["twist"] in place, zeroing ranges)
     command = deepcopy(microduck_mdp.twist_command_cfg(cfg))
     cfg.commands["twist"] = command
@@ -275,7 +275,7 @@ def make_microduck_velocity_env_cfg(play: bool = False, rough: bool = False) -> 
             (-0.015, 0.015),  # head_roll (tighter — much smaller mechanical range)
         ),
     )
-    # Vel env carries this slot for runtime obs-shape parity; tracked at a tiny
+    # Vel env carries this slot for runtime obs-shape parity. Tracked at a tiny
     # weight to keep the input neurons alive but not steer the policy. The
     # standup env raises the weight + widens the ranges.
     cfg.commands["body_pose"] = microduck_mdp.UniformPoseCommandCfg(
@@ -417,7 +417,7 @@ def make_microduck_velocity_env_cfg(play: bool = False, rough: bool = False) -> 
                 "event_name": "randomize_head_com",
                 "range_stages": [
                     # Capped at ±10 mm (2026-07 audit — same over-conservatism
-                    # concern as trunk CoM; head is a large lever arm).
+                    # concern as trunk CoM. Head is a large lever arm).
                     {"step": 0, "range": 0.003},
                     {"step": 500 * 24, "range": 0.005},
                     {"step": 1000 * 24, "range": 0.01},

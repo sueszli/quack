@@ -23,7 +23,7 @@ ENTRY_VELOCITY_X = (0.25, 0.45)
 TILE_SIZE = (15.0, 4.0)  # >= flat + ramp_max + runout (= 14) + margin
 SPAWN_YAW = (0.0, 0.0)  # facing the descent (+x)
 
-# None = random steepness, as in training; 0..1 forces a slope (1.0 = steepest ~20°).
+# None = random steepness, as in training, 0..1 forces a slope (1.0 = steepest ~20°).
 PLAY_DIFFICULTY = None
 
 
@@ -107,7 +107,7 @@ def make_microduck_roller_slope_env_cfg(play: bool = False) -> ManagerBasedRlEnv
     cfg.rewards["joint_torques_l2"] = RewardTermCfg(func=microduck_mdp.joint_torques_l2, weight=-1e-3)
     cfg.rewards["action_rate_l2"].weight = -1.0
 
-    # The exit flat is solid ground, so edge-termination is unnecessary; it cut long
+    # The exit flat is solid ground, so edge-termination is unnecessary. It cut long
     # ramps short.
     cfg.terminations["fell_over"] = TerminationTermCfg(func=base_mdp.bad_orientation, params={"limit_angle": 1.0, "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))})
     if "out_of_terrain_bounds" in cfg.terminations:

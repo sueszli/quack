@@ -115,13 +115,13 @@ MICRODUCK_WALK_BACKLASH_ROBOT_CFG = EntityCfg(spec_fn=get_walk_backlash_spec, in
 
 MICRODUCK_ROLLERS_BACKLASH_ROBOT_CFG = EntityCfg(spec_fn=get_rollers_backlash_spec, init_state=BACKLASH_HOME_FRAME, collisions=(), articulation=EntityArticulationInfoCfg(actuators=(backlash_actuators,), soft_joint_pos_limit_factor=0.9))
 
-# Position is set each episode by reset_ball_in_front_of_foot; this init pos is pre-first-reset only.
+# Position is set each episode by reset_ball_in_front_of_foot. This init pos is pre-first-reset only.
 MICRODUCK_BALL_CFG = EntityCfg(spec_fn=get_ball_spec, init_state=EntityCfg.InitialStateCfg(pos=(0.3, 0.0, 0.035)))
 
 MICRODUCK_WALK_ROLLERS_ROBOT_CFG = EntityCfg(
     spec_fn=get_walk_rollers_spec,
     init_state=HOME_FRAME,
-    collisions=(),  # roller wheel collision geoms have no explicit names; XML defaults apply
+    collisions=(),  # roller wheel collision geoms have no explicit names. XML defaults apply
     articulation=EntityArticulationInfoCfg(actuators=(actuators,), soft_joint_pos_limit_factor=0.9),
 )
 

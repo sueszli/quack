@@ -94,7 +94,7 @@ def make_microduck_ball_kick_env_cfg(play: bool = False, kick_foot: str | None =
         "foot_clearance",
         "foot_swing_height",
         "foot_slip",
-        "pose",  # gait-conditioned; replaced by pose_target_match below
+        "pose",  # gait-conditioned. Replaced by pose_target_match below
         "soft_landing",
     ]:
         if name in cfg.rewards:
@@ -198,7 +198,7 @@ def make_microduck_ball_kick_env_cfg(play: bool = False, kick_foot: str | None =
     )
 
     # Ball placement — MUST come after set_ground_state (events run in dict
-    # insertion order; the ball position derives from the final robot pose).
+    # insertion order. The ball position derives from the final robot pose).
     ball_offset_y = -BALL_OFFSET_ABS_Y if kick_foot == "right" else BALL_OFFSET_ABS_Y
     cfg.events["reset_ball"] = EventTermCfg(func=microduck_mdp.reset_ball_in_front_of_foot, mode="reset", params={"offset": (BALL_OFFSET_X, ball_offset_y), "noise_xy": BALL_POS_NOISE_XY, "ball_radius": BALL_RADIUS, "asset_name": "ball"})
 

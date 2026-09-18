@@ -1,6 +1,6 @@
 # Classic swizzle: both blades stay grounded and the legs spread and pull back in
-# symmetrically. The alternating stride env does not transfer to the real robot;
-# this reuses it wholesale and swaps only the reward recipe.
+# symmetrically. The alternating stride env does not transfer to the real robot.
+# This reuses it wholesale and swaps only the reward recipe.
 
 import dataclasses
 
@@ -25,7 +25,7 @@ def make_microduck_velocity_swizzle_env_cfg(play: bool = False) -> ManagerBasedR
     cfg.rewards["leg_symmetry"] = RewardTermCfg(func=microduck_mdp.leg_symmetry_reward, weight=2.0, params={"asset_cfg": SceneEntityCfg("robot")})
     cfg.rewards["grounded"] = RewardTermCfg(func=microduck_mdp.grounded_reward, weight=1.0, params={"sensor_name": "feet_ground_contact", "command_name": "twist"})
 
-    # cmd_x < 0 means GO BACKWARD, not brake; to stop, command cmd_x ~ 0 (coast).
+    # cmd_x < 0 means GO BACKWARD, not brake. To stop, command cmd_x ~ 0 (coast).
     cfg.rewards["wheel_speed"].params["bidirectional"] = True
     if "braking" in cfg.rewards:
         del cfg.rewards["braking"]
@@ -34,7 +34,7 @@ def make_microduck_velocity_swizzle_env_cfg(play: bool = False) -> ManagerBasedR
 
     # cmd[2] is a heading-error clip: ±0.5 rather than ±1.0 bounds the OBSERVED error
     # so turn correction is gentler (a ±1.0-trained policy turned violently enough to
-    # need --max-angular-vel 0.3). Any heading is still reachable; the error saturates.
+    # need --max-angular-vel 0.3). Any heading is still reachable. The error saturates.
     twist.ranges.ang_vel_z = (-0.5, 0.5)
 
     cfg.rewards["heading_tracking"] = RewardTermCfg(
@@ -68,7 +68,7 @@ def make_microduck_velocity_swizzle_env_cfg(play: bool = False) -> ManagerBasedR
         },
     )
 
-    # 4D deltas from HOME; ranges start small and are widened by the curriculum below.
+    # 4D deltas from HOME. Ranges start small and are widened by the curriculum below.
     cfg.commands["head_pose"] = microduck_mdp.UniformPoseCommandCfg(
         resampling_time_range=(2.0, 5.0),
         ranges=(
@@ -79,13 +79,13 @@ def make_microduck_velocity_swizzle_env_cfg(play: bool = False) -> ManagerBasedR
         ),
     )
 
-    # Replaces zero_command_padding; body_command stays zero-padded (61D layout).
+    # Replaces zero_command_padding, body_command stays zero-padded (61D layout).
     for group in ("actor", "critic"):
         cfg.observations[group].terms["head_command"] = ObservationTermCfg(func=mdp.generated_commands, params={"command_name": "head_pose"})
 
     cfg.rewards["head_pose_tracking"] = RewardTermCfg(func=microduck_mdp.head_pose_tracking, weight=0.0, params={"command_name": "head_pose", "std": 0.5})
 
-    # Both of these pull neck/head to HOME and would fight head_pose_tracking; the
+    # Both of these pull neck/head to HOME and would fight head_pose_tracking. The
     # std dicts must stay in sync with the scoped asset_cfg.
     if "neck_joint_pos_l2" in cfg.rewards:
         del cfg.rewards["neck_joint_pos_l2"]

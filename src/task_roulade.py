@@ -1,6 +1,6 @@
 # Episodic policy: robot starts standing, rolls forward over the flat top of
 # its head, and lands back on its feet. Triggered at deployment like sit/standup
-# (policy switch = roll starts immediately; no phase clock, no reference motion).
+# (policy switch = roll starts immediately, no phase clock, no reference motion).
 
 import math
 
@@ -22,7 +22,7 @@ ROULADE_FORWARD_VEL_RANGE = (0.0, 0.0)
 # 90° = balanced on the head, 180° = on the back, 270° = supine, ~340° = seated
 # leaning back, >260° opens the landing gate. Run-3 change: MAX widened
 # 185° → 340° — run-2 logs showed the second half of the roll (supine →
-# seated → rise) was never spawned and never learned; spawns past ~300° open
+# seated → rise) was never spawned and never learned. Spawns past ~300° open
 # the landing gate at birth, giving dense on-policy data on the crouch→stand
 # last mile (the velstand run-5 crouch-basin lesson).
 MIDROLL_PITCH_MIN = math.radians(50.0)
@@ -31,8 +31,8 @@ MIDROLL_OMEGA_RANGE = (0.0, 3.0)  # rad/s forward momentum at spawn
 # Tuck anchor: legs folded (crouch-anchor values from the velstand crouch
 # reset) + CHIN TUCK (run-5: neck_pitch −1 / head_pitch +1 puts the flat head
 # top squarely on the floor — measured axis_z −0.99 vs +0.6 for the passive
-# face-plant; the head-top latch requires this, so mid-roll spawns must
-# demonstrate the tucked configuration). Servo-index keyed; mid-roll spawns
+# face-plant. The head-top latch requires this, so mid-roll spawns must
+# demonstrate the tucked configuration). Servo-index keyed. Mid-roll spawns
 # lerp HOME→tuck by a per-env factor.
 TUCK_OVERRIDES = {
     2: -1.15,  # left  hip_pitch
@@ -110,7 +110,7 @@ def make_microduck_roulade_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
             del cfg.rewards[name]
 
     # Progress increments — the one dense task signal during the roll. During
-    # a 1.5 s roll it averages ~0.7/step; total payout per full roll from a
+    # a 1.5 s roll it averages ~0.7/step. Total payout per full roll from a
     # standing spawn ≈ weight × (episode steps it took) × mean ≈ weight × 50.
     cfg.rewards["roulade_progress"] = RewardTermCfg(
         func=microduck_mdp.roulade_progress,
@@ -152,12 +152,12 @@ def make_microduck_roulade_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     # rotation is done, every step spent below STAND_Z costs — "crumple in a
     # heap after the roll" flips from free to net-negative, the same fix that
     # broke standup's static-sit basin (its height L1 at ÷4-scaled weight
-    # 7.5). Gate closed during the roll, so the roll itself is never taxed;
-    # mid/late-roll spawns are born with it active, which is the point.
+    # 7.5). Gate closed during the roll, so the roll itself is never taxed.
+    # Mid/late-roll spawns are born with it active, which is the point.
     cfg.rewards["roulade_stand_tax"] = RewardTermCfg(func=microduck_mdp.roulade_stand_tax, weight=5.0, params={"target_height": STAND_Z, "gate_lo": LANDING_GATE_LO, "gate_hi": LANDING_GATE_HI})
 
     # Exit-rise bootstrap: upward CoM velocity, gated to the late-roll region
-    # (supine → up is the face-up-recovery problem; end-state rewards have zero
+    # (supine → up is the face-up-recovery problem, end-state rewards have zero
     # gradient at zero motion there — standup lesson #2).
     cfg.rewards["roulade_rise_velocity"] = RewardTermCfg(func=microduck_mdp.roulade_rise_velocity, weight=0.75, params={"max_height": STAND_Z + 0.01, "gate_lo": RISE_GATE_LO, "gate_hi": RISE_GATE_HI})
 
@@ -165,7 +165,7 @@ def make_microduck_roulade_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     # energy path than straight over the head — it avoids the fully-inverted
     # configuration, same cheat human beginners default to). The structural
     # fix is the flatness gate on the accumulator + the head-top latch (side
-    # rolls no longer count as rotation at all); these penalties provide the
+    # rolls no longer count as rotation at all). These penalties provide the
     # dense per-step gradient back toward the plane, weights raised 5× from
     # the run-2 values that were noise against progress@8.
     cfg.rewards["roulade_sagittal"] = RewardTermCfg(func=microduck_mdp.roulade_sagittal_penalty, weight=-0.1)
@@ -173,7 +173,7 @@ def make_microduck_roulade_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     cfg.rewards["roulade_flatness"] = RewardTermCfg(func=microduck_mdp.roulade_flatness_penalty, weight=-0.5)
 
     # Motion-blockers stay near zero during discovery (the roll IS a large
-    # angular-velocity + impact event); the settle/polish pressure comes from
+    # angular-velocity + impact event). The settle/polish pressure comes from
     # the LATE-introduced gated terms below (arrival_damping, |a_z|, torque
     # rate) — the standup timing lesson.
     cfg.rewards["action_rate_l2"] = RewardTermCfg(func=mdp.action_rate_l2, weight=-0.1)
@@ -187,16 +187,16 @@ def make_microduck_roulade_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     cfg.rewards["arrival_damping"] = RewardTermCfg(func=microduck_mdp.body_ang_vel_at_height, weight=0.0, params={"height_low": 0.09, "height_high": 0.11, "tilt_full_deg": 20.0, "tilt_zero_deg": 45.0, "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))})
 
     # NOTE: trunk_vertical_accel_penalty is SELF-NEGATING (returns -|a_z|) →
-    # POSITIVE weight (penalty sign convention; a negative weight here would
+    # POSITIVE weight (penalty sign convention, a negative weight here would
     # reward violence — caught in the run-2 smoke test, sum was positive).
     cfg.rewards["gentle_landing"] = RewardTermCfg(func=microduck_mdp.trunk_vertical_accel_penalty, weight=0.002, params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))})
 
     # Self-collision — LIGHT: a tucked roll needs body-on-body contact
-    # (knees against trunk); standup's -1.0 would fight the tuck.
+    # (knees against trunk). Standup's -1.0 would fight the tuck.
     cfg.rewards["self_collisions"] = RewardTermCfg(func=mdp.self_collision_cost, weight=-0.1, params={"sensor_name": self_collision_cfg.name})
 
-    # Always-on upright would oppose the flip (the old attempt's core failure);
-    # landing uprightness is handled by the completion-gated terms above.
+    # Always-on upright would oppose the flip (the old attempt's core failure).
+    # Landing uprightness is handled by the completion-gated terms above.
     if "upright" in cfg.rewards:
         del cfg.rewards["upright"]
 
@@ -239,7 +239,7 @@ def make_microduck_roulade_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     cfg.events["foot_friction"].params["asset_cfg"].geom_names = foot_frictions_geom_names
     cfg.events["foot_friction"].params["ranges"] = (0.7, 1.3)
 
-    # Standing start + mid-roll reverse-curriculum spawns; also resets the
+    # Standing start + mid-roll reverse-curriculum spawns. Also resets the
     # rotation accumulator (must run after reset_robot_joints — dict insertion
     # order — since mid-roll tuck lerps FROM the HOME pose it wrote).
     cfg.events["set_roulade_state"] = EventTermCfg(func=microduck_mdp.reset_roulade_state, mode="reset", params={"standing_prob": 0.5, "midroll_prob": 0.5, "standing_z_min": 0.11, "standing_z_max": 0.12, "standing_tilt_max": math.radians(5.0), "forward_vel_range": ROULADE_FORWARD_VEL_RANGE, "midroll_pitch_min": MIDROLL_PITCH_MIN, "midroll_pitch_max": MIDROLL_PITCH_MAX, "midroll_z_min": 0.05, "midroll_z_max": 0.10, "midroll_omega_range": MIDROLL_OMEGA_RANGE, "tuck_overrides": TUCK_OVERRIDES, "tuck_factor_range": (0.3, 1.0), "joint_noise_std": 0.08})
