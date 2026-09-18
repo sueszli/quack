@@ -65,7 +65,7 @@ def make_microduck_roller_standup_env_cfg(play: bool = False) -> ManagerBasedRlE
 
     # Nothing is steered here, but the slot keeps a tiny non-zero range so its input
     # neurons stay alive; head_pose and body_pose stay zero-padded (61D obs parity).
-    command = cfg.commands["twist"]
+    command = microduck_mdp.twist_command_cfg(cfg)
     command.rel_standing_envs = 0.0
     command.rel_heading_envs = 0.0
     command.heading_command = False

@@ -1,5 +1,6 @@
 import pytest
 
+from src import task_mdp as microduck_mdp
 from src.task_roller_standup import EPISODE_LENGTH_S, make_microduck_roller_standup_env_cfg
 from src.task_velocity_rollers import make_microduck_velocity_rollers_env_cfg
 
@@ -31,7 +32,7 @@ def test_smoothness_regularisers_kept():
 
 def test_twist_command_is_neutralised():
     cfg = make_microduck_roller_standup_env_cfg()
-    cmd = cfg.commands["twist"]
+    cmd = microduck_mdp.twist_command_cfg(cfg)
     assert cmd.ranges.lin_vel_x == (-0.01, 0.01)
     assert cmd.ranges.lin_vel_y == (-0.01, 0.01)
     assert cmd.ranges.ang_vel_z == (-0.05, 0.05)
@@ -41,10 +42,8 @@ def test_twist_command_is_neutralised():
 
 
 def test_twist_command_is_not_heading_relative():
-    from src import task_mdp as microduck_mdp
-
     cfg = make_microduck_roller_standup_env_cfg()
-    cmd = cfg.commands["twist"]
+    cmd = microduck_mdp.twist_command_cfg(cfg)
     assert isinstance(cmd, microduck_mdp.VelocityCommandCommandOnlyCfg)
     assert not isinstance(cmd, microduck_mdp.RelativeHeadingVelocityCommandCfg)
 
@@ -64,8 +63,10 @@ def test_obs_parity_with_roller_env():
 
 def test_terrain_is_plain_plane():
     cfg = make_microduck_roller_standup_env_cfg()
-    assert cfg.scene.terrain.terrain_type == "plane"
-    assert cfg.scene.terrain.terrain_generator is None
+    terrain = cfg.scene.terrain
+    assert terrain is not None
+    assert terrain.terrain_type == "plane"
+    assert terrain.terrain_generator is None
 
 
 def test_task_is_registered():

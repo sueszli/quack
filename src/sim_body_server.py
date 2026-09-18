@@ -288,7 +288,9 @@ class Body:
 class Handler(socketserver.StreamRequestHandler):
     def handle(self) -> None:
         self.connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-        body: Body = self.server.body
+        server = self.server
+        assert isinstance(server, Server)
+        body = server.body
         print(f"== duck {body.index}: daemon connected from {self.client_address}", flush=True)
         for raw in self.rfile:
             try:
@@ -326,6 +328,7 @@ class Handler(socketserver.StreamRequestHandler):
 class Server(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
     daemon_threads = True
+    body: Body
 
 
 def run(world: World, headless: bool) -> None:

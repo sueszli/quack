@@ -1,4 +1,5 @@
 import math
+from typing import Any
 
 import pytest
 import torch
@@ -37,16 +38,19 @@ class _Data:
 class _Scene:
     def __init__(self, data):
         self._asset = type("A", (), {"data": data})()
-        self.terrain = type("T", (), {"env_origins": torch.zeros(len(data.root_link_quat_w), 3)})()
+        self.env_origins = torch.zeros(len(data.root_link_quat_w), 3)
 
     def __getitem__(self, _):
         return self._asset
 
 
-class _Env:
+class _EnvImpl:
     def __init__(self, quat, cmd):
         self.scene = _Scene(_Data(quat))
         self.command_manager = type("C", (), {"get_command": lambda _s, _n: cmd})()
+
+
+_Env: Any = _EnvImpl
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
@@ -72,9 +76,8 @@ def test_body_pose_tracking_6d_maps_each_angle_to_its_command_slot(axis, index):
     swapped = torch.zeros(1, 6)
     swapped[0, 3 + (index - 3 + 1) % 3] = angle
 
-    kwargs = {"nominal_height": 0.0, "xy_std": 1.0, "z_std": 1.0, "angle_std": math.radians(2)}
-    reward_matched = microduck_mdp.body_pose_tracking_6d(_Env(quat, matched), **kwargs)
-    reward_swapped = microduck_mdp.body_pose_tracking_6d(_Env(quat, swapped), **kwargs)
+    reward_matched = microduck_mdp.body_pose_tracking_6d(_Env(quat, matched), nominal_height=0.0, xy_std=1.0, z_std=1.0, angle_std=math.radians(2))
+    reward_swapped = microduck_mdp.body_pose_tracking_6d(_Env(quat, swapped), nominal_height=0.0, xy_std=1.0, z_std=1.0, angle_std=math.radians(2))
 
     assert reward_matched.item() == pytest.approx(1.0, abs=1e-4)
     assert reward_swapped.item() < 0.9

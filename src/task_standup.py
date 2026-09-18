@@ -331,7 +331,7 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
             cfg.observations[group].terms["body_command"] = ObservationTermCfg(func=microduck_mdp.zero_command_padding, params={"dim": 6})
 
     # Command: tiny noise around zero (kept for obs-shape parity)
-    command = cfg.commands["twist"]
+    command = microduck_mdp.twist_command_cfg(cfg)
     command.rel_standing_envs = 0.0
     command.rel_heading_envs = 0.0
     command.heading_command = False
@@ -399,16 +399,18 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
     # (matching velocity) — the old event-based randomize_imu_orientation wrote
     # site_quat, which under mjlab 1.3.0 is neither per-env nor read by the obs.
 
+    terrain = cfg.scene.terrain
+    assert terrain is not None
     if not rough:
-        cfg.scene.terrain.terrain_type = "plane"
-        cfg.scene.terrain.terrain_generator = None
+        terrain.terrain_type = "plane"
+        terrain.terrain_generator = None
     else:
-        cfg.scene.terrain.terrain_type = "generator"
-        cfg.scene.terrain.terrain_generator = MICRODUCK_ROUGH_TERRAINS_CFG
+        terrain.terrain_type = "generator"
+        terrain.terrain_generator = MICRODUCK_ROUGH_TERRAINS_CFG
         if play:
-            cfg.scene.terrain.terrain_generator.curriculum = False
-            cfg.scene.terrain.terrain_generator.num_cols = 5
-            cfg.scene.terrain.terrain_generator.num_rows = 5
+            terrain.terrain_generator.curriculum = False
+            terrain.terrain_generator.num_cols = 5
+            terrain.terrain_generator.num_rows = 5
 
     if not rough:
         del cfg.curriculum["terrain_levels"]

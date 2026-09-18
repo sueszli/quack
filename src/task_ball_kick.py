@@ -160,7 +160,7 @@ def make_microduck_ball_kick_env_cfg(play: bool = False, kick_foot: str | None =
     cfg.observations["critic"].terms["ball_velocity"] = ObservationTermCfg(func=microduck_mdp.ball_vel_in_base, params={"asset_name": "ball"})
 
     # Command: tiny noise around zero (obs-shape parity only)
-    command = cfg.commands["twist"]
+    command = microduck_mdp.twist_command_cfg(cfg)
     command.rel_standing_envs = 0.0
     command.rel_heading_envs = 0.0
     command.heading_command = False
@@ -204,8 +204,10 @@ def make_microduck_ball_kick_env_cfg(play: bool = False, kick_foot: str | None =
 
     task_dr.apply_dr(cfg, DR, HEAD_BODY_NAMES, play=play)
 
-    cfg.scene.terrain.terrain_type = "plane"
-    cfg.scene.terrain.terrain_generator = None
+    terrain = cfg.scene.terrain
+    assert terrain is not None
+    terrain.terrain_type = "plane"
+    terrain.terrain_generator = None
 
     del cfg.curriculum["terrain_levels"]
     del cfg.curriculum["command_vel"]

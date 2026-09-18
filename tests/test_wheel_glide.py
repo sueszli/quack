@@ -1,4 +1,5 @@
 import re
+from typing import Any
 
 import torch
 
@@ -22,7 +23,7 @@ class _Asset:
         return ids, None
 
 
-class _Env:
+class _EnvImpl:
     def __init__(self, omegas):
         self._a = _Asset(_Data(omegas))
 
@@ -32,6 +33,9 @@ class _Env:
     @property
     def scene(self):
         return self
+
+
+_Env: Any = _EnvImpl
 
 
 def test_rewards_forward_roll_below_cap():

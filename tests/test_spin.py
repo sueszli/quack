@@ -1,4 +1,5 @@
 import math
+from typing import Any
 
 import torch
 
@@ -104,11 +105,14 @@ class _FakeSensor:
         self.data = _FakeSensorData(current_contact_time)
 
 
-class _FakeEnv:
+class _FakeEnvImpl:
     def __init__(self, entity, cmd=None, sensors=None):
         self.scene = {"robot": entity, **(sensors or {})}
         self.command_manager = _FakeCommandManager(cmd)
         self.device = "cpu"
+
+
+_FakeEnv: Any = _FakeEnvImpl
 
 
 def _phase_cmd(phases):

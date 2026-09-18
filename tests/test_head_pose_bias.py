@@ -1,4 +1,5 @@
 import math
+from typing import Any
 
 import torch
 
@@ -19,15 +20,10 @@ class _Asset:
         self.data = data
 
 
-class _Terrain:
-    def __init__(self, n):
-        self.env_origins = torch.zeros(n, 3)
-
-
 class _Scene:
     def __init__(self, asset, n):
         self._asset = asset
-        self.terrain = _Terrain(n)
+        self.env_origins = torch.zeros(n, 3)
 
     def __getitem__(self, _):
         return self._asset
@@ -41,7 +37,7 @@ class _Cmd:
         return self.cmd
 
 
-class _Env:
+class _EnvImpl:
     def __init__(self, n):
         self.num_envs = n
         self.device = "cpu"
@@ -52,6 +48,9 @@ class _Env:
         self._head_pose_neck_ids = torch.tensor([0, 1, 2, 3])
         self._head_pose_bl_ids = torch.tensor([0, 0, 0, 0])
         self._head_pose_bl_mask = torch.zeros(4)
+
+
+_Env: Any = _EnvImpl
 
 
 GATE = {"gate_height_low": 0.09, "gate_height_high": 0.11, "gate_tilt_full_deg": 20.0, "gate_tilt_zero_deg": 45.0}
@@ -65,7 +64,8 @@ def _set_pose(env, z, pitch_deg):
 
 
 def _run(env, steps, **kw):
-    out = None
+    assert steps >= 1
+    out = torch.zeros(env.num_envs)
     for _ in range(steps):
         out = microduck_mdp.head_pose_bias_penalty(env, tau_s=1.0, **kw)
     return out

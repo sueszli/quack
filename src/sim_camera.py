@@ -81,8 +81,9 @@ class Camera:
 
 class FrameHandler(socketserver.BaseRequestHandler):
     def handle(self) -> None:
-        camera: Camera = self.server.camera
-        fps: int = self.server.fps
+        server = self.server
+        assert isinstance(server, FrameServer)
+        camera, fps = server.camera, server.fps
         self.request.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         print(f"== camera: a reader connected from {self.client_address}", flush=True)
         period = 1.0 / max(1, fps)
@@ -108,3 +109,5 @@ class FrameHandler(socketserver.BaseRequestHandler):
 class FrameServer(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
     daemon_threads = True
+    camera: Camera
+    fps: int

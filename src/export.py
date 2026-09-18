@@ -144,7 +144,7 @@ def run_export(task_id: str, cfg: ExportConfig) -> ExportResult:
 
     runner.export_policy_to_onnx(path, filename)
 
-    metadata = get_base_metadata(runner.env.unwrapped, run_path=str(resume_path) if resume_path is not None else None)
+    metadata = get_base_metadata(env.unwrapped, run_path=str(resume_path) if resume_path is not None else "")
     if DUMMY_MODE:
         metadata["untrained"] = "true"
     attach_metadata_to_onnx(onnx_path, metadata)

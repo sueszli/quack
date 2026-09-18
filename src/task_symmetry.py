@@ -65,11 +65,11 @@ def microduck_vel_symmetry(env, obs: TensorDict | None, actions: torch.Tensor | 
     aug_actions: torch.Tensor | None = None
 
     if obs is not None:
-        actor_orig: torch.Tensor = obs["actor"]
+        actor_orig = torch.as_tensor(obs["actor"])
         obs_perm, obs_sign, _, _ = _get_tensors(actor_orig.device)
         actor_sym = actor_orig[:, obs_perm] * obs_sign
 
-        critic_orig: torch.Tensor = obs["critic"]
+        critic_orig = torch.as_tensor(obs["critic"])
         # Critic obs is repeated unmirrored: mirror loss does not need it, and the
         # critic's privileged terms have no actor-side mirror.
         critic_repeated = torch.cat([critic_orig, critic_orig], dim=0)

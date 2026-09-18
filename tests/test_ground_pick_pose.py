@@ -1,3 +1,5 @@
+from typing import Any
+
 import torch
 
 from src.task_mdp import phase_pose_blend
@@ -45,7 +47,7 @@ class _FakeCmdMgr:
         return self._cmd
 
 
-class _FakeEnv:
+class _FakeEnvImpl:
     def __init__(self, names, joint_pos, default_pos, phase):
         import math
 
@@ -54,6 +56,9 @@ class _FakeEnv:
         ang = 2 * math.pi * phase
         cmd = torch.tensor([[math.cos(ang), math.sin(ang), 0.0]])
         self.command_manager = _FakeCmdMgr(cmd)
+
+
+_FakeEnv: Any = _FakeEnvImpl
 
 
 NAMES = ["j0", "j1"]

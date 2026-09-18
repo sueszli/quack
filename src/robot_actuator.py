@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import dataclasses
 from dataclasses import dataclass
+from typing import Any, cast
 
 import torch
 from bam.mjlab import BamActuator, BamActuatorCfg
@@ -13,6 +14,9 @@ from mjlab.actuator.actuator import ActuatorCmd
 
 
 class FrictionDRBamActuator(BamActuator):
+    kp_scale: torch.Tensor
+    friction_scale: torch.Tensor
+
     def initialize(self, mj_model, model, data, device) -> None:
         super().initialize(mj_model, model, data, device)
         self.friction_scale = torch.ones_like(self.kp_scale)
@@ -20,7 +24,7 @@ class FrictionDRBamActuator(BamActuator):
 
     def _compute_friction_budget(self, motor_torque: torch.Tensor, external_torque: torch.Tensor, stribeck_coeff: torch.Tensor) -> torch.Tensor:
         # Scales the velocity-INDEPENDENT budget only; the viscous term stays nominal.
-        base = super()._compute_friction_budget(motor_torque, external_torque, stribeck_coeff)
+        base: torch.Tensor = cast(Any, super())._compute_friction_budget(motor_torque, external_torque, stribeck_coeff)
         fs = getattr(self, "friction_scale", None)
         return base if fs is None else base * fs
 

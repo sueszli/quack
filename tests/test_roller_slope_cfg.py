@@ -1,18 +1,21 @@
+from src import task_mdp as microduck_mdp
 from src.task_roller_slope import make_microduck_roller_slope_env_cfg
 from src.task_slope_terrain import FlatRampTerrainCfg
 
 
 def test_terrain_is_flat_ramp_generator():
     cfg = make_microduck_roller_slope_env_cfg()
-    assert cfg.scene.terrain.terrain_type == "generator"
-    gen = cfg.scene.terrain.terrain_generator
+    terrain = cfg.scene.terrain
+    assert terrain is not None
+    assert terrain.terrain_type == "generator"
+    gen = terrain.terrain_generator
     assert gen is not None and gen.curriculum is True
     assert any(isinstance(st, FlatRampTerrainCfg) for st in gen.sub_terrains.values())
 
 
 def test_command_is_neutralised():
     cfg = make_microduck_roller_slope_env_cfg()
-    cmd = cfg.commands["twist"]
+    cmd = microduck_mdp.twist_command_cfg(cfg)
     assert cmd.rel_standing_envs == 1.0
     assert cmd.rel_heading_envs == 0.0
     assert cmd.ranges.lin_vel_x == (0.0, 0.0)
@@ -78,11 +81,15 @@ def test_obs_nan_policy_sanitize():
 def test_curriculum_present_and_starts_gentle():
     cfg = make_microduck_roller_slope_env_cfg()
     assert "terrain_levels" in cfg.curriculum
+    assert cfg.scene.terrain is not None
     assert cfg.scene.terrain.max_init_terrain_level == 0
 
 
 def test_terrain_tile_fits_geometry():
     cfg = make_microduck_roller_slope_env_cfg()
+    assert cfg.scene.terrain is not None
     gen = cfg.scene.terrain.terrain_generator
+    assert gen is not None
     st = next(iter(gen.sub_terrains.values()))
+    assert isinstance(st, FlatRampTerrainCfg)
     assert st.flat_length + st.ramp_length_range[1] + st.runout_length <= gen.size[0]

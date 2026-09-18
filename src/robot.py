@@ -81,7 +81,7 @@ HOME_FRAME = EntityCfg.InitialStateCfg(
     joint_vel={".*": 0.0},
 )
 
-FULL_COLLISION = CollisionCfg(geom_names_expr=[".*_collision"], condim={r"^(left|right)_foot_collision$": 3, ".*_collision": 1}, priority={r"^(left|right)_foot_collision$": 1}, friction={r"^(left|right)_foot_collision$": (1.0,)})
+FULL_COLLISION = CollisionCfg(geom_names_expr=(".*_collision",), condim={r"^(left|right)_foot_collision$": 3, ".*_collision": 1}, priority={r"^(left|right)_foot_collision$": 1}, friction={r"^(left|right)_foot_collision$": (1.0,)})
 
 _BAM_ACTUATOR_KWARGS = {
     "motor_name": "xl330",
@@ -100,7 +100,7 @@ backlash_actuators = BacklashEncoderBamActuatorCfg(**_BAM_ACTUATOR_KWARGS)
 
 # The backlash rule must stay FIRST: matching is first-match-wins, and HOME_FRAME's unanchored
 # patterns would otherwise initialize passive_*_backlash joints outside their ±1° range.
-BACKLASH_HOME_FRAME = EntityCfg.InitialStateCfg(joint_pos={r".*_backlash$": 0.0, **HOME_FRAME.joint_pos}, joint_vel={".*": 0.0})
+BACKLASH_HOME_FRAME = EntityCfg.InitialStateCfg(joint_pos={r".*_backlash$": 0.0, **(HOME_FRAME.joint_pos or {})}, joint_vel={".*": 0.0})
 
 MICRODUCK_WALK_ROBOT_CFG = EntityCfg(spec_fn=get_walk_spec, init_state=HOME_FRAME, collisions=(FULL_COLLISION,), articulation=EntityArticulationInfoCfg(actuators=(actuators,), soft_joint_pos_limit_factor=0.9))
 
@@ -127,10 +127,10 @@ MICRODUCK_WALK_ROLLERS_ROBOT_CFG = EntityCfg(
 
 if __name__ == "__main__":
     from mjlab.scene import Scene, SceneCfg
-    from mjlab.terrains import TerrainImporterCfg
+    from mjlab.terrains.terrain_entity import TerrainEntityCfg
     from mujoco import viewer
 
-    SCENE_CFG = SceneCfg(terrain=TerrainImporterCfg(terrain_type="plane"), entities={"robot": MICRODUCK_WALK_ROBOT_CFG})
+    SCENE_CFG = SceneCfg(terrain=TerrainEntityCfg(terrain_type="plane"), entities={"robot": MICRODUCK_WALK_ROBOT_CFG})
 
     scene = Scene(SCENE_CFG, device="cuda:0")
     viewer.launch(scene.compile())

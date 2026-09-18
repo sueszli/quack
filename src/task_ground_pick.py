@@ -13,7 +13,6 @@ from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.rl import RslRlModelCfg, RslRlOnPolicyRunnerCfg
 from mjlab.sensor import ContactMatch, ContactSensorCfg
 from mjlab.tasks.velocity import mdp
-from mjlab.tasks.velocity.mdp import UniformVelocityCommandCfg
 from mjlab.tasks.velocity.velocity_env_cfg import make_velocity_env_cfg
 
 from . import task_dr
@@ -75,9 +74,9 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     # ~20 cm (from the standing stance). The "WITHOUT TOUCHING" is ensured by
     # head_impact_penalty (strong) below -> the equilibrium is the mouth just
     # above the ground. Weight raised 2.0 -> 3.0 to pull closer.
-    cfg.rewards["mouth_ground_proximity"] = RewardTermCfg(func=microduck_mdp.mouth_ground_proximity_phased, weight=3.0, params={"asset_cfg": SceneEntityCfg("robot", site_names=["mouth_tip"]), "std": 0.10, "target_height": 0.0, "command_name": "twist", "descent_end": DESCENT_END, "hold_end": HOLD_END, "rise_end": RISE_END})
+    cfg.rewards["mouth_ground_proximity"] = RewardTermCfg(func=microduck_mdp.mouth_ground_proximity_phased, weight=3.0, params={"asset_cfg": SceneEntityCfg("robot", site_names=("mouth_tip",)), "std": 0.10, "target_height": 0.0, "command_name": "twist", "descent_end": DESCENT_END, "hold_end": HOLD_END, "rise_end": RISE_END})
 
-    cfg.rewards["mouth_perpendicular_to_ground"] = RewardTermCfg(func=microduck_mdp.mouth_perpendicular_phased, weight=2.0, params={"asset_cfg": SceneEntityCfg("robot", site_names=["mouth_tip"]), "command_name": "twist", "descent_end": DESCENT_END, "hold_end": HOLD_END, "rise_end": RISE_END})
+    cfg.rewards["mouth_perpendicular_to_ground"] = RewardTermCfg(func=microduck_mdp.mouth_perpendicular_phased, weight=2.0, params={"asset_cfg": SceneEntityCfg("robot", site_names=("mouth_tip",)), "command_name": "twist", "descent_end": DESCENT_END, "hold_end": HOLD_END, "rise_end": RISE_END})
 
     _LEG_JOINTS = [0, 1, 2, 3, 4, 9, 10, 11, 12, 13]
     cfg.rewards["ground_pick_return_pose_legs"] = RewardTermCfg(
@@ -102,7 +101,7 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
 
     # Weight-0 reward: serves as a per-step hook that applies the object's WEIGHT
     # as an external force at mouth_tip, gated on the rise (phase >= HOLD_END).
-    cfg.rewards["mouth_payload_force"] = RewardTermCfg(func=microduck_mdp.apply_mouth_payload_force, weight=0.0, params={"asset_cfg": SceneEntityCfg("robot", body_names=["jaw_soft"], site_names=["mouth_tip"]), "command_name": "twist", "hold_end": HOLD_END})
+    cfg.rewards["mouth_payload_force"] = RewardTermCfg(func=microduck_mdp.apply_mouth_payload_force, weight=0.0, params={"asset_cfg": SceneEntityCfg("robot", body_names=("jaw_soft",), site_names=("mouth_tip",)), "command_name": "twist", "hold_end": HOLD_END})
 
     # Upright: reduced weight — the robot needs to lean forward during approach.
     cfg.rewards["upright"].params["asset_cfg"].body_names = ("trunk_base",)
@@ -123,7 +122,7 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     # projects gravity into the foot site frame: when flat the site Z is
     # vertical (xy²≈0); any tipping -> xy²>0. Thus forbids rolling the
     # foot over on the ankle axis.
-    cfg.rewards["feet_flat"] = RewardTermCfg(func=microduck_mdp.feet_flat_penalty, weight=-2.0, params={"asset_cfg": SceneEntityCfg("robot", site_names=["left_foot", "right_foot"])})
+    cfg.rewards["feet_flat"] = RewardTermCfg(func=microduck_mdp.feet_flat_penalty, weight=-2.0, params={"asset_cfg": SceneEntityCfg("robot", site_names=("left_foot", "right_foot"))})
 
     # Deliberately kept heavier than the velocity env: the ground-pick motion is
     # slow and precise, so strong smoothness aids transfer (unlike the dynamic
@@ -158,7 +157,7 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
         cfg.observations[group].terms["head_command"] = ObservationTermCfg(func=microduck_mdp.zero_command_padding, params={"dim": 4})
         cfg.observations[group].terms["body_command"] = ObservationTermCfg(func=microduck_mdp.zero_command_padding, params={"dim": 6})
 
-    command: UniformVelocityCommandCfg = cfg.commands["twist"]
+    command = microduck_mdp.twist_command_cfg(cfg)
     command.rel_standing_envs = 0.0
     command.rel_heading_envs = 0.0
     cfg.commands["twist"] = microduck_mdp.GroundPickPhaseCommandCfg(**{**vars(command), "class_type": microduck_mdp.GroundPickPhaseCommand, "period": GP_PERIOD})
@@ -178,16 +177,18 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     # (matching velocity) — the old event-based randomize_imu_orientation wrote
     # site_quat, a no-op under mjlab 1.3.0.
 
+    terrain = cfg.scene.terrain
+    assert terrain is not None
     if not rough:
-        cfg.scene.terrain.terrain_type = "plane"
-        cfg.scene.terrain.terrain_generator = None
+        terrain.terrain_type = "plane"
+        terrain.terrain_generator = None
     else:
-        cfg.scene.terrain.terrain_type = "generator"
-        cfg.scene.terrain.terrain_generator = MICRODUCK_ROUGH_TERRAINS_CFG
+        terrain.terrain_type = "generator"
+        terrain.terrain_generator = MICRODUCK_ROUGH_TERRAINS_CFG
         if play:
-            cfg.scene.terrain.terrain_generator.curriculum = False
-            cfg.scene.terrain.terrain_generator.num_cols = 5
-            cfg.scene.terrain.terrain_generator.num_rows = 5
+            terrain.terrain_generator.curriculum = False
+            terrain.terrain_generator.num_cols = 5
+            terrain.terrain_generator.num_rows = 5
 
     if not rough:
         del cfg.curriculum["terrain_levels"]

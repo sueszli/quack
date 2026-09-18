@@ -1,3 +1,5 @@
+from typing import Any
+
 import torch
 
 from src.task_mdp import descent_speed_reward
@@ -14,13 +16,16 @@ class _Asset:
         self.data = data
 
 
-class _Env:
+class _EnvImpl:
     def __init__(self, vx):
         self._a = _Asset(_Data(vx))
         self.scene = self
 
     def __getitem__(self, _k):
         return self._a
+
+
+_Env: Any = _EnvImpl
 
 
 def test_rewards_forward_speed_up_to_cap():

@@ -21,6 +21,12 @@ def test_ramp_angle_clamps_out_of_range():
     assert math.isclose(ramp_angle_by_difficulty(2.0), math.radians(RAMP_DEG_MAX), abs_tol=1e-9)
 
 
+def _geom(out, index):
+    geom = out.geometries[index].geom
+    assert geom is not None
+    return geom
+
+
 def _empty_terrain_spec():
     spec = mujoco.MjSpec()
     spec.worldbody.add_body(name="terrain")
@@ -44,14 +50,14 @@ def test_flat_ramp_steeper_at_higher_difficulty():
     cfg.size = (15.0, 4.0)
     easy = cfg.function(0.0, _empty_terrain_spec(), np.random.default_rng(0))
     hard = cfg.function(1.0, _empty_terrain_spec(), np.random.default_rng(0))
-    assert hard.geometries[1].geom.pos[2] < easy.geometries[1].geom.pos[2]
+    assert _geom(hard, 1).pos[2] < _geom(easy, 1).pos[2]
 
 
 def test_ramp_joins_flat_platform_no_gap():
     cfg = FlatRampTerrainCfg()
     cfg.size = (15.0, 4.0)
     out = cfg.function(0.5, _empty_terrain_spec(), np.random.default_rng(0))
-    ramp = out.geometries[1].geom
+    ramp = _geom(out, 1)
     angle = ramp_angle_by_difficulty(0.5, cfg.deg_min, cfg.deg_max)
     surf_half = ramp.size[0]
     ramp_len = surf_half * 2.0 * math.cos(angle)
@@ -63,7 +69,7 @@ def test_flat_ramp_runout_at_ramp_bottom():
     cfg = FlatRampTerrainCfg()
     cfg.size = (15.0, 4.0)
     out = cfg.function(1.0, _empty_terrain_spec(), np.random.default_rng(0))
-    runout = out.geometries[2].geom
+    runout = _geom(out, 2)
     assert runout.pos[2] < 0.0
     assert math.isclose(runout.quat[0], 1.0, abs_tol=1e-9)
 
@@ -73,6 +79,6 @@ def test_ramp_length_within_range():
     cfg.size = (15.0, 4.0)
     for seed in range(20):
         out = cfg.function(0.0, _empty_terrain_spec(), np.random.default_rng(seed))
-        surf_half = out.geometries[1].geom.size[0]
+        surf_half = _geom(out, 1).size[0]
         ramp_len = surf_half * 2.0 * math.cos(math.radians(2.0))
         assert 3.0 - 1e-6 <= ramp_len <= 8.0 + 1e-6

@@ -1,3 +1,5 @@
+from typing import Any
+
 import torch
 
 from src.task_mdp import robot_state_is_nan
@@ -26,9 +28,12 @@ class _Scene:
         return self._a
 
 
-class _Env:
+class _EnvImpl:
     def __init__(self, data):
         self.scene = _Scene(_Asset(data))
+
+
+_Env: Any = _EnvImpl
 
 
 def test_catches_base_linear_velocity_nan():

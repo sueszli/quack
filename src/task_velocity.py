@@ -32,7 +32,6 @@ from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.rl import RslRlModelCfg, RslRlOnPolicyRunnerCfg
 from mjlab.sensor import ContactMatch, ContactSensorCfg, ObjRef, RingPatternCfg, TerrainHeightSensorCfg
 from mjlab.tasks.velocity import mdp
-from mjlab.tasks.velocity.mdp import UniformVelocityCommandCfg
 from mjlab.tasks.velocity.velocity_env_cfg import make_velocity_env_cfg
 from mjlab.terrains.terrain_generator import TerrainGeneratorCfg
 
@@ -245,7 +244,7 @@ def make_microduck_velocity_env_cfg(play: bool = False, rough: bool = False) -> 
     # Commands — deepcopy to avoid shared-state corruption from other env cfgs
     # (make_velocity_env_cfg() returns objects with shared mutable references;
     # standup/ground_pick envs mutate commands["twist"] in place, zeroing ranges)
-    command: UniformVelocityCommandCfg = deepcopy(cfg.commands["twist"])
+    command = deepcopy(microduck_mdp.twist_command_cfg(cfg))
     cfg.commands["twist"] = command
     command.rel_standing_envs = 0.02
     command.rel_heading_envs = 0.0
@@ -257,8 +256,9 @@ def make_microduck_velocity_env_cfg(play: bool = False, rough: bool = False) -> 
     command.ranges.lin_vel_y = (-0.3, 0.3)
     command.ranges.ang_vel_z = (-1.0, 1.0)
     command.viz.z_offset = 0.5
-    cfg.commands["twist"] = microduck_mdp.VelocityCommandCommandOnlyCfg(**vars(command))
-    cfg.commands["twist"].rel_turn_in_place_envs = TURN_IN_PLACE_FRACTION
+    twist = microduck_mdp.VelocityCommandCommandOnlyCfg(**vars(command))
+    twist.rel_turn_in_place_envs = TURN_IN_PLACE_FRACTION
+    cfg.commands["twist"] = twist
 
     # Per-joint final caps reflect each joint's mechanically reachable delta
     # from HOME (XML limits minus HOME offset, with ~10% safety margin):
@@ -323,12 +323,14 @@ def make_microduck_velocity_env_cfg(play: bool = False, rough: bool = False) -> 
         params={"command_name": "head_pose", "tau_s": 1.0},
     )
 
+    terrain = cfg.scene.terrain
+    assert terrain is not None
     if not rough:
-        cfg.scene.terrain.terrain_type = "plane"
-        cfg.scene.terrain.terrain_generator = None
+        terrain.terrain_type = "plane"
+        terrain.terrain_generator = None
     else:
-        cfg.scene.terrain.terrain_type = "generator"
-        cfg.scene.terrain.terrain_generator = MICRODUCK_ROUGH_TERRAINS_CFG
+        terrain.terrain_type = "generator"
+        terrain.terrain_generator = MICRODUCK_ROUGH_TERRAINS_CFG
 
         cfg.scene.spec_fn = _soften_terrain_contacts
 
@@ -345,9 +347,9 @@ def make_microduck_velocity_env_cfg(play: bool = False, rough: bool = False) -> 
         cfg.sim.mujoco.ls_iterations = 50
 
         if play:
-            cfg.scene.terrain.terrain_generator.curriculum = False
-            cfg.scene.terrain.terrain_generator.num_cols = 5
-            cfg.scene.terrain.terrain_generator.num_rows = 5
+            terrain.terrain_generator.curriculum = False
+            terrain.terrain_generator.num_cols = 5
+            terrain.terrain_generator.num_rows = 5
 
     cfg.curriculum["action_rate_weight"] = CurriculumTermCfg(func=microduck_mdp.reward_weight, params={"reward_name": "action_rate_l2", "weight_stages": [{"step": 0, "weight": -0.1}, {"step": 500 * NUM_STEPS_PER_ENV, "weight": -0.2}, {"step": 750 * NUM_STEPS_PER_ENV, "weight": -0.4}, {"step": 1000 * NUM_STEPS_PER_ENV, "weight": -0.6}, {"step": 1250 * NUM_STEPS_PER_ENV, "weight": -0.8}, {"step": 1500 * NUM_STEPS_PER_ENV, "weight": -1.0}]})
 
