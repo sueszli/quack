@@ -112,7 +112,7 @@ def make_microduck_spin_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     command = microduck_mdp.twist_command_cfg(cfg)
     command.rel_standing_envs = 0.0
     command.rel_heading_envs = 0.0
-    # period=4.0 = default of --ground-pick-period (nothing to pass to the runtime);
+    # period=4.0 = default of --ground-pick-period (nothing to pass to the runtime),
     # randomize_phase=False -> every episode starts standing at phase 0, like the
     # button at deployment. 20 s episode = 5 full cycles of the gesture.
     cfg.commands["twist"] = microduck_mdp.GroundPickPhaseCommandCfg(**{**vars(command), "class_type": microduck_mdp.GroundPickPhaseCommand, "period": SPIN_PERIOD, "randomize_phase": False})

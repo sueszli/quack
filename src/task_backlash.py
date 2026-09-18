@@ -28,7 +28,7 @@ def make_backlash_variant(cfg: ManagerBasedRlEnvCfg, robot_cfg: EntityCfg = MICR
             if "asset_cfg" not in term.params:
                 term.params["asset_cfg"] = SceneEntityCfg("robot", joint_names=_SERVO_JOINTS_ONLY)
 
-    # Backlash joints legitimately ride their hard limits; the default asset_cfg
+    # Backlash joints legitimately ride their hard limits. The default asset_cfg
     # covers every joint and would charge a permanent soft-limit penalty.
     dof_limits = cfg.rewards.get("dof_pos_limits")
     if dof_limits is not None and "asset_cfg" not in dof_limits.params:
@@ -38,7 +38,7 @@ def make_backlash_variant(cfg: ManagerBasedRlEnvCfg, robot_cfg: EntityCfg = MICR
     # "passive_left_hip_yaw_backlash" matches both ".*hip_yaw.*" and ".*passive_.*".
     pose = cfg.rewards.get("pose")
     if pose is not None and "asset_cfg" in pose.params:
-        # Base templates share SceneEntityCfg objects across make() calls; mutating
+        # Base templates share SceneEntityCfg objects across make() calls. Mutating
         # in place would leak into the base tasks.
         ac = deepcopy(pose.params["asset_cfg"])
         ac.joint_names = tuple(p if "_backlash" in p else r"^(?!passive_.*_backlash)" + p.lstrip("^") for p in ac.joint_names)

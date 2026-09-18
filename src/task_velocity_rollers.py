@@ -48,7 +48,7 @@ def make_microduck_velocity_rollers_env_cfg(play: bool = False) -> ManagerBasedR
     }
 
     # 2026-07 model: the roller_blade bodies were merged into the ankles (blade
-    # mesh is now a visual geom on ankle_{l,r}_v1); the tires hang directly off
+    # mesh is now a visual geom on ankle_{l,r}_v1). The tires hang directly off
     # the ankles. Each ankle subtree's only collision geoms are its two tires,
     # so this keeps the old per-foot semantics: 2 slots, left first.
     feet_ground_cfg = ContactSensorCfg(name="feet_ground_contact", primary=ContactMatch(mode="subtree", pattern=r"^(ankle_l_v1|ankle_r_v1)$", entity="robot"), secondary=ContactMatch(mode="body", pattern="terrain"), fields=("found", "force"), reduce="netforce", num_slots=1, track_air_time=True)
@@ -130,7 +130,7 @@ def make_microduck_velocity_rollers_env_cfg(play: bool = False) -> ManagerBasedR
     cfg.rewards["gait_symmetry"] = RewardTermCfg(func=microduck_mdp.gait_symmetry_penalty, weight=-1.0, params={"sensor_name": "feet_ground_contact"})
     # NOTE: a contact_frequency penalty was tried here to slow the cadence, but it
     # penalises contact CHANGES — minimised by never lifting a foot (the swizzle),
-    # so it pushes toward exactly the gait we fought to leave. Reverted; the
+    # so it pushes toward exactly the gait we fought to leave. Reverted. The
     # widened air-time window above is the safe cadence-slower (it forbids short
     # swings without rewarding not-stepping).
     cfg.rewards["forward_lean"] = RewardTermCfg(func=microduck_mdp.forward_lean_reward, weight=1.5, params={"command_name": "twist", "target_pitch": 0.262, "std": 0.1})
@@ -145,7 +145,7 @@ def make_microduck_velocity_rollers_env_cfg(play: bool = False) -> ManagerBasedR
 
     cfg.events["reset_action_history"] = EventTermCfg(func=microduck_mdp.reset_action_history, mode="reset")
 
-    del cfg.events["foot_friction"]  # wheels roll; ground friction lives in the XML
+    del cfg.events["foot_friction"]  # wheels roll. Ground friction lives in the XML
 
     cfg.events["reset_base"].params["pose_range"]["z"] = (0.1335, 0.1435)
 
@@ -201,7 +201,7 @@ def make_microduck_velocity_rollers_env_cfg(play: bool = False) -> ManagerBasedR
 
     # CoM randomization curricula — velocity's ramp, capped lower for the
     # balance-sensitive skating task (audit lesson: ±30 mm forced a nervous
-    # gait on the walker; skates are even less forgiving).
+    # gait on the walker. Skates are even less forgiving).
     if DR.com:
         cfg.curriculum["com_range"] = CurriculumTermCfg(func=microduck_mdp.com_range_curriculum, params={"event_name": "randomize_com", "range_stages": [{"step": 0, "range": 0.003}, {"step": 500 * 24, "range": 0.005}, {"step": 1000 * 24, "range": 0.01}]})
     if DR.head_com:
@@ -214,7 +214,7 @@ MicroduckRollersRlCfg = RslRlOnPolicyRunnerCfg(
     actor=RslRlModelCfg(
         hidden_dims=(512, 256, 128),
         activation="elu",
-        obs_normalization=True,  # matches the family; normalizer baked into ONNX by export.py
+        obs_normalization=True,  # matches the family. Normalizer baked into ONNX by export.py
         distribution_cfg={"class_name": "GaussianDistribution", "init_std": 1.0, "std_type": "scalar"},
     ),
     critic=RslRlModelCfg(hidden_dims=(512, 256, 128), activation="elu", obs_normalization=True),

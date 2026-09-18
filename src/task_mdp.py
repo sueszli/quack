@@ -133,7 +133,7 @@ def _servo_joint_ids(env: "ManagerBasedRlEnv", asset: Entity) -> list:
     # 14-servo layout. On models with extra unactuated joints — backlash hinges,
     # roller wheels, the jaw linkage, all named ``passive_*`` — the entity joint
     # array is wider and interleaved, so raw indices would select the wrong
-    # joints. Index through this list to recover the servo-only view; on plain
+    # joints. Index through this list to recover the servo-only view. On plain
     # models it is the identity.
     cache = env.__dict__.setdefault("_servo_joint_ids_cache", {})
     key = id(asset)
@@ -276,7 +276,7 @@ def upright_progress(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAUL
     # head-tripod lean across three velstand runs). Potential-based shaping is
     # policy-invariant (Ng et al.): it accelerates learning of recovery without
     # creating new optima. A full prone→stand recovery collects Δ≈+1 total
-    # (× weight); a fall costs the same on the way down.
+    # (× weight). A fall costs the same on the way down.
     asset: Entity = env.scene[asset_cfg.name]
     quat = asset.data.root_link_quat_w
     cos_tilt = torch.nan_to_num(1.0 - 2.0 * (quat[:, 1] ** 2 + quat[:, 2] ** 2), nan=1.0)
@@ -316,7 +316,7 @@ def fallen_state_penalty(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DE
     # 1.0 while FALLEN (weight it negative): a flat per-step tax on staying
     # down. Without it, lying still is ~0/step while attempting recovery costs
     # action-rate/torque penalties — waiting for the fallen_too_long recycle was
-    # the rational policy. (Penalties on bad states are safe; it's POSITIVE
+    # the rational policy. (Penalties on bad states are safe, it's POSITIVE
     # rewards gated on bad states that get farmed.)
     #
     # With ``release_*`` set, the tax has HYSTERESIS (velstand crouch-endpoint
@@ -405,8 +405,8 @@ def body_ang_vel_at_height(env: ManagerBasedRlEnv, height_low: float, height_hig
     # Height-gated arrival damper: zero below ``height_low`` (ground recovery —
     # flips/rolls need large trunk rotation and must stay free), full above
     # ``height_high``. Same formula as mjlab's body_angular_velocity_penalty
-    # (world-frame ω_xy, z-rotation free) but returns the gated POSITIVE cost;
-    # use a negative weight.
+    # (world-frame ω_xy, z-rotation free) but returns the gated POSITIVE cost.
+    # Use a negative weight.
     #
     # ``tilt_full_deg`` (optional but STRONGLY recommended): additionally gate
     # by tilt — full cost only when tilt ≤ tilt_full_deg, zero when
@@ -415,7 +415,7 @@ def body_ang_vel_at_height(env: ManagerBasedRlEnv, height_low: float, height_hig
     # bent-over rise (tilt 60°→0 happening INSIDE the z gate) is itself a
     # large trunk rotation — taxing it builds a reward wall right before the
     # finish, and the policy parks bent-over below the gate instead. With the
-    # tilt gate, the approach TO vertical is free; only residual wobble
+    # tilt gate, the approach TO vertical is free. Only residual wobble
     # AROUND vertical (the overshoot→tip→retry oscillation) is damped.
     asset = env.scene[asset_cfg.name]
     ang_vel = asset.data.body_link_ang_vel_w[:, asset_cfg.body_ids, :].squeeze(1)
@@ -464,7 +464,7 @@ def com_upward_velocity(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEF
     # then picks the smooth one). The bootstrap property is preserved: any
     # upward motion still pays immediately.
     asset: Entity = env.scene[asset_cfg.name]
-    # nan_to_num: MuJoCo can produce NaN on contact instability; treat as z=0
+    # nan_to_num: MuJoCo can produce NaN on contact instability. Treat as z=0
     com_z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2], nan=0.0)
     vz = torch.nan_to_num(asset.data.root_link_lin_vel_w[:, 2], nan=0.0)
     below_target = (com_z < max_height).float()
@@ -495,8 +495,8 @@ def robot_state_is_nan(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFA
     # impulse (e.g. robot landing at high velocity). A NaN simulation state
     # propagates into observations, corrupting the policy network weights.
     #
-    # Note: the reward at THIS terminal step may still be NaN from the simulation;
-    # mjlab computes rewards before resetting (see manager_based_rl_env.py step()).
+    # Note: the reward at THIS terminal step may still be NaN from the simulation.
+    # Mjlab computes rewards before resetting (see manager_based_rl_env.py step()).
     # Our custom reward functions guard against NaN internally with nan_to_num,
     # but standard mjlab rewards can still be NaN here. One NaN reward is
     # tolerable because done=True prevents it propagating backward through GAE.
@@ -505,7 +505,7 @@ def robot_state_is_nan(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFA
     # often blows up the base FREE-JOINT (position/orientation/velocity) or the
     # passive WHEELS, not the actuated joints. These quantities
     # feed critic obs terms (base_lin_vel, base_ang_vel,
-    # projected_gravity, wheel_vel); if they are not monitored, the env does not
+    # projected_gravity, wheel_vel). If they are not monitored, the env does not
     # reset and the NaN reaches the obs → rsl_rl's check_nan kills the whole
     # training. We test non-finiteness (NaN AND inf, the inf becoming NaN
     # downstream during the normalization of projected_gravity).
@@ -556,11 +556,11 @@ def descent_speed_reward(env: ManagerBasedRlEnv, cap: float = 0.8, asset_cfg: Sc
 
 
 def reset_rolling_entry(env: ManagerBasedRlEnv, env_ids: torch.Tensor | None, speed_range: tuple = (0.25, 0.45), wheel_radius: float = 0.0175, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> None:
-    # Draws a forward speed v per env; sets the base LINEAR velocity (world
+    # Draws a forward speed v per env. Sets the base LINEAR velocity (world
     # x) = v AND the ROTATION velocity of the 4 passive wheels = v / r, so
     # ω·r = v => zero slip at contact. Avoids the jolt of the old base-only
     # push (moving base, stationary wheels = brutal skidding on the 1st step).
-    # To be executed AFTER reset_base (which places the base; stop giving it a
+    # To be executed AFTER reset_base (which places the base, so stop giving it a
     # velocity_range).
     asset: Entity = env.scene[asset_cfg.name]
     if env_ids is None:
@@ -588,7 +588,7 @@ def wheel_glide_reward(env: ManagerBasedRlEnv, cap_speed: float = 0.35, wheel_ra
     # "running"/pushing), we reward the rotation of the passive WHEELS = true
     # glide by rolling. Independent of any command (the slope task has a
     # zero command: the glide comes from gravity). Capped at ``cap_speed``
-    # (m/s of rolling speed) -> NO incentive to accelerate beyond; zero
+    # (m/s of rolling speed) -> NO incentive to accelerate beyond. Zero
     # if the wheels go backwards (uphill). NaN-safe.
     asset: Entity = env.scene["robot"]
     lf, _ = asset.find_joints("passive_LF_?wheel")
@@ -610,7 +610,7 @@ def com_height_target(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAU
     asset: Entity = env.scene[asset_cfg.name]
 
     # env_origins[:, 2] is 0 for flat ground, so this is safe unconditionally.
-    # nan_to_num: MuJoCo can produce NaN on contact instability; treat as z=0
+    # nan_to_num: MuJoCo can produce NaN on contact instability. Treat as z=0
     # so the penalty is finite (small, since 0 is near the target range).
     com_height = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2], nan=0.0)
 
@@ -1023,7 +1023,7 @@ def ground_pick_return_upright_phased(env: ManagerBasedRlEnv, asset_cfg: SceneEn
 def neck_vel_descent_penalty(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, command_name: str = "twist", joint_indices: list | None = None, hold_end: float = 0.35) -> torch.Tensor:
     # Cost = mean(joint_vel²) over the given joints, gated to 1 for phase < hold_end
     # (descent + low hold) and 0 afterwards (rise + rest) -> does NOT hinder
-    # raising the neck. Returns a positive cost; to be used with a negative weight.
+    # raising the neck. Returns a positive cost. To be used with a negative weight.
     asset = env.scene[asset_cfg.name]
     vel = _servo_joint_vel(env, asset)
     if joint_indices is not None:
@@ -1428,7 +1428,7 @@ def set_random_ground_state(env: ManagerBasedRlEnv, env_ids: torch.Tensor, asset
     env.sim.data.qvel[env_ids, :6] = 0.0
 
     # Sitting-bucket joint overrides (e.g. knee/ankle bent to keyframe).
-    # Override keys are SERVO indices (14-joint layout); translate to entity
+    # Override keys are SERVO indices (14-joint layout). Translate to entity
     # joint indices so models with interleaved passive_* joints (backlash)
     # write the intended joints. qpos column = 7 + entity joint index
     # (robot free joint first, all hinges 1-dof).
@@ -1729,8 +1729,8 @@ def glide_reward(env: ManagerBasedRlEnv, sensor_name: str, command_name: str, ve
     #   farm the reward and regress the gait.
     # - forward_gate = clamp(v_fwd,0,vel_ref)/vel_ref → 0 when not moving forward.
     # - stillness = exp(-Σ leg_joint_vel² / stillness_std²) → high only when legs
-    #   are quiet; a kick (fast joint motion) gets ~0, so only a real glide pays.
-    # - active on push/coast only (cmd_x >= 0); silent on brake.
+    #   are quiet. A kick (fast joint motion) gets ~0, so only a real glide pays.
+    # - active on push/coast only (cmd_x >= 0). Silent on brake.
     from mjlab.sensor import ContactSensor
 
     sensor: ContactSensor = env.scene[sensor_name]
@@ -1754,7 +1754,7 @@ def glide_reward(env: ManagerBasedRlEnv, sensor_name: str, command_name: str, ve
 def leg_symmetry_reward(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG, joint_bases: tuple = ("hip_yaw", "hip_roll", "hip_pitch", "knee", "ankle")) -> torch.Tensor:
     # The robot uses mirrored L/R sign conventions, so a bilaterally-symmetric config
     # satisfies q_left + q_right ≈ 0 per matched joint pair. Returns
-    # ``-mean_pairs |q_left + q_right|`` (L1, constant gradient); use with a POSITIVE
+    # ``-mean_pairs |q_left + q_right|`` (L1, constant gradient). Use with a POSITIVE
     # weight so asymmetry is penalised and the symmetric swizzle is favoured. L/R index
     # pairs are resolved once by name and cached on env.
     asset: Entity = env.scene[asset_cfg.name]
@@ -1847,7 +1847,7 @@ def action_over_limit_penalty(env: ManagerBasedRlEnv, action_name: str = "joint_
     # learned behaviour is baked into the network and transfers to deployment
     # WITHOUT any env-side action clip (which would only exist in sim → mismatch).
     # ``overshoot`` gives the low-kp servo the headroom to reach near-limit targets
-    # under load; only the wild over-drive past that is penalised.
+    # under load. Only the wild over-drive past that is penalised.
     term = env.action_manager.get_term(action_name)
     assert isinstance(term, _JointAction)
     target = term.raw_action * term.scale + term.offset
@@ -1871,7 +1871,7 @@ def forward_lean_reward(env: ManagerBasedRlEnv, command_name: str, target_pitch:
 
 
 class GroundPickPhaseCommand(UniformVelocityCommand):
-    PERIOD: float = 4.0  # default; cfg.period overrides
+    PERIOD: float = 4.0  # default, cfg.period overrides
 
     def __init__(self, cfg, env: _MjlabManagerBasedRlEnv):
         super().__init__(cfg, env)
@@ -1917,7 +1917,7 @@ from dataclasses import dataclass as _dataclass
 @_dataclass(kw_only=True)
 class GroundPickPhaseCommandCfg(UniformVelocityCommandCfg):
     class_type: type = GroundPickPhaseCommand
-    period: float = 4.0  # cycle length in seconds; sitstand uses 8.0
+    period: float = 4.0  # cycle length in seconds. Sitstand uses 8.0
     randomize_phase: bool = True  # False -> each episode starts at phase 0 (standing)
 
     def build(self, env: _MjlabManagerBasedRlEnv) -> "GroundPickPhaseCommand":
@@ -2195,7 +2195,7 @@ def body_pose_tracking_locomotion(env: ManagerBasedRlEnv, command_name: str = "b
     z_world = torch.nan_to_num(pos_w[:, 2] - origin[:, 2], nan=0.0)
 
     # Feet yaws → circular mean. NOTE: this depends on the site orientation
-    # matching the foot pointing direction; if the site frame is rotated, this
+    # matching the foot pointing direction. If the site frame is rotated, this
     # yaw reference may have an offset (constant per-env, so dyaw=0 still maps
     # to "feet-aligned").
     fqw, fqx, fqy, fqz = foot_quat[..., 0], foot_quat[..., 1], foot_quat[..., 2], foot_quat[..., 3]
@@ -2243,7 +2243,7 @@ def body_pose_tracking_locomotion(env: ManagerBasedRlEnv, command_name: str = "b
 
 def pose_command_range_curriculum(env: ManagerBasedRlEnv, env_ids: torch.Tensor, command_name: str, range_stages: list[dict]) -> torch.Tensor:
     # range_stages: list of {step: int, ranges: tuple[(lo, hi), ...]}.
-    # The first stage applies before its step; latest passed stage wins.
+    # The first stage applies before its step. Latest passed stage wins.
     # Always uses the live CommandManager term cfg (NOT env.cfg.commands) so
     # updates take effect — CommandManager keeps its own term refs and reads
     # `term.cfg.ranges` each resample.
@@ -2318,7 +2318,7 @@ def reset_ball_in_front_of_foot(env: ManagerBasedRlEnv, env_ids: torch.Tensor, o
     # real-world placement error.
     #
     # Reads the robot root from qpos directly (root_link_pos_w lags until the
-    # next forward()); must be registered AFTER reset_base / set_ground_state
+    # next forward()). Must be registered AFTER reset_base / set_ground_state
     # (events run in dict insertion order) so the robot pose is final.
     if env_ids is None or len(env_ids) == 0:
         return
@@ -2499,7 +2499,7 @@ def spin_stay_in_place(env: ManagerBasedRlEnv, command_name: str = "twist", laun
 # At the new 3.0 rad/s target: 2*3.0*0.0499/0.0175 = 17.1 rad/s. Leaving 34.0
 # here would cap the term at tanh(17.1/34) = 0.47 of its own maximum, which
 # would weaken exactly the shaping we want to strengthen (cf. spin_stay_in_place).
-SPIN_WHEEL_OMEGA_SCALE = 17.0  # rad/s; recalibrated on the measured half-track and SPIN_RATE_MAX = 3.0
+SPIN_WHEEL_OMEGA_SCALE = 17.0  # rad/s. Recalibrated on the measured half-track and SPIN_RATE_MAX = 3.0
 
 
 def spin_wheel_differential_from_values(diff: torch.Tensor, gate: torch.Tensor, omega_scale: float) -> torch.Tensor:
@@ -2507,7 +2507,7 @@ def spin_wheel_differential_from_values(diff: torch.Tensor, gate: torch.Tensor, 
 
 
 def spin_wheel_differential(env: ManagerBasedRlEnv, command_name: str = "twist", omega_scale: float = SPIN_WHEEL_OMEGA_SCALE, rate_max: float = SPIN_RATE_MAX, accel_end: float = SPIN_ACCEL_END, hold_end: float = SPIN_HOLD_END, brake_end: float = SPIN_BRAKE_END) -> torch.Tensor:
-    # For a counter-clockwise spin, the left skate goes backwards and the right one forwards; the 4
+    # For a counter-clockwise spin, the left skate goes backwards and the right one forwards. The 4
     # wheels spinning positive when going forward, this gives ω_R − ω_L > 0. The tanh
     # saturates at `omega_scale` to avoid a race for wheel speed.
     asset: Entity = env.scene["robot"]
@@ -2599,7 +2599,7 @@ def _backlash_encoder_ids(env: "ManagerBasedRlEnv", asset: Entity, asset_cfg: Sc
 def joint_pos_rel_backlash(env: "ManagerBasedRlEnv", biased: bool = False, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG) -> torch.Tensor:
     # Returns (qpos[servo] + qpos[backlash]) - default[servo]. With biased=True
     # the per-env encoder-calibration bias is applied to the servo reading (one
-    # encoder per servo → one bias per joint; the backlash summand stays raw).
+    # encoder per servo → one bias per joint. The backlash summand stays raw).
     asset: Entity = env.scene[asset_cfg.name]
     main_ids, bl_ids, mask = _backlash_encoder_ids(env, asset, asset_cfg)
     joint_pos = asset.data.joint_pos_biased if biased else asset.data.joint_pos
@@ -2638,8 +2638,8 @@ class SitStandCommand(UniformVelocityCommand):
     # distance cost — an instant drop beat a 1 s descent by ~7×. With the
     # slewed target, being AHEAD of the ramp scores ~0 on the height/composite
     # stack (z far from the commanded height), so tracking the slow setpoint IS
-    # the argmax; the caps remain as backstops for overshoot/bounce. The OBS
-    # stays the raw binary flag (deployment: runtime writes 0/1; the trained
+    # the argmax. The caps remain as backstops for overshoot/bounce. The OBS
+    # stays the raw binary flag (deployment: runtime writes 0/1, the trained
     # response to a flip is the ~ramp_s glide).
     #
     # On episode reset, alpha is initialised from the robot's ACTUAL trunk
@@ -2717,8 +2717,8 @@ def _posture_blend(env: ManagerBasedRlEnv, command_name: str) -> torch.Tensor:
 
 
 def _posture_targets(env: ManagerBasedRlEnv, asset: Entity, command_name: str, sit_overrides: dict) -> tuple[torch.Tensor, torch.Tensor]:
-    # STAND target = default_joint_pos (HOME); SIT target = HOME with the
-    # keyframe overrides applied; the SLEWED blend interpolates between them,
+    # STAND target = default_joint_pos (HOME). SIT target = HOME with the
+    # keyframe overrides applied. The SLEWED blend interpolates between them,
     # so mid-ramp the rewarded pose folds in sync with the descending height.
     blend = _posture_blend(env, command_name)
     stand_target = _servo_default_joint_pos(env, asset)
@@ -2846,7 +2846,7 @@ def posture_rise_bootstrap(env: ManagerBasedRlEnv, command_name: str, max_height
     # zero motion, so "stay seated and eat the L1" is a local optimum — paying
     # for the rise *motion* itself makes any attempt immediately positive.
     # Gated off above ``max_height`` (set just ABOVE the stand target so the
-    # final cm still pays; gating at exactly STAND_Z parks the policy short).
+    # final cm still pays. Gating at exactly STAND_Z parks the policy short).
     # Zero whenever SIT is commanded, so it can never fight the descent.
     # ``max_vz`` caps the rewarded speed (any rise ≥ the cap earns the same, so
     # an explosive launch can't out-earn a gentle one).
@@ -2876,7 +2876,7 @@ _ROULADE_HEAD_SENSOR = "head_ground_contact"
 
 # Head-latch window: head-ground contact while accum is inside this window
 # marks the episode as a genuine over-the-head roll. In a real roulade the
-# head plants at ~60–120° of body rotation; the window is generous around it.
+# head plants at ~60–120° of body rotation. The window is generous around it.
 _HEAD_LATCH_LO = math.radians(20.0)
 _HEAD_LATCH_HI = math.radians(170.0)
 
@@ -2941,7 +2941,7 @@ def _roulade_state(env: ManagerBasedRlEnv) -> tuple:
 
 def _update_roulade_accum(env: ManagerBasedRlEnv, asset: Entity) -> None:
     # SUPPORT GATE (run-1 fix): rotation is integrated only while the robot
-    # touches the terrain — a roulade is a supported motion; ballistic flips
+    # touches the terrain — a roulade is a supported motion. Ballistic flips
     # accumulate nothing, so they neither get paid nor open the completion gate.
     #
     # Also latches env._roulade_head_latch when the head touches the ground

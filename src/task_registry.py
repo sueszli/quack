@@ -59,7 +59,7 @@ register_mjlab_task(task_id="Mjlab-BallKick-Flat-MicroDuck", env_cfg=make_microd
 
 register_mjlab_task(task_id="Mjlab-GroundPick-Rough-MicroDuck", env_cfg=make_microduck_ground_pick_env_cfg(rough=True), play_env_cfg=make_microduck_ground_pick_env_cfg(play=True, rough=True), rl_cfg=MicroduckGroundPickRlCfg, runner_cls=MicroduckOnPolicyRunner)
 
-# Roller skate velocity task (passive-wheel model; historical task id kept)
+# Roller skate velocity task (passive-wheel model, historical task id kept)
 register_mjlab_task(task_id="Mjlab-Velocity-Flat-MicroDuck-Rollers", env_cfg=make_microduck_velocity_rollers_env_cfg(), play_env_cfg=make_microduck_velocity_rollers_env_cfg(play=True), rl_cfg=MicroduckRollersRlCfg, runner_cls=MicroduckOnPolicyRunner)
 
 register_mjlab_task(task_id="Mjlab-Velocity-Swizzle-MicroDuck", env_cfg=make_microduck_velocity_swizzle_env_cfg(), play_env_cfg=make_microduck_velocity_swizzle_env_cfg(play=True), rl_cfg=MicroduckSwizzleRlCfg, runner_cls=MicroduckOnPolicyRunner)

@@ -49,7 +49,7 @@ class FlatRampTerrainCfg(SubTerrainCfg):
         runout_cx = self.flat_length + ramp_length + self.runout_length / 2.0
         runout = body.add_geom(type=mujoco.mjtGeom.mjGEOM_BOX, size=(self.runout_length / 2.0, width / 2.0, t / 2.0), pos=(runout_cx, 0.0, -drop - t / 2.0))
 
-        # Spawning on the ramp starts the wheels rolling under gravity; a base push
+        # Spawning on the ramp starts the wheels rolling under gravity. A base push
         # instead would skid.
         spawn_x = self.flat_length + self.spawn_on_ramp
         spawn_z = -self.spawn_on_ramp * math.tan(angle)

@@ -139,7 +139,7 @@ class TerminalInput:
     # also fire the viewer's built-in visualization shortcuts (frames, labels,
     # rendering toggles…), so commands are read from the terminal instead.
     # Arrow keys arrive as ESC [ A/B/C/D escape sequences and are translated to
-    # symbolic names ("up"/"down"/"left"/"right"); letters are lowercased.
+    # symbolic names ("up"/"down"/"left"/"right"). Letters are lowercased.
     # cbreak (not raw) mode keeps ISIG enabled, so Ctrl+C still works.
 
     _ARROWS = {"A": "up", "B": "down", "C": "right", "D": "left"}
@@ -254,10 +254,10 @@ class PolicyInference:
 
         # Load sit policy. Two flavours share the Y key and self.sit_session:
         #  - --sit (is_sitstand=False): the OLD one-way sit policy. Sits
-        #    unconditionally on a zero twist command; standing back up is done
+        #    unconditionally on a zero twist command. Standing back up is done
         #    by switching back to the standing/walking session.
         #  - --sitstand (is_sitstand=True): the commanded sit↔stand policy.
-        #    twist[0] is a posture flag (0=stand, 1=sit); the SAME policy sits,
+        #    twist[0] is a posture flag (0=stand, 1=sit). The SAME policy sits,
         #    holds, and stands back up — Y just flips the flag.
         self.sit_session = None
         self.sit_mode = False
@@ -287,7 +287,7 @@ class PolicyInference:
         # Episodic behavior policies (kick left/right, roulade). All three use
         # the unified 61D obs layout with an ALL-ZERO 13D command (twist forced
         # ~0 in training, head/body slots zero-padded), so triggering one is a
-        # plain session swap; after `duration` seconds control hands back to
+        # plain session swap. After `duration` seconds control hands back to
         # walking/standing (the behavior policies end standing on their own).
         self.behavior_sessions = {}
         self.behavior_durations = {}
@@ -374,9 +374,9 @@ class PolicyInference:
         self.body_cmd_step_angle = math.radians(10)
 
         # Head control mode. In legacy mode head_offset is added on top of
-        # ctrl[5:9]; in new_cmd_obs mode it's a *command* fed to the policy.
+        # ctrl[5:9]. In new_cmd_obs mode it's a *command* fed to the policy.
         # Final per-joint training caps: neck/head_pitch ±1.1, head_yaw ±1.4,
-        # head_roll ±0.31. Slider max = widest joint cap; head_roll naturally
+        # head_roll ±0.31. Slider max = widest joint cap, head_roll naturally
         # gets clipped by the policy since it was never trained beyond 0.31.
         self.head_mode = False
         self.head_offset = np.zeros(4, dtype=np.float32)
@@ -624,7 +624,7 @@ class PolicyInference:
 
     def trigger_behavior(self, name):
         # The behavior policies were trained to run from a standing start with an
-        # all-zero command and end standing, so triggering is a session swap; a
+        # all-zero command and end standing, so triggering is a session swap. A
         # timer hands control back to walking/standing afterwards.
         session = self.behavior_sessions.get(name)
         if session is None:
@@ -698,7 +698,7 @@ class PolicyInference:
         # Sitstand policy (--sitstand): Y just flips the posture flag — the SAME
         # policy sits, holds the sit, and stands back up gently (trained response
         # to a flag flip is a ~2 s glide). The session stays active after
-        # standing (it holds the stand); a velocity command switches back to
+        # standing (it holds the stand). A velocity command switches back to
         # walking/standing as usual.
         if self.sit_session is None:
             print("Sit unavailable: no --sit/--sitstand policy loaded")
@@ -862,7 +862,7 @@ def main():
         print("Legacy MuJoCo position actuators (--no-bam): NOT the actuator the policy was trained with")
 
     # (--no-bam only) XL330 firmware current limit. The motors saturate current
-    # at ~1.75 A; since torque = kt * current, this caps the actuator force at
+    # at ~1.75 A. Since torque = kt * current, this caps the actuator force at
     # +/- kt * I_max. With BAM the limiter is modelled inside the voltage
     # controller instead (see load_bam_model). kt comes from the bam package.
     if args.no_bam and args.current_limit and args.current_limit > 0:
@@ -878,7 +878,7 @@ def main():
 
     # Foot contact override — emulate the real grippy + soft PU sole to check
     # whether it reproduces the on-robot forward-fall-at-speed. Training used
-    # rigid feet at mu~1.0; the real sole is grippier (higher mu) and compliant
+    # rigid feet at mu~1.0. The real sole is grippier (higher mu) and compliant
     # (softer solref). Applied to the foot collision geoms only.
     if args.foot_friction is not None or args.foot_solref is not None:
         import re as _re

@@ -11,7 +11,7 @@ EPISODE_LENGTH_S = 6.0
 # ankles 0). Keep the two in sync: this reset IS the sit→stand hand-off.
 SITTING_JOINT_OVERRIDES = {
     1: 0.0,  # left  hip_roll   (HOME -0.0873)
-    2: -0.4079,  # left  hip_pitch  (HOME -0.4579; +0.05 = slight fwd lean)
+    2: -0.4079,  # left  hip_pitch  (HOME -0.4579, +0.05 = slight fwd lean)
     3: 1.35,  # left  knee       (HOME -0.0049)
     4: 0.0,  # left  ankle      (HOME +0.4530)
     10: 0.0,  # right hip_roll   (HOME +0.0873)
@@ -24,7 +24,7 @@ _LEG_JOINTS = [0, 1, 2, 3, 4, 9, 10, 11, 12, 13]
 _NECK_JOINTS = [5, 6, 7, 8]
 
 # SIT_Z matches the sit env's measured seated equilibrium (trunk z at rest in
-# the swept stable pose above). Was 0.07 (old robot); keep in sync with
+# the swept stable pose above). Was 0.07 (old robot). Keep in sync with
 # task_sitstand.py.
 SIT_Z = 0.060
 # STAND_Z = empirically-measured trunk z at the natural standing equilibrium
@@ -102,7 +102,7 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
     # standing point was nearly free. Internal ratios between task terms are
     # unchanged (uniform scaling), so the per-term rationale comments below
     # still hold — just read their absolute reward numbers ×4. PPO normalises
-    # advantages, so the global scale itself doesn't matter; only the
+    # advantages, so the global scale itself doesn't matter. Only the
     # task↔regulariser ratio does.
 
     cfg.rewards["pose_stand_legs"] = RewardTermCfg(
@@ -119,7 +119,7 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
 
     # Head DC-droop penalty (velocity's fix, standup-adapted). L1 on a 1 s EMA
     # of the head tracking error — prices only the sustained gravity sag the
-    # policy can cancel by biasing the neck command up; transient motion
+    # policy can cancel by biasing the neck command up. Transient motion
     # averages out. TWO standup-specific safeties, both mandatory here:
     #  - UPRIGHT GATE (same values as arrival_damping): the gate multiplies the
     #    error feeding the EMA, so the ground/rising phase accumulates NOTHING
@@ -169,7 +169,7 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
 
     # NOTE this term is GLOBAL (not phase-gated): prone flips pay it in full
     # (impacts + push-off are |a_z| spikes). The 2026-07-24 attempt to double
-    # it to -0.01 contributed to the face-up freeze; -0.005 is the ceiling
+    # it to -0.01 contributed to the face-up freeze, -0.005 is the ceiling
     # unless it gets a height/tilt gate like arrival_damping.
     # ⚠️ POSITIVE weight: trunk_vertical_accel_penalty ALREADY returns -|a_z|.
     # The previous -0.005 double-negated into a (small) reward for vertical
@@ -201,7 +201,7 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
     #  - ``upright_sharp``: exp(-tilt²/std²) with std ≈ 6°. Gradient is
     #    STRONGEST in the near-vertical regime where the linear version
     #    runs out of steam. Previous run converged at ~37° back-lean because
-    #    the linear pull at small tilt becomes weak; this term punishes that
+    #    the linear pull at small tilt becomes weak. This term punishes that
     #    exact regime.
     cfg.rewards["upright_linear"] = RewardTermCfg(func=microduck_mdp.body_upright_linear, weight=1.5, params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))})
     # Sharp Gaussian upright, gated by trunk z. Pays only when the robot is
@@ -233,13 +233,13 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
     # Body pose tracking — z/roll/pitch only (axis_weights), the runtime
     # body-control axes. Locomotion variant (not body_pose_tracking_6d) so the
     # unused x/y axes wouldn't reference the spawn origin, which the robot
-    # leaves during prone flips. Weight starts at 0; body_pose_tracking_weight
+    # leaves during prone flips. Weight starts at 0, body_pose_tracking_weight
     # ramps it in from iter 2500 (after ground_state_mix finishes) so recovery
     # discovery is untouched. While prone/rising the reward is ≈0 on all
     # tracked axes, so before the robot stands it is just another standing
     # attractor — unlike motion penalties, it can't tax flip/rise attempts.
     # Tight stds on purpose (standup phase-2 lesson): at 1 cm z error with
-    # z_std=0.01 the axis reward drops to 0.37 (real gradient); 0.02 → 0.78.
+    # z_std=0.01 the axis reward drops to 0.37 (real gradient), 0.02 → 0.78.
     if ENABLE_BODY_CONTROL:
         cfg.rewards["body_pose_tracking"] = RewardTermCfg(func=microduck_mdp.body_pose_tracking_locomotion, weight=0.0, params={"command_name": "body_pose", "nominal_height": STAND_Z, "z_std": 0.01, "angle_std": math.radians(5), "axis_weights": (0.0, 0.0, 1.0, 1.0, 1.0, 0.0), "vel_gate_command_name": None})
 
@@ -361,7 +361,7 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
         func=microduck_mdp.set_random_ground_state,
         mode="reset",
         params={
-            # Initial mix = curriculum stage 0 (easy); the ground_state_mix
+            # Initial mix = curriculum stage 0 (easy). The ground_state_mix
             # curriculum ramps these easy→hard over training. Face-up (back) starts
             # at 0 and is introduced late (hardest recovery).
             "face_down_prob": 0.20,  # belly to floor (+90° pitch)
@@ -423,7 +423,7 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
     # nothing". This introduces standing/sitting first, then face-down, then
     # face-up last, and biases toward the hard poses late so they get the most
     # practice. (event_param_curriculum shallow-merges these keys into the live
-    # set_ground_state event; the z-ranges / joint overrides are left untouched.)
+    # set_ground_state event. The z-ranges / joint overrides are left untouched.)
     cfg.curriculum["ground_state_mix"] = CurriculumTermCfg(
         func=microduck_mdp.event_param_curriculum,
         params={
@@ -459,13 +459,13 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
     # action_rate curriculum — velocity's exact ramp (-0.1 → -1.0 by iter 1500).
     # Gentler early stages than the old -0.4/-0.8/-1.0-by-500 ramp: the rise
     # skill gets discovered under light smoothing, then damping tightens.
-    # (Old note, still relevant: a -1.2 end once blocked back-recovery; -1.0 is
+    # (Old note, still relevant: a -1.2 end once blocked back-recovery, -1.0 is
     # the ceiling. With the ÷4 task scale this -1.0 now actually bites.)
     cfg.curriculum["action_rate_weight"] = CurriculumTermCfg(func=microduck_mdp.reward_weight, params={"reward_name": "action_rate_l2", "weight_stages": [{"step": 0, "weight": -0.1}, {"step": 500 * 24, "weight": -0.2}, {"step": 750 * 24, "weight": -0.4}, {"step": 1000 * 24, "weight": -0.6}, {"step": 1250 * 24, "weight": -0.8}, {"step": 1500 * 24, "weight": -1.0}]})
 
     # Smoothness-polish curricula — introduce the anti-violence terms only
     # AFTER the recovery skills exist. ground_state_mix finishes ramping the
-    # hard poses at iter 2500; from 3000 on, prone resets keep exercising the
+    # hard poses at iter 2500. From 3000 on, prone resets keep exercising the
     # learned flips while these penalties fine-tune their execution (brake at
     # arrival, less jitter). Two runs proved the same weights active from
     # step 0 prevent the flips from ever being DISCOVERED (attempt-tax on
@@ -482,7 +482,7 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
     cfg.curriculum["head_pose_bias_weight"] = CurriculumTermCfg(func=microduck_mdp.reward_weight, params={"reward_name": "head_pose_bias", "weight_stages": [{"step": 0, "weight": 0.0}, {"step": 3000 * 24, "weight": 0.5}, {"step": 4000 * 24, "weight": 1.5}]})
     cfg.curriculum["torque_rate_weight"] = CurriculumTermCfg(func=microduck_mdp.reward_weight, params={"reward_name": "joint_torque_rate_l2", "weight_stages": [{"step": 0, "weight": 0.0}, {"step": 3000 * 24, "weight": -1e-3}]})
 
-    # Everything below is body-control only — NOTE the early return; add any
+    # Everything below is body-control only — NOTE the early return. Add any
     # unrelated cfg above this line.
     if not ENABLE_BODY_CONTROL:
         return cfg
@@ -516,7 +516,7 @@ def make_microduck_standup_env_cfg(play: bool = False, rough: bool = False) -> M
     # the sharp fixed-stand attractors directly out-bid commanded deviations
     # (at Δz=−2cm/15° tilt: height_stand_sharp −0.83, upright_sharp −0.79,
     # standing_composite −1.9 per step). Their bootstrap/polish job is done by
-    # 3000; body_pose_tracking at cmd=0 (30% of resamples) takes over the
+    # 3000, body_pose_tracking at cmd=0 (30% of resamples) takes over the
     # "sharp peak at nominal stand" role with even tighter stds. The broad
     # bootstrap layers (height_stand, upright_linear, height_stand_l1,
     # pose_stand_*) are left untouched — they're what recovery leans on, and
@@ -533,7 +533,7 @@ MicroduckStandUpRlCfg = RslRlOnPolicyRunnerCfg(
     actor=RslRlModelCfg(
         hidden_dims=(512, 256, 128),
         activation="elu",
-        obs_normalization=True,  # matches velocity; normalizer MUST be baked into ONNX by export.py
+        obs_normalization=True,  # matches velocity. Normalizer MUST be baked into ONNX by export.py
         distribution_cfg={"class_name": "GaussianDistribution", "init_std": 1.0, "std_type": "scalar"},
     ),
     critic=RslRlModelCfg(hidden_dims=(512, 256, 128), activation="elu", obs_normalization=True),

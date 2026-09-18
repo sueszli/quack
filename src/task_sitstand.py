@@ -22,7 +22,7 @@ SIT_PROB = 0.5
 # task_standup.SITTING_JOINT_OVERRIDES.
 SITTING_TARGET_OVERRIDES = {
     1: 0.0,  # left  hip_roll   (HOME -0.0873)
-    2: -0.4079,  # left  hip_pitch  (HOME -0.4579; +0.05 = slight fwd lean)
+    2: -0.4079,  # left  hip_pitch  (HOME -0.4579, +0.05 = slight fwd lean)
     3: 1.35,  # left  knee       (HOME -0.0049)
     4: 0.0,  # left  ankle      (HOME +0.4530)
     # neck/head intentionally omitted → steered by the head_pose command.
@@ -42,7 +42,7 @@ SIT_Z = 0.060
 
 # Upright gating window for ``upright_while_tall``: full upright incentive
 # above STAND_UPRIGHT_Z, fades to 0 at SIT_UPRIGHT_Z (committed to the sit).
-# Blocks the "tip backward while still high" descent exploit; the always-on
+# Blocks the "tip backward while still high" descent exploit. The always-on
 # upright_linear floor covers the seated regime.
 STAND_UPRIGHT_Z = 0.10
 SIT_UPRIGHT_Z = 0.075
@@ -135,8 +135,8 @@ def make_microduck_sitstand_env_cfg(play: bool = False, rough: bool = False) -> 
 
     # Rise bootstrap — pays for upward motion itself when STAND is commanded
     # and the trunk is below 0.125 (just ABOVE the target so the final cm
-    # still pays). Destination-only rewards have zero gradient at zero motion;
-    # without this the standup env parked seated. Zero under a SIT command.
+    # still pays). Destination-only rewards have zero gradient at zero motion.
+    # Without this the standup env parked seated. Zero under a SIT command.
     cfg.rewards["rise_bootstrap"] = RewardTermCfg(
         func=microduck_mdp.posture_rise_bootstrap,
         weight=0.75,
@@ -160,16 +160,16 @@ def make_microduck_sitstand_env_cfg(play: bool = False, rough: bool = False) -> 
     cfg.rewards["gentle_motion"] = RewardTermCfg(func=microduck_mdp.trunk_vertical_accel_penalty, weight=0.05, params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))})
 
     # Two-layer upright pressure (sit env values — the anti-flop calibration):
-    #  - always-on linear floor: holds the trunk vertical at BOTH rests; at 2.5
+    #  - always-on linear floor: holds the trunk vertical at BOTH rests. At 2.5
     #    "lie on your back" trails upright rest by ~4.5/step (sit run-2 fix).
     #  - height-gated booster: blocks the "tip backward while tall" descent
-    #    exploit; during the rise it doubles as an arrival-uprightness pull.
+    #    exploit. During the rise it doubles as an arrival-uprightness pull.
     cfg.rewards["upright_linear"] = RewardTermCfg(func=microduck_mdp.body_upright_linear, weight=2.5, params={"asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))})
     cfg.rewards["upright_while_tall"] = RewardTermCfg(func=microduck_mdp.upright_while_tall, weight=1.5, params={"height_low": SIT_UPRIGHT_Z, "height_high": STAND_UPRIGHT_Z, "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",))})
 
     # Stillness at the commanded posture — "arrive, then rest QUIETLY, UPRIGHT"
     # as an explicit positive peak. The z gate is a band around the commanded
-    # height (inactive during transitions); the tilt gate pays nothing for a
+    # height (inactive during transitions). The tilt gate pays nothing for a
     # tilted rest (back/face/side flops earn zero — the sit run-2 exploit).
     cfg.rewards["posture_stillness"] = RewardTermCfg(func=microduck_mdp.posture_stillness, weight=2.0, params={"command_name": "twist", "sit_z": SIT_Z, "stand_z": STAND_Z, "band_full": 0.012, "band_zero": 0.03, "vel_std": 0.05, "tilt_full_deg": 25.0, "tilt_zero_deg": 60.0})
 
@@ -180,7 +180,7 @@ def make_microduck_sitstand_env_cfg(play: bool = False, rough: bool = False) -> 
     # rested with the head DANGLING to the floor (trunk/legs/z all on target →
     # full composite, only the 0.75 tracking term lost, and the hanging head
     # adds passive stability). With the head factor, the goal state itself
-    # requires the head up at its commanded pose; transient head assist
+    # requires the head up at its commanded pose. Transient head assist
     # mid-transition stays free (composite ≈0 there anyway).
     cfg.rewards["posture_composite"] = RewardTermCfg(
         func=microduck_mdp.posture_composite,
@@ -239,11 +239,11 @@ def make_microduck_sitstand_env_cfg(play: bool = False, rough: bool = False) -> 
         cfg.observations[group].terms["head_command"] = ObservationTermCfg(func=mdp.generated_commands, params={"command_name": "head_pose"})
         cfg.observations[group].terms["body_command"] = ObservationTermCfg(func=microduck_mdp.zero_command_padding, params={"dim": 6})
 
-    # cmd = [sit_flag, 0, 0]; dwell-time resampling flips the posture mid-
+    # cmd = [sit_flag, 0, 0]. Dwell-time resampling flips the posture mid-
     # episode. "Stand" is the all-zero command (deployment idle parity). The
     # runtime drives this by writing 0/1 into the vx slot of the command
     # buffer. Internally the term slews a target blend over POSTURE_RAMP_S
-    # that the posture rewards track (see the constant's comment); the OBS
+    # that the posture rewards track (see the constant's comment). The OBS
     # stays the raw binary flag.
     command = microduck_mdp.twist_command_cfg(cfg)
     command.rel_standing_envs = 0.0
@@ -290,7 +290,7 @@ def make_microduck_sitstand_env_cfg(play: bool = False, rough: bool = False) -> 
     )
 
     # MuJoCo physics robustness (sit env's contact NaN fix). The standup XML
-    # has full collisions on every body; the seated pose puts trunk + folded
+    # has full collisions on every body. The seated pose puts trunk + folded
     # legs + head all in close ground/self contact. Default nconmax=35 and
     # solver iters=10 overflow the contact solver on sit attempts → NaN →
     # nan_state terminations that punish the descent itself ("learn then
@@ -336,7 +336,7 @@ def make_microduck_sitstand_env_cfg(play: bool = False, rough: bool = False) -> 
 
     # Push curriculum — delayed significantly (sit env lesson): a push
     # mid-transition tips the robot into configurations it can't recover from
-    # before the motions have consolidated; early pushes made the sit policy
+    # before the motions have consolidated. Early pushes made the sit policy
     # unlearn sitting and converge to "just stand doing nothing".
     if DR.pushes:
         cfg.curriculum["push_magnitude"] = CurriculumTermCfg(func=microduck_mdp.push_curriculum, params={"event_name": "push_robot", "push_stages": [{"step": 0, "velocity_range": {"x": (0.0, 0.0), "y": (0.0, 0.0)}}, {"step": 1000 * 24, "velocity_range": {"x": (-0.05, 0.05), "y": (-0.05, 0.05)}}, {"step": 1500 * 24, "velocity_range": {"x": (-0.10, 0.10), "y": (-0.10, 0.10)}}, {"step": 2000 * 24, "velocity_range": {"x": (-0.20, 0.20), "y": (-0.20, 0.20)}}, {"step": 2500 * 24, "velocity_range": {"x": DR.push_range, "y": DR.push_range}}]})
@@ -370,7 +370,7 @@ MicroduckSitStandRlCfg = RslRlOnPolicyRunnerCfg(
     actor=RslRlModelCfg(
         hidden_dims=(512, 256, 128),
         activation="elu",
-        obs_normalization=True,  # matches velocity; normalizer MUST be baked into ONNX by export.py
+        obs_normalization=True,  # matches velocity. Normalizer MUST be baked into ONNX by export.py
         distribution_cfg={"class_name": "GaussianDistribution", "init_std": 1.0, "std_type": "scalar"},
     ),
     critic=RslRlModelCfg(hidden_dims=(512, 256, 128), activation="elu", obs_normalization=True),

@@ -93,7 +93,7 @@ def make_microduck_velstand_env_cfg(play: bool = False, rough: bool = False) -> 
         weight=0.0,  # ramped in at RECOVERY_ECON_KICKIN_ITER
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=("trunk_base",)),
-            # Slightly above standing so the rising reward pays until fully up; the
+            # Slightly above standing so the rising reward pays until fully up. The
             # fallen gate, not this ceiling, is what stops gait-bounce farming.
             "max_height": 0.125,
             # Never triggers: the gate is tilt-only, see REWARD_GATE_TILT_DEG.

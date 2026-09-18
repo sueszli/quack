@@ -70,7 +70,7 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
         if name in cfg.rewards:
             del cfg.rewards[name]
 
-    # target_height=0 pulls the mouth towards the ground; std=0.10 gives gradient from
+    # target_height=0 pulls the mouth towards the ground, std=0.10 gives gradient from
     # ~20 cm (from the standing stance). The "WITHOUT TOUCHING" is ensured by
     # head_impact_penalty (strong) below -> the equilibrium is the mouth just
     # above the ground. Weight raised 2.0 -> 3.0 to pull closer.
@@ -120,7 +120,7 @@ def make_microduck_ground_pick_env_cfg(play: bool = False, rough: bool = False) 
     # that PIVOTS on the ankle (tips onto its edge/tip) while keeping one contact
     # point slips through -> "it rolls its foot over". feet_flat_penalty
     # projects gravity into the foot site frame: when flat the site Z is
-    # vertical (xy²≈0); any tipping -> xy²>0. Thus forbids rolling the
+    # vertical (xy²≈0). Any tipping -> xy²>0. Thus forbids rolling the
     # foot over on the ankle axis.
     cfg.rewards["feet_flat"] = RewardTermCfg(func=microduck_mdp.feet_flat_penalty, weight=-2.0, params={"asset_cfg": SceneEntityCfg("robot", site_names=("left_foot", "right_foot"))})
 
@@ -211,7 +211,7 @@ MicroduckGroundPickRlCfg = RslRlOnPolicyRunnerCfg(
     actor=RslRlModelCfg(
         hidden_dims=(512, 256, 128),
         activation="elu",
-        obs_normalization=True,  # matches velocity; normalizer baked into ONNX by export.py
+        obs_normalization=True,  # matches velocity. Normalizer baked into ONNX by export.py
         distribution_cfg={"class_name": "GaussianDistribution", "init_std": 1.0, "std_type": "scalar"},
     ),
     critic=RslRlModelCfg(hidden_dims=(512, 256, 128), activation="elu", obs_normalization=True),

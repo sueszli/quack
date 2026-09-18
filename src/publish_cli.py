@@ -41,7 +41,7 @@ class PublishConfig:
     chain: bool = False
     # perpetual held pose (flamingo): seconds the daemon drives `idle` before handing back. Leave unset for a gait.
     unwind_s: float | None = None
-    # perpetual gait: which slot it is for (walk, stand, ...). Display-only; drives the install hint.
+    # perpetual gait: which slot it is for (walk, stand, ...). Display-only. Drives the install hint.
     slot: Literal["walk", "stand", "sitstand", "ground_pick", "kick_left", "kick_right", "roulade"] | None = None
     # The twist that means 'stop doing the thing'. Zeros for every one-shot published so far.
     idle: tuple[float, float, float] = (0.0, 0.0, 0.0)

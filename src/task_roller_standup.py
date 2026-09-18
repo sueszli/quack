@@ -22,7 +22,7 @@ NUM_STEPS_PER_ENV = 24
 
 # At play the step counter restarts at 0, so ground_state_mix applies stage 0 and
 # face-up starts — the hardest case, the one worth watching — never appear.
-# STANDUP_PLAY_FACE_UP overrides; play only.
+# STANDUP_PLAY_FACE_UP overrides. Play only.
 PLAY_FACE_UP = None
 # Splits the remainder 2:1 face-down:standing, the last curriculum stage's ratio.
 _PLAY_FACE_DOWN_SHARE = 2.0 / 3.0
@@ -44,7 +44,7 @@ def _resolve_play_face_up():
 
 # The passive wheels are INTERLEAVED in the rollers joint order, so standup's
 # [0-4, 9-13] indices do NOT hold here. Locked by tests/test_roller_standup_cfg.py.
-# Only _LEG_JOINTS is consumed; the other two exist for that test (the neck resolves
+# Only _LEG_JOINTS is consumed. The other two exist for that test (the neck resolves
 # by name, the wheels by the ^passive_.* regex).
 _LEG_JOINTS = [0, 1, 2, 3, 4, 11, 12, 13, 14, 15]
 _NECK_JOINTS = [7, 8, 9, 10]
@@ -64,7 +64,7 @@ def make_microduck_roller_standup_env_cfg(play: bool = False) -> ManagerBasedRlE
         cfg.rewards.pop(name, None)
 
     # Nothing is steered here, but the slot keeps a tiny non-zero range so its input
-    # neurons stay alive; head_pose and body_pose stay zero-padded (61D obs parity).
+    # neurons stay alive, head_pose and body_pose stay zero-padded (61D obs parity).
     command = microduck_mdp.twist_command_cfg(cfg)
     command.rel_standing_envs = 0.0
     command.rel_heading_envs = 0.0
@@ -77,7 +77,7 @@ def make_microduck_roller_standup_env_cfg(play: bool = False) -> ManagerBasedRlE
     command.ranges.ang_vel_z = (-0.05, 0.05)
     cfg.commands["twist"] = microduck_mdp.VelocityCommandCommandOnlyCfg(**vars(command))
 
-    # A rare contact (~1/25M steps) diverges the free joint to NaN; sanitizing the obs
+    # A rare contact (~1/25M steps) diverges the free joint to NaN. Sanitizing the obs
     # keeps training alive and the offending env resets on the next step.
     for grp in ("actor", "critic"):
         cfg.observations[grp].nan_policy = "sanitize"
@@ -177,7 +177,7 @@ def make_microduck_roller_standup_env_cfg(play: bool = False) -> ManagerBasedRlE
     # earlier ones lean on a rolling friction the real robot does not have.
     _WHEEL_FRICTION_STAGE0 = (0.0500, 0.0500)
     cfg.curriculum["wheel_friction"] = CurriculumTermCfg(func=microduck_mdp.wheel_friction_curriculum, params={"event_name": "randomize_wheel_friction", "ranges_stages": [{"step": 0, "ranges": _WHEEL_FRICTION_STAGE0}, {"step": 1000 * NUM_STEPS_PER_ENV, "ranges": (0.0200, 0.0200)}, {"step": 2000 * NUM_STEPS_PER_ENV, "ranges": (0.0080, 0.0080)}, {"step": 3000 * NUM_STEPS_PER_ENV, "ranges": (0.0030, 0.0030)}, {"step": 4000 * NUM_STEPS_PER_ENV, "ranges": (0.0015, 0.0015)}]})
-    # Redundant in practice (the curriculum already defaults to stage 0); keeps the
+    # Redundant in practice (the curriculum already defaults to stage 0). Keeps the
     # event honest if the curriculum is ever removed.
     cfg.events["randomize_wheel_friction"].params["ranges"] = _WHEEL_FRICTION_STAGE0
 
