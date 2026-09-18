@@ -23,8 +23,9 @@ fmt: ## format src and tests
 	uvx ruff format src tests
 
 .PHONY: lint
-lint: ## lint src and tests
+lint: ## lint and type check src and tests
 	uvx ruff check src tests
+	uvx pyright
 
 .PHONY: tests
 tests: ## run the test suite (CPU, no GPU needed)
@@ -63,7 +64,3 @@ export: ## checkpoint -> weights/output.onnx, obs normalizer baked in; CKPT=3000
 .PHONY: infer
 infer: ## CPU MuJoCo deployment rehearsal of weights/output.onnx
 	uv run infer --walking weights/output.onnx --new-cmd-obs $(ARGS)
-
-.PHONY: types
-types: ## type check over source code
-	uvx pyright
