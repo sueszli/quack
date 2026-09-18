@@ -54,6 +54,12 @@ ignore = [
 [tool.ruff.lint.isort]
 split-on-trailing-comma = false
 
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
+include = ["src", "tests"]
+stubPath = "typings"
+
 [tool.uv]
 override-dependencies = [
     "protobuf>=4.0,<7.0",
